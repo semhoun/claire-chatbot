@@ -1,0 +1,8 @@
+{% extends 'layout.twig' %}
+
+{% block chat %}
+    <article class="message message--received">
+        <div class="message__bubble">{{ message }}</div>
+        <span class="message__meta">{{ time }}</span>
+    </article>
+{% endblock %}

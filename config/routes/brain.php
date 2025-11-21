@@ -1,0 +1,15 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Controller\BrainController;
+use Slim\App;
+use Slim\Interfaces\RouteCollectorProxyInterface as Group;
+
+return static function (
+    App $app,
+): void {
+    $app->group('/brain', static function (Group $group): void {
+        $group->post('/chat', [BrainController::class, 'chat'])->setName('brain.chat');
+    });
+};

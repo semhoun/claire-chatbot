@@ -1,0 +1,4 @@
+<article class="message {{ sent ? 'message--sent' : 'message--received' }}">
+    <div class="message__bubble">{{ message|markdown_to_html }}</div>
+    <span class="message__meta">{{ time }}{% if sent %} • Vous{% endif %}</span>
+</article>

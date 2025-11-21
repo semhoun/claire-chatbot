@@ -1,0 +1,10 @@
+\.ac-php-conf\.json
+vendor/
+var/*
+composer.lock
+.cache/composer
+.config/composer
+.idea
+.local/share/composer
+.bash_history
+compose.yml
