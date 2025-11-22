@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Services\Settings;
-
 return [
     'name' => 'claire',
     'lifetime' => 7200,

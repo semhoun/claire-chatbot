@@ -9,11 +9,11 @@ use Slim\Interfaces\ErrorRendererInterface;
 use Slim\Views\Twig;
 use Throwable;
 
-final class HtmlErrorRenderer implements ErrorRendererInterface
+final readonly class HtmlErrorRenderer implements ErrorRendererInterface
 {
     public function __construct(
         private Settings $settings,
-        private Twig $view
+        private Twig $twig
     ) {
     }
 
@@ -22,7 +22,7 @@ final class HtmlErrorRenderer implements ErrorRendererInterface
         bool $displayErrorDetails
     ): string {
         if ($exception->getCode() === 404) {
-            return $this->view->fetch('error/404.twig');
+            return $this->twig->fetch('error/404.twig');
         }
 
         if ($exception->getCode() === 0 || $exception->getCode() > 499) {
@@ -30,8 +30,9 @@ final class HtmlErrorRenderer implements ErrorRendererInterface
                 // We are in debug mode, and is not app exception so we let tracy manage the exception
                 throw $exception;
             }
+
             if ($displayErrorDetails) {
-                return $this->view->fetch('error/default.twig', [
+                return $this->twig->fetch('error/default.twig', [
                     'title' => is_a($exception, '\Slim\Exception\HttpException') ?
                         $exception->getTitle() : '500 - ' .  $exception::class,
                     'debug' => $displayErrorDetails,
@@ -45,7 +46,7 @@ final class HtmlErrorRenderer implements ErrorRendererInterface
             }
         }
 
-        return $this->view->fetch('error/default.twig', [
+        return $this->twig->fetch('error/default.twig', [
             'title' => is_a($exception, '\Slim\Exception\HttpException') ?
                         $exception->getTitle() : '500 - ' .  $exception::class,
             'debug' => $displayErrorDetails,

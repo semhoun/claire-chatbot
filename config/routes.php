@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Controller;
 use App\Services\Settings;
-use Slim\Psr7\Request;
 use Slim\App;
+use Slim\Psr7\Request;
 
 return static function (App $app): void {
     $container = $app->getContainer();

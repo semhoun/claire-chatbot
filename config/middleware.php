@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use App\Middleware\BaseUrlMiddleware;
-use Odan\Session\Middleware\SessionStartMiddleware;
 use App\Renderer\HtmlErrorRenderer;
 use App\Renderer\JsonErrorRenderer;
 use App\Services\Settings;
+use Odan\Session\Middleware\SessionStartMiddleware;
 use RKA\Middleware\ProxyDetection;
 use Slim\App;
 use Slim\Views\Twig;
@@ -28,6 +28,7 @@ return static function (App $app): void {
         $app->add(new SlimTracy\Middlewares\TracyMiddleware($app, $settings->get('tracy')));
         Debugger::enable(Debugger::Development);
     }
+
     $errorMiddleware = $app->addErrorMiddleware($settings->get('debug'), true, true);
     $errorHandler = $errorMiddleware->getDefaultErrorHandler();
     $errorHandler->registerErrorRenderer('text/html', HtmlErrorRenderer::class);

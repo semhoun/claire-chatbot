@@ -44,6 +44,7 @@ final readonly class Settings
             if ($key === '_base_') {
                 continue;
             }
+
             $config[$key] = require $file;
         }
 

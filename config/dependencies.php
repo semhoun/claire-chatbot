@@ -2,17 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Agent\Brain;
 use App\Services\Settings;
-use App\Services\Brain;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\Configuration;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\Driver\AttributeDriver;
-use Monolog\Handler\StreamHandler;
 use Monolog\Logger;
-use Monolog\Processor\UidProcessor;
+use NeuronAI\Observability\LogObserver;
 use Odan\Session\PhpSession;
 use Odan\Session\SessionInterface;
 use Odan\Session\SessionManagerInterface;
@@ -21,14 +20,14 @@ use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
 use Twig\Extension\DebugExtension;
 use Twig\Extension\ProfilerExtension;
-use Twig\Profiler\Profile;
 use Twig\Extra\Markdown\DefaultMarkdown;
 use Twig\Extra\Markdown\MarkdownExtension;
 use Twig\Extra\Markdown\MarkdownRuntime;
+use Twig\Profiler\Profile;
 
 return [
     // Doctrine Dbal connection
-    Connection::class => static fn (Settings $settings, Doctrine\ORM\Configuration $conf): Doctrine\DBAL\Connection => DriverManager::getConnection($settings->get('doctrine.connection'), $conf),
+    Connection::class => static fn (Settings $settings, Doctrine\ORM\Configuration $configuration): Doctrine\DBAL\Connection => DriverManager::getConnection($settings->get('database.doctrine.connection'), $configuration),
     // Doctrine Config used by entity manager and Tracy
     Configuration::class => static function (Settings $settings): Doctrine\ORM\Configuration {
         if ($settings->get('debug')) {
@@ -41,7 +40,8 @@ return [
 
         $config = new Configuration();
         $config->setMetadataCache($metadataCache);
-        $driverImpl = new AttributeDriver($settings->get('doctrine.entity_path'), true);
+
+        $driverImpl = new AttributeDriver($settings->get('database.doctrine.entity_path'), true);
         $config->setMetadataDriverImpl($driverImpl);
         $config->setQueryCache($queryCache);
         $config->setProxyDir($settings->get('cache_dir') . '/proxy');
@@ -56,48 +56,48 @@ return [
         return $config;
     },
     // Doctrine EntityManager.
-    EntityManager::class => static fn (Configuration $config, Connection $connection): EntityManager => new EntityManager($connection, $config),
+    EntityManager::class => static fn (Configuration $configuration, Connection $connection): EntityManager => new EntityManager($connection, $configuration),
     EntityManagerInterface::class => DI\get(EntityManager::class),
     // Settings.
     Settings::class => DI\factory([Settings::class, 'load']),
     Logger::class => static function (Settings $settings): Logger {
         $logger = new Logger($settings->get('logger.name'));
-        $processor = new UidProcessor();
-        $logger->pushProcessor($processor);
-
-        $handler = new StreamHandler($settings->get('logger.path'), $settings->get('logger.level'));
-        $logger->pushHandler($handler);
+        $handlerOLTP = new \OpenTelemetry\Contrib\Logs\Monolog\Handler(
+            \OpenTelemetry\API\Globals::loggerProvider(),
+            $settings->get('logger.level'),
+        );
+        $logger->pushHandler($handlerOLTP);
 
         return $logger;
     },
     Twig::class => static function (Settings $settings, Profile $profile): Twig {
-        $view = Twig::create($settings->get('view.template_path'), $settings->get('view.twig'));
+        $twig = Twig::create($settings->get('twig.template_path'), $settings->get('twig.config'));
         if ($settings->get('debug')) {
             // Add extensions
-            $view->addExtension(new ProfilerExtension($profile));
-            $view->addExtension(new DebugExtension());
+            $twig->addExtension(new ProfilerExtension($profile));
+            $twig->addExtension(new DebugExtension());
         }
-        $view->addExtension(new MarkdownExtension());
-        $view->addRuntimeLoader(new class implements \Twig\RuntimeLoader\RuntimeLoaderInterface {
-            public function load($class) {
-                if (MarkdownRuntime::class === $class) {
+
+        $twig->addExtension(new MarkdownExtension());
+        $twig->addRuntimeLoader(new class() implements \Twig\RuntimeLoader\RuntimeLoaderInterface {
+            public function load($class): ?MarkdownRuntime
+            {
+                if ($class === MarkdownRuntime::class) {
                     // Provide the Markdown runtime with a default League/CommonMark-based implementation
                     return new MarkdownRuntime(new DefaultMarkdown());
                 }
+
                 return null;
             }
         });
-        return $view;
+        return $twig;
     },
-    Brain::class => static function (Settings $settings): Brain {
+    Brain::class => static function (Settings $settings, Logger $logger): Brain {
         $brain = Brain::make();
         $brain->config($settings);
+        $brain->observe(new LogObserver($logger));
         return $brain;
     },
-    SessionManagerInterface::class => static function (SessionInterface $sessionInterface) {
-        return $sessionInterface;
-    },
-    SessionInterface::class => static function (Settings $settings) {
-        return new PhpSession($settings->get('session'));
-    },
+    SessionManagerInterface::class => static fn (SessionInterface $session): \Odan\Session\SessionInterface => $session,
+    SessionInterface::class => static fn (Settings $settings): \Odan\Session\PhpSession => new PhpSession($settings->get('session')),
 ];

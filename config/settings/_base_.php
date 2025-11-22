@@ -11,12 +11,8 @@ return [
     'version' => phpversion(),
     // Is debug moderm
     'debug' => $debug,
-    // API Base path
-    'api_base_path' => '/api',
     // 'Temprorary directory
     'temporary_path' => Settings::getAppRoot() . '/var/tmp',
     // Route cache
     'cache_dir' => Settings::getAppRoot() . '/var/cache',
-    // Inspector Key
-    'inspector_key' => getenv('INSPECTOR_INGESTION_KEY'),
 ];

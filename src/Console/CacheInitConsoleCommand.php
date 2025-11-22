@@ -18,7 +18,7 @@ final class CacheInitConsoleCommand extends Command
 {
     public function __construct(
         private readonly Settings $settings,
-        private EntityManager $entityManager
+        private readonly EntityManager $entityManager
     ) {
         parent::__construct();
     }

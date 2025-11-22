@@ -8,10 +8,9 @@ $debug = getenv('DEBUG_MODE', true) === 'true';
 
 return [
     'template_path' => Settings::getAppRoot() . '/tmpl',
-    'twig' => [
+    'config' => [
         'cache' => Settings::getAppRoot() . '/var/cache/twig',
         'debug' => true,
         'auto_reload' => $debug,
     ],
-    'base_path' => '/app',
 ];
