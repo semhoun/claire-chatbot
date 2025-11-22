@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Agent;
 
 use App\Services\Settings;
+use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\SystemPrompt;
+use NeuronAI\Chat\History\ChatHistoryInterface;
+use NeuronAI\Chat\History\SQLChatHistory;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\Providers\OpenAILike;
 use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
@@ -14,11 +17,23 @@ use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 
 class Brain extends Agent
 {
-    private Settings $settings;
-
-    public function config(Settings $settings): void
+        public function __construct(protected Connection $connection,
+                                    protected readonly Settings $settings,
+                                    protected readonly string $threadId,
+        )
     {
-        $this->settings = $settings;
+        parent::__construct();
+    }
+
+    #[\Override]
+    protected function chatHistory(): ChatHistoryInterface
+    {
+        return new SQLChatHistory(
+            thread_id: $this->threadId,
+            pdo: $this->connection->getNativeConnection(),
+            table: 'chat_history',
+            contextWindow: 50000
+        );
     }
 
     #[\Override]

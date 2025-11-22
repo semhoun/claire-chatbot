@@ -27,7 +27,15 @@ use Twig\Profiler\Profile;
 
 return [
     // Doctrine Dbal connection
-    Connection::class => static fn (Settings $settings, Doctrine\ORM\Configuration $configuration): Doctrine\DBAL\Connection => DriverManager::getConnection($settings->get('database.doctrine.connection'), $configuration),
+    Connection::class => static function (Settings $settings, Doctrine\ORM\Configuration $configuration): Doctrine\DBAL\Connection {
+        $connectionParams = [
+            'driver' => 'pdo_' . $settings->get('database.driver'),
+        ];
+        if ($settings->get('database.driver') === 'sqlite') {
+            $connectionParams['path'] = $settings->get('database.path');
+        }
+        return DriverManager::getConnection($connectionParams, $configuration);
+    },
     // Doctrine Config used by entity manager and Tracy
     Configuration::class => static function (Settings $settings): Doctrine\ORM\Configuration {
         if ($settings->get('debug')) {
@@ -92,9 +100,8 @@ return [
         });
         return $twig;
     },
-    Brain::class => static function (Settings $settings, Logger $logger): Brain {
-        $brain = Brain::make();
-        $brain->config($settings);
+    Brain::class => static function (Settings $settings, Logger $logger, Connection $connection, SessionInterface $session): Brain {
+        $brain = Brain::make($connection, $settings, $session->get('chatId'));
         $brain->observe(new LogObserver($logger));
         return $brain;
     },

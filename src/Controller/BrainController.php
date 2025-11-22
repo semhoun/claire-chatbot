@@ -36,23 +36,8 @@ final readonly class BrainController
 
         $time = new \DateTime()->format('H:i');
 
-        $chat = [];
-        $chatHistory = $this->session->get('chatHistory', []);
-        $chatHistory[] = ['role' => 'user', 'content' => $userMessage, 'time' => $time];
-        foreach ($chatHistory as &$message) {
-            if ($message['role'] === 'user') {
-                $chat[] = new UserMessage($message['content']);
-            } else {
-                $chat[] = new AssistantMessage($message['content']);
-            }
-        }
-
-        $answer = $this->brain->chat($chat);
+        $answer = $this->brain->chat(new UserMessage($userMessage));
         $agentMessage = $answer->getContent();
-
-        $chatHistory[] = ['role' => 'assistant', 'content' => $agentMessage, 'time' => $time];
-
-        $this->session->set('chatHistory', $chatHistory);
 
         return $this->twig->render($response, 'partials/message.md.twig', [
             'message' => $agentMessage,

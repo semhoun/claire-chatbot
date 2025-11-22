@@ -23,7 +23,7 @@ final class CacheClearConsoleCommand extends Command
     {
         $cacheDirs = [$this->settings->get('cache_dir')];
         foreach ($cacheDirs as $cacheDir) {
-            if (! file_exists($cacheDir)) {
+            if (!file_exists($cacheDir)) {
                 continue;
             }
 

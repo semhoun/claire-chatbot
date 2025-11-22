@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 return [
-    'name' => 'claire',
+    'name' => 'claire_chatbot',
     'lifetime' => 7200,
     'save_path' => null,
     'domain' => null,
