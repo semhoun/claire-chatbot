@@ -2,26 +2,6 @@
 
 Claire est une application web minimaliste de chat IA construite avec Slim 4 et Twig. Elle s’appuie sur la bibliothèque neuron-core pour piloter un LLM compatible OpenAI et fournit une petite interface web ainsi qu’un endpoint API pour échanger des messages.
 
-## Sommaire
-
-- Présentation
-- Fonctionnalités
-- Pile technique
-- Prérequis
-- Installation
-- Configuration (LLM, logs, observabilité, base de données)
-- Démarrage
-- API et routes
-- Développement & Qualité
-- Déploiement avec Docker/Traefik
-- Sécurité
-- Dépannage
-- Licence
-
-## Présentation
-
-Claire est un agent conversationnel simple dont l’instruction système par défaut est définie dans `App\Services\Brain`. Elle conserve l’historique de session côté serveur et renvoie les réponses du modèle sous forme de snippets Markdown rendus par Twig.
-
 ## Fonctionnalités
 
 - Interface web de chat basique (Twig + CSS).
@@ -29,7 +9,7 @@ Claire est un agent conversationnel simple dont l’instruction système par dé
 - Healthcheck `GET /health` (JSON) pour la supervision.
 - Intégration d’un fournisseur LLM « OpenAI-like » (URL, clé et modèle configurables).
 - Journalisation via Monolog, exportée par OpenTelemetry.
-- Intégration OpenTelemetry pour traces/metrics/logs (requis).
+- Intégration OpenTelemetry pour traces/metrics/logs.
 
 ## Pile technique
 
@@ -46,7 +26,7 @@ Claire est un agent conversationnel simple dont l’instruction système par dé
 
 - PHP 8.4 ou supérieur avec les extensions:
   - `ext-json`
-  - `ext-sqlite3` (exigée par le projet; Doctrine est installé mais pas nécessairement utilisé pour le chat)
+  - `ext-sqlite3` ou 'ext-mysql' ou 'ext-pgsql'
   - `ext-libxml`
 - Composer
 
@@ -225,15 +205,18 @@ Démarrez ensuite votre stack avec votre orchestrateur habituel (ex. `docker com
 
 ## API et routes
 
-- `GET /health`
-  - Retourne un JSON de statut.
+### Healthcheck
 
-- `POST /brain/chat`
-  - Corps: `application/x-www-form-urlencoded` ou `application/json`
-  - Champ requis: `message` (string)
-  - Réponse: un fragment rendu (Markdown -> HTML) correspondant au message assistant. Ce point est pensé pour l’UI; pour un usage purement API, adaptez selon vos besoins.
-
-Les routes sont enregistrées dans `config/routes.php` et dans les fichiers du dossier `config/routes/` (ex: `brain.php`). L’interface web est rendue via Twig (`tmpl/`).
+- `GET /health` — endpoint JSON simple pour supervision (liveness/readiness).
+  - Réponse 200 (exemple):
+    ```json
+    {
+      "version": "1.0.0",
+      "date": "2025-01-01T12:34:56+00:00"
+    }
+    ```
+  - Utilisation typique: sonde de conteneur/orchestrateur (Docker, Traefik, Kubernetes, etc.).
+  - Aucun corps requis, pas d’authentification par défaut.
 
 ## Sécurité
 
@@ -256,17 +239,11 @@ Outils disponibles:
 
 - Slim Tracy (debug console) peut être activé en mode debug si configuré.
 
-## Déploiement avec Docker/Traefik
-
-Points d’attention:
-
-- Ne commitez pas vos clés `OPENAPI_KEY` en clair.
-- En production, vérifiez les permissions du dossier `var/` (cache, logs, tmp) et la désactivation de `DEBUG_MODE`.
-
 ## Dépannage
 
-- 404 partout: vérifiez que le serveur pointe bien sur `public/index.php` et que vos règles de réécriture sont actives.
+- 500 au `GET /`:  vérifiez les permissions du dossier var/ (cache, logs, tmp).
 - 500 au `POST /brain/chat`: assurez-vous que `OPENAPI_URL`, `OPENAPI_KEY` et `OPENAPI_MODEL` sont correctement définis et que le réseau sortant fonctionne.
+- 404 partout: vérifiez que le serveur pointe bien sur `public/index.php` et que vos règles de réécriture sont actives.
 - Pas de logs: les logs sont gérés par OpenTelemetry. Pour les voir dans la console, définissez `OTEL_LOGS_EXPORTER=console` (et `OTEL_LOGS_PROCESSOR=simple` pour un affichage immédiat). En alternance, configurez un export OTLP (`OTEL_LOGS_EXPORTER=otlp`) vers un collecteur comme l’OTel Collector.
 
 ## Todo

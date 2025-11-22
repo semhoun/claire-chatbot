@@ -25,7 +25,6 @@
   },
   "require": {
     "php": "^8.4",
-    "ext-sqlite3": "*",
     "ext-json": "*",
     "ext-libxml": "*",
     "slim/slim": "^4.15",
