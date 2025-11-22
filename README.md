@@ -39,12 +39,12 @@ Claire est un agent conversationnel simple dont l’instruction système par dé
 - [Twig](https://twig.symfony.com/) (templates)
 - [Monolog](https://github.com/Seldaek/monolog) (logs)
 - [Doctrine ORM](https://www.doctrine-project.org/) (présent, non requis pour l’usage basique)
-- [neuron-core/neuron-ai](https://www.neuron-ai.dev/)
-- OpenTelemetry (observabilité)
+- [Neuron AI](https://www.neuron-ai.dev/) (agent LLM)
+- [OpenTelemetry](https://opentelemetry.io/docs/languages/php/) (observabilité)
 
 ## Prérequis
 
-- PHP 8.2 ou supérieur avec les extensions:
+- PHP 8.4 ou supérieur avec les extensions:
   - `ext-json`
   - `ext-sqlite3` (exigée par le projet; Doctrine est installé mais pas nécessairement utilisé pour le chat)
   - `ext-libxml`
@@ -190,8 +190,6 @@ Outils disponibles:
 - Slim Tracy (debug console) peut être activé en mode debug si configuré.
 
 ## Déploiement avec Docker/Traefik
-
-Le fichier `compose.yml` fournit un exemple d’intégration avec Traefik et un conteneur web (image `semhoun/webserver:8.4`). Les logs sont envoyés sur `stdout` et plusieurs variables d’environnement d’observabilité sont déjà prévues.
 
 Points d’attention:
 
