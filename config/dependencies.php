@@ -34,6 +34,7 @@ return [
         if ($settings->get('database.driver') === 'sqlite') {
             $connectionParams['path'] = $settings->get('database.path');
         }
+
         return DriverManager::getConnection($connectionParams, $configuration);
     },
     // Doctrine Config used by entity manager and Tracy

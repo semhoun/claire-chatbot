@@ -1,4 +1,6 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace app;
 
@@ -15,7 +17,8 @@ final class Version20251122210810 extends AbstractMigration
     public function up(Schema $schema): void
     {
         if ($this->connection->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\SQLitePlatform) {
-            $this->addSql(<<<EOT
+            $this->addSql(
+                <<<EOT
 -- SQLite-compatible schema
 CREATE TABLE IF NOT EXISTS chat_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,9 +33,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_thread_id ON chat_history(thread_id);
 CREATE INDEX IF NOT EXISTS idx_thread_id ON chat_history(thread_id);
 EOT
             );
-        }
-        else {
-            $this->addSql(<<<EOT
+        } else {
+            $this->addSql(
+                <<<EOT
 CREATE TABLE IF NOT EXISTS chat_history (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   thread_id VARCHAR(255) NOT NULL,

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Agent\Brain;
-use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\UserMessage;
 use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -16,8 +15,7 @@ final readonly class BrainController
 {
     public function __construct(
         private Twig $twig,
-        private Brain $brain,
-        private SessionInterface $session
+        private Brain $brain
     ) {
     }
 
@@ -36,8 +34,8 @@ final readonly class BrainController
 
         $time = new \DateTime()->format('H:i');
 
-        $answer = $this->brain->chat(new UserMessage($userMessage));
-        $agentMessage = $answer->getContent();
+        $message = $this->brain->chat(new UserMessage($userMessage));
+        $agentMessage = $message->getContent();
 
         return $this->twig->render($response, 'partials/message.md.twig', [
             'message' => $agentMessage,

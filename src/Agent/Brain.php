@@ -17,11 +17,11 @@ use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 
 class Brain extends Agent
 {
-        public function __construct(protected Connection $connection,
-                                    protected readonly Settings $settings,
-                                    protected readonly string $threadId,
-        )
-    {
+    public function __construct(
+            protected Connection $connection,
+            protected readonly Settings $settings,
+            protected readonly string $threadId,
+        ) {
         parent::__construct();
     }
 

@@ -9,7 +9,7 @@ Claire est une application web minimaliste de chat IA construite avec Slim 4 et 
 - Pile technique
 - Prérequis
 - Installation
-- Configuration (LLM, logs, observabilité)
+- Configuration (LLM, logs, observabilité, base de données)
 - Démarrage
 - API et routes
 - Développement & Qualité
@@ -98,6 +98,53 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 
   Note: les endpoints OTLP et les headers sont optionnels. Si vous ne les définissez pas, l’exporteur appliquera ses valeurs par défaut. Par exemple, pour afficher les logs uniquement en console, il suffit de définir `OTEL_LOGS_EXPORTER=console` sans renseigner d’endpoint OTLP.
 
+### Base de données (Doctrine ORM / DBAL)
+
+Le projet inclut Doctrine ORM/DBAL et peut fonctionner avec SQLite (par défaut), MySQL/MariaDB ou PostgreSQL. La configuration est lue depuis `config/settings/database.php` et pilotée par des variables d’environnement prefixées `DATABASE_`.
+
+- Variables d’environnement supportées:
+  - `DATABASE_KIND` — pilote de base de données. Valeurs possibles: `sqlite`, `mysql`, `postgres` (ou `pgsql`).
+  - `DATABASE_HOST` — hôte (MySQL/PostgreSQL uniquement).
+  - `DATABASE_PORT` — port (MySQL/PostgreSQL uniquement; ex: 3306 pour MySQL, 5432 pour PostgreSQL).
+  - `DATABASE_NAME` — nom de la base (MySQL/PostgreSQL uniquement).
+  - `DATABASE_USER` — utilisateur (MySQL/PostgreSQL uniquement).
+  - `DATABASE_PASSWORD` — mot de passe (MySQL/PostgreSQL uniquement).
+
+- SQLite
+  - Si `DATABASE_KIND=sqlite`, aucune autre variable n’est nécessaire.
+  - Le fichier de base de données est créé/lu à l’emplacement par défaut: `var/database.sqlite` (chemin défini dans `config/settings/database.php`). Assurez‑vous que le processus PHP a les droits d’écriture sur le dossier `var/`.
+
+- MySQL / MariaDB
+  - Exemple minimal:
+    ```env
+    DATABASE_KIND=mysql
+    DATABASE_HOST=localhost
+    DATABASE_PORT=3306
+    DATABASE_NAME=claire
+    DATABASE_USER=claire
+    DATABASE_PASSWORD=change_me
+    ```
+
+- PostgreSQL
+  - Exemple minimal:
+    ```env
+    DATABASE_KIND=postgres
+    DATABASE_HOST=localhost
+    DATABASE_PORT=5432
+    DATABASE_NAME=claire
+    DATABASE_USER=claire
+    DATABASE_PASSWORD=change_me
+    ```
+
+Migrations Doctrine
+- Pour initialiser la base de données et/ou la mettre à jour, exécutez:
+
+  ```bash
+  ./console migrations:migrate
+  ```
+
+- Cette commande applique toutes les migrations disponibles (dossier `migrations/`) et maintient la table de version `db_version` conformément à la configuration définie dans `config/settings/database.php`.
+
 ## Démarrage
 
 ### Via PHP intégré
@@ -147,6 +194,26 @@ services:
       OPENAPI_MODEL: gpt-4o-mini
       # Optionnel
       # SEARXNG_URL: http://searxng:8080
+
+      # Base de données
+      # Choix simple (par défaut): SQLite, aucune autre variable requise
+      DATABASE_KIND: sqlite
+
+      # Exemple MySQL/MariaDB (décommentez et ajustez)
+      # DATABASE_KIND: mysql
+      # DATABASE_HOST: mysql
+      # DATABASE_PORT: 3306
+      # DATABASE_NAME: claire
+      # DATABASE_USER: claire
+      # DATABASE_PASSWORD: change_me
+
+      # Exemple PostgreSQL (décommentez et ajustez)
+      # DATABASE_KIND: postgres
+      # DATABASE_HOST: postgres
+      # DATABASE_PORT: 5432
+      # DATABASE_NAME: claire
+      # DATABASE_USER: claire
+      # DATABASE_PASSWORD: change_me
 
 networks:
   internal:
