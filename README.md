@@ -246,9 +246,6 @@ Outils disponibles:
 - 404 partout: vérifiez que le serveur pointe bien sur `public/index.php` et que vos règles de réécriture sont actives.
 - Pas de logs: les logs sont gérés par OpenTelemetry. Pour les voir dans la console, définissez `OTEL_LOGS_EXPORTER=console` (et `OTEL_LOGS_PROCESSOR=simple` pour un affichage immédiat). En alternance, configurez un export OTLP (`OTEL_LOGS_EXPORTER=otlp`) vers un collecteur comme l’OTel Collector.
 
-## Todo
-- Gérer les erreurs dans les outils
-
 ## Licence
 
 Ce projet est distribué sous licence MIT. Voir le fichier `LICENSE` pour plus d’informations.

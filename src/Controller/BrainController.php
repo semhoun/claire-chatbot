@@ -6,7 +6,6 @@ namespace App\Controller;
 
 use App\Agent\Brain;
 use NeuronAI\Chat\Messages\UserMessage;
-use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;

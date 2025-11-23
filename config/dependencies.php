@@ -11,7 +11,6 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Mapping\Driver\AttributeDriver;
 use Monolog\Logger;
-use NeuronAI\Observability\LogObserver;
 use Odan\Session\PhpSession;
 use Odan\Session\SessionInterface;
 use Odan\Session\SessionManagerInterface;
@@ -103,7 +102,7 @@ return [
     },
     Brain::class => static function (Settings $settings, Logger $logger, Connection $connection, SessionInterface $session): Brain {
         $brain = Brain::make($connection, $settings, $session->get('chatId'));
-        $brain->observe(new LogObserver($logger));
+        $brain->observe(new \App\Agent\Observability\Observer());
         return $brain;
     },
     SessionManagerInterface::class => static fn (SessionInterface $session): \Odan\Session\SessionInterface => $session,
