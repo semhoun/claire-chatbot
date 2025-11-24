@@ -78,6 +78,24 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 
   Note: les endpoints OTLP et les headers sont optionnels. Si vous ne les définissez pas, l’exporteur appliquera ses valeurs par défaut. Par exemple, pour afficher les logs uniquement en console, il suffit de définir `OTEL_LOGS_EXPORTER=console` sans renseigner d’endpoint OTLP.
 
+### Authentification OpenID Connect (SSO)
+
+L’application prend en charge une authentification uniquement via SSO OpenID Connect. La configuration est lue dans `config/settings/oidc.php` et repose sur les variables d’environnement suivantes:
+
+- `OPENID_WELLKNOWN_URL` — URL du document de découverte OpenID Connect 1.0 (ex: `https://votre-idp/.well-known/openid-configuration`).
+- `OPENID_CLIENT_ID` — identifiant du client OIDC (côté fournisseur).
+- `OPENID_CLIENT_SECRET` — secret du client OIDC (côté fournisseur).
+- `OPENID_REDIRECT_URI_BASE` — base d’URL publique de votre application (ex: `https://claire.example.com`). L’URI de redirection effective sera `${OPENID_REDIRECT_URI_BASE}/auth/callback` et doit être enregistrée à l’identique dans la fiche du client côté IdP.
+
+Autres détails:
+- Scopes utilisés par défaut: `openid email profile` (envoyés avec un séparateur espace, encodé en `+` dans l’URL d’autorisation).
+- Endpoints utilisés: `authorization_endpoint`, `token_endpoint` et `userinfo_endpoint` découverts via le document `.well-known`.
+- En cas d’échec d’authentification, l’application reste SSO‑only et ne propose pas de login/mot de passe.
+
+Dépannage rapide:
+- Erreur `invalid_client` lors de l’échange de code: vérifiez l’ID et le secret, et surtout que la méthode d’authentification configurée pour VOTRE client au token endpoint côté IdP correspond à celle attendue (souvent `client_secret_basic` ou `client_secret_post`). Assurez‑vous également que l’URI de redirection enregistrée correspond exactement à `https://votre-domaine/auth/callback`.
+- Erreur de redirection: vérifiez `OPENID_REDIRECT_URI_BASE` et les règles de proxy/host (Traefik) afin que l’URL publique corresponde bien au host utilisé par les utilisateurs.
+
 ### Base de données (Doctrine ORM / DBAL)
 
 Le projet inclut Doctrine ORM/DBAL et peut fonctionner avec SQLite (par défaut), MySQL/MariaDB ou PostgreSQL. La configuration est lue depuis `config/settings/database.php` et pilotée par des variables d’environnement prefixées `DATABASE_`.
@@ -174,6 +192,12 @@ services:
       OPENAPI_MODEL: gpt-4o-mini
       # Optionnel
       # SEARXNG_URL: http://searxng:8080
+
+      # OpenID Connect (SSO)
+      OPENID_WELLKNOWN_URL: https://auth.example.com/.well-known/openid-configuration
+      OPENID_CLIENT_ID: ${OPENID_CLIENT_ID:?set_me}
+      OPENID_CLIENT_SECRET: ${OPENID_CLIENT_SECRET:?set_me}
+      OPENID_REDIRECT_URI_BASE: https://claire.example.com
 
       # Base de données
       # Choix simple (par défaut): SQLite, aucune autre variable requise
