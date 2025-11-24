@@ -1,8 +1,25 @@
 {% extends 'layout.twig' %}
 
-{% block chat %}
-    <article class="message message--received">
-        <div class="message__bubble">{{ message }}</div>
-        <span class="message__meta">{{ time }}</span>
-    </article>
+{% block app %}
+        <header class="chat-header">
+            <button
+                    class="options-toggle"
+                    type="button"
+                    aria-label="Ouvrir le menu"
+                    aria-expanded="false"
+                    hx-on:click="
+                        this.classList.toggle('is-active');
+                        const expanded = this.classList.contains('is-active');
+                        this.setAttribute('aria-expanded', expanded);
+                        const panel = document.getElementById('optionsPanel');
+                        if (panel) { panel.classList.toggle('is-open'); }
+                        const bd = document.getElementById('optionsBackdrop');
+                        if (bd) { bd.classList.toggle('is-visible', expanded); }
+                    "
+                >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </button>
+        </header>
 {% endblock %}

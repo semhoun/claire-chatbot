@@ -1,0 +1,195 @@
+{% extends 'layout.twig' %}
+
+{% block app %}
+<section class="chat-panel">
+    <div class="chat-shell">
+        <header class="chat-header">
+            <div class="chat-header__main">
+                <img class="chat-header__avatar" src="{{ base_url }}/image/claire.png" alt="Photo de claire">
+                <div class="chat-header__info">
+                    <span class="chat-header__title">Claire</span>
+                    <span class="chat-header__subtitle">Votre assistante en PHP</span>
+                </div>
+            </div>
+            <button
+                    class="options-toggle"
+                    type="button"
+                    aria-label="Ouvrir le menu"
+                    aria-expanded="false"
+                    hx-on:click="
+                        this.classList.toggle('is-active');
+                        const expanded = this.classList.contains('is-active');
+                        this.setAttribute('aria-expanded', expanded);
+                        const panel = document.getElementById('optionsPanel');
+                        if (panel) { panel.classList.toggle('is-open'); }
+                        const bd = document.getElementById('optionsBackdrop');
+                        if (bd) { bd.classList.toggle('is-visible', expanded); }
+                    "
+                >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </button>
+        </header>
+
+        <main class="chat-body" style="position: relative; z-index: 1;">
+            <div id="messages" class="messages">
+                   <article class="message message--received">
+                       <div class="message__bubble">{{ message }}</div>
+                       <span class="message__meta">{{ time }}</span>
+                   </article>
+            </div>
+            <div id="typingIndicator" class="typing-indicator htmx-indicator" aria-hidden="true">
+                <span class="typing-indicator__dot"></span>
+                <span class="typing-indicator__dot"></span>
+                <span class="typing-indicator__dot"></span>
+            </div>
+            <!-- Ascenseur: bouton pour descendre en bas du chat -->
+            <button
+                    id="scrollDownBtn"
+                    type="button"
+                    aria-label="Descendre au dernier message"
+                    title="Aller en bas"
+                    style="
+                        position: absolute;
+                        right: 18px;
+                        bottom: 18px;
+                        display: none;
+                        border: none;
+                        border-radius: 999px;
+                        width: 44px;
+                        height: 44px;
+                        cursor: pointer;
+                        color: #2b0052;
+                        background: linear-gradient(135deg, rgba(255, 240, 254, 0.92), rgba(255, 176, 240, 0.88));
+                        box-shadow: 0 12px 26px rgba(26, 0, 41, 0.35);
+                        z-index: 5;
+                    "
+            >
+                <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+                    <path d="M12 4v12m0 0l-5-5m5 5l5-5M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                </svg>
+            </button>
+        </main>
+
+        <footer class="chat-input">
+            <form class="chat-input__form"
+                  hx-post="{{ base_url }}/brain/chat"
+                  hx-target="#messages"
+                  hx-swap="beforeend"
+                  hx-indicator="#typingIndicator"
+                  hx-on::after-request="if(event.detail.successful) this.reset()">
+                <label class="chat-icon-btn chat-icon-btn--upload" for="chat-upload" aria-label="Joindre un fichier">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
+                    </svg>
+                </label>
+                <input class="chat-input__file" type="file" id="chat-upload" accept="image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg">
+                <input class="chat-input__field" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required>
+                <div class="chat-input__actions">
+                    <button class="chat-icon-btn" type="submit" aria-label="Envoyer">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M3.4 20.6L4.8 14.2 16.2 12 4.8 9.8 3.4 3.4 22 12 3.4 20.6Z"/>
+                        </svg>
+                    </button>
+                </div>
+            </form>
+        </footer>
+    </div>
+</section>
+{% endblock %}
+
+{% block script %}
+<script>
+    // Append the user's message immediately, then let HTMX show the typing indicator and load the agent reply
+    document.addEventListener('htmx:beforeRequest', function (evt) {
+        const form = document.querySelector('.chat-input__form');
+        if (!form || evt.target !== form) return;
+        const input = form.querySelector('[name="message"]');
+        if (!input) return;
+        const text = (input.value || '').trim();
+        if (!text) return; // nothing to append
+        const messages = document.getElementById('messages');
+        const chatBody = document.querySelector('.chat-body');
+        const scrollBtn = document.getElementById('scrollDownBtn');
+        if (!messages || !chatBody) return;
+        // Build the message bubble
+        const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = '<article class="message message--sent">\
+            <div class="message__bubble"></div>\
+            <span class="message__meta"></span>\
+        </article>';
+        const article = wrapper.firstElementChild;
+        article.querySelector('.message__bubble').textContent = text;
+        article.querySelector('.message__meta').textContent = time + ' • Vous';
+        messages.appendChild(article);
+        // Ensure we scroll to the bottom to keep the newest message in view
+        chatBody.scrollTop = chatBody.scrollHeight;
+        if (scrollBtn) scrollBtn.style.display = 'none';
+        // Do not clear input here; it will be cleared on successful response via hx-on::after-request
+    });
+
+    // Gestion de l'ascenseur (bouton descendre en bas)
+    (function () {
+        const chatBody = document.querySelector('.chat-body');
+        const messages = document.getElementById('messages');
+        const scrollBtn = document.getElementById('scrollDownBtn');
+        if (!chatBody || !scrollBtn) return;
+
+        const threshold = 24; // px avant le bas pour cacher le bouton
+
+        function atBottomOf(el) {
+            return el.scrollTop + el.clientHeight >= el.scrollHeight - threshold;
+        }
+
+        function updateButtonVisibility() {
+            // Si pas de débordement, cacher
+            if (chatBody.scrollHeight <= chatBody.clientHeight + 1) {
+                scrollBtn.style.display = 'none';
+                return;
+            }
+            const atBottom = atBottomOf(chatBody);
+            scrollBtn.style.display = atBottom ? 'none' : 'inline-flex';
+            if (!atBottom) {
+                scrollBtn.style.alignItems = 'center';
+                scrollBtn.style.justifyContent = 'center';
+            }
+        }
+
+        chatBody.addEventListener('scroll', updateButtonVisibility, {passive: true});
+        window.addEventListener('resize', updateButtonVisibility);
+
+        scrollBtn.addEventListener('click', function () {
+            chatBody.scrollTo({top: chatBody.scrollHeight, behavior: 'smooth'});
+        });
+
+        // Met à jour à l'initialisation et force un scroll en bas au chargement
+        window.addEventListener('DOMContentLoaded', function () {
+            chatBody.scrollTop = chatBody.scrollHeight;
+            updateButtonVisibility();
+        });
+
+        // Après chaque swap HTMX, on redescend et on met à jour le bouton
+        document.body.addEventListener('htmx:afterSwap', function (evt) {
+            const detail = evt.detail || {};
+            const target = detail.target;
+            if (target && (target.id === 'messages' || (target.closest && target.closest('#messages')))) {
+                chatBody.scrollTop = chatBody.scrollHeight;
+                updateButtonVisibility();
+            }
+        });
+
+        // Observe les mutations du contenu des messages (fallback si pas d'HTMX)
+        if (window.MutationObserver && messages) {
+            const mo = new MutationObserver(function () {
+                updateButtonVisibility();
+            });
+            mo.observe(messages, {childList: true, subtree: false});
+        }
+
+        // Premier calcul
+        updateButtonVisibility();
+    })();
+</script>
+{% endblock %}

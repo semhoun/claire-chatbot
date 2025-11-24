@@ -1,0 +1,30 @@
+{% extends 'layout.twig' %}
+
+{% block app %}
+    <article class="message message--received">
+        <div class="message__bubble">
+            <h2 style="margin:0 0 12px 0; font-size:16px; font-weight:600;">Authentification SSO uniquement</h2>
+
+            {% if flash is defined and flash %}
+                <ul style="margin:0 0 12px 0; padding-left:18px; color:#b00020;">
+                    {% for msg in flash %}
+                        <li>{{ msg }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+
+            <p>La connexion par identifiant/mot de passe a été désactivée. Merci d'utiliser l'authentification OpenID Connect (SSO).</p>
+
+            <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+                <a href="/auth/sso" class="chat-send-btn" style="text-decoration:none; display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border:none; border-radius:12px; background:linear-gradient(135deg, #c4e3ff, #8bd0ff); color:#003252; cursor:pointer; font-weight:600;">
+                    Se connecter avec OpenID Connect
+                </a>
+            </div>
+        </div>
+        <span class="message__meta">SSO requis</span>
+    </article>
+    <script>
+        // Redirection automatique après un court délai
+        setTimeout(function(){ window.location.href = '/auth/sso'; }, 500);
+    </script>
+{% endblock %}

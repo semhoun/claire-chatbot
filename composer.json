@@ -54,8 +54,9 @@
     "twig/markdown-extra": "^3.22",
     "league/commonmark": "^2.7",
     "odan/session": "^6.4",
-    "league/html-to-markdown": "^5.1"
- },
+    "league/html-to-markdown": "^5.1",
+    "league/oauth2-client": "^2.7"
+  },
   "require-dev": {
     "roave/security-advisories": "dev-latest",
     "nunomaduro/phpinsights": "^2.13",
