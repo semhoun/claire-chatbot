@@ -19,11 +19,6 @@ final readonly class HomeController
 
     public function index(Request $request, Response $response): Response
     {
-        // Si non authentifié, afficher une page d'accueil avec bouton SSO
-        if (! $this->session->get('logged')) {
-            return $this->twig->render($response, 'welcome.twig', []);
-        }
-
         $time = new \DateTime()->format('H:i');
         $message = "Bonjour et bienvenue ! Comment puis-je t'aider aujourd'hui ?";
 

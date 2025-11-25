@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Middleware\AuthMiddleware;
 use App\Middleware\BaseUrlMiddleware;
 use App\Renderer\HtmlErrorRenderer;
 use App\Renderer\JsonErrorRenderer;
@@ -17,10 +18,12 @@ return static function (App $app): void {
     $container = $app->getContainer();
     $settings = $container->get(Settings::class);
 
-    $app->add(TwigMiddleware::create($app, $container->get(Twig::class)));
-    $app->add(SessionStartMiddleware::class);
-    $app->add($container->get(BaseUrlMiddleware::class));
+    // Must first because called in reverse order
+    $app->add(AuthMiddleware::class);
 
+    $app->add(SessionStartMiddleware::class);
+    $app->add(TwigMiddleware::create($app, $container->get(Twig::class)));
+    $app->add(BaseUrlMiddleware::class);
     $app->add(new ProxyDetection());
 
     // Add error handling middleware.
