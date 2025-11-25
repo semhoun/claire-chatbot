@@ -9,18 +9,18 @@ use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Agent\SystemPrompt;
 use NeuronAI\Chat\History\ChatHistoryInterface;
-use NeuronAI\Chat\History\SQLChatHistory;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\Providers\OpenAILike;
 use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
 use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
+use Odan\Session\SessionInterface;
 
 class Brain extends Agent
 {
     public function __construct(
         protected Connection $connection,
         protected readonly Settings $settings,
-        protected readonly string $threadId,
+        protected readonly SessionInterface $session,
     ) {
         parent::__construct();
     }
@@ -28,8 +28,8 @@ class Brain extends Agent
     #[\Override]
     protected function chatHistory(): ChatHistoryInterface
     {
-        return new SQLChatHistory(
-            thread_id: $this->threadId,
+        return new ChatHistory(
+            session: $this->session,
             pdo: $this->connection->getNativeConnection(),
             table: 'chat_history',
             contextWindow: 50000
@@ -40,7 +40,7 @@ class Brain extends Agent
     protected function instructions(): string
     {
         return (string) new SystemPrompt(
-            background: ['You are a friendly AI Agent named Claire and created by Nathanaël SEMHOUN.'],
+            background: [$this->settings->get('llm.brain.systemPrompt')],
         );
     }
 
@@ -58,7 +58,7 @@ class Brain extends Agent
         return [
             CalculatorToolkit::make(),
             CalendarToolkit::make(),
-            Tools\WebToolkit::make($this->settings->get('llm.tools.searchXngGUrl')),
+            Tools\WebToolkit::make($this->settings->get('llm.tools.searchXngUrl')),
         ];
     }
 }

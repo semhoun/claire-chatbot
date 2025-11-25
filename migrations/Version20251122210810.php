@@ -11,7 +11,7 @@ final class Version20251122210810 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'NeuronAI table chat history';
+        return 'Create user table';
     }
 
     public function up(Schema $schema): void
@@ -19,32 +19,25 @@ final class Version20251122210810 extends AbstractMigration
         if ($this->connection->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\SQLitePlatform) {
             $this->addSql(
                 <<<EOT
--- SQLite-compatible schema
-CREATE TABLE IF NOT EXISTS chat_history (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  thread_id TEXT NOT NULL,
-  messages TEXT NOT NULL,
-  created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
-  updated_at DATETIME DEFAULT (CURRENT_TIMESTAMP)
+CREATE TABLE IF NOT EXISTS user (
+  id TEXT NOT NULL,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  picture BLOB
 );
-
--- Indexes (separate statements in SQLite)
-CREATE UNIQUE INDEX IF NOT EXISTS uk_thread_id ON chat_history(thread_id);
-CREATE INDEX IF NOT EXISTS idx_thread_id ON chat_history(thread_id);
 EOT
             );
         } else {
             $this->addSql(
                 <<<EOT
-CREATE TABLE IF NOT EXISTS chat_history (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  thread_id VARCHAR(255) NOT NULL,
-  messages LONGTEXT NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
- 
-  UNIQUE KEY uk_thread_id (thread_id),
-  INDEX idx_thread_id (thread_id)
+CREATE TABLE IF NOT EXISTS user (
+    id VARCHAR(64) NOT NULL,
+    first_name VARCHAR(128) NOT NULL,
+    last_name VARCHAR(128) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    picture BLOB,
+    PRIMARY KEY (id)
 );
 EOT
             );
@@ -53,6 +46,6 @@ EOT
 
     public function down(Schema $schema): void
     {
-        $this->addSql('DROP TABLE chat_history');
+        $this->addSql('DROP TABLE user');
     }
 }

@@ -9,6 +9,9 @@ return [
         'model' => getenv('OPENAPI_MODEL', true),
     ],
     'tools' => [
-        'searchXngGUrl' => getenv('SEARXNG_URL', true),
+        'searchXngUrl' => getenv('SEARXNG_URL', true),
+    ],
+    'brain' => [
+        'systemPrompt' => 'You are a friendly AI Agent named Claire and created by Nathanaël SEMHOUN.',
     ],
 ];

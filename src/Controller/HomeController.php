@@ -27,8 +27,8 @@ final readonly class HomeController
         $time = new \DateTime()->format('H:i');
         $message = "Bonjour et bienvenue ! Comment puis-je t'aider aujourd'hui ?";
 
-        $this->session->set('chatId', uniqid('USER_ ', true));
+        $this->session->set('chatId', uniqid('', true));
 
-        return $this->twig->render($response, 'chat.twig', ['time' => $time, 'message' => $message ]);
+        return $this->twig->render($response, 'chat.twig', ['time' => $time, 'message' => $message, 'uinfo' => $this->session->get('uinfo') ]);
     }
 }

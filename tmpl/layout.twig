@@ -69,6 +69,26 @@
                 </div>
             </div>
         </div>
+
+        <div class="options-panel__section">
+            <span class="options-panel__title">Compte</span>
+            <div class="options-list">
+                {% if uinfo is defined and uinfo %}
+                <div class="options-item" aria-current="true">
+                    <span class="options-item__label">{{ uinfo.name }}</span>
+                </div>
+                {% endif %}
+                <div
+                        class="options-item"
+                        role="button"
+                        tabindex="0"
+                        hx-on:click="window.location='{{ base_url }}/logout'"
+                        hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
+                >
+                    <span class="options-item__label">Se déconnecter</span>
+                </div>
+            </div>
+        </div>
     </aside>
 </div>
 

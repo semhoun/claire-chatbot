@@ -101,12 +101,12 @@ return [
         });
         return $twig;
     },
-    Brain::class => static function (Settings $settings, Logger $logger, Connection $connection, SessionInterface $session): Brain {
-        $brain = Brain::make($connection, $settings, $session->get('chatId'));
+    Brain::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Brain {
+        $brain = Brain::make($connection, $settings, $session);
         $brain->observe(new \App\Agent\Observability\Observer());
         return $brain;
     },
     SessionManagerInterface::class => static fn (SessionInterface $session): \Odan\Session\SessionInterface => $session,
     SessionInterface::class => static fn (Settings $settings): \Odan\Session\PhpSession => new PhpSession($settings->get('session')),
-    OidcClient::class => static fn (Settings $settings): OidcClient => new OidcClient($settings),
+    OidcClient::class => static fn (Settings $settings, Logger $logger): OidcClient => new OidcClient($settings, $logger),
 ];

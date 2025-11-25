@@ -9,10 +9,13 @@ use League\OAuth2\Client\OptionProvider\HttpBasicAuthOptionProvider;
 use League\OAuth2\Client\OptionProvider\PostAuthOptionProvider;
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use League\OAuth2\Client\Provider\GenericProvider;
+use Monolog\Logger;
 use Odan\Session\SessionInterface;
 
 final class OidcClient
 {
+    private bool $enabled = false;
+
     private array $discovery;
 
     private readonly GenericProvider $genericProvider;
@@ -23,17 +26,21 @@ final class OidcClient
 
     private readonly array $scopes;
 
-    public function __construct(private readonly Settings $settings)
-    {
+    public function __construct(
+        private readonly Settings $settings,
+        private readonly Logger $logger
+    ) {
         $wellKnownUrl = $this->settings->get('oidc.well_known_url');
         $clientId = $this->settings->get('oidc.client_id');
         $clientSecret = $this->settings->get('oidc.client_secret');
         $this->scopes = $this->settings->get('oidc.scopes');
         $this->redirectUri = $this->settings->get('oidc.redirect_uri_base') .  '/auth/callback';
 
-        if ($wellKnownUrl === '' || $clientId === '' || $clientSecret === '') {
-            throw new \RuntimeException('Missing OpenID environment variables.');
+        if ($wellKnownUrl === '' || $clientId === '') {
+            return;
         }
+
+        $this->enabled = true;
 
         $client = new Client(['timeout' => 5.0]);
         $response = $client->get($wellKnownUrl);
@@ -66,6 +73,16 @@ final class OidcClient
             'scopes' => $this->scopes,
             'optionProvider' => $optionProvider,
         ]);
+    }
+
+    public function isEnabled(): bool
+    {
+        return $this->enabled;
+    }
+
+    public function getDefaultUser(): array
+    {
+        return $this->settings->get('oidc.default_user');
     }
 
     public function getAuthorizationUrl(SessionInterface $session): string
@@ -118,11 +135,14 @@ final class OidcClient
             return ['logged' => false];
         }
 
+        $this->logger->info('OIDC user info', $data);
+
         // Normalize
         $uinfo = [
             'id' => $data['sub'] ?? null,
-            'firstname' => $data['given_name'] ?? null,
-            'lastname' => $data['family_name'] ?? null,
+            'firstName' => $data['given_name'] ?? null,
+            'lastName' => $data['family_name'] ?? null,
+            'username' => $data['preferred_username'] ?? null,
             'name' => $data['name'] ?? trim(($data['given_name'] ?? '') . ' ' . ($data['family_name'] ?? '')),
             'email' => $data['email'] ?? null,
         ];

@@ -80,7 +80,7 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 
 ### Authentification OpenID Connect (SSO)
 
-L’application prend en charge une authentification uniquement via SSO OpenID Connect. La configuration est lue dans `config/settings/oidc.php` et repose sur les variables d’environnement suivantes:
+L’application prend en charge une authentification via SSO OpenID Connect, si les paramètres sont définis sinon elle utilise un utilisateur par défaut. La configuration est lue dans `config/settings/oidc.php` et repose sur les variables d’environnement suivantes:
 
 - `OPENID_WELLKNOWN_URL` — URL du document de découverte OpenID Connect 1.0 (ex: `https://votre-idp/.well-known/openid-configuration`).
 - `OPENID_CLIENT_ID` — identifiant du client OIDC (côté fournisseur).

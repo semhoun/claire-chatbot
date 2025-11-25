@@ -8,4 +8,11 @@ return [
     'client_secret' => getenv('OPENID_CLIENT_SECRET', true),
     'redirect_uri_base' => getenv('OPENID_REDIRECT_URI_BASE', true),
     'scopes' => ['openid', 'profile', 'email'],
+    'default_user' => [
+        'id' => 'default',
+        'firstname' => 'Demo',
+        'lastname' => null,
+        'display' => 'Demo',
+        'email' => null,
+    ],
 ];
