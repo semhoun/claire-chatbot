@@ -108,5 +108,5 @@ return [
     },
     SessionManagerInterface::class => static fn (SessionInterface $session): \Odan\Session\SessionInterface => $session,
     SessionInterface::class => static fn (Settings $settings): \Odan\Session\PhpSession => new PhpSession($settings->get('session')),
-    OidcClient::class => static fn (Settings $settings, Logger $logger): OidcClient => new OidcClient($settings, $logger),
+    OidcClient::class => static fn (Settings $settings): OidcClient => new OidcClient($settings),
 ];

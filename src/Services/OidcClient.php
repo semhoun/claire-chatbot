@@ -9,7 +9,6 @@ use League\OAuth2\Client\OptionProvider\HttpBasicAuthOptionProvider;
 use League\OAuth2\Client\OptionProvider\PostAuthOptionProvider;
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use League\OAuth2\Client\Provider\GenericProvider;
-use Monolog\Logger;
 use Odan\Session\SessionInterface;
 
 final class OidcClient
@@ -27,8 +26,7 @@ final class OidcClient
     private readonly array $scopes;
 
     public function __construct(
-        private readonly Settings $settings,
-        private readonly Logger $logger
+        private readonly Settings $settings
     ) {
         $wellKnownUrl = $this->settings->get('oidc.well_known_url');
         $clientId = $this->settings->get('oidc.client_id');
@@ -134,9 +132,6 @@ final class OidcClient
         if (! is_array($data)) {
             return ['logged' => false];
         }
-
-        $this->logger->info('OIDC user info', $data);
-
         // Normalize
         $uinfo = [
             'id' => $data['sub'] ?? null,
