@@ -132,6 +132,7 @@ final class OidcClient
         if (! is_array($data)) {
             return ['logged' => false];
         }
+
         // Normalize
         $uinfo = [
             'id' => $data['sub'] ?? null,

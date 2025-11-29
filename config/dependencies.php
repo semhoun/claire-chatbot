@@ -10,7 +10,7 @@ use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\Configuration;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Mapping\Driver\AttributeDriver;
+use Doctrine\ORM\ORMSetup;
 use Monolog\Logger;
 use Odan\Session\PhpSession;
 use Odan\Session\SessionInterface;
@@ -39,30 +39,28 @@ return [
     },
     // Doctrine Config used by entity manager and Tracy
     Configuration::class => static function (Settings $settings): Doctrine\ORM\Configuration {
-        if ($settings->get('debug')) {
-            $queryCache = new ArrayAdapter();
-            $metadataCache = new ArrayAdapter();
-        } else {
-            $queryCache = new PhpFilesAdapter('queries', 0, $settings->get('cache_dir'));
-            $metadataCache = new PhpFilesAdapter('metadata', 0, $settings->get('cache_dir'));
-        }
+        $isDevMode = $settings->get('debug');
+        $entityPaths = $settings->get('database.doctrine.entity_path');
+        $cacheDir = $settings->get('cache_dir');
 
-        $config = new Configuration();
-        $config->setMetadataCache($metadataCache);
+        $queryCache = $isDevMode ? new ArrayAdapter() : new PhpFilesAdapter('queries', 0, $cacheDir);
+        $metadataCache = $isDevMode ? new ArrayAdapter() : new PhpFilesAdapter('metadata', 0, $cacheDir);
 
-        $driverImpl = new AttributeDriver($settings->get('database.doctrine.entity_path'), true);
-        $config->setMetadataDriverImpl($driverImpl);
-        $config->setQueryCache($queryCache);
-        $config->setProxyDir($settings->get('cache_dir') . '/proxy');
-        $config->setProxyNamespace('App\Proxies');
+        // Configuration manuelle avec cache explicite
+        $configuration = ORMSetup::createAttributeMetadataConfiguration(
+            $entityPaths,
+            $isDevMode,
+            $cacheDir . '/proxy',
+            $metadataCache
+        );
 
-        if ($settings->get('debug')) {
-            $config->setAutoGenerateProxyClasses(true);
-        } else {
-            $config->setAutoGenerateProxyClasses(false);
-        }
+        $configuration->setQueryCache($queryCache);
+        $configuration->setProxyDir($cacheDir . '/proxy');
+        $configuration->setProxyNamespace('App\\Proxies');
 
-        return $config;
+        $configuration->setAutoGenerateProxyClasses($isDevMode);
+
+        return $configuration;
     },
     // Doctrine EntityManager.
     EntityManager::class => static fn (Configuration $configuration, Connection $connection): EntityManager => new EntityManager($connection, $configuration),
@@ -102,7 +100,7 @@ return [
         return $twig;
     },
     Brain::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Brain {
-        $brain = Brain::make($connection, $settings, $session);
+        $brain = Brain::make(connection: $connection, settings: $settings, session: $session);
         $brain->observe(new \App\Agent\Observability\Observer());
         return $brain;
     },

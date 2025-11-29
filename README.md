@@ -242,6 +242,34 @@ Démarrez ensuite votre stack avec votre orchestrateur habituel (ex. `docker com
   - Utilisation typique: sonde de conteneur/orchestrateur (Docker, Traefik, Kubernetes, etc.).
   - Aucun corps requis, pas d’authentification par défaut.
 
+### Streaming SSE (Server‑Sent Events) et proxy HTTP
+
+L’endpoint de streaming utilise le type `text/event-stream` et écrit au fil de l’eau (pas de buffer côté application). Cependant, certains reverse proxies / frontaux web peuvent bufferiser la réponse et empêcher l’affichage progressif côté navigateur.
+
+Pour garantir un streaming fluide, désactivez la bufferisation au niveau du proxy. Exemple avec Apache quand PHP est servi via `mod_proxy_fcgi`:
+
+```apache
+# Assurez-vous que mod_proxy et mod_proxy_fcgi sont activés
+# a2enmod proxy proxy_fcgi
+
+# Votre mapping vers PHP-FPM (à adapter à votre environnement)
+# ProxyPassMatch ^/(.*\.php(/.*)?)$ fcgi://127.0.0.1:9000/var/www/html/$1
+
+# Désactiver la bufferisation pour le backend FastCGI
+<Proxy "fcgi://localhost/" flushpackets=on flushwait=20>
+</Proxy>
+```
+
+Notes:
+- Remplacez l’URL FastCGI (`fcgi://localhost/` ou `fcgi://127.0.0.1:9000/…`) par celle de votre instance PHP‑FPM.
+- Selon la version d’Apache, vous pouvez également utiliser `ProxySet` à l’intérieur du bloc `<Proxy>`:
+  ```apache
+  <Proxy "fcgi://127.0.0.1:9000">
+      ProxySet flushpackets=on flushwait=20
+  </Proxy>
+  ```
+- Si vous utilisez un autre proxy (Nginx, Traefik, etc.), désactivez la bufferisation équivalente (ex. Nginx: `proxy_buffering off;` sur l’emplacement concerné).
+
 ## Sécurité
 
 - Ne commitez jamais vos clés ou secrets (`OPENAPI_KEY`, etc.).

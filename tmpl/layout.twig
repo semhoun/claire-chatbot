@@ -33,9 +33,14 @@
         <div class="options-panel__section">
             <span class="options-panel__title">Options</span>
             <div class="options-list">
-                <div class="options-item">
-                    <span class="options-item__label">Transfert vers un agent</span>
-                    <span class="options-item__badge">Live</span>
+                <div class="options-item" id="toggleStreamMode" role="button" tabindex="0"
+                     aria-pressed="false"
+                     data-chat-mode="{{ chat_mode|default('chat') }}"
+                >
+                    <span class="options-item__label">Réponse en continue</span>
+                    <span class="options-item__badge" data-mode-badge>
+                        {{ (chat_mode|default('chat')) == 'stream' ? 'On' : 'Off' }}
+                    </span>
                 </div>
                 <div class="options-item">
                     <span class="options-item__label">Historique des conversations</span>
@@ -93,6 +98,7 @@
 </div>
 
 <script src="{{ base_url }}/js/htmx.min.js"></script>
+<script src="{{ base_url }}/js/htmx-ext-sse.js"></script>
 {% block script %}{% endblock %}
 <script>
     // Gestion fermeture du panneau d'options (bouton, touche Échap, clic sur backdrop)
@@ -134,6 +140,51 @@
             if (backdrop) { backdrop.classList.toggle('is-visible', isOpen); }
         });
         observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
+    })();
+
+    // Toggle "Réponse en continue" option: updates server and notifies pages
+    (function() {
+        const toggle = document.getElementById('toggleStreamMode');
+        if (!toggle) return;
+        const badge = toggle.querySelector('[data-mode-badge]');
+
+        function currentMode() {
+            return (toggle.getAttribute('data-chat-mode') || 'chat');
+        }
+
+        function setMode(mode) {
+            toggle.setAttribute('data-chat-mode', mode);
+            if (badge) badge.textContent = mode === 'stream' ? 'On' : 'Off';
+            toggle.setAttribute('aria-pressed', String(mode === 'stream'));
+            // Notify other parts of the app (e.g., chat.twig)
+            window.dispatchEvent(new CustomEvent('chat-mode-changed', { detail: { mode } }));
+        }
+
+        async function postMode(mode) {
+            try {
+                await fetch('{{ base_url }}/brain/mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ mode })
+                });
+            } catch (e) {
+                // ignore network errors for now
+            }
+        }
+
+        function toggleClick() {
+            const next = currentMode() === 'stream' ? 'chat' : 'stream';
+            setMode(next);
+            postMode(next);
+        }
+
+        toggle.addEventListener('click', toggleClick);
+        toggle.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleClick(); }
+        });
+
+        // Initialize ARIA/state on load
+        setMode(currentMode());
     })();
 </script>
 </body>

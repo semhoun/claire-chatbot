@@ -73,12 +73,40 @@
         </main>
 
         <footer class="chat-input">
-            <form class="chat-input__form"
+            <form class="chat-input__form" id="brain_chat"
                   hx-post="{{ base_url }}/brain/chat"
                   hx-target="#messages"
                   hx-swap="beforeend"
                   hx-indicator="#typingIndicator"
-                  hx-on::after-request="if(event.detail.successful) this.reset()">
+                  hx-on::after-request="if(event.detail.successful) this.reset()"
+                  data-mode="chat"
+                  style="display: {{ (chat_mode|default('chat')) == 'chat' ? 'flex' : 'none' }}"
+            >
+                <label class="chat-icon-btn chat-icon-btn--upload" for="chat-upload" aria-label="Joindre un fichier">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
+                    </svg>
+                </label>
+                <input class="chat-input__file" type="file" id="chat-upload" accept="image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg">
+                <input class="chat-input__field" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required>
+                <div class="chat-input__actions">
+                    <button class="chat-icon-btn" type="submit" aria-label="Envoyer">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M3.4 20.6L4.8 14.2 16.2 12 4.8 9.8 3.4 3.4 22 12 3.4 20.6Z"/>
+                        </svg>
+                    </button>
+                </div>
+            </form>
+            <form class="chat-input__form" id="brain_stream"
+                  hx-post="{{ base_url }}/brain/stream"
+                  hx-trigger="submit"
+                  hx-target="#messages"
+                  hx-swap="beforeend"
+                  hx-indicator="#typingIndicator"
+                  hx-on::after-request="if(event.detail.successful) this.reset()"
+                  data-mode="stream"
+                  style="display: {{ (chat_mode|default('chat')) == 'stream' ? 'flex' : 'none' }}"
+            >
                 <label class="chat-icon-btn chat-icon-btn--upload" for="chat-upload" aria-label="Joindre un fichier">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
@@ -103,8 +131,9 @@
 <script>
     // Append the user's message immediately, then let HTMX show the typing indicator and load the agent reply
     document.addEventListener('htmx:beforeRequest', function (evt) {
-        const form = document.querySelector('.chat-input__form');
-        if (!form || evt.target !== form) return;
+        const forms = Array.from(document.querySelectorAll('.chat-input__form'));
+        if (!forms.length || !forms.includes(evt.target)) return;
+        const form = evt.target;
         const input = form.querySelector('[name="message"]');
         if (!input) return;
         const text = (input.value || '').trim();
@@ -129,6 +158,21 @@
         if (scrollBtn) scrollBtn.style.display = 'none';
         // Do not clear input here; it will be cleared on successful response via hx-on::after-request
     });
+
+    // Bascule du mode chat/stream selon l'option (événement global)
+    (function () {
+        const chatForm = document.getElementById('brain_chat');
+        const streamForm = document.getElementById('brain_stream');
+        function setMode(mode) {
+            if (!chatForm || !streamForm) return;
+            const isStream = mode === 'stream';
+            chatForm.style.display = isStream ? 'none' : 'flex';
+            streamForm.style.display = isStream ? 'flex' : 'none';
+        }
+        window.addEventListener('chat-mode-changed', function (e) {
+            setMode(e.detail && e.detail.mode ? e.detail.mode : 'chat');
+        });
+    })();
 
     // Gestion de l'ascenseur (bouton descendre en bas)
     (function () {

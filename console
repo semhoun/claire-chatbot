@@ -3,6 +3,7 @@
 
 use App\Console\CacheClearConsoleCommand;
 use App\Console\CacheInitConsoleCommand;
+use App\Console\GenerateProxies;
 use App\Services\Settings;
 use DI\ContainerBuilder;
 use Doctrine\Migrations\Configuration\EntityManager\ExistingEntityManager;
@@ -45,6 +46,7 @@ $dependencyFactory = DependencyFactory::fromEntityManager(
 $cli = new Application();
 $cli->add($container->get(CacheClearConsoleCommand::class));
 $cli->add($container->get(CacheInitConsoleCommand::class));
+$cli->add($container->get(GenerateProxies::class));
 
 $cli->addCommands([
     new Command\DumpSchemaCommand($dependencyFactory),

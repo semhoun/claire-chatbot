@@ -21,9 +21,10 @@ final class Version20251122210810 extends AbstractMigration
                 <<<EOT
 CREATE TABLE IF NOT EXISTS user (
   id TEXT NOT NULL,
-  first_name TEXT NOT NULL,
-  last_name TEXT NOT NULL,
-  email TEXT NOT NULL,
+  first_name TEXT,
+  last_name TEXT,
+  email TEXT,
+  params TEXT,
   picture BLOB
 );
 EOT
@@ -33,9 +34,10 @@ EOT
                 <<<EOT
 CREATE TABLE IF NOT EXISTS user (
     id VARCHAR(64) NOT NULL,
-    first_name VARCHAR(128) NOT NULL,
-    last_name VARCHAR(128) NOT NULL,
-    email VARCHAR(255) NOT NULL,
+    first_name VARCHAR(128),
+    last_name VARCHAR(128),
+    email VARCHAR(255),
+    params TEXT,
     picture BLOB,
     PRIMARY KEY (id)
 );

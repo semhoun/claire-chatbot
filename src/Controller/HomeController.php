@@ -24,6 +24,15 @@ final readonly class HomeController
 
         $this->session->set('chatId', uniqid('', true));
 
-        return $this->twig->render($response, 'chat.twig', ['time' => $time, 'message' => $message, 'uinfo' => $this->session->get('uinfo') ]);
+        // Default chat mode
+        $mode = $this->session->get('chat_mode') ?? 'chat';
+        $this->session->set('chat_mode', $mode);
+
+        return $this->twig->render($response, 'chat.twig', [
+            'time' => $time,
+            'message' => $message,
+            'uinfo' => $this->session->get('uinfo'),
+            'chat_mode' => $mode,
+        ]);
     }
 }

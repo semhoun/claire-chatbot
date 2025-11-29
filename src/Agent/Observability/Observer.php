@@ -14,10 +14,15 @@ use OpenTelemetry\API\Trace\SpanInterface;
 class Observer implements ObserverInterface
 {
     use HandleAgentEvents;
+
     use HandleToolEvents;
+
     use HandleRagEvents;
+
     use HandleInferenceEvents;
+
     use HandleStructuredEvents;
+
     use HandleWorkflowEvents;
 
     public const SPAN_TYPE = 'neuron.ai';
