@@ -8,7 +8,6 @@ use App\Entity\User;
 use App\Exception;
 use App\Services\OidcClient;
 use Doctrine\ORM\EntityManagerInterface;
-use Monolog\Logger;
 use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -75,22 +74,22 @@ final readonly class AuthController
             $user = $this->entityManager->getRepository(User::class)->find($userId);
             if ($user === null) {
                 $user = new User();
-                $user->setId($userId);
+                $user->id = $userId;
                 $this->entityManager->persist($user);
                 $this->entityManager->flush();
             }
 
             $user = $this->entityManager->getRepository(User::class)->find($userId);
-            $user->setFirstName($uinfo['firstName']);
-            $user->setLastName($uinfo['lastName']);
-            $user->setEmail($uinfo['email']);
+            $user->firstName = $uinfo['firstName'];
+            $user->lastName = $uinfo['lastName'];
+            $user->email = $uinfo['email'];
             if ($uinfo['firstName'] === null && $uinfo['lastName'] === null && $uinfo['name'] !== null) {
-                $user->setFirstName($uinfo['name']);
+                $user->firstName = $uinfo['name'];
             }
 
             $this->entityManager->flush();
 
-            foreach ($user->getParams() ?? [] as $key => $value) {
+            foreach ($user->params ?? [] as $key => $value) {
                 $this->session->set($key, $value);
             }
         } catch (\Exception $exception) {

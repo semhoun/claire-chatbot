@@ -109,7 +109,7 @@ final readonly class BrainController
             } elseif ($chunk instanceof TextChunk) {
                 $streamedText .= $chunk->content;
             } else {
-                $this->logger->error('Unknown chunk type: ' . get_class($chunk));
+                $this->logger->error('Unknown chunk type: ' . $chunk::class);
                 continue;
             }
 

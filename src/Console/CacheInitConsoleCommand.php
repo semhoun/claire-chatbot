@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Console;
 
-use App\Services\Settings;
 use Doctrine\ORM\EntityManager;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;

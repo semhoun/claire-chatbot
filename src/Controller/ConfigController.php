@@ -10,11 +10,11 @@ use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
-class ConfigController
+readonly class ConfigController
 {
     public function __construct(
-        private readonly SessionInterface $session,
-        private readonly EntityManagerInterface $entityManager,
+        private SessionInterface $session,
+        private EntityManagerInterface $entityManager,
     ) {
     }
 
@@ -35,9 +35,9 @@ class ConfigController
             return $response->withStatus(404);
         }
 
-        $params = $user->getParams() ?? [];
+        $params = $user->params ?? [];
         $params['chat_mode'] = $mode;
-        $user->setParams($params);
+        $user->params = $params;
         $this->entityManager->flush();
 
         // HTMX friendly: no content needed

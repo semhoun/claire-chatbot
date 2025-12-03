@@ -130,7 +130,7 @@ class Observer implements ObserverInterface
         return $message;
     }
 
-    protected function spanSetAttributes(SpanInterface $span, string $attribute, mixed $data): void
+    protected function spanSetAttributes(Span $span, string $attribute, mixed $data): void
     {
         if (\is_string($data)) {
             $span->setAttribute($attribute, $data);
