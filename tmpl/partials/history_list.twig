@@ -1,0 +1,39 @@
+<div class="history-list">
+    {% if histories is empty %}
+        <div class="history-list__empty">
+            <svg class="history-list__empty-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 5h16v14H4z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M7 9h10M7 12h7M7 15h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <div class="history-list__empty-text">Aucune conversation pour le moment</div>
+            <div class="history-list__empty-help">Envoyez un message pour créer une nouvelle conversation.</div>
+        </div>
+    {% else %}
+        <ul class="history-list__items">
+            {% for h in histories %}
+                <li class="history-item"
+                    role="button"
+                    tabindex="0"
+                    hx-get="{{ base_url }}/history/open/{{ h.threadId }}"
+                    hx-target="#messages"
+                    hx-swap="innerHTML"
+                    hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
+                    hx-on::after-request="if (event.detail.successful) { const btn = document.getElementById('historyToggle'); const panel = document.getElementById('historyList'); if (btn) btn.setAttribute('aria-expanded','false'); if (panel) panel.innerHTML=''; const chatBody = document.querySelector('.chat-body'); if (chatBody) chatBody.scrollTop = chatBody.scrollHeight; }"
+                >
+                    <div class="history-item__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M4 5h16v12H7l-3 3V5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <div class="history-item__content">
+                        <div class="history-item__title">{{ h.title ?: 'Conversation' }}</div>
+                        {% if h.updatedAt is defined %}
+                            <div class="history-item__meta">Modifiée le {{ h.updatedAt|date('d/m/Y \à H:i') }}</div>
+                        {% endif %}
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+    
+</div>

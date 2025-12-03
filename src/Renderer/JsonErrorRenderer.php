@@ -17,7 +17,6 @@ final class JsonErrorRenderer implements ErrorRendererInterface
     ) {
     }
 
-
     public function __invoke(
         Throwable $exception,
         bool $displayErrorDetails,
@@ -43,6 +42,6 @@ final class JsonErrorRenderer implements ErrorRendererInterface
 
         $this->logger->error('[' . $exception->getCode() . '] ' . $exception->getMessage(), $details);
 
-        return json_encode($displayErrorDetails ? $data : array_merge($data, $details)) ?? [];
+        return json_encode($displayErrorDetails ? array_merge($data, $details) : $data) ?? [];
     }
 }

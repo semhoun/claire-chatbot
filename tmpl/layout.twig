@@ -42,10 +42,24 @@
                         {{ (chat_mode|default('chat')) == 'stream' ? 'On' : 'Off' }}
                     </span>
                 </div>
-                <div class="options-item">
+                <div
+                        class="options-item"
+                        id="historyToggle"
+                        role="button"
+                        tabindex="0"
+                        aria-expanded="false"
+                        aria-controls="historyList"
+                >
                     <span class="options-item__label">Historique des conversations</span>
-                    <span class="options-item__badge">12</span>
+                    <span
+                            class="options-item__badge"
+                            id="historyCountBadge"
+                            hx-get="{{ base_url }}/history/count"
+                            hx-trigger="load"
+                            hx-swap="innerHTML"
+                    >0</span>
                 </div>
+                <div id="historyList" class="options-subpanel" aria-live="polite" style="margin: 0 16px 8px;"></div>
                 <div
                         class="options-item"
                         data-layout-toggle
@@ -185,6 +199,49 @@
 
         // Initialize ARIA/state on load
         setMode(currentMode());
+    })();
+
+    // Toggle « Historique des conversations »: clic = ouvre/ferme. Au besoin charge la liste.
+    (function () {
+        const btn = document.getElementById('historyToggle');
+        const panel = document.getElementById('historyList');
+        if (!btn || !panel) return;
+
+        function isExpanded() {
+            return btn.getAttribute('aria-expanded') === 'true';
+        }
+
+        function expand() {
+            btn.setAttribute('aria-expanded', 'true');
+            // Charger la liste via HTMX
+            if (window.htmx) {
+                window.htmx.ajax('GET', '{{ base_url }}/history/list', { target: '#historyList', swap: 'innerHTML' });
+            }
+        }
+
+        function collapse() {
+            btn.setAttribute('aria-expanded', 'false');
+            // Vider le panneau
+            try {
+                panel.innerHTML = '';
+            } catch (e) {}
+        }
+
+        function toggle() {
+            if (isExpanded()) {
+                collapse();
+            } else {
+                expand();
+            }
+        }
+
+        btn.addEventListener('click', function () { toggle(); });
+        btn.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggle();
+            }
+        });
     })();
 </script>
 </body>

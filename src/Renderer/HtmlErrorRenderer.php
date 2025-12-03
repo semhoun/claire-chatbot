@@ -49,6 +49,6 @@ final readonly class HtmlErrorRenderer implements ErrorRendererInterface
            throw $exception;
         }
 
-        return $this->twig->fetch('error/default.twig', $displayErrorDetails ? $data : array_merge($data, $details));
+        return $this->twig->fetch('error/default.twig', $displayErrorDetails ? array_merge($data, $details) : $data);
     }
 }

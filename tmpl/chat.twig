@@ -34,10 +34,14 @@
 
         <main class="chat-body" style="position: relative; z-index: 1;">
             <div id="messages" class="messages">
-                   <article class="message message--received">
-                       <div class="message__bubble">{{ message }}</div>
-                       <span class="message__meta">{{ time }}</span>
-                   </article>
+                {% if messages is defined and messages is not null and messages is not empty %}
+                    {% include 'partials/messages_list.twig' with { messages: messages } %}
+                {% else %}
+                    <article class="message message--received">
+                        <div class="message__bubble">{{ message }}</div>
+                        <span class="message__meta">{{ time }}</span>
+                    </article>
+                {% endif %}
             </div>
             <div id="typingIndicator" class="typing-indicator htmx-indicator" aria-hidden="true">
                 <span class="typing-indicator__dot"></span>

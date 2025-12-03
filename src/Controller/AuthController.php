@@ -74,17 +74,17 @@ final readonly class AuthController
             $user = $this->entityManager->getRepository(User::class)->find($userId);
             if ($user === null) {
                 $user = new User();
-                $user->id = $userId;
+                $user->setId($userId);
                 $this->entityManager->persist($user);
                 $this->entityManager->flush();
             }
 
             $user = $this->entityManager->getRepository(User::class)->find($userId);
-            $user->firstName = $uinfo['firstName'];
-            $user->lastName = $uinfo['lastName'];
-            $user->email = $uinfo['email'];
-            if ($uinfo['firstName'] === null && $uinfo['lastName'] === null && $uinfo['name'] !== null) {
-                $user->firstName = $uinfo['name'];
+            $user->setFirstName($uinfo['firstName']);
+            $user->setLastName($uinfo['lastName']);
+            $user->setEmail($uinfo['email']);
+            if (($uinfo['firstName'] ?? null) === null && ($uinfo['lastName'] ?? null) === null && ($uinfo['name'] ?? null) !== null) {
+                $user->setFirstName($uinfo['name']);
             }
 
             $this->entityManager->flush();

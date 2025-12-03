@@ -1,0 +1,9 @@
+{# Renders a list of messages into the chat #}
+{% for m in messages %}
+    {% set sent = (m.role|default('assistant')) == 'user' %}
+    {% include 'partials/message.twig' with {
+        message: m.content|default(''),
+        time: '',
+        sent: sent
+    } %}
+{% endfor %}
