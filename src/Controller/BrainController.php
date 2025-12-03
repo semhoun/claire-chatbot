@@ -74,6 +74,7 @@ final readonly class BrainController
         $toolCallId = null;
 
         $streamedText = '';
+        $toolText = '';
 
         // Iterate chunks
         foreach ($stream as $chunk) {
