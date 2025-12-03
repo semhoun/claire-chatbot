@@ -89,7 +89,7 @@ final readonly class AuthController
 
             $this->entityManager->flush();
 
-            foreach ($user->params ?? [] as $key => $value) {
+            foreach ($user->getParams() ?? [] as $key => $value) {
                 $this->session->set($key, $value);
             }
         } catch (\Exception $exception) {

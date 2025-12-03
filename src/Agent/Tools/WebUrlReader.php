@@ -16,7 +16,7 @@ use NeuronAI\Tools\ToolProperty;
 
 class WebUrlReader extends Tool
 {
-    public function __construct()
+    public function __construct( private readonly string $maxContentLength = '20000')
     {
         parent::__construct(
             'url_reader',
@@ -39,9 +39,11 @@ class WebUrlReader extends Tool
                 'hard_break' => false,
                 'strip_tags' => true,
                 'use_autolinks' => false,
+                'remove_nodes' => 'script style',
             ]);
             $htmlConverter->getEnvironment()->addConverter(new TableConverter());
             $markdown = $htmlConverter->convert($html);
+            $markdown = substr($markdown, 0, (int) $this->maxContentLength);
         } catch (\Exception $exception) {
             throw new ToolException('Failed to read URL: ' . $exception->getMessage());
         }

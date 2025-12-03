@@ -35,9 +35,9 @@ readonly class ConfigController
             return $response->withStatus(404);
         }
 
-        $params = $user->params ?? [];
+        $params = $user->getParams() ?? [];
         $params['chat_mode'] = $mode;
-        $user->params = $params;
+        $user->setParams($params);
         $this->entityManager->flush();
 
         // HTMX friendly: no content needed

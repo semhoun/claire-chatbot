@@ -4,33 +4,45 @@ declare(strict_types=1);
 
 namespace App\Renderer;
 
+use App\Services\Settings;
+use Monolog\Logger;
 use Slim\Interfaces\ErrorRendererInterface;
+use Slim\Views\Twig;
 use Throwable;
 
 final class JsonErrorRenderer implements ErrorRendererInterface
 {
+    public function __construct(
+        private Logger $logger,
+    ) {
+    }
+
+
     public function __invoke(
         Throwable $exception,
-        bool $displayErrorDetails
+        bool $displayErrorDetails,
     ): string {
-        if ($exception->getCode() === 0 || $exception->getCode() > 499) {
-            // We are in debug mode, and is not app exception so we let tracy manage the exception
-            throw $exception;
-        }
-
-        if (($exception->getCode() >= 400 && $exception->getCode() <= 499) ||
-                ! $displayErrorDetails) {
-            return json_encode([
-                'message' => $exception->getMessage(),
-            ]);
-        }
-
-        return json_encode([
-            'title' => $exception::class,
-            'type' => $exception::class,
+        $data = [
+            'title' => is_a($exception, '\Slim\Exception\HttpException') ?
+                $exception->getTitle() : '500 - ' .  $exception::class,
+            'code' => $exception->getCode(),
             'message' => $exception->getMessage(),
+        ];
+
+        $details = [
+            'debug' => $displayErrorDetails,
+            'type' => $exception::class,
             'file' => $exception->getFile(),
             'line' => $exception->getLine(),
-        ]);
+            'trace' => $exception->getTraceAsString(),
+        ];
+
+        if ($exception->getCode() === 404) {
+            return json_encode($data) ?? [];
+        }
+
+        $this->logger->error('[' . $exception->getCode() . '] ' . $exception->getMessage(), $details);
+
+        return json_encode($displayErrorDetails ? $data : array_merge($data, $details)) ?? [];
     }
 }

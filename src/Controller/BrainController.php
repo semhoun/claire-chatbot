@@ -74,7 +74,7 @@ final readonly class BrainController
         $toolCallId = null;
 
         $streamedText = '';
-        $toolText = '';
+        $toolText = null;
 
         // Iterate chunks
         foreach ($stream as $chunk) {
@@ -131,8 +131,9 @@ final readonly class BrainController
 
             $html = $this->twig->fetch('partials/md.twig', [ 'message' => $streamedText ]);
             $body->write('streamId:' . $streamId . "\n" . $html . self::STREAM_STOP);
-            if ($toolCallId !== null) {
+            if ($toolCallId !== null && $toolText !== null) {
                 $body->write('streamId:' . $toolCallId . "\n" . $toolText . self::STREAM_STOP);
+                $toolCallId = null;
             }
         }
 

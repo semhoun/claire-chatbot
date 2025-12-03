@@ -54,27 +54,7 @@ class User
     }
 
     #[ORM\Column(name: 'params', type: 'string', nullable: true)]
-    public ?string $params = null {
-        get {
-            if ($this->params === null) {
-                return null;
-            }
-
-            try {
-                return json_decode($this->params, associative: true, flags: JSON_THROW_ON_ERROR);
-            } catch (\JsonException) {
-                return null;
-            }
-        }
-        set {
-            if ($value === null) {
-                $this->params = null;
-                return;
-            }
-
-            $this->params = json_encode($value, flags: JSON_THROW_ON_ERROR);
-        }
-    }
+    private ?string $params = null;
 
     // BLOB en base; Doctrine recommande un type LOB. On utilise string|null pour simplicité.
     #[ORM\Column(name: 'picture', type: 'blob', nullable: true)]
@@ -86,4 +66,28 @@ class User
             $this->picture = $value;
         }
     }
+
+    public function getParams(): ?array
+    {
+        if ($this->params === null) {
+            return null;
+        }
+
+        try {
+            return json_decode($this->params, associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+    }
+
+    public function setParams(?array $params): void
+    {
+        if ($params === null) {
+            $this->params = null;
+            return;
+        }
+
+        $this->params = json_encode($params, JSON_THROW_ON_ERROR);
+    }
+
 }
