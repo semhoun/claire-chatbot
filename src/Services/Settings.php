@@ -19,10 +19,10 @@ final readonly class Settings
     ) {
     }
 
-    public function get(string $parents): mixed
+    public function get(string $parentsStr): mixed
     {
         $settings = $this->settings;
-        $parents = explode('.', $parents);
+        $parents = explode('.', $parentsStr);
 
         foreach ($parents as $parent) {
             if (is_array($settings) && (isset($settings[$parent]) || array_key_exists($parent, $settings))) {

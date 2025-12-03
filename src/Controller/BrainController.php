@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Agent\Brain;
+use Monolog\Logger;
+use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
 use NeuronAI\Chat\Messages\UserMessage;
-use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Psr7\NonBufferedBody;
@@ -16,10 +18,12 @@ use Slim\Views\Twig;
 
 final readonly class BrainController
 {
+    private const string STREAM_STOP = "\n§STREAM-STOP§\n";
+
     public function __construct(
         private Twig $twig,
         private Brain $brain,
-        private SessionInterface $session
+        private Logger $logger,
     ) {
     }
 
@@ -39,7 +43,7 @@ final readonly class BrainController
         $message = $this->brain->chat(new UserMessage($userMessage));
         $agentMessage = $message->getContent();
 
-        return $this->twig->render($response, 'partials/message.md.twig', [
+        return $this->twig->render($response, 'partials/message.twig', [
             'message' => $agentMessage,
             'time' => $time,
             'sent' => false,
@@ -59,61 +63,88 @@ final readonly class BrainController
         // SSE headers
         $response = $response
             ->withBody(new NonBufferedBody())
-            ->withHeader('content-type', 'text/event-stream')
+            ->withHeader('content-type', 'text/stream')
             ->withHeader('cache-control', 'no-cache');
 
         $body = $response->getBody();
 
         $stream = $this->brain->stream(new UserMessage($userMessage));
 
+        $streamId = null;
+        $toolCallId = null;
+
+        $streamedText = '';
+
         // Iterate chunks
         foreach ($stream as $chunk) {
-            if ($chunk instanceof ToolCallChunk) {
-                /*      // Output the ongoing tool call
-                      $body->write("\n".\array_reduce($chunk->getTools(),
-                          fn(string $carry, ToolInterface $tool)
-                          => $carry .= '- Calling tool: '.$tool->getName()."\n",
-                          ''));*/
+            if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
+                $toolText = '';
+                if ($toolCallId === null) {
+                    $toolCallId = uniqid('tool-', true);
+                }
+
+                if ($chunk instanceof ToolResultChunk) {
+                    $toolText = '<span class="tools-done-flag" style="display:none"></span>' . "\n";
+                }
+
+                foreach ($chunk->tools as $tool) {
+                    $toolText .= "Utilisation de l'outil : " . $tool->getName() . "<br>\n";
+                    $toolText .= "Paramètres : <br>\n";
+                    $toolText .= "<ul>\n";
+                    foreach ($tool->getInputs() as $name => $value) {
+                        $toolText .= '<li>' . $name . ' : ' . $value . "</li>\n";
+                    }
+
+                    $toolText .= "</ul>\n";
+                    if ($chunk instanceof ToolResultChunk) {
+                        $toolText .= "Réponse : <br>\n";
+                        if ($tool->getResult()) {
+                            $toolText .= '<pre class="toolcall__result">' . $tool->getResult() . "</pre>\n";
+                        }
+                    }
+                }
+            } elseif ($chunk instanceof ReasoningChunk) {
+                $streamedText .= $chunk->content;
+            } elseif ($chunk instanceof TextChunk) {
+                $streamedText .= $chunk->content;
+            } else {
+                $this->logger->error('Unknown chunk type: ' . get_class($chunk));
                 continue;
             }
 
-            if ($chunk instanceof ToolResultChunk) {
-                $body->write("- Tools execution completed\n");
+            if ($streamId === null) {
+                $streamId = uniqid('stream-', true);
+                $html = $this->twig->fetch('partials/message.twig', [
+                    'message' => $streamedText,
+                    'time' => date('H:i'),
+                    'sent' => false,
+                    'streamId' => $streamId,
+                    'toolCallId' => $toolCallId,
+                    'toolCall' => $toolText,
+                ]);
+                $body->write($html);
+                $body->write(self::STREAM_STOP);
+
                 continue;
             }
 
-            $body->write($chunk->content);
+            $html = $this->twig->fetch('partials/md.twig', [ 'message' => $streamedText ]);
+            $body->write('streamId:' . $streamId . "\n" . $html . self::STREAM_STOP);
+            if ($toolCallId !== null) {
+                $body->write('streamId:' . $toolCallId . "\n" . $toolText . self::STREAM_STOP);
+            }
         }
 
         return $response;
-    }
-
-    /**
-     * Set current chat mode in session ("chat" | "stream")
-     */
-    public function mode(Request $request, Response $response): Response
-    {
-        $data = (array) ($request->getParsedBody() ?? []);
-        $mode = (string) ($data['mode'] ?? '');
-        if (! in_array($mode, ['chat', 'stream'], true)) {
-            return $response->withStatus(400);
-        }
-
-        $this->session->set('chat_mode', $mode);
-
-        // HTMX friendly: no content needed
-        return $response->withStatus(204);
     }
 
     private function getUserMessage(Request $request): string
     {
         if ($request->getMethod() === 'POST') {
             $data = (array) ($request->getParsedBody() ?? []);
-            $userMessage = trim((string) ($data['message'] ?? ''));
-        } else {
-            $userMessage = trim((string) ($request->getQueryParams()['message'] ?? []));
+            return trim((string) ($data['message'] ?? ''));
         }
 
-        return $userMessage;
+        return trim((string) ($request->getQueryParams()['message'] ?? []));
     }
 }

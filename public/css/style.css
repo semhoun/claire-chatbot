@@ -237,6 +237,131 @@ body.compact .chat-body {
     box-shadow: 0 18px 34px rgba(26, 0, 41, 0.5);
 }
 
+/* Toolcall sub-bubble (more beautiful) */
+.message__subbubble--toolcall {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    /* Compact when collapsed */
+    padding: 4px 6px;
+    margin: 4px 0 6px;
+    display: inline-flex; /* shrink to content when closed */
+    align-items: center;
+    max-width: 100%;
+    box-shadow: 0 10px 24px rgba(18, 0, 35, 0.25);
+    transition: padding 0.2s ease, margin 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Expanded state: take full width and comfortable spacing */
+.message__subbubble--toolcall:has(.toolcall[open]) {
+    display: block;
+    padding: 10px 12px;
+    margin: 8px 0 10px;
+    width: 100%; /* take full width when expanded */
+}
+
+/* Reset native marker and style the summary as a clean icon row */
+.toolcall {
+    display: block;
+}
+
+.toolcall summary {
+    list-style: none; /* Firefox */
+}
+.toolcall summary::-webkit-details-marker {
+    display: none; /* Chrome/Safari */
+}
+
+.toolcall__summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 2px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toolcall__summary:hover {
+    color: var(--text-primary);
+}
+
+.toolcall__summary:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(255, 124, 229, 0.22);
+    border-radius: 8px;
+}
+
+.toolcall__icon {
+    opacity: 0.9;
+}
+
+/* Icon state control during streaming */
+.toolcall__icon--done {
+    display: none; /* hidden by default */
+}
+.toolcall__icon--spinner {
+    display: inline; /* hidden by default */
+}
+
+/* When tools are done, swap spinner for checkmark */
+.toolcall:has(.toolcall__text .tools-done-flag) .toolcall__icon--spinner {
+    display: none;
+}
+.toolcall:has(.toolcall__text .tools-done-flag) .toolcall__icon--done {
+    display: inline;
+    color: #34d399; /* subtle success tint */
+}
+
+/* Optional: dim spinner when details are opened */
+.toolcall[open] .toolcall__icon--spinner {
+    opacity: 0.7;
+}
+
+.toolcall__chevron {
+    opacity: 0.8;
+    transition: transform 0.25s ease;
+    transform: rotate(-90deg);
+}
+
+.toolcall[open] .toolcall__chevron {
+    transform: rotate(0deg);
+}
+
+.toolcall__text {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-primary);
+    margin-top: 8px;
+    opacity: 0;
+    transform-origin: top;
+    transform: translateY(-4px);
+    transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.toolcall__result {
+    color: white;
+    background: black;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    text-wrap: auto;
+}
+
+.toolcall[open] .toolcall__text {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Utility for accessibility */
+.visually-hidden {
+    position: absolute !important;
+    height: 1px; width: 1px;
+    overflow: hidden;
+    clip: rect(1px, 1px, 1px, 1px);
+    white-space: nowrap;
+}
+
 .typing-indicator {
     display: none; /* hidden by default, shown during request */
     align-items: center;

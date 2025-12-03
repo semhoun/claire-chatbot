@@ -47,7 +47,7 @@ EOT
             $response = $client->request('GET', $this->searxngUrl, [
                 'query' => $queryParams,
             ]);
-            return $response->getBody();
+            return $response->getBody()->getContents();
         } catch (\Exception $exception) {
             throw new ToolException('Failed to read URL: ' . $exception->getMessage());
         }
@@ -74,7 +74,7 @@ EOT
                 PropertyType::STRING,
                 'Time range of search (day, month, year)',
                 false,
-                ['day, month, year']
+                ['day', 'month', 'year']
             ),
         ];
     }

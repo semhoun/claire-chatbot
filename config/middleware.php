@@ -30,9 +30,11 @@ return static function (App $app): void {
     if ($settings->get('debug')) {
         $app->add(new SlimTracy\Middlewares\TracyMiddleware($app, $settings->get('tracy')));
         Debugger::enable(Debugger::Development);
+        $errorMiddleware = $app->addErrorMiddleware(true, true, true);
+    } else {
+        $errorMiddleware = $app->addErrorMiddleware(false, true, true);
     }
 
-    $errorMiddleware = $app->addErrorMiddleware($settings->get('debug'), true, true);
     $errorHandler = $errorMiddleware->getDefaultErrorHandler();
     $errorHandler->registerErrorRenderer('text/html', HtmlErrorRenderer::class);
     $errorHandler->registerErrorRenderer('application/json', JsonErrorRenderer::class);

@@ -104,7 +104,7 @@ return [
         $brain->observe(new \App\Agent\Observability\Observer());
         return $brain;
     },
-    SessionManagerInterface::class => static fn (SessionInterface $session): \Odan\Session\SessionInterface => $session,
-    SessionInterface::class => static fn (Settings $settings): \Odan\Session\PhpSession => new PhpSession($settings->get('session')),
+    SessionManagerInterface::class => static fn (SessionInterface $session): SessionInterface => $session,
+    SessionInterface::class => static fn (Settings $settings): PhpSession => new PhpSession($settings->get('session')),
     OidcClient::class => static fn (Settings $settings): OidcClient => new OidcClient($settings),
 ];

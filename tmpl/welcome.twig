@@ -8,7 +8,7 @@
             border-radius: 16px;
             overflow: hidden;
             background: #000;
-            background-image: url('/image/background.png');
+            background-image: url('{{ base_url }}/image/background.png');
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
@@ -56,7 +56,7 @@
         <div class="bubble" role="dialog" aria-label="Connexion">
             <h2>Bienvenue</h2>
             <p>Pour continuer, veuillez vous authentifier via notre SSO.</p>
-            <a href="/auth/sso" class="sso-btn">Se connecter</a>
+            <a href="{{ base_url }}/auth/sso" class="sso-btn">Se connecter</a>
         </div>
     </div>
 {% endblock %}

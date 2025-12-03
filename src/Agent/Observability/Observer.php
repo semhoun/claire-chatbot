@@ -9,7 +9,7 @@ use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Observability\Events\AgentError;
 use NeuronAI\Observability\ObserverInterface;
 use OpenTelemetry\API\Logs\LogRecord;
-use OpenTelemetry\API\Trace\SpanInterface;
+use OpenTelemetry\API\Trace\SpanInterface as Span;
 
 class Observer implements ObserverInterface
 {

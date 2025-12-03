@@ -97,12 +97,14 @@
                     </button>
                 </div>
             </form>
+
             <form class="chat-input__form" id="brain_stream"
                   hx-post="{{ base_url }}/brain/stream"
                   hx-trigger="submit"
                   hx-target="#messages"
                   hx-swap="beforeend"
                   hx-indicator="#typingIndicator"
+                  hx-ext="stream"
                   hx-on::after-request="if(event.detail.successful) this.reset()"
                   data-mode="stream"
                   style="display: {{ (chat_mode|default('chat')) == 'stream' ? 'flex' : 'none' }}"

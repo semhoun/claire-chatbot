@@ -98,7 +98,7 @@
 </div>
 
 <script src="{{ base_url }}/js/htmx.min.js"></script>
-<script src="{{ base_url }}/js/htmx-ext-sse.js"></script>
+<script src="{{ base_url }}/js/htmx-stream.js"></script>
 {% block script %}{% endblock %}
 <script>
     // Gestion fermeture du panneau d'options (bouton, touche Échap, clic sur backdrop)
@@ -162,7 +162,7 @@
 
         async function postMode(mode) {
             try {
-                await fetch('{{ base_url }}/brain/mode', {
+                await fetch('{{ base_url }}/config/chat_mode', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: new URLSearchParams({ mode })

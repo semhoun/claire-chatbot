@@ -26,7 +26,6 @@ final readonly class HomeController
 
         // Default chat mode
         $mode = $this->session->get('chat_mode') ?? 'chat';
-        $this->session->set('chat_mode', $mode);
 
         return $this->twig->render($response, 'chat.twig', [
             'time' => $time,

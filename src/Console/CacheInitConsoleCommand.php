@@ -17,7 +17,6 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class CacheInitConsoleCommand extends Command
 {
     public function __construct(
-        private readonly Settings $settings,
         private readonly EntityManager $entityManager
     ) {
         parent::__construct();
