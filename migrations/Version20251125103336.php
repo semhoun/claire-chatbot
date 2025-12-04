@@ -20,15 +20,15 @@ final class Version20251125103336 extends AbstractMigration
             $this->addSql(
                 <<<EOT
 CREATE TABLE IF NOT EXISTS chat_history (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id TEXT NOT NULL,
-  thread_id TEXT NOT NULL,
-  messages TEXT NOT NULL,
-  title TEXT,
-  summarize TEXT,
-  created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
-  updated_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
-  CONSTRAINT fk_chat_history_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE ON UPDATE NO ACTION
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    messages TEXT NOT NULL,
+    title TEXT,
+    summary TEXT,
+    created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
+    updated_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
+    CONSTRAINT fk_chat_history_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE ON UPDATE NO ACTION
 );
 
 -- Indexes (separate statements in SQLite)
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS chat_history (
     thread_id VARCHAR(128) NOT NULL,
     messages LONGTEXT NOT NULL,
     title TEXT,
-    summarize TEXT,
+    summary TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     

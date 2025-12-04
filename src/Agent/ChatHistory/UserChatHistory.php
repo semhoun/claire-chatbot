@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Agent;
+namespace App\Agent\ChatHistory;
 
 use NeuronAI\Chat\History\SQLChatHistory;
 use Odan\Session\SessionInterface;
 use PDO;
 
-class ChatHistory extends SQLChatHistory
+class UserChatHistory extends SQLChatHistory
 {
     protected string $user_id;
 

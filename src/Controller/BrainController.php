@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Agent\Brain;
+use App\Agent\Summary;
 use Monolog\Logger;
 use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
@@ -23,6 +24,7 @@ final readonly class BrainController
     public function __construct(
         private Twig $twig,
         private Brain $brain,
+        private Summary $summary,
         private Logger $logger,
     ) {
     }
@@ -42,6 +44,8 @@ final readonly class BrainController
 
         $message = $this->brain->chat(new UserMessage($userMessage));
         $agentMessage = $message->getContent();
+
+        $this->manageSummary();
 
         return $this->twig->render($response, 'partials/message.twig', [
             'message' => $agentMessage,
@@ -137,7 +141,15 @@ final readonly class BrainController
             }
         }
 
+        $this->manageSummary();
+
         return $response;
+    }
+
+    private function manageSummary(): void
+    {
+        // TODO : manage summary only some times
+        $this->summary->generateAndPersist();
     }
 
     private function getUserMessage(Request $request): string

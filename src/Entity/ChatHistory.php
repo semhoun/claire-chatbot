@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
-use Doctrine\ORM\Mapping as ORM;
 use App\Repository\ChatHistoryRepository;
+use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Table(name: 'chat_history')]
 #[ORM\UniqueConstraint(name: 'uk_thread_id', columns: ['thread_id'])]
@@ -36,8 +36,8 @@ class ChatHistory
     #[ORM\Column(name: 'title', type: 'text', nullable: true)]
     private ?string $title = null;
 
-    #[ORM\Column(name: 'summarize', type: 'text', nullable: true)]
-    private ?string $summarize = null;
+    #[ORM\Column(name: 'summary', type: 'text', nullable: true)]
+    private ?string $summary = null;
 
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable', nullable: false)]
     private \DateTimeImmutable $createdAt;
@@ -104,14 +104,14 @@ class ChatHistory
         $this->title = $title;
     }
 
-    public function getSummarize(): ?string
+    public function getSummary(): ?string
     {
-        return $this->summarize;
+        return $this->summary;
     }
 
-    public function setSummarize(?string $summarize): void
+    public function setSummary(?string $summary): void
     {
-        $this->summarize = $summarize;
+        $this->summary = $summary;
     }
 
     public function getCreatedAt(): \DateTimeImmutable

@@ -45,7 +45,9 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 - LLM (voir `config/settings/llm.php`):
   - `OPENAPI_KEY`   — clé d’API du fournisseur (compatible OpenAI)
   - `OPENAPI_URL`   — base URL de l’API (ex: https://api.openai.com/v1 ou un proxy type LiteLLM)
-  - `OPENAPI_MODEL` — identifiant du modèle (ex: gpt-4o-mini, gpt-5.1, etc.)
+  - `OPENAPI_MODEL` — identifiant du modèle par défaut (ex: gpt-4o-mini, gpt-5.1, etc.)
+  - `OPENAPI_MODEL_SUMMARY` — modèle dédié aux tâches de synthèse/résumé (optionnel; si absent, `OPENAPI_MODEL` sera utilisé)
+  - `OPENAPI_MODEL_EMBED` — modèle dédié aux embeddings (optionnel; si absent, le RAG est désactivé)
 
 - Mode et logs:
   - `DEBUG_MODE` = `true|false` (active un niveau de logs plus verbeux)
@@ -189,7 +191,11 @@ services:
       # LLM (remplacez par vos valeurs / variables d'env)
       OPENAPI_KEY: ${OPENAPI_KEY:?set_me}
       OPENAPI_URL: https://api.openai.com/v1
-      OPENAPI_MODEL: gpt-4o-mini
+      OPENAPI_MODEL: gpt-5
+      # Optionnels (précisez si vous souhaitez des modèles dédiés)
+      OPENAPI_MODEL_SUMMARY: gpt-5-mini
+      OPENAPI_MODEL_EMBED: text-embedding-3-large
+      # NB: si `OPENAPI_MODEL_EMBED` est omis, le RAG est désactivé
       # Optionnel
       # SEARXNG_URL: http://searxng:8080
 
@@ -294,9 +300,9 @@ Outils disponibles:
 ## Dépannage
 
 - 500 au `GET /`:  vérifiez les permissions du dossier var/ (cache, logs, tmp).
-- 500 au `POST /brain/chat`: assurez-vous que `OPENAPI_URL`, `OPENAPI_KEY` et `OPENAPI_MODEL` sont correctement définis et que le réseau sortant fonctionne.
 - 404 partout: vérifiez que le serveur pointe bien sur `public/index.php` et que vos règles de réécriture sont actives.
 - Pas de logs: les logs sont gérés par OpenTelemetry. Pour les voir dans la console, définissez `OTEL_LOGS_EXPORTER=console` (et `OTEL_LOGS_PROCESSOR=simple` pour un affichage immédiat). En alternance, configurez un export OTLP (`OTEL_LOGS_EXPORTER=otlp`) vers un collecteur comme l’OTel Collector.
+- RAG inactif: assurez-vous que `OPENAPI_MODEL_EMBED` est défini. S’il est absent, le RAG est désactivé par conception.
 
 ## Licence
 

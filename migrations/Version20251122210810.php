@@ -20,12 +20,12 @@ final class Version20251122210810 extends AbstractMigration
             $this->addSql(
                 <<<EOT
 CREATE TABLE IF NOT EXISTS user (
-  id TEXT NOT NULL,
-  first_name TEXT,
-  last_name TEXT,
-  email TEXT,
-  params TEXT,
-  picture BLOB
+    id TEXT NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
+    email TEXT,
+    params TEXT,
+    picture BLOB
 );
 EOT
             );

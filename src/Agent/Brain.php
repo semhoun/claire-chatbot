@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Agent;
 
+use App\Agent\ChatHistory\UserChatHistory;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Agent;
@@ -28,7 +29,7 @@ class Brain extends Agent
     #[\Override]
     protected function chatHistory(): ChatHistoryInterface
     {
-        return new ChatHistory(
+        return new UserChatHistory(
             session: $this->session,
             pdo: $this->connection->getNativeConnection(),
             table: 'chat_history',

@@ -17,19 +17,41 @@
                     hx-get="{{ base_url }}/history/open/{{ h.threadId }}"
                     hx-target="#messages"
                     hx-swap="innerHTML"
+                    hx-on:click="(function(){var b=document.getElementById('historyTooltipBanner');if(b){b.classList.remove('is-visible');b.setAttribute('aria-hidden','true');}})()"
                     hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
-                    hx-on::after-request="if (event.detail.successful) { const btn = document.getElementById('historyToggle'); const panel = document.getElementById('historyList'); if (btn) btn.setAttribute('aria-expanded','false'); if (panel) panel.innerHTML=''; const chatBody = document.querySelector('.chat-body'); if (chatBody) chatBody.scrollTop = chatBody.scrollHeight; }"
+                    hx-on::after-request="if (event.detail.successful) { const btn = document.getElementById('historyToggle'); const panel = document.getElementById('historyList'); if (btn) btn.setAttribute('aria-expanded','false'); if (panel) panel.innerHTML=''; const chatBody = document.querySelector('.chat-body'); if (chatBody) chatBody.scrollTop = chatBody.scrollHeight; /* Fermer le panneau d'options si ouvert */ const optionsPanelEl = document.getElementById('optionsPanel'); const optionsBackdropEl = document.getElementById('optionsBackdrop'); const optionsToggleEl = document.querySelector('.options-toggle'); if (optionsPanelEl) optionsPanelEl.classList.remove('is-open'); if (optionsBackdropEl) optionsBackdropEl.classList.remove('is-visible'); if (optionsToggleEl) { optionsToggleEl.classList.remove('is-active'); optionsToggleEl.setAttribute('aria-expanded','false'); } /* Cacher le bandeau tooltip */ const banner = document.getElementById('historyTooltipBanner'); if (banner) { banner.classList.remove('is-visible'); banner.setAttribute('aria-hidden','true'); } }"
                 >
                     <div class="history-item__icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24">
                             <path d="M4 5h16v12H7l-3 3V5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
                         </svg>
                     </div>
-                    <div class="history-item__content">
-                        <div class="history-item__title">{{ h.title ?: 'Conversation' }}</div>
+                    <div class="history-item__content"{% if h.summary is defined and h.summary %} data-tooltip="{{ h.summary }}"{% endif %}>
+                        <div class="history-item__title"{% if h.summary is defined and h.summary %} aria-label="{{ h.summary }}"{% endif %}>{{ h.title ?: 'Conversation' }}</div>
                         {% if h.updatedAt is defined %}
                             <div class="history-item__meta">Modifiée le {{ h.updatedAt|date('d/m/Y \à H:i') }}</div>
                         {% endif %}
+                    </div>
+                    <div class="history-item__actions">
+                        <button class="history-item__delete"
+                                type="button"
+                                aria-label="Supprimer cette conversation"
+                                title="Supprimer"
+                                hx-delete="{{ base_url }}/history/delete/{{ h.threadId }}"
+                                hx-target="closest li"
+                                hx-swap="outerHTML"
+                                data-dialog-confirm="Supprimer cette conversation ? Cette action est irréversible."
+                                data-dialog-title="Confirmer la suppression"
+                                data-dialog-variant="danger"
+                                data-dialog-confirm-label="Supprimer"
+                                data-dialog-cancel-label="Annuler"
+                                onclick="event.stopPropagation();"
+                                onkeydown="event.stopPropagation();"
+                        >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M9 3h6m-9 3h12M8 9v9m4-9v9m4-9v9M6 6l1 15a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
                     </div>
                 </li>
             {% endfor %}

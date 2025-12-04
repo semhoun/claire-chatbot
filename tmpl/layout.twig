@@ -31,17 +31,38 @@
             </svg>
         </button>
         <div class="options-panel__section">
-            <span class="options-panel__title">Options</span>
+            <span class="options-panel__title">Messages</span>
+            <div
+                class="options-item"
+                role="button"
+                tabindex="0"
+                hx-post="{{ base_url }}/history/new"
+                hx-target="#messages"
+                hx-swap="innerHTML"
+                hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
+                hx-on::after-request="
+                    if (event.detail.successful) {
+                        // Ferme le panneau d'options
+                        const panel = document.getElementById('optionsPanel');
+                        const bd = document.getElementById('optionsBackdrop');
+                        const toggle = document.querySelector('.options-toggle');
+                        if (panel) panel.classList.remove('is-open');
+                        if (bd) bd.classList.remove('is-visible');
+                        if (toggle) toggle.classList.remove('is-active');
+
+                        // Scroll en bas
+                        const chatBody = document.querySelector('.chat-body');
+                        if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
+
+                        // Rafraîchir le compteur
+                        const countUrl = '{{ base_url }}/history/count';
+                        if (window.htmx) { htmx.ajax('GET', countUrl, {target: '#historyCountBadge', swap: 'innerHTML'}); }
+                    }
+                "
+            >
+                <span class="options-item__label">Nouvelle conversation</span>
+            </div>
             <div class="options-list">
-                <div class="options-item" id="toggleStreamMode" role="button" tabindex="0"
-                     aria-pressed="false"
-                     data-chat-mode="{{ chat_mode|default('chat') }}"
-                >
-                    <span class="options-item__label">Réponse en continue</span>
-                    <span class="options-item__badge" data-mode-badge>
-                        {{ (chat_mode|default('chat')) == 'stream' ? 'On' : 'Off' }}
-                    </span>
-                </div>
                 <div
                         class="options-item"
                         id="historyToggle"
@@ -60,6 +81,21 @@
                     >0</span>
                 </div>
                 <div id="historyList" class="options-subpanel" aria-live="polite" style="margin: 0 16px 8px;"></div>
+            </div>
+        </div>
+
+        <div class="options-panel__section">
+            <span class="options-panel__title">Préférences</span>
+            <div class="options-list">
+                <div class="options-item" id="toggleStreamMode" role="button" tabindex="0"
+                     aria-pressed="false"
+                     data-chat-mode="{{ chat_mode|default('chat') }}"
+                >
+                    <span class="options-item__label">Réponse en continue</span>
+                    <span class="options-item__badge" data-mode-badge>
+                        {{ (chat_mode|default('chat')) == 'stream' ? 'On' : 'Off' }}
+                    </span>
+                </div>
                 <div
                         class="options-item"
                         data-layout-toggle
@@ -67,20 +103,6 @@
                 >
                     <span class="options-item__label">Mode largeur</span>
                     <span class="options-item__badge" data-layout-badge>Plein écran</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="options-panel__section">
-            <span class="options-panel__title">Préférences</span>
-            <div class="options-list">
-                <div class="options-item">
-                    <span class="options-item__label">Notifications</span>
-                    <span class="options-item__badge">On</span>
-                </div>
-                <div class="options-item">
-                    <span class="options-item__label">Mode discret</span>
-                    <span class="options-item__badge">Off</span>
                 </div>
                 <div class="options-item">
                     <span class="options-item__label">Langue</span>
@@ -109,11 +131,31 @@
             </div>
         </div>
     </aside>
+
+    {# Global reusable modal dialog #}
+    <div id="modalBackdrop" class="modal-backdrop" aria-hidden="true"></div>
+    <div id="modalRoot" class="modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="modalTitle" aria-describedby="modalBody" data-variant="default">
+        <div class="modal__container">
+            <div class="modal__header">
+                <h2 id="modalTitle" class="modal__title">Confirmation</h2>
+                <button id="modalClose" class="modal__close" type="button" aria-label="Fermer la boîte de dialogue" title="Fermer">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+            <div id="modalBody" class="modal__body">Êtes-vous sûr ?</div>
+            <div class="modal__footer">
+                <button id="modalCancel" class="btn btn--secondary" type="button">Annuler</button>
+                <button id="modalConfirm" class="btn btn--primary" type="button">Confirmer</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script src="{{ base_url }}/js/htmx.min.js"></script>
 <script src="{{ base_url }}/js/htmx-stream.js"></script>
 {% block script %}{% endblock %}
+<!-- Global fixed tooltip banner (bottom of the page) -->
+<div id="historyTooltipBanner" role="status" aria-live="polite" aria-hidden="true"></div>
 <script>
     // Gestion fermeture du panneau d'options (bouton, touche Échap, clic sur backdrop)
     (function() {
@@ -201,6 +243,61 @@
         setMode(currentMode());
     })();
 
+    // Global fixed tooltip banner for history summaries
+    (function() {
+        const banner = document.getElementById('historyTooltipBanner');
+        if (!banner) return;
+
+        function showBannerFrom(el) {
+            if (!el) return;
+            const text = el.getAttribute('data-tooltip') || '';
+            if (!text) return;
+            banner.textContent = text;
+            banner.classList.add('is-visible');
+            banner.setAttribute('aria-hidden', 'false');
+        }
+
+        function hideBanner() {
+            banner.classList.remove('is-visible');
+            banner.setAttribute('aria-hidden', 'true');
+        }
+
+        function wireTooltips(root) {
+            const scope = root || document;
+            const nodes = scope.querySelectorAll('.history-item__content[data-tooltip]');
+            nodes.forEach(function(el) {
+                // Avoid double wiring
+                if (el.__hasTooltipBanner) return;
+                el.__hasTooltipBanner = true;
+
+                el.addEventListener('mouseenter', function() { showBannerFrom(el); });
+                el.addEventListener('mouseleave', hideBanner);
+                el.addEventListener('focusin', function() { showBannerFrom(el); });
+                el.addEventListener('focusout', hideBanner);
+                // Touch support: show while touching, hide shortly after
+                el.addEventListener('touchstart', function() { showBannerFrom(el); }, { passive: true });
+                el.addEventListener('touchend', function() { setTimeout(hideBanner, 120); });
+            });
+        }
+
+        // Initial wiring
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() { wireTooltips(document); });
+        } else {
+            wireTooltips(document);
+        }
+
+        // Re-wire after HTMX swaps (e.g., when the history list loads/updates)
+        window.addEventListener('htmx:afterSwap', function(e) {
+            const t = e.target;
+            try {
+                if (t && (t.id === 'historyList' || (t.closest && t.closest('#historyList')))) {
+                    wireTooltips(t);
+                }
+            } catch (_) { /* no-op */ }
+        });
+    })();
+
     // Toggle « Historique des conversations »: clic = ouvre/ferme. Au besoin charge la liste.
     (function () {
         const btn = document.getElementById('historyToggle');
@@ -244,5 +341,6 @@
         });
     })();
 </script>
+<script src="{{ base_url }}/js/dialog.js"></script>
 </body>
 </html>

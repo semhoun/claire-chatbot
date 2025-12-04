@@ -739,13 +739,14 @@ body.compact .chat-input {
 
 .history-item__content {
     min-width: 0; /* enable text truncation */
+    flex: 1; /* push actions to the right */
 }
 
 .history-item__title {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-primary);
-    white-space: nowrap;
+    white-space: wrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -754,6 +755,233 @@ body.compact .chat-input {
     margin-top: 2px;
     font-size: 12px;
     color: var(--text-secondary);
+}
+
+/* Actions (delete button) */
+.history-item__actions {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+}
+
+.history-item__delete {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 240, 254, 0.9);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, color 0.2s ease;
+}
+
+.history-item__delete:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 124, 229, 0.35);
+    color: #ffe9fd;
+}
+
+.history-item__delete:active {
+    transform: scale(0.96);
+}
+
+.history-item__delete:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.history-item__delete svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Global fixed tooltip banner (bottom of the page) */
+#historyTooltipBanner {
+    position: fixed;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    max-width: min(92vw, 720px);
+    box-sizing: border-box;
+    padding: 10px 14px;
+    /* Extra bottom padding to avoid partial clipping of the last line on some engines */
+    padding-bottom: 24px;
+    border-radius: 10px;
+    background: rgba(17, 17, 17, 0.95);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.05) inset;
+    backdrop-filter: saturate(120%) blur(2px);
+    font-size: 13px;
+    line-height: 1.4; /* slightly larger to prevent sub-pixel cropping */
+    z-index: 3000;
+    pointer-events: none; /* do not block clicks */
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 90ms ease-out, visibility 0s linear 90ms;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4; /* clamp to 4 lines */
+    overflow: hidden;
+    white-space: pre-wrap; /* respect line breaks */
+    overflow-wrap: anywhere; /* allow long words/urls to wrap */
+    word-break: break-word;
+}
+
+/* ============ Modal dialog ============ */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 0, 20, 0.6);
+    backdrop-filter: blur(1.5px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    z-index: 60;
+}
+
+.modal-backdrop.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 61;
+}
+
+.modal.is-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.modal__container {
+    width: min(520px, calc(100% - 32px));
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 26px 60px rgba(9, 0, 28, 0.55), inset 0 0 0 1px rgba(255,255,255,0.04);
+    transform: translateY(10px) scale(0.98);
+    opacity: 0;
+    transition: transform 0.22s ease, opacity 0.22s ease;
+}
+
+.modal.is-open .modal__container {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+}
+
+.modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 18px 8px;
+}
+
+.modal__title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.modal__close {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 240, 254, 0.9);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.modal__close:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255, 124, 229, 0.35);
+}
+
+.modal__body {
+    padding: 8px 18px 16px;
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+
+.modal__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 8px 18px 18px;
+}
+
+/* Buttons */
+.btn {
+    min-width: 110px;
+    height: 40px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    padding: 0 14px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn:active { transform: scale(0.98); }
+
+.btn--secondary {
+    background: rgba(255,255,255,0.04);
+    color: var(--text-primary);
+}
+
+.btn--secondary:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255, 124, 229, 0.35);
+}
+
+.btn--primary {
+    background: linear-gradient(135deg, #ff3cac, #784ba0, #2b86c5);
+    color: #fff0fe;
+    box-shadow: 0 14px 26px rgba(255, 60, 172, 0.35);
+}
+
+.btn--primary:hover {
+    filter: brightness(1.05);
+}
+
+/* Variant danger accent for confirm button */
+.modal[data-variant="danger"] .btn--primary {
+    background: linear-gradient(135deg, #ff3c3c, #b3003c, #7a003f);
+    box-shadow: 0 14px 26px rgba(255, 60, 60, 0.35);
+}
+
+/* Prevent background scroll when modal open */
+body.modal-open {
+    overflow: hidden;
+}
+
+#historyTooltipBanner.is-visible {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 90ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #historyTooltipBanner {
+        transition: none;
+    }
 }
 
 .history-list__empty {

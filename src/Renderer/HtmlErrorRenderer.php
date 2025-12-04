@@ -46,7 +46,7 @@ final readonly class HtmlErrorRenderer implements ErrorRendererInterface
 
         if ($this->settings->get('debug')) {
             // We are in debug mode, and is not app exception so we let tracy manage the exception
-           throw $exception;
+            throw $exception;
         }
 
         return $this->twig->fetch('error/default.twig', $displayErrorDetails ? array_merge($data, $details) : $data);

@@ -16,7 +16,7 @@ use NeuronAI\Tools\ToolProperty;
 
 class WebUrlReader extends Tool
 {
-    public function __construct( private readonly string $maxContentLength = '20000')
+    public function __construct(private readonly string $maxContentLength = '20000')
     {
         parent::__construct(
             'url_reader',

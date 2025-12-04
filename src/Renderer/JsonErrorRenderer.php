@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace App\Renderer;
 
-use App\Services\Settings;
 use Monolog\Logger;
 use Slim\Interfaces\ErrorRendererInterface;
-use Slim\Views\Twig;
 use Throwable;
 
-final class JsonErrorRenderer implements ErrorRendererInterface
+final readonly class JsonErrorRenderer implements ErrorRendererInterface
 {
     public function __construct(
         private Logger $logger,

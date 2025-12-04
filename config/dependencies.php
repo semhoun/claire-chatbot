@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Agent\Brain;
+use App\Agent\Summary;
 use App\Services\OidcClient;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
@@ -100,9 +101,14 @@ return [
         return $twig;
     },
     Brain::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Brain {
-        $brain = Brain::make(connection: $connection, settings: $settings, session: $session);
+        $brain = new Brain($connection, $settings, $session);
         $brain->observe(new \App\Agent\Observability\Observer());
         return $brain;
+    },
+    Summary::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Summary {
+        $summary = new Summary($connection, $settings, $session);
+        $summary->observe(new \App\Agent\Observability\Observer());
+        return $summary;
     },
     SessionManagerInterface::class => static fn (SessionInterface $session): SessionInterface => $session,
     SessionInterface::class => static fn (Settings $settings): PhpSession => new PhpSession($settings->get('session')),

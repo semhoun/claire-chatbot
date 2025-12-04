@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\ChatHistory as ChatHistoryEntity;
-use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -17,22 +16,40 @@ final readonly class HistoryController
     public function __construct(
         private Twig $twig,
         private SessionInterface $session,
-        private EntityManagerInterface $em,
+        private EntityManagerInterface $entityManager,
     ) {
+    }
+
+    /**
+     * Crée une nouvelle conversation :
+     * - génère un nouveau threadId
+     * - le place dans la session sous `chatId`
+     * - retourne un fragment HTML vide pour remplacer la zone #messages
+     */
+    public function create(Request $request, Response $response): Response
+    {
+        // Nouveau thread
+        $threadId = uniqid('', true);
+        $this->session->set('chatId', $threadId);
+
+        // Retourne une liste de messages vide pour remplacer #messages
+        return $this->twig->render($response, 'partials/messages_list.twig', [
+            'messages' => [],
+        ]);
     }
 
     public function count(Request $request, Response $response): Response
     {
         $userId = (string) $this->session->get('userId');
-        $count = $this->em->getRepository(ChatHistoryEntity::class)->countByUserId($userId);
-        $response->getBody()->write((string)$count);
+        $count = $this->entityManager->getRepository(ChatHistoryEntity::class)->countByUserId($userId);
+        $response->getBody()->write((string) $count);
         return $response;
     }
 
     public function list(Request $request, Response $response): Response
     {
         $userId = (string) $this->session->get('userId');
-        $histories = $this->em->getRepository(ChatHistoryEntity::class)->getHistoryList($userId);
+        $histories = $this->entityManager->getRepository(ChatHistoryEntity::class)->getHistoryList($userId);
         return $this->twig->render($response, 'partials/history_list.twig', [
             'histories' => $histories,
         ]);
@@ -56,14 +73,41 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
-        $messages = $this->em->getRepository(ChatHistoryEntity::class)->getShareGptMessages($userId, $threadId);
+        $messages = $this->entityManager->getRepository(ChatHistoryEntity::class)->getShareGptMessages($userId, $threadId);
         if ($messages === null) {
             return $response->withStatus(400);
         }
+
         $this->session->set('chatId', $threadId);
 
         return $this->twig->render($response, 'partials/messages_list.twig', [
             'messages' => $messages,
         ]);
+    }
+
+    /**
+     * Supprime une conversation (par threadId) appartenant à l'utilisateur courant.
+     * Retourne 204 en cas de succès (prévu pour HTMX: suppression de l'élément de liste côté client).
+     */
+    public function delete(Request $request, Response $response): Response
+    {
+        $userId = (string) $this->session->get('userId');
+        if ($userId === '') {
+            return $response->withStatus(403);
+        }
+
+        $threadId = $request->getAttribute('threadId');
+        if (! is_string($threadId) || $threadId === '') {
+            return $response->withStatus(400);
+        }
+
+        if (! $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteThread($userId, $threadId)) {
+            return $response->withStatus(400);
+        }
+
+        // Important for HTMX swap: return 200 with an empty body so that
+        // hx-swap="outerHTML" on the <li> effectively removes the element.
+        $response->getBody()->write('');
+        return $response->withStatus(200);
     }
 }

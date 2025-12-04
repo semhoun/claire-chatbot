@@ -24,6 +24,11 @@
                         if (panel) { panel.classList.toggle('is-open'); }
                         const bd = document.getElementById('optionsBackdrop');
                         if (bd) { bd.classList.toggle('is-visible', expanded); }
+                        // Rafraîchir le compteur d'historiques à l'ouverture du menu
+                        if (expanded) {
+                            const countUrl = '{{ base_url }}/history/count';
+                            if (window.htmx) { htmx.ajax('GET', countUrl, {target: '#historyCountBadge', swap: 'innerHTML'}); }
+                        }
                     "
                 >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
