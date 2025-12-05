@@ -39,6 +39,10 @@ body.compact {
     padding: 32px 16px;
 }
 
+p {
+    margin: 5px;
+}
+
 .app {
     width: 100%;
     max-width: 100%;
@@ -201,7 +205,7 @@ body.compact .chat-body {
 }
 
 .message__bubble {
-    padding: 18px 20px;
+    padding: 12px 14px;
     border-radius: calc(var(--radius) - 8px);
     line-height: 1.45;
     font-size: 15px;
@@ -798,6 +802,13 @@ body.compact .chat-input {
     height: 18px;
 }
 
+/* In files list, stack action buttons vertically: add (top) above delete (bottom) */
+.file-item .history-item__actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
 /* Global fixed tooltip banner (bottom of the page) */
 #historyTooltipBanner {
     position: fixed;
@@ -984,6 +995,85 @@ body.modal-open {
     }
 }
 
+/* Files section: upload row */
+.file-upload {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0; /* allow truncation */
+}
+
+/* Stack the browse and submit icons vertically and make them compact */
+.files-root .file-upload__icons {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+}
+
+/* Visually-hidden but accessible input */
+.file-upload__input {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap; /* added line */
+    border: 0;
+}
+
+.file-upload__label {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    min-height: 28px;
+    padding: 4px 6px;
+}
+
+.file-upload__name {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 6px 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Center icons and reduce size for file upload actions */
+.files-root .file-upload button.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    min-height: 28px;
+    min-width: 0; /* override global button min-width */
+    width: 32px; /* compact icon button */
+    padding: 2px 4px;
+}
+
+.files-root .file-upload__label svg,
+.files-root .file-upload button.btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Make the browse label look like the compact icon button too */
+.files-root .file-upload__label.btn {
+    min-width: 0;
+    width: 32px;
+    padding: 2px 4px;
+}
+
 .history-list__empty {
     display: flex;
     flex-direction: column;
@@ -1011,6 +1101,64 @@ body.modal-open {
 .history-list__empty-help {
     font-size: 12px;
     color: var(--text-secondary);
+}
+
+/* Attached file chips inside chat input */
+.chat-attached {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 6px;
+    flex: 0 0 auto;
+}
+
+.chat-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: var(--text-primary);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18) inset;
+    position: relative; /* needed for the close button positioning */
+}
+
+.chat-chip svg {
+    width: 36px;
+    height: 36px;
+}
+
+/* Small close button inside the chip (top-right) */
+.chat-chip__remove {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    background: linear-gradient(135deg, rgba(255, 60, 60, 0.95), rgba(234, 0, 94, 0.95));
+    color: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+    padding: 0;
+}
+
+.chat-chip__remove svg {
+    width: 16px;
+    height: 16px;
+}
+
+.chat-chip__remove:hover,
+.chat-chip__remove:focus-visible {
+    filter: brightness(1.05);
+    outline: none;
 }
 
 @media (max-width: 1180px) {

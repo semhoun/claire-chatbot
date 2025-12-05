@@ -12,7 +12,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ base_url }}/css/style.css">
 </head>
-<body>
+<body class="{{ (layout_mode|default('full')) == 'compact' ? 'compact' : '' }}">
 <div class="app">
     {% block app %}{% endblock %}
 
@@ -85,6 +85,30 @@
         </div>
 
         <div class="options-panel__section">
+            <span class="options-panel__title">Fichiers</span>
+            <div class="options-list">
+                <div
+                        class="options-item"
+                        id="filesToggle"
+                        role="button"
+                        tabindex="0"
+                        aria-expanded="false"
+                        aria-controls="filesList"
+                >
+                    <span class="options-item__label">Fichiers</span>
+                    <span
+                            class="options-item__badge"
+                            id="filesCountBadge"
+                            hx-get="{{ base_url }}/files/count"
+                            hx-trigger="load"
+                            hx-swap="innerHTML"
+                    >0</span>
+                </div>
+                <div id="filesList" class="options-subpanel files-root" aria-live="polite" style="margin: 0 16px 8px;"></div>
+            </div>
+        </div>
+
+        <div class="options-panel__section">
             <span class="options-panel__title">Préférences</span>
             <div class="options-list">
                 <div class="options-item" id="toggleStreamMode" role="button" tabindex="0"
@@ -98,11 +122,14 @@
                 </div>
                 <div
                         class="options-item"
+                        id="toggleLayoutMode"
                         data-layout-toggle
-                        hx-on:click="document.body.classList.toggle('compact'); const badge = this.querySelector('[data-layout-badge]'); if (badge) { badge.textContent = document.body.classList.contains('compact') ? 'Largeur 800px' : 'Plein écran'; }"
+                        data-layout-mode="{{ layout_mode|default('full') }}"
                 >
                     <span class="options-item__label">Mode largeur</span>
-                    <span class="options-item__badge" data-layout-badge>Plein écran</span>
+                    <span class="options-item__badge" data-layout-badge>
+                        {{ (layout_mode|default('full')) == 'compact' ? 'Largeur 800px' : 'Plein écran' }}
+                    </span>
                 </div>
                 <div class="options-item">
                     <span class="options-item__label">Langue</span>
@@ -243,6 +270,50 @@
         setMode(currentMode());
     })();
 
+    // Toggle "Mode largeur" option: persist like chat mode
+    (function() {
+        const toggle = document.getElementById('toggleLayoutMode');
+        if (!toggle) return;
+        const badge = toggle.querySelector('[data-layout-badge]');
+
+        function currentMode() {
+            return (toggle.getAttribute('data-layout-mode') || 'full');
+        }
+
+        function setMode(mode) {
+            toggle.setAttribute('data-layout-mode', mode);
+            const isCompact = mode === 'compact';
+            document.body.classList.toggle('compact', isCompact);
+            if (badge) badge.textContent = isCompact ? 'Largeur 800px' : 'Plein écran';
+        }
+
+        async function postMode(mode) {
+            try {
+                await fetch('{{ base_url }}/config/layout_mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ mode })
+                });
+            } catch (e) {
+                // ignore network errors for now
+            }
+        }
+
+        function toggleClick() {
+            const next = currentMode() === 'compact' ? 'full' : 'compact';
+            setMode(next);
+            postMode(next);
+        }
+
+        toggle.addEventListener('click', toggleClick);
+        toggle.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleClick(); }
+        });
+
+        // Initialize ARIA/state on load
+        setMode(currentMode());
+    })();
+
     // Global fixed tooltip banner for history summaries
     (function() {
         const banner = document.getElementById('historyTooltipBanner');
@@ -338,6 +409,38 @@
                 e.preventDefault();
                 toggle();
             }
+        });
+    })();
+
+    // Toggle « Fichiers de la conversation »: clic = ouvre/ferme. Charge la liste via HTMX.
+    (function () {
+        const btn = document.getElementById('filesToggle');
+        const panel = document.getElementById('filesList');
+        if (!btn || !panel) return;
+
+        function isExpanded() {
+            return btn.getAttribute('aria-expanded') === 'true';
+        }
+
+        function expand() {
+            btn.setAttribute('aria-expanded', 'true');
+            if (window.htmx) {
+                window.htmx.ajax('GET', '{{ base_url }}/files/list', { target: '#filesList', swap: 'innerHTML' });
+            }
+        }
+
+        function collapse() {
+            btn.setAttribute('aria-expanded', 'false');
+            try { panel.innerHTML = ''; } catch (e) {}
+        }
+
+        function toggle() {
+            if (isExpanded()) { collapse(); } else { expand(); }
+        }
+
+        btn.addEventListener('click', function () { toggle(); });
+        btn.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
         });
     })();
 </script>

@@ -43,4 +43,30 @@ readonly class ConfigController
         // HTMX friendly: no content needed
         return $response->withStatus(204);
     }
+
+    /**
+     * Set current layout width mode in session ("full" | "compact")
+     */
+    public function layoutMode(Request $request, Response $response): Response
+    {
+        $data = (array) ($request->getParsedBody() ?? []);
+        $mode = (string) ($data['mode'] ?? '');
+        if (! in_array($mode, ['full', 'compact'], true)) {
+            return $response->withStatus(400);
+        }
+
+        $this->session->set('layout_mode', $mode);
+
+        $user = $this->entityManager->getRepository(User::class)->find($this->session->get('userId'));
+        if ($user === null) {
+            return $response->withStatus(404);
+        }
+
+        $params = $user->getParams() ?? [];
+        $params['layout_mode'] = $mode;
+        $user->setParams($params);
+        $this->entityManager->flush();
+
+        return $response->withStatus(204);
+    }
 }

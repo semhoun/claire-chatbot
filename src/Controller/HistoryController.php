@@ -38,6 +38,16 @@ final readonly class HistoryController
         ]);
     }
 
+    /**
+     * Compte le nombre d'historiques de conversation associés à l'utilisateur en session.
+     * - Récupère l'ID utilisateur depuis la session
+     * - Interroge le référentiel d'historique pour obtenir le compte
+     * - Écrit le résultat en tant que réponse
+     *
+     * @param Request $request L'objet requête contenant les informations de la requête HTTP.
+     * @param Response $response L'objet réponse pour envoyer les données de la réponse HTTP.
+     * @return Response La réponse contenant le nombre d'historiques de conversation de l'utilisateur.
+     */
     public function count(Request $request, Response $response): Response
     {
         $userId = (string) $this->session->get('userId');
@@ -46,6 +56,15 @@ final readonly class HistoryController
         return $response;
     }
 
+    /**
+     * Récupère la liste des historiques de conversation de l'utilisateur en session.
+     * - Charge les historiques appartenant à l'utilisateur identifié via la session
+     * - Retourne le HTML pour mettre à jour le conteneur #history-list (HTMX)
+     *
+     * @param Request $request La requête HTTP courante
+     * @param Response $response La réponse HTTP courante
+     * @return Response La réponse modifiée contenant le rendu des historiques
+     */
     public function list(Request $request, Response $response): Response
     {
         $userId = (string) $this->session->get('userId');

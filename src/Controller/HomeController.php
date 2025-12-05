@@ -41,6 +41,8 @@ final readonly class HomeController
 
         // Default chat mode
         $mode = $this->session->get('chat_mode') ?? 'chat';
+        // Default layout width mode
+        $layoutMode = $this->session->get('layout_mode') ?? 'full';
 
         return $this->twig->render($response, 'chat.twig', [
             'time' => $time,
@@ -48,6 +50,7 @@ final readonly class HomeController
             'messages' => $messages,
             'uinfo' => $this->session->get('uinfo'),
             'chat_mode' => $mode,
+            'layout_mode' => $layoutMode,
         ]);
     }
 }

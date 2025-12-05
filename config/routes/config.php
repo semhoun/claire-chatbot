@@ -11,5 +11,6 @@ return static function (
 ): void {
     $app->group('/config', static function (Group $group): void {
         $group->post('/chat_mode', [ConfigController::class, 'chatMode'])->setName('config.mode');
+        $group->post('/layout_mode', [ConfigController::class, 'layoutMode'])->setName('config.layout');
     });
 };

@@ -40,6 +40,15 @@ final readonly class BrainController
             return $response->withStatus(422);
         }
 
+        // Read optional attachments coming from the chat form
+        $attachments = $this->getAttachments($request);
+        if ($attachments['hasAnything']) {
+            $this->logger->debug('Chat form attachments received', [
+                'file_ids' => $attachments['file_ids'],
+                'uploads_count' => \count($attachments['uploads']),
+            ]);
+        }
+
         $time = new \DateTime()->format('H:i');
 
         $message = $this->brain->chat(new UserMessage($userMessage));
@@ -62,6 +71,15 @@ final readonly class BrainController
         $userMessage = $this->getUserMessage($request);
         if ($userMessage === '') {
             return $response->withStatus(422);
+        }
+
+        // Read optional attachments coming from the chat form
+        $attachments = $this->getAttachments($request);
+        if ($attachments['hasAnything']) {
+            $this->logger->debug('Chat form attachments received (stream)', [
+                'file_ids' => $attachments['file_ids'],
+                'uploads_count' => \count($attachments['uploads']),
+            ]);
         }
 
         // SSE headers
@@ -113,7 +131,7 @@ final readonly class BrainController
             } elseif ($chunk instanceof TextChunk) {
                 $streamedText .= $chunk->content;
             } else {
-                $this->logger->error('Unknown chunk type: ' . $chunk::class);
+                $this->logger->error('Unknown chunk type: ' . get_class($chunk));
                 continue;
             }
 
@@ -148,7 +166,8 @@ final readonly class BrainController
 
     private function manageSummary(): void
     {
-        // TODO : manage summary only some times
+        $messages = $this->brain->getChatHistory()->getMessages();
+        $this->logger->debug('Manage summary', $messages);
         $this->summary->generateAndPersist();
     }
 
@@ -160,5 +179,43 @@ final readonly class BrainController
         }
 
         return trim((string) ($request->getQueryParams()['message'] ?? []));
+    }
+
+    /**
+     * Extracts file references (file_ids[]) and inline uploads (upload_files[])
+     * from the chat form without persisting them. Returns a normalized array:
+     * [ 'file_ids' => string[], 'uploads' => [ [filename, mime, size, content]... ], 'hasAnything' => bool ]
+     */
+    private function getAttachments(Request $request): array
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $fileIds = array_map('strval', (array) ($body['file_ids'] ?? []));
+
+        $uploads = [];
+        $uploadedFiles = (array) ($request->getUploadedFiles()['upload_files'] ?? []);
+        foreach ($uploadedFiles as $uf) {
+            try {
+                if (!method_exists($uf, 'getError') || $uf->getError() !== UPLOAD_ERR_OK) {
+                    continue;
+                }
+                $stream = $uf->getStream();
+                $stream->rewind();
+                $uploads[] = [
+                    'filename' => $uf->getClientFilename() ?? 'fichier',
+                    'mime' => $uf->getClientMediaType() ?? 'application/octet-stream',
+                    'size' => (int) $uf->getSize(),
+                    'content' => $stream->getContents(),
+                ];
+            } catch (\Throwable $e) {
+                // best-effort; ignore faulty upload and continue
+                $this->logger->warning('Failed to read inline upload', ['error' => $e->getMessage()]);
+            }
+        }
+
+        return [
+            'file_ids' => $fileIds,
+            'uploads' => $uploads,
+            'hasAnything' => !empty($fileIds) || !empty($uploads),
+        ];
     }
 }

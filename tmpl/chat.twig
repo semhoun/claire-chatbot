@@ -26,8 +26,12 @@
                         if (bd) { bd.classList.toggle('is-visible', expanded); }
                         // Rafraîchir le compteur d'historiques à l'ouverture du menu
                         if (expanded) {
-                            const countUrl = '{{ base_url }}/history/count';
-                            if (window.htmx) { htmx.ajax('GET', countUrl, {target: '#historyCountBadge', swap: 'innerHTML'}); }
+                            const historyCountUrl = '{{ base_url }}/history/count';
+                            const filesCountUrl = '{{ base_url }}/files/count';
+                            if (window.htmx) {
+                                htmx.ajax('GET', historyCountUrl, {target: '#historyCountBadge', swap: 'innerHTML'});
+                                htmx.ajax('GET', filesCountUrl, {target: '#filesCountBadge', swap: 'innerHTML'});
+                            }
                         }
                     "
                 >
@@ -87,6 +91,7 @@
                   hx-target="#messages"
                   hx-swap="beforeend"
                   hx-indicator="#typingIndicator"
+                  hx-encoding="multipart/form-data"
                   hx-on::after-request="if(event.detail.successful) this.reset()"
                   data-mode="chat"
                   style="display: {{ (chat_mode|default('chat')) == 'chat' ? 'flex' : 'none' }}"
@@ -96,7 +101,11 @@
                         <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
                     </svg>
                 </label>
-                <input class="chat-input__file" type="file" id="chat-upload" accept="image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg">
+                <input class="chat-input__file" type="file" id="chat-upload" name="upload_files[]" multiple accept="image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg">
+                {# Container for attached file chips (chat mode) #}
+                <span id="chatAttachedFilesChat" class="chat-attached"></span>
+                {# Hidden inputs for selected file IDs (from Files list) #}
+                <span id="chatAttachedFilesChatHidden" hidden></span>
                 <input class="chat-input__field" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required>
                 <div class="chat-input__actions">
                     <button class="chat-icon-btn" type="submit" aria-label="Envoyer">
@@ -114,16 +123,21 @@
                   hx-swap="beforeend"
                   hx-indicator="#typingIndicator"
                   hx-ext="stream"
+                  hx-encoding="multipart/form-data"
                   hx-on::after-request="if(event.detail.successful) this.reset()"
                   data-mode="stream"
                   style="display: {{ (chat_mode|default('chat')) == 'stream' ? 'flex' : 'none' }}"
             >
-                <label class="chat-icon-btn chat-icon-btn--upload" for="chat-upload" aria-label="Joindre un fichier">
+                <label class="chat-icon-btn chat-icon-btn--upload" for="chat-upload-stream" aria-label="Joindre un fichier">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
                     </svg>
                 </label>
-                <input class="chat-input__file" type="file" id="chat-upload" accept="image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg">
+                <input class="chat-input__file" type="file" id="chat-upload-stream" name="upload_files[]" multiple accept="image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg">
+                {# Container for attached file chips (stream mode) #}
+                <span id="chatAttachedFilesStream" class="chat-attached"></span>
+                {# Hidden inputs for selected file IDs (from Files list) #}
+                <span id="chatAttachedFilesStreamHidden" hidden></span>
                 <input class="chat-input__field" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required>
                 <div class="chat-input__actions">
                     <button class="chat-icon-btn" type="submit" aria-label="Envoyer">
@@ -182,6 +196,157 @@
         }
         window.addEventListener('chat-mode-changed', function (e) {
             setMode(e.detail && e.detail.mode ? e.detail.mode : 'chat');
+        });
+    })();
+
+    // Gestion locale des pièces jointes: chips avec suppression + synchronisation du formulaire
+    (function () {
+        function $(sel, root=document) { return root.querySelector(sel); }
+        function chipSelectorById(id) { return '.chat-chip[data-file-id="' + CSS.escape(String(id)) + '"]'; }
+
+        const containers = {
+            chat: {
+                chips: $('#chatAttachedFilesChat'),
+                hidden: $('#chatAttachedFilesChatHidden'),
+                fileInput: $('#chat-upload'),
+            },
+            stream: {
+                chips: $('#chatAttachedFilesStream'),
+                hidden: $('#chatAttachedFilesStreamHidden'),
+                fileInput: $('#chat-upload-stream'),
+            }
+        };
+
+        function svgFileIcon() {
+            return '<svg viewBox="0 0 24 24" aria-hidden="true">\
+                <path d="M6 2h7l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>\
+                <path d="M13 2v6h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>\
+            </svg>';
+        }
+        function removeBtn() {
+            return '<button type="button" class="chat-chip__remove" aria-label="Retirer" title="Retirer">\
+                <svg viewBox="0 0 24 24" aria-hidden="true">\
+                    <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>\
+                </svg>\
+            </button>';
+        }
+
+        function createIdChip(fileId, fileName) {
+            const chip = document.createElement('span');
+            chip.className = 'chat-chip';
+            chip.setAttribute('data-type', 'id');
+            chip.setAttribute('data-file-id', String(fileId));
+            chip.title = fileName || '';
+            chip.setAttribute('aria-label', fileName || 'Fichier');
+            chip.innerHTML = svgFileIcon() + removeBtn();
+            return chip;
+        }
+
+        function createLocalChip(tmpKey, file) {
+            const chip = document.createElement('span');
+            chip.className = 'chat-chip';
+            chip.setAttribute('data-type', 'local');
+            chip.setAttribute('data-tmp-key', tmpKey);
+            chip.title = file.name;
+            chip.setAttribute('aria-label', file.name);
+            chip.innerHTML = svgFileIcon() + removeBtn();
+            return chip;
+        }
+
+        function ensureHiddenId(hiddenContainer, fileId) {
+            if (!hiddenContainer) return;
+            const sel = 'input[type="hidden"][name="file_ids[]"][value="' + CSS.escape(String(fileId)) + '"]';
+            if (hiddenContainer.querySelector(sel)) return;
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'file_ids[]';
+            input.value = String(fileId);
+            hiddenContainer.appendChild(input);
+        }
+
+        function removeHiddenId(hiddenContainer, fileId) {
+            if (!hiddenContainer) return;
+            const sel = 'input[type="hidden"][name="file_ids[]"][value="' + CSS.escape(String(fileId)) + '"]';
+            const node = hiddenContainer.querySelector(sel);
+            if (node) node.remove();
+        }
+
+        function removeFromFileInput(fileInput, tmpKeyToRemove) {
+            if (!fileInput || !fileInput.files || !fileInput.files.length) return;
+            const dt = new DataTransfer();
+            for (const file of fileInput.files) {
+                const key = makeTmpKey(file);
+                if (key !== tmpKeyToRemove) dt.items.add(file);
+            }
+            fileInput.files = dt.files;
+        }
+
+        function makeTmpKey(file) {
+            return [file.name, file.size, file.type, file.lastModified].join('|');
+        }
+
+        // Click on "Ajouter à la conversation" from Files list → add ID chips and hidden inputs
+        document.addEventListener('click', function (e) {
+            const btn = e.target && e.target.closest ? e.target.closest('[data-add-file-id]') : null;
+            if (!btn) return;
+            const fileId = btn.getAttribute('data-add-file-id');
+            const fileName = btn.getAttribute('data-add-file-name') || '';
+
+            for (const mode of Object.keys(containers)) {
+                const { chips, hidden } = containers[mode];
+                if (!chips) continue;
+                if (!chips.querySelector(chipSelectorById(fileId))) {
+                    chips.appendChild(createIdChip(fileId, fileName));
+                    ensureHiddenId(hidden, fileId);
+                }
+            }
+        });
+
+        // Local file selection via <input type=file multiple>
+        for (const mode of Object.keys(containers)) {
+            const { chips, fileInput } = containers[mode];
+            if (!fileInput || !chips) continue;
+
+            fileInput.addEventListener('change', function () {
+                if (!fileInput.files || !fileInput.files.length) return;
+                for (const file of fileInput.files) {
+                    const tmpKey = makeTmpKey(file);
+                    if (chips.querySelector('.chat-chip[data-type="local"][data-tmp-key="' + CSS.escape(tmpKey) + '"]')) continue;
+                    chips.appendChild(createLocalChip(tmpKey, file));
+                }
+            });
+        }
+
+        // Remove chip (either id-based or local upload)
+        document.addEventListener('click', function (e) {
+            const rem = e.target && e.target.closest ? e.target.closest('.chat-chip__remove') : null;
+            if (!rem) return;
+            const chip = rem.closest('.chat-chip');
+            if (!chip) return;
+
+            const type = chip.getAttribute('data-type');
+            if (type === 'id') {
+                const fid = chip.getAttribute('data-file-id');
+                removeHiddenId(containers.chat.hidden, fid);
+                removeHiddenId(containers.stream.hidden, fid);
+                // Remove from both chip containers if duplicated
+                for (const mode of Object.keys(containers)) {
+                    const list = containers[mode].chips;
+                    if (!list) continue;
+                    const dup = list.querySelector(chipSelectorById(fid));
+                    if (dup) dup.remove();
+                }
+            } else if (type === 'local') {
+                const tmpKey = chip.getAttribute('data-tmp-key');
+                removeFromFileInput(containers.chat.fileInput, tmpKey);
+                removeFromFileInput(containers.stream.fileInput, tmpKey);
+                for (const mode of Object.keys(containers)) {
+                    const list = containers[mode].chips;
+                    if (!list) continue;
+                    list.querySelectorAll('.chat-chip[data-type="local"][data-tmp-key="' + CSS.escape(tmpKey) + '"]')
+                        .forEach(node => node.remove());
+                }
+            }
         });
     })();
 
