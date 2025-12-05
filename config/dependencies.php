@@ -98,6 +98,8 @@ return [
                 return null;
             }
         });
+        // Expose settings to Twig templates
+        $twig->getEnvironment()->addGlobal('settings', $settings);
         return $twig;
     },
     Brain::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Brain {
