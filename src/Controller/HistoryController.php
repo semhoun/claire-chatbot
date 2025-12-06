@@ -46,6 +46,7 @@ final readonly class HistoryController
      *
      * @param Request $request L'objet requête contenant les informations de la requête HTTP.
      * @param Response $response L'objet réponse pour envoyer les données de la réponse HTTP.
+     *
      * @return Response La réponse contenant le nombre d'historiques de conversation de l'utilisateur.
      */
     public function count(Request $request, Response $response): Response
@@ -63,6 +64,7 @@ final readonly class HistoryController
      *
      * @param Request $request La requête HTTP courante
      * @param Response $response La réponse HTTP courante
+     *
      * @return Response La réponse modifiée contenant le rendu des historiques
      */
     public function list(Request $request, Response $response): Response

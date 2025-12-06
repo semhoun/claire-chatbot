@@ -33,7 +33,7 @@ class Brain extends Agent
             session: $this->session,
             pdo: $this->connection->getNativeConnection(),
             table: 'chat_history',
-            contextWindow: 50000
+            contextWindow: $this->settings->get('llm.history.contextWindow')
         );
     }
 

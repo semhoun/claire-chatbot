@@ -12,7 +12,7 @@ use Doctrine\ORM\EntityRepository;
  */
 class FileRepository extends EntityRepository
 {
-    /** @return File[] */
+    /** @return array<File> */
     public function listByUser(string $userId): array
     {
         return $this->createQueryBuilder('f')
@@ -25,26 +25,33 @@ class FileRepository extends EntityRepository
 
     public function countByUserId(string $userId): int
     {
-        $qb = $this->createQueryBuilder('f')
+        $queryBuilder = $this->createQueryBuilder('f')
             ->select('COUNT(f.id)')
             ->where('IDENTITY(f.user) = :userId')
             ->setParameter('userId', $userId);
 
-        return (int) $qb->getQuery()->getSingleScalarResult();
+        return (int) $queryBuilder->getQuery()->getSingleScalarResult();
     }
 
     public function deleteForUser(string $userId, string $id): bool
     {
-        $em = $this->getEntityManager();
+        $entityManager = $this->getEntityManager();
         $file = $this->find($id);
         if (! $file instanceof File) {
             return false;
         }
-        if ((string) $file->getUser()->getId() !== $userId) {
+
+        if ($file->getUser()->getId() !== $userId) {
             return false;
         }
-        $em->remove($file);
-        $em->flush();
+
+        $entityManager->remove($file);
+        $entityManager->flush();
         return true;
+    }
+
+    public function findOneByToken(string $token): ?File
+    {
+        return $this->findOneBy(['token' => $token]);
     }
 }

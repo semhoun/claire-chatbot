@@ -6,6 +6,7 @@ namespace App\Entity;
 
 use App\Repository\FileRepository;
 use Doctrine\ORM\Mapping as ORM;
+use Ramsey\Uuid\Uuid;
 
 #[ORM\Table(name: 'file')]
 #[ORM\Index(name: 'idx_cf_user_id', columns: ['user_id'])]
@@ -38,22 +39,86 @@ class File
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable', nullable: false)]
     private \DateTimeImmutable $createdAt;
 
+    #[ORM\Column(name: 'token', type: 'string', length: 36, unique: true, nullable: false)]
+    private string $token;
+
     #[ORM\PrePersist]
     public function onPrePersist(): void
     {
         $this->createdAt ??= new \DateTimeImmutable('now');
+        // Ensure token is set (UUID v7)
+        if (!isset($this->token) || ($this->token === '' || $this->token === '0')) {
+            $this->token = Uuid::uuid7()->toString();
+        }
     }
 
-    public function getId(): ?string { return $this->id; }
-    public function getUser(): User { return $this->user; }
-    public function setUser(User $user): void { $this->user = $user; }
-    public function getFilename(): string { return $this->filename; }
-    public function setFilename(string $filename): void { $this->filename = $filename; }
-    public function getMimeType(): string { return $this->mimeType; }
-    public function setMimeType(string $mimeType): void { $this->mimeType = $mimeType; }
-    public function getSizeBytes(): string { return $this->sizeBytes; }
-    public function setSizeBytes(string $size): void { $this->sizeBytes = $size; }
-    public function getContent() { return $this->content; }
-    public function setContent($content): void { $this->content = $content; }
-    public function getCreatedAt(): \DateTimeImmutable { return $this->createdAt; }
+    public function getId(): ?string
+    {
+        return $this->id;
+    }
+
+    public function getUser(): User
+    {
+        return $this->user;
+    }
+
+    public function setUser(User $user): void
+    {
+        $this->user = $user;
+    }
+
+    public function getFilename(): string
+    {
+        return $this->filename;
+    }
+
+    public function setFilename(string $filename): void
+    {
+        $this->filename = $filename;
+    }
+
+    public function getMimeType(): string
+    {
+        return $this->mimeType;
+    }
+
+    public function setMimeType(string $mimeType): void
+    {
+        $this->mimeType = $mimeType;
+    }
+
+    public function getSizeBytes(): string
+    {
+        return $this->sizeBytes;
+    }
+
+    public function setSizeBytes(string $size): void
+    {
+        $this->sizeBytes = $size;
+    }
+
+    public function getContent()
+    {
+        return $this->content;
+    }
+
+    public function setContent($content): void
+    {
+        $this->content = $content;
+    }
+
+    public function getCreatedAt(): \DateTimeImmutable
+    {
+        return $this->createdAt;
+    }
+
+    public function getToken(): string
+    {
+        return $this->token;
+    }
+
+    public function setToken(string $token): void
+    {
+        $this->token = $token;
+    }
 }

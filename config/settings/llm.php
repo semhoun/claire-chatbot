@@ -10,6 +10,9 @@ return [
         'modelSummary' => getenv('OPENAPI_MODEL_SUMMARY', true) ?? getenv('OPENAPI_MODEL', true),
         'modelEmbed' => getenv('OPENAPI_MODEL_EMBED', true),
     ],
+    'history' => [
+        'contextWindow' => 500000, //50000
+    ],
     'tools' => [
         'searchXngUrl' => getenv('SEARXNG_URL', true),
     ],

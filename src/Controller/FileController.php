@@ -17,7 +17,7 @@ final readonly class FileController
     public function __construct(
         private Twig $twig,
         private SessionInterface $session,
-        private EntityManagerInterface $em,
+        private EntityManagerInterface $entityManager,
     ) {
     }
 
@@ -28,7 +28,7 @@ final readonly class FileController
             return $response->withStatus(403);
         }
 
-        $files = $this->em->getRepository(File::class)->listByUser($userId);
+        $files = $this->entityManager->getRepository(File::class)->listByUser($userId);
         return $this->twig->render($response, 'partials/files_list.twig', [
             'files' => $files,
         ]);
@@ -44,7 +44,7 @@ final readonly class FileController
             return $response->withStatus(403);
         }
 
-        $count = $this->em->getRepository(File::class)->countByUserId($userId);
+        $count = $this->entityManager->getRepository(File::class)->countByUserId($userId);
         $response->getBody()->write((string) $count);
         return $response;
     }
@@ -64,9 +64,10 @@ final readonly class FileController
 
         $contentStream = $file->getStream();
         $contentStream->rewind();
+
         $data = $contentStream->getContents();
 
-        $user = $this->em->getReference(User::class, $userId);
+        $user = $this->entityManager->getReference(User::class, $userId);
 
         $entity = new File();
         $entity->setUser($user);
@@ -75,8 +76,8 @@ final readonly class FileController
         $entity->setSizeBytes((string) $file->getSize());
         $entity->setContent($data);
 
-        $this->em->persist($entity);
-        $this->em->flush();
+        $this->entityManager->persist($entity);
+        $this->entityManager->flush();
 
         // Return refreshed list
         return $this->list($request, $response);
@@ -88,12 +89,42 @@ final readonly class FileController
         if ($userId === '') {
             return $response->withStatus(403);
         }
+
         $id = (string) $request->getAttribute('id');
-        $repo = $this->em->getRepository(File::class);
+        $repo = $this->entityManager->getRepository(File::class);
         if (! $repo->deleteForUser($userId, $id)) {
             return $response->withStatus(400);
         }
+
         // Return refreshed list (so the badge/count updates via OOB)
         return $this->list($request, $response);
+    }
+
+    /**
+     * Télécharge un fichier via son token public (UUID v7)
+     */
+    public function downloadByToken(Request $request, Response $response): Response
+    {
+        $token = (string) $request->getAttribute('token');
+        if ($token === '') {
+            return $response->withStatus(400);
+        }
+
+        $repo = $this->entityManager->getRepository(File::class);
+        $file = $repo->findOneBy(['token' => $token]);
+        if (! $file instanceof File) {
+            return $response->withStatus(404);
+        }
+
+        $stream = $file->getContent();
+        // Blob may be a resource stream depending on driver; normalize to string
+        $data = is_resource($stream) ? stream_get_contents($stream) : (string) $stream;
+        $response->getBody()->write($data);
+
+        $disposition = sprintf('attachment; filename="%s"', addslashes($file->getFilename()));
+        return $response
+            ->withHeader('Content-Type', $file->getMimeType())
+            ->withHeader('Content-Length', $file->getSizeBytes())
+            ->withHeader('Content-Disposition', $disposition);
     }
 }

@@ -6,7 +6,10 @@ namespace App\Controller;
 
 use App\Agent\Brain;
 use App\Agent\Summary;
+use Doctrine\ORM\EntityManager;
 use Monolog\Logger;
+use NeuronAI\Chat\Enums\SourceType;
+use NeuronAI\Chat\Messages\ContentBlocks\FileContent;
 use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
@@ -26,6 +29,7 @@ final readonly class BrainController
         private Brain $brain,
         private Summary $summary,
         private Logger $logger,
+        private EntityManager $entityManager,
     ) {
     }
 
@@ -42,22 +46,28 @@ final readonly class BrainController
 
         // Read optional attachments coming from the chat form
         $attachments = $this->getAttachments($request);
-        if ($attachments['hasAnything']) {
-            $this->logger->debug('Chat form attachments received', [
-                'file_ids' => $attachments['file_ids'],
-                'uploads_count' => \count($attachments['uploads']),
-            ]);
-        }
 
         $time = new \DateTime()->format('H:i');
 
-        $message = $this->brain->chat(new UserMessage($userMessage));
-        $agentMessage = $message->getContent();
+        $message = new UserMessage($userMessage);
+        foreach ($attachments as $attachment) {
+            $message->addContent(
+                new FileContent(
+                    content: base64_encode((string) $attachment['content']),
+                    sourceType: SourceType::BASE64,
+                    mediaType: $attachment['mime'],
+                    filename: $attachment['filename'],
+                )
+            );
+        }
+
+        $this->brain->chat($message);
+        $agentMessageStr = $message->getContent();
 
         $this->manageSummary();
 
         return $this->twig->render($response, 'partials/message.twig', [
-            'message' => $agentMessage,
+            'message' => $agentMessageStr,
             'time' => $time,
             'sent' => false,
         ]);
@@ -74,13 +84,7 @@ final readonly class BrainController
         }
 
         // Read optional attachments coming from the chat form
-        $attachments = $this->getAttachments($request);
-        if ($attachments['hasAnything']) {
-            $this->logger->debug('Chat form attachments received (stream)', [
-                'file_ids' => $attachments['file_ids'],
-                'uploads_count' => \count($attachments['uploads']),
-            ]);
-        }
+        $this->getAttachments($request);
 
         // SSE headers
         $response = $response
@@ -131,7 +135,7 @@ final readonly class BrainController
             } elseif ($chunk instanceof TextChunk) {
                 $streamedText .= $chunk->content;
             } else {
-                $this->logger->error('Unknown chunk type: ' . get_class($chunk));
+                $this->logger->error('Unknown chunk type: ' . $chunk::class);
                 continue;
             }
 
@@ -182,29 +186,46 @@ final readonly class BrainController
     }
 
     /**
-     * Extracts file references (file_ids[]) and inline uploads (upload_files[])
-     * from the chat form without persisting them. Returns a normalized array:
-     * [ 'file_ids' => string[], 'uploads' => [ [filename, mime, size, content]... ], 'hasAnything' => bool ]
+     * Retrieves a list of attachments from the request, including files referenced by `file_ids`
+     * and uploaded files from the `upload_files` field.
+     *
+     * @param Request $request The incoming HTTP request containing file references and/or uploads.
+     *
+     * @return array An array of attachments, where each attachment includes 'filename', 'mime', and 'content' (base64 encoded).
      */
     private function getAttachments(Request $request): array
     {
         $body = (array) ($request->getParsedBody() ?? []);
-        $fileIds = array_map('strval', (array) ($body['file_ids'] ?? []));
+        $files = [];
 
-        $uploads = [];
+        $fileIds = array_map(strval(...), (array) ($body['file_ids'] ?? []));
+        foreach ($fileIds as &$fileId) {
+            $file = $this->entityManager->find(\App\Entity\File::class, $fileId);
+            if ($file !== null) {
+                $files[] = [
+                    'filename' => $file->getFilename(),
+                    'mime' => $file->getMimeType(),
+                    'content' => base64_encode(stream_get_contents($file->getContent())),
+                ];
+            }
+        }
+
         $uploadedFiles = (array) ($request->getUploadedFiles()['upload_files'] ?? []);
-        foreach ($uploadedFiles as $uf) {
+        foreach ($uploadedFiles as $uploadedFile) {
             try {
-                if (!method_exists($uf, 'getError') || $uf->getError() !== UPLOAD_ERR_OK) {
+                if (! method_exists($uploadedFile, 'getError')) {
                     continue;
                 }
-                $stream = $uf->getStream();
+                if ($uploadedFile->getError() !== UPLOAD_ERR_OK) {
+                    continue;
+                }
+
+                $stream = $uploadedFile->getStream();
                 $stream->rewind();
-                $uploads[] = [
-                    'filename' => $uf->getClientFilename() ?? 'fichier',
-                    'mime' => $uf->getClientMediaType() ?? 'application/octet-stream',
-                    'size' => (int) $uf->getSize(),
-                    'content' => $stream->getContents(),
+                $files[] = [
+                    'filename' => $uploadedFile->getClientFilename() ?? 'fichier',
+                    'mime' => $uploadedFile->getClientMediaType() ?? 'application/octet-stream',
+                    'content' => base64_encode((string) $stream->getContents()),
                 ];
             } catch (\Throwable $e) {
                 // best-effort; ignore faulty upload and continue
@@ -212,10 +233,6 @@ final readonly class BrainController
             }
         }
 
-        return [
-            'file_ids' => $fileIds,
-            'uploads' => $uploads,
-            'hasAnything' => !empty($fileIds) || !empty($uploads),
-        ];
+        return $files;
     }
 }

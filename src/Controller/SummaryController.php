@@ -35,9 +35,9 @@ final readonly class SummaryController
         }
 
         // Vérifier que l'historique appartient bien à l'utilisateur
-        $repo = $this->entityManager->getRepository(ChatHistoryEntity::class);
+        $entityRepository = $this->entityManager->getRepository(ChatHistoryEntity::class);
         /** @var ChatHistoryEntity|null $history */
-        $history = $repo->createQueryBuilder('h')
+        $history = $entityRepository->createQueryBuilder('h')
             ->leftJoin('h.user', 'u')
             ->where('u.id = :userId AND h.threadId = :threadId')
             ->setParameter('userId', $userId)
