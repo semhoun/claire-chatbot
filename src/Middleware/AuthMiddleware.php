@@ -31,6 +31,7 @@ final readonly class AuthMiddleware implements MiddlewareInterface
         '/css',
         '/js',
         '/image',
+        '/files/by-token/',
     ];
 
     public function __construct(

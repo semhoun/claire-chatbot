@@ -8,9 +8,9 @@
     <div class="history-item__content">
         <div class="history-item__title">{{ file.filename }}</div>
         <div class="history-item__meta">
-            {{ file.mimeType }} • {{ file.sizeBytes }} o
+            {{ file.mimeType }} • {{ file.sizeBytes |filesize(2) }}
             {% if file.createdAt is defined %}
-                • Ajouté le {{ file.createdAt|date('d/m/Y \\à H:i') }}
+                • Ajouté le {{ file.createdAt|date('d/m/Y') }}
             {% endif %}
         </div>
     </div>

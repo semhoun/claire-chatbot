@@ -6,10 +6,10 @@ namespace App\Controller;
 
 use App\Agent\Brain;
 use App\Agent\Summary;
+use App\Services\Settings;
 use Doctrine\ORM\EntityManager;
 use Monolog\Logger;
-use NeuronAI\Chat\Enums\SourceType;
-use NeuronAI\Chat\Messages\ContentBlocks\FileContent;
+use NeuronAI\Chat\Messages\ContentBlocks\TextContent;
 use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
@@ -30,45 +30,37 @@ final readonly class BrainController
         private Summary $summary,
         private Logger $logger,
         private EntityManager $entityManager,
+        private Settings $settings,
     ) {
     }
 
     /**
-     * Handle chat request
+     * Processes a chat request, generates a response from the agent, and renders the chat message output.
+     *
+     * @param Request $request The HTTP request containing the user message and optional attachment data.
+     * @param Response $response The HTTP response object to which the output will be appended.
+     *
+     * @return Response The updated response object containing the rendered chat message.
      */
     public function chat(Request $request, Response $response): Response
     {
-        $userMessage = $this->getUserMessage($request);
-        if ($userMessage === '') {
+        $userStr = $this->getUserMessage($request);
+        if ($userStr === '') {
             // Return a 422 with no body so client can handle error; minimal for now
             return $response->withStatus(422);
         }
 
-        // Read optional attachments coming from the chat form
-        $attachments = $this->getAttachments($request);
+        $userMessage = new UserMessage($userStr);
+        $userMessage = $this->addAttachments($request, $userMessage);
 
-        $time = new \DateTime()->format('H:i');
-
-        $message = new UserMessage($userMessage);
-        foreach ($attachments as $attachment) {
-            $message->addContent(
-                new FileContent(
-                    content: base64_encode((string) $attachment['content']),
-                    sourceType: SourceType::BASE64,
-                    mediaType: $attachment['mime'],
-                    filename: $attachment['filename'],
-                )
-            );
-        }
-
-        $this->brain->chat($message);
-        $agentMessageStr = $message->getContent();
+        $agentMessage = $this->brain->chat($userMessage);
+        $agentMessageStr = $agentMessage->getContent();
 
         $this->manageSummary();
 
         return $this->twig->render($response, 'partials/message.twig', [
             'message' => $agentMessageStr,
-            'time' => $time,
+            'time' => new \DateTime()->format('H:i'),
             'sent' => false,
         ]);
     }
@@ -78,13 +70,14 @@ final readonly class BrainController
      */
     public function stream(Request $request, Response $response): Response
     {
-        $userMessage = $this->getUserMessage($request);
-        if ($userMessage === '') {
+        $userStr = $this->getUserMessage($request);
+        if ($userStr === '') {
+            // Return a 422 with no body so client can handle error; minimal for now
             return $response->withStatus(422);
         }
 
-        // Read optional attachments coming from the chat form
-        $this->getAttachments($request);
+        $userMessage = new UserMessage($userStr);
+        $userMessage = $this->addAttachments($request, $userMessage);
 
         // SSE headers
         $response = $response
@@ -94,7 +87,7 @@ final readonly class BrainController
 
         $body = $response->getBody();
 
-        $stream = $this->brain->stream(new UserMessage($userMessage));
+        $stream = $this->brain->stream($userMessage);
 
         $streamId = null;
         $toolCallId = null;
@@ -143,7 +136,7 @@ final readonly class BrainController
                 $streamId = uniqid('stream-', true);
                 $html = $this->twig->fetch('partials/message.twig', [
                     'message' => $streamedText,
-                    'time' => date('H:i'),
+                    'time' => new \DateTime()->format('H:i'),
                     'sent' => false,
                     'streamId' => $streamId,
                     'toolCallId' => $toolCallId,
@@ -186,31 +179,37 @@ final readonly class BrainController
     }
 
     /**
-     * Retrieves a list of attachments from the request, including files referenced by `file_ids`
-     * and uploaded files from the `upload_files` field.
+     * Adds attachments to the provided UserMessage based on file IDs and uploaded files from the request.
      *
-     * @param Request $request The incoming HTTP request containing file references and/or uploads.
+     * This method processes file IDs and uploaded files passed via the request, generates
+     * the required content based on these inputs, and appends the generated content
+     * to the given UserMessage. Files are handled with best-effort, allowing the
+     * process to continue even if an error occurs while reading files.
      *
-     * @return array An array of attachments, where each attachment includes 'filename', 'mime', and 'content' (base64 encoded).
+     * @param Request $request The request containing file IDs and/or uploaded files.
+     * @param UserMessage $userMessage The message to which the attachments will be added.
+     *
+     * @return UserMessage The updated UserMessage containing the added attachments.
      */
-    private function getAttachments(Request $request): array
+    private function addAttachments(Request $request, UserMessage $userMessage): UserMessage
     {
         $body = (array) ($request->getParsedBody() ?? []);
-        $files = [];
-
         $fileIds = array_map(strval(...), (array) ($body['file_ids'] ?? []));
-        foreach ($fileIds as &$fileId) {
-            $file = $this->entityManager->find(\App\Entity\File::class, $fileId);
-            if ($file !== null) {
-                $files[] = [
-                    'filename' => $file->getFilename(),
-                    'mime' => $file->getMimeType(),
-                    'content' => base64_encode(stream_get_contents($file->getContent())),
-                ];
-            }
+        $uploadedFiles = (array) ($request->getUploadedFiles()['upload_files'] ?? []);
+
+        if ($fileIds === [] && $uploadedFiles === []) {
+            return $userMessage;
         }
 
-        $uploadedFiles = (array) ($request->getUploadedFiles()['upload_files'] ?? []);
+        $text = "<!-- SYSTEM CONTEXT (NOT PART OF USER QUERY) -->\n"
+            . "<context.instruction>following part contains context information injected by the system. Please follow these instructions:\n\n"
+            . "1. Always prioritize handling user-visible content.\n"
+            . "2. the context is only required when user's queries rely on it.\n"
+            . "</context.instruction>\n"
+            . "<files_info>\n"
+            . "<files>\n"
+            . "<files_docstring>here are user upload files you can refer to</files_docstring>\n";
+
         foreach ($uploadedFiles as $uploadedFile) {
             try {
                 if (! method_exists($uploadedFile, 'getError')) {
@@ -222,17 +221,54 @@ final readonly class BrainController
 
                 $stream = $uploadedFile->getStream();
                 $stream->rewind();
-                $files[] = [
-                    'filename' => $uploadedFile->getClientFilename() ?? 'fichier',
-                    'mime' => $uploadedFile->getClientMediaType() ?? 'application/octet-stream',
-                    'content' => base64_encode((string) $stream->getContents()),
-                ];
+                $text .= '<file'
+                    . ' name="' . ($uploadedFile->getClientFilename() ?? 'fichier') . '"'
+                    . ' type="' . ($uploadedFile->getClientMediaType() ?? 'application/octet-stream') . '"'
+                    . ' size="' . $uploadedFile->getSize() . '"'
+                    . '>';
+                if (in_array($uploadedFile->getClientMediaType(), $this->settings->get('files.rawMimeTypes'), true)) {
+                    $text .= $stream->getContents();
+                } else {
+                    $text .= base64_encode((string) $stream->getContents());
+                }
+
+                $text .= '</file>' . "\n";
             } catch (\Throwable $e) {
                 // best-effort; ignore faulty upload and continue
                 $this->logger->warning('Failed to read inline upload', ['error' => $e->getMessage()]);
             }
         }
 
-        return $files;
+        foreach ($fileIds as &$fileId) {
+            // choose action by mimetype
+            $file = $this->entityManager->find(\App\Entity\File::class, $fileId);
+            if ($file === null) {
+                continue;
+            }
+
+            $text .= '<file'
+                . ' id="' . $fileId . '"'
+                . ' name="' . $file->getFilename() . '"'
+                . ' type="' . $file->getMimeType() . '"'
+                . ' size="' . $file->getSizeBytes() . '"'
+                . ' url="' . $request->getAttribute('base_url') . '/files/by-token/' . $file->getToken() . '"'
+                . ' user_id="' . $file->getUser()->getId() . '"'
+                . '>';
+            if (in_array($file->getMimeType(), $this->settings->get('file.rawMimeTypes'), true)) {
+                $text .= $file->getContentAsString();
+            } else {
+                $text .= base64_encode((string) $file->getContentAsString());
+            }
+
+            $text .= '</file>' . "\n";
+        }
+
+        $text .= "</files>\n"
+            . "</files_info>\n"
+            . '<!-- END SYSTEM CONTEXT -->';
+
+        $userMessage->addContent(new TextContent($text));
+
+        return $userMessage;
     }
 }

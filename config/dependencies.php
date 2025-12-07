@@ -16,6 +16,7 @@ use Monolog\Logger;
 use Odan\Session\PhpSession;
 use Odan\Session\SessionInterface;
 use Odan\Session\SessionManagerInterface;
+use OneToMany\Twig\FilesizeExtension;
 use Slim\Views\Twig;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
@@ -87,6 +88,7 @@ return [
         }
 
         $twig->addExtension(new MarkdownExtension());
+        $twig->addExtension(new FilesizeExtension());
         $twig->addRuntimeLoader(new class() implements \Twig\RuntimeLoader\RuntimeLoaderInterface {
             public function load($class): ?MarkdownRuntime
             {

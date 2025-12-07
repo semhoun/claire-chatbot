@@ -47,7 +47,7 @@ class File
     {
         $this->createdAt ??= new \DateTimeImmutable('now');
         // Ensure token is set (UUID v7)
-        if (!isset($this->token) || ($this->token === '' || $this->token === '0')) {
+        if (! isset($this->token) || ($this->token === '' || $this->token === '0')) {
             $this->token = Uuid::uuid7()->toString();
         }
     }
@@ -100,6 +100,11 @@ class File
     public function getContent()
     {
         return $this->content;
+    }
+
+    public function getContentAsString(): string
+    {
+        return stream_get_contents($this->content);
     }
 
     public function setContent($content): void

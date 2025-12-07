@@ -15,7 +15,7 @@
                 id="fileUploadInput"
                 type="file"
                 name="file"
-                accept="{{ settings.get('file.upload.accept_ext') }}"
+                accept="{{ settings.get('file.upload.acceptedExt') }}"
                 required
                 onchange="(function(inp){var f=inp.files&&inp.files[0]?inp.files[0].name:'Aucun fichier';var form=inp.closest('form');if(!form) return;var nameEl=form.querySelector('.file-upload__name');if(nameEl){nameEl.textContent=f;nameEl.title=f;}var submit=form.querySelector('button[type=submit]');if(submit){submit.disabled=!(inp.files&&inp.files.length);} })(this)"
             >

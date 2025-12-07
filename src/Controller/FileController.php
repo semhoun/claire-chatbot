@@ -91,8 +91,8 @@ final readonly class FileController
         }
 
         $id = (string) $request->getAttribute('id');
-        $repo = $this->entityManager->getRepository(File::class);
-        if (! $repo->deleteForUser($userId, $id)) {
+        $entityRepository = $this->entityManager->getRepository(File::class);
+        if (! $entityRepository->deleteForUser($userId, $id)) {
             return $response->withStatus(400);
         }
 
@@ -110,8 +110,8 @@ final readonly class FileController
             return $response->withStatus(400);
         }
 
-        $repo = $this->entityManager->getRepository(File::class);
-        $file = $repo->findOneBy(['token' => $token]);
+        $entityRepository = $this->entityManager->getRepository(File::class);
+        $file = $entityRepository->findOneBy(['token' => $token]);
         if (! $file instanceof File) {
             return $response->withStatus(404);
         }

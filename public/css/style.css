@@ -488,6 +488,12 @@ body.compact .chat-input {
     fill: currentColor;
 }
 
+chat-icon-btn--upload {
+    background: linear-gradient(135deg, rgba(255, 240, 254, 0.96), rgba(255, 176, 240, 0.92));
+    color: #2b0052;
+    box-shadow: 0 16px 30px rgba(26, 0, 41, 0.4);
+}
+
 .chat-input__file {
     position: absolute;
     width: 1px;

@@ -92,10 +92,16 @@
                   hx-swap="beforeend"
                   hx-indicator="#typingIndicator"
                   hx-encoding="multipart/form-data"
-                  hx-on::after-request="if(event.detail.successful) this.reset()"
+                  hx-on::after-request="clearInput(event)"
                   data-mode="chat"
                   style="display: {{ (chat_mode|default('chat')) == 'chat' ? 'flex' : 'none' }}"
             >
+                <label class="chat-icon-btn chat-icon-btn--upload" for="chat-upload" aria-label="Joindre un fichier">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
+                    </svg>
+                </label>
+                <input class="chat-input__file" type="file" id="chat-upload" name="upload_files[]" multiple accept="{{ settings.get('file.upload.acceptedExt') }}">
                 {# Container for attached file chips (chat mode) #}
                 <span id="chatAttachedFilesChat" class="chat-attached"></span>
                 {# Hidden inputs for selected file IDs (from Files list) #}
@@ -118,10 +124,16 @@
                   hx-indicator="#typingIndicator"
                   hx-ext="stream"
                   hx-encoding="multipart/form-data"
-                  hx-on::after-request="if(event.detail.successful) this.reset()"
+                  hx-on::after-request="clearInput(event);"
                   data-mode="stream"
                   style="display: {{ (chat_mode|default('chat')) == 'stream' ? 'flex' : 'none' }}"
             >
+                <label class="chat-icon-btn chat-icon-btn--upload" for="chat-upload-stream" aria-label="Joindre un fichier">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
+                    </svg>
+                </label>
+                <input class="chat-input__file" type="file" id="chat-upload-stream" name="upload_files[]" multiple accept="{{ settings.get('file.upload.acceptedExt') }}">
                 {# Container for attached file chips (stream mode) #}
                 <span id="chatAttachedFilesStream" class="chat-attached"></span>
                 {# Hidden inputs for selected file IDs (from Files list) #}
@@ -189,6 +201,15 @@
 
     // Gestion locale des pièces jointes: chips avec suppression + synchronisation du formulaire
     (function () {
+        window.clearInput =  function clearInput(event) {
+            if(!event.detail.successful) {
+                return;
+            }
+            event.target.reset();
+            let elements = document.querySelectorAll('.chat-chip__remove');
+            elements.forEach(element => {removeChatChip(element);})
+        }
+
         function $(sel, root=document) { return root.querySelector(sel); }
         function chipSelectorById(id) { return '.chat-chip[data-file-id="' + CSS.escape(String(id)) + '"]'; }
 
@@ -305,9 +326,8 @@
             });
         }
 
-        // Remove chip (either id-based or local upload)
-        document.addEventListener('click', function (e) {
-            const rem = e.target && e.target.closest ? e.target.closest('.chat-chip__remove') : null;
+        function removeChatChip(e) {
+            const rem = e && e.closest ? e.closest('.chat-chip__remove') : null;
             if (!rem) return;
             const chip = rem.closest('.chat-chip');
             if (!chip) return;
@@ -335,6 +355,11 @@
                         .forEach(node => node.remove());
                 }
             }
+        }
+
+        // Remove chip (either id-based or local upload)
+        document.addEventListener('click', function (e) {
+            removeChatChip(e.target);
         });
     })();
 
