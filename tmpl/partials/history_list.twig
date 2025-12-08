@@ -1,39 +1,45 @@
-<div class="history-list">
+<div class="option-list">
     {% if histories is empty %}
-        <div class="history-list__empty">
-            <svg class="history-list__empty-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <div class="option-list__empty">
+            <svg class="option-list__empty-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M4 5h16v14H4z" fill="none" stroke="currentColor" stroke-width="1.5"/>
                 <path d="M7 9h10M7 12h7M7 15h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <div class="history-list__empty-text">Aucune conversation pour le moment</div>
-            <div class="history-list__empty-help">Envoyez un message pour créer une nouvelle conversation.</div>
+            <div class="option-list__empty-text">Aucune conversation pour le moment</div>
+            <div class="option-list__empty-help">Envoyez un message pour créer une nouvelle conversation.</div>
         </div>
     {% else %}
-        <ul class="history-list__items">
+        <ul class="option-list__items">
             {% for h in histories %}
-                <li class="history-item"
-                    role="button"
-                    tabindex="0"
-                    hx-get="{{ base_url }}/history/open/{{ h.threadId }}"
-                    hx-target="#messages"
-                    hx-swap="innerHTML"
-                    hx-on:click="(function(){var b=document.getElementById('historyTooltipBanner');if(b){b.classList.remove('is-visible');b.setAttribute('aria-hidden','true');}})()"
-                    hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
-                    hx-on::after-request="if (event.detail.successful) { const btn = document.getElementById('historyToggle'); const panel = document.getElementById('historyList'); if (btn) btn.setAttribute('aria-expanded','false'); if (panel) panel.innerHTML=''; const chatBody = document.querySelector('.chat-body'); if (chatBody) chatBody.scrollTop = chatBody.scrollHeight; /* Fermer le panneau d'options si ouvert */ const optionsPanelEl = document.getElementById('optionsPanel'); const optionsBackdropEl = document.getElementById('optionsBackdrop'); const optionsToggleEl = document.querySelector('.options-toggle'); if (optionsPanelEl) optionsPanelEl.classList.remove('is-open'); if (optionsBackdropEl) optionsBackdropEl.classList.remove('is-visible'); if (optionsToggleEl) { optionsToggleEl.classList.remove('is-active'); optionsToggleEl.setAttribute('aria-expanded','false'); } /* Cacher le bandeau tooltip */ const banner = document.getElementById('historyTooltipBanner'); if (banner) { banner.classList.remove('is-visible'); banner.setAttribute('aria-hidden','true'); } }"
-                >
-                    <div class="history-item__icon" aria-hidden="true">
+                <li class="option-item history-item">
+                    <div class="option-item__icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24">
                             <path d="M4 5h16v12H7l-3 3V5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
                         </svg>
                     </div>
-                    <div class="history-item__content"{% if h.summary is defined and h.summary %} data-tooltip="{{ h.summary }}"{% endif %}>
-                        <div class="history-item__title"{% if h.summary is defined and h.summary %} aria-label="{{ h.summary }}"{% endif %}>{{ h.title ?: 'Conversation' }}</div>
+                    <div class="option-item__content history-item__content"{% if h.summary is defined and h.summary %} data-tooltip="{{ h.summary }}"{% endif %}>
+                        <div class="option-item__title"{% if h.summary is defined and h.summary %} aria-label="{{ h.summary }}"{% endif %}>{{ h.title ?: 'Conversation' }}</div>
                         {% if h.updatedAt is defined %}
-                            <div class="history-item__meta">Modifiée le {{ h.updatedAt|date('d/m/Y \à H:i') }}</div>
+                            <div class="option-item__meta">Modifiée le {{ h.updatedAt|date('d/m/Y \à H:i') }}</div>
                         {% endif %}
                     </div>
-                    <div class="history-item__actions">
-                        <button class="history-item__delete"
+                    <div class="option-item__actions">
+                        <button class="option-item__button"
+                                type="button"
+                                aria-label="Afficher la conversation"
+                                title="Afficher la conversation"
+                                hx-get="{{ base_url }}/history/open/{{ h.threadId }}"
+                                hx-target="#messages"
+                                hx-swap="innerHTML"
+                                hx-on:click="(function(){var b=document.getElementById('historyTooltipBanner');if(b){b.classList.remove('is-visible');b.setAttribute('aria-hidden','true');}})()"
+                                hx-on::after-request="if (event.detail.successful) { const btn = document.getElementById('historyToggle'); const panel = document.getElementById('historyList'); if (btn) btn.setAttribute('aria-expanded','false'); if (panel) panel.innerHTML=''; const chatBody = document.querySelector('.chat-body'); if (chatBody) chatBody.scrollTop = chatBody.scrollHeight; /* Fermer le panneau d'options si ouvert */ const optionsPanelEl = document.getElementById('optionsPanel'); const optionsBackdropEl = document.getElementById('optionsBackdrop'); const optionsToggleEl = document.querySelector('.options-toggle'); if (optionsPanelEl) optionsPanelEl.classList.remove('is-open'); if (optionsBackdropEl) optionsBackdropEl.classList.remove('is-visible'); if (optionsToggleEl) { optionsToggleEl.classList.remove('is-active'); optionsToggleEl.setAttribute('aria-expanded','false'); } /* Cacher le bandeau tooltip */ const banner = document.getElementById('historyTooltipBanner'); if (banner) { banner.classList.remove('is-visible'); banner.setAttribute('aria-hidden','true'); } }"
+                        >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 8c-5 0-11 6-11 6s6 6 11 6 11-6 11-6-6-6-11-6zm0 10c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                                <circle cx="12" cy="14" r="2" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                        <button class="option-item__button history-item__delete"
                                 type="button"
                                 aria-label="Supprimer cette conversation"
                                 title="Supprimer"
@@ -57,5 +63,4 @@
             {% endfor %}
         </ul>
     {% endif %}
-    
 </div>

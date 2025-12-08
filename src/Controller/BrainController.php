@@ -44,7 +44,15 @@ final readonly class BrainController
      */
     public function chat(Request $request, Response $response): Response
     {
-        $userStr = $this->getUserMessage($request);
+        if ($request->getMethod() === 'POST') {
+            $data = (array) ($request->getParsedBody() ?? []);
+            $userStr = trim((string) ($data['message'] ?? ''));
+            $chatMode = (string) ($data['mode'] ?? 'chat');
+        } else {
+            $userStr = trim((string) ($request->getQueryParams()['message'] ?? ''));
+            $chatMode = (string) ($request->getQueryParams()['mode'] ?? 'chat');
+        }
+
         if ($userStr === '') {
             // Return a 422 with no body so client can handle error; minimal for now
             return $response->withStatus(422);
@@ -53,129 +61,109 @@ final readonly class BrainController
         $userMessage = new UserMessage($userStr);
         $userMessage = $this->addAttachments($request, $userMessage);
 
-        $agentMessage = $this->brain->chat($userMessage);
-        $agentMessageStr = $agentMessage->getContent();
+        if ($chatMode === 'chat') {
+            $agentMessage = $this->brain->chat($userMessage);
+            $agentMessageStr = $agentMessage->getContent();
 
-        $this->manageSummary();
+            $this->manageSummary();
 
-        return $this->twig->render($response, 'partials/message.twig', [
-            'message' => $agentMessageStr,
-            'time' => new \DateTime()->format('H:i'),
-            'sent' => false,
-        ]);
-    }
+            $response = $this->twig->render($response, 'partials/message.twig', [
+                'message' => $agentMessageStr,
+                'time' => new \DateTime()->format('H:i'),
+                'sent' => false,
+            ]);
+        } else {
+            // SSE headers
+            $response = $response
+                ->withBody(new NonBufferedBody())
+                ->withHeader('content-type', 'text/stream')
+                ->withHeader('cache-control', 'no-cache');
 
-    /**
-     * Streaming SSE endpoint using Slim\Http\StreamingBody and NeuronAI Agent::stream
-     */
-    public function stream(Request $request, Response $response): Response
-    {
-        $userStr = $this->getUserMessage($request);
-        if ($userStr === '') {
-            // Return a 422 with no body so client can handle error; minimal for now
-            return $response->withStatus(422);
-        }
+            $body = $response->getBody();
 
-        $userMessage = new UserMessage($userStr);
-        $userMessage = $this->addAttachments($request, $userMessage);
+            $stream = $this->brain->stream($userMessage);
 
-        // SSE headers
-        $response = $response
-            ->withBody(new NonBufferedBody())
-            ->withHeader('content-type', 'text/stream')
-            ->withHeader('cache-control', 'no-cache');
+            $streamId = null;
+            $toolCallId = null;
 
-        $body = $response->getBody();
+            $streamedText = '';
+            $toolText = null;
 
-        $stream = $this->brain->stream($userMessage);
-
-        $streamId = null;
-        $toolCallId = null;
-
-        $streamedText = '';
-        $toolText = null;
-
-        // Iterate chunks
-        foreach ($stream as $chunk) {
-            if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
-                $toolText = '';
-                if ($toolCallId === null) {
-                    $toolCallId = uniqid('tool-', true);
-                }
-
-                if ($chunk instanceof ToolResultChunk) {
-                    $toolText = '<span class="tools-done-flag" style="display:none"></span>' . "\n";
-                }
-
-                foreach ($chunk->tools as $tool) {
-                    $toolText .= "Utilisation de l'outil : " . $tool->getName() . "<br>\n";
-                    $toolText .= "Paramètres : <br>\n";
-                    $toolText .= "<ul>\n";
-                    foreach ($tool->getInputs() as $name => $value) {
-                        $toolText .= '<li>' . $name . ' : ' . $value . "</li>\n";
+            // Iterate chunks
+            foreach ($stream as $chunk) {
+                if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
+                    $toolText = '';
+                    if ($toolCallId === null) {
+                        $toolCallId = uniqid('tool-', true);
                     }
 
-                    $toolText .= "</ul>\n";
                     if ($chunk instanceof ToolResultChunk) {
-                        $toolText .= "Réponse : <br>\n";
-                        if ($tool->getResult()) {
-                            $toolText .= '<pre class="toolcall__result">' . $tool->getResult() . "</pre>\n";
+                        $toolText = '<span class="tools-done-flag" style="display:none"></span>' . "\n";
+                    }
+
+                    foreach ($chunk->tools as $tool) {
+                        $toolText .= "Utilisation de l'outil : " . $tool->getName() . "<br>\n";
+                        $toolText .= "Paramètres : <br>\n";
+                        $toolText .= "<ul>\n";
+                        foreach ($tool->getInputs() as $name => $value) {
+                            $toolText .= '<li>' . $name . ' : ' . $value . "</li>\n";
+                        }
+
+                        $toolText .= "</ul>\n";
+                        if ($chunk instanceof ToolResultChunk) {
+                            $toolText .= "Réponse : <br>\n";
+                            if ($tool->getResult()) {
+                                $toolText .= '<pre class="toolcall__result">' . $tool->getResult() . "</pre>\n";
+                            }
                         }
                     }
+                } elseif ($chunk instanceof ReasoningChunk) {
+                    $streamedText .= $chunk->content;
+                } elseif ($chunk instanceof TextChunk) {
+                    $streamedText .= $chunk->content;
+                } elseif ($chunk === null) {
+                    $this->logger->error('Empty chunk');
+                    continue;
+                } else {
+                    $this->logger->error('Unknown chunk type: ' . $chunk::class);
+                    continue;
                 }
-            } elseif ($chunk instanceof ReasoningChunk) {
-                $streamedText .= $chunk->content;
-            } elseif ($chunk instanceof TextChunk) {
-                $streamedText .= $chunk->content;
-            } else {
-                $this->logger->error('Unknown chunk type: ' . $chunk::class);
-                continue;
-            }
 
-            if ($streamId === null) {
-                $streamId = uniqid('stream-', true);
-                $html = $this->twig->fetch('partials/message.twig', [
-                    'message' => $streamedText,
-                    'time' => new \DateTime()->format('H:i'),
-                    'sent' => false,
-                    'streamId' => $streamId,
-                    'toolCallId' => $toolCallId,
-                    'toolCall' => $toolText,
-                ]);
-                $body->write($html);
-                $body->write(self::STREAM_STOP);
+                if ($streamId === null) {
+                    $streamId = uniqid('stream-', true);
+                    $html = $this->twig->fetch('partials/message.twig', [
+                        'message' => $streamedText,
+                        'time' => new \DateTime()->format('H:i'),
+                        'sent' => false,
+                        'streamId' => $streamId,
+                        'toolCallId' => $toolCallId,
+                        'toolCall' => $toolText,
+                    ]);
+                    $body->write($html);
+                    $body->write(self::STREAM_STOP);
 
-                continue;
-            }
+                    continue;
+                }
 
-            $html = $this->twig->fetch('partials/md.twig', [ 'message' => $streamedText ]);
-            $body->write('streamId:' . $streamId . "\n" . $html . self::STREAM_STOP);
-            if ($toolCallId !== null && $toolText !== null) {
-                $body->write('streamId:' . $toolCallId . "\n" . $toolText . self::STREAM_STOP);
-                $toolCallId = null;
+                $html = $this->twig->fetch('partials/md.twig', ['message' => $streamedText]);
+                $body->write('streamId:' . $streamId . "\n" . $html . self::STREAM_STOP);
+                if ($toolCallId !== null && $toolText !== null) {
+                    $body->write('streamId:' . $toolCallId . "\n" . $toolText . self::STREAM_STOP);
+                    $toolCallId = null;
+                }
             }
         }
 
         $this->manageSummary();
-
         return $response;
     }
 
     private function manageSummary(): void
     {
         $messages = $this->brain->getChatHistory()->getMessages();
+        // TODO ne pas générer le summary si le message est vide, et pas à chaque message
         $this->logger->debug('Manage summary', $messages);
         $this->summary->generateAndPersist();
-    }
-
-    private function getUserMessage(Request $request): string
-    {
-        if ($request->getMethod() === 'POST') {
-            $data = (array) ($request->getParsedBody() ?? []);
-            return trim((string) ($data['message'] ?? ''));
-        }
-
-        return trim((string) ($request->getQueryParams()['message'] ?? []));
     }
 
     /**
@@ -215,6 +203,7 @@ final readonly class BrainController
                 if (! method_exists($uploadedFile, 'getError')) {
                     continue;
                 }
+
                 if ($uploadedFile->getError() !== UPLOAD_ERR_OK) {
                     continue;
                 }

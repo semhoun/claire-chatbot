@@ -88,57 +88,26 @@
         <footer class="chat-input">
             <form class="chat-input__form" id="brain_chat"
                   hx-post="{{ base_url }}/brain/chat"
+                  hx-ext="stream"
                   hx-target="#messages"
                   hx-swap="beforeend"
                   hx-indicator="#typingIndicator"
                   hx-encoding="multipart/form-data"
                   hx-on::after-request="clearInput(event)"
-                  data-mode="chat"
-                  style="display: {{ (chat_mode|default('chat')) == 'chat' ? 'flex' : 'none' }}"
+                  data-mode="{{ chat_mode|default('chat') }}"
             >
                 <label class="chat-icon-btn chat-icon-btn--upload" for="chat-upload" aria-label="Joindre un fichier">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
                     </svg>
                 </label>
-                <input class="chat-input__file" type="file" id="chat-upload" name="upload_files[]" multiple accept="{{ settings.get('file.upload.acceptedExt') }}">
+                <input type="hidden" name="mode" id="chat-input_mode" value="{{ chat_mode|default('chat') }}" />
+                <input class="chat-input__file" type="file" id="chat-upload" name="upload_files[]" multiple accept="{{ settings.get('file.upload.acceptedExt') }}" />
                 {# Container for attached file chips (chat mode) #}
                 <span id="chatAttachedFilesChat" class="chat-attached"></span>
                 {# Hidden inputs for selected file IDs (from Files list) #}
                 <span id="chatAttachedFilesChatHidden" hidden></span>
-                <input class="chat-input__field" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required>
-                <div class="chat-input__actions">
-                    <button class="chat-icon-btn" type="submit" aria-label="Envoyer">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M3.4 20.6L4.8 14.2 16.2 12 4.8 9.8 3.4 3.4 22 12 3.4 20.6Z"/>
-                        </svg>
-                    </button>
-                </div>
-            </form>
-
-            <form class="chat-input__form" id="brain_stream"
-                  hx-post="{{ base_url }}/brain/stream"
-                  hx-trigger="submit"
-                  hx-target="#messages"
-                  hx-swap="beforeend"
-                  hx-indicator="#typingIndicator"
-                  hx-ext="stream"
-                  hx-encoding="multipart/form-data"
-                  hx-on::after-request="clearInput(event);"
-                  data-mode="stream"
-                  style="display: {{ (chat_mode|default('chat')) == 'stream' ? 'flex' : 'none' }}"
-            >
-                <label class="chat-icon-btn chat-icon-btn--upload" for="chat-upload-stream" aria-label="Joindre un fichier">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
-                    </svg>
-                </label>
-                <input class="chat-input__file" type="file" id="chat-upload-stream" name="upload_files[]" multiple accept="{{ settings.get('file.upload.acceptedExt') }}">
-                {# Container for attached file chips (stream mode) #}
-                <span id="chatAttachedFilesStream" class="chat-attached"></span>
-                {# Hidden inputs for selected file IDs (from Files list) #}
-                <span id="chatAttachedFilesStreamHidden" hidden></span>
-                <input class="chat-input__field" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required>
+                <input class="chat-input__field" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required />
                 <div class="chat-input__actions">
                     <button class="chat-icon-btn" type="submit" aria-label="Envoyer">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -186,16 +155,13 @@
 
     // Bascule du mode chat/stream selon l'option (événement global)
     (function () {
-        const chatForm = document.getElementById('brain_chat');
-        const streamForm = document.getElementById('brain_stream');
-        function setMode(mode) {
-            if (!chatForm || !streamForm) return;
-            const isStream = mode === 'stream';
-            chatForm.style.display = isStream ? 'none' : 'flex';
-            streamForm.style.display = isStream ? 'flex' : 'none';
-        }
         window.addEventListener('chat-mode-changed', function (e) {
-            setMode(e.detail && e.detail.mode ? e.detail.mode : 'chat');
+            const mode = e.detail && e.detail.mode ? e.detail.mode : 'chat';
+            const chatForm = document.getElementById('brain_chat');
+            const inputMode = document.getElementById('chat-input_mode');
+            if (!chatForm && !inputMode) return;
+            chatForm.setAttribute('data-mode', mode);
+            inputMode.setAttribute('value', mode);
         });
     })();
 

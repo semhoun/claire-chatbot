@@ -687,13 +687,13 @@ chat-icon-btn--upload {
     padding: 0;
 }
 
-.history-list {
+.option-list {
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
-.history-list__items {
+.option-list__items {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -702,7 +702,7 @@ chat-icon-btn--upload {
     gap: 8px;
 }
 
-.history-item {
+.option-item {
     display: flex;
     align-items: flex-start;
     gap: 12px;
@@ -713,18 +713,18 @@ chat-icon-btn--upload {
     transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
-.history-item:hover {
+.option-item:hover {
     background: rgba(255, 255, 255, 0.06);
     border-color: rgba(255, 124, 229, 0.25);
     transform: translateY(-1px);
 }
 
-.history-item:focus-visible {
+.option-item:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
 }
 
-.history-item__icon {
+.option-item__icon {
     width: 22px;
     height: 22px;
     flex: 0 0 22px;
@@ -736,17 +736,17 @@ chat-icon-btn--upload {
     margin-top: 2px;
 }
 
-.history-item__icon svg {
+.option-item__icon svg {
     width: 20px;
     height: 20px;
 }
 
-.history-item__content {
+.option-item__content {
     min-width: 0; /* enable text truncation */
     flex: 1; /* push actions to the right */
 }
 
-.history-item__title {
+.option-item__title {
     font-size: 13px;
     font-weight: 600;
     color: var(--text-primary);
@@ -755,20 +755,20 @@ chat-icon-btn--upload {
     text-overflow: ellipsis;
 }
 
-.history-item__meta {
+.option-item__meta {
     margin-top: 2px;
     font-size: 12px;
     color: var(--text-secondary);
 }
 
 /* Actions (delete button) */
-.history-item__actions {
+.option-item__actions {
     display: inline-flex;
     align-items: center;
     margin-left: 8px;
 }
 
-.history-item__delete {
+.option-item__button {
     width: 32px;
     height: 32px;
     border-radius: 8px;
@@ -782,28 +782,27 @@ chat-icon-btn--upload {
     transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
 
-.history-item__delete:hover {
+.option-item__button:hover {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 124, 229, 0.35);
     color: #ffe9fd;
 }
 
-.history-item__delete:active {
+.option-item__button:active {
     transform: scale(0.96);
 }
 
-.history-item__delete:focus-visible {
+.option-item__button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
 }
 
-.history-item__delete svg {
+.option-item__button svg {
     width: 18px;
     height: 18px;
 }
 
-/* In files list, stack action buttons vertically: add (top) above delete (bottom) */
-.file-item .history-item__actions {
+.option-item .option-item__actions {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -1074,7 +1073,7 @@ body.modal-open {
     padding: 2px 4px;
 }
 
-.history-list__empty {
+.option-list__empty {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1086,19 +1085,19 @@ body.modal-open {
     border: 1px dashed rgba(255, 255, 255, 0.14);
 }
 
-.history-list__empty-icon {
+.option-list__empty-icon {
     width: 28px;
     height: 28px;
     color: var(--accent-light);
     opacity: 0.9;
 }
 
-.history-list__empty-text {
+.option-list__empty-text {
     font-size: 13px;
     font-weight: 600;
 }
 
-.history-list__empty-help {
+.option-list__empty-help {
     font-size: 12px;
     color: var(--text-secondary);
 }
