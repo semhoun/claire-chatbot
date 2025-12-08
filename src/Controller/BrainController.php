@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Agent\Brain;
-use App\Agent\Summary;
+use App\Brain\Claire;
+use App\Brain\Summary;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManager;
 use Monolog\Logger;
@@ -26,7 +26,7 @@ final readonly class BrainController
 
     public function __construct(
         private Twig $twig,
-        private Brain $brain,
+        private Claire $claire,
         private Summary $summary,
         private Logger $logger,
         private EntityManager $entityManager,
@@ -62,7 +62,7 @@ final readonly class BrainController
         $userMessage = $this->addAttachments($request, $userMessage);
 
         if ($chatMode === 'chat') {
-            $agentMessage = $this->brain->chat($userMessage);
+            $agentMessage = $this->claire->chat($userMessage);
             $agentMessageStr = $agentMessage->getContent();
 
             $this->manageSummary();
@@ -81,7 +81,7 @@ final readonly class BrainController
 
             $body = $response->getBody();
 
-            $stream = $this->brain->stream($userMessage);
+            $stream = $this->claire->stream($userMessage);
 
             $streamId = null;
             $toolCallId = null;
@@ -160,7 +160,7 @@ final readonly class BrainController
 
     private function manageSummary(): void
     {
-        $messages = $this->brain->getChatHistory()->getMessages();
+        $messages = $this->claire->getChatHistory()->getMessages();
         // TODO ne pas générer le summary si le message est vide, et pas à chaque message
         $this->logger->debug('Manage summary', $messages);
         $this->summary->generateAndPersist();

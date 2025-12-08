@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Agent\Brain;
-use App\Agent\Summary;
+use App\Brain\Claire;
+use App\Brain\Summary;
 use App\Services\OidcClient;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
@@ -104,14 +104,14 @@ return [
         $twig->getEnvironment()->addGlobal('settings', $settings);
         return $twig;
     },
-    Brain::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Brain {
-        $brain = new Brain($connection, $settings, $session);
-        $brain->observe(new \App\Agent\Observability\Observer());
+    Claire::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Claire {
+        $brain = new Claire($connection, $settings, $session);
+        $brain->observe(new \App\Brain\Observability\Observer());
         return $brain;
     },
     Summary::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Summary {
         $summary = new Summary($connection, $settings, $session);
-        $summary->observe(new \App\Agent\Observability\Observer());
+        $summary->observe(new \App\Brain\Observability\Observer());
         return $summary;
     },
     SessionManagerInterface::class => static fn (SessionInterface $session): SessionInterface => $session,

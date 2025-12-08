@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Agent;
+namespace App\Brain;
 
-use App\Agent\ChatHistory\ReadOnlyChatHistory;
+use App\Brain\ChatHistory\ReadOnlyChatHistory;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Agent;

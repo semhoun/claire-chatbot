@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Agent\Observability;
+namespace App\Brain\Observability;
 
 use NeuronAI\Agent\AgentInterface;
 use NeuronAI\Observability\Events\ToolCalled;

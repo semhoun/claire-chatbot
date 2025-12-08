@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Agent\ChatHistory;
+namespace App\Brain\ChatHistory;
 
 use NeuronAI\Chat\History\SQLChatHistory;
 use Odan\Session\SessionInterface;

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Agent\Summary;
+use App\Brain\Summary;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use Doctrine\ORM\EntityManagerInterface;
 use NeuronAI\Chat\Messages\UserMessage;

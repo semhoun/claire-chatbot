@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Agent\Tools;
+namespace App\Brain\Tools;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Psr7\Uri;

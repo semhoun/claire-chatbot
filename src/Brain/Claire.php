@@ -2,12 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Agent;
+namespace App\Brain;
 
-use App\Agent\ChatHistory\UserChatHistory;
+use App\Brain\ChatHistory\UserChatHistory;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Agent;
+use NeuronAI\Agent\Middleware\Summarization;
 use NeuronAI\Agent\SystemPrompt;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Providers\AIProviderInterface;
@@ -16,7 +17,7 @@ use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
 use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 use Odan\Session\SessionInterface;
 
-class Brain extends Agent
+class Claire extends Agent
 {
     public function __construct(
         protected Connection $connection,
@@ -60,6 +61,30 @@ class Brain extends Agent
             CalculatorToolkit::make(),
             CalendarToolkit::make(),
             Tools\WebToolkit::make($this->settings->get('llm.tools.searchXngUrl')),
+        ];
+    }
+
+    /**
+     * Define your middleware here.
+     *
+     * @return array<class-string<NodeInterface>, array<WorkflowMiddleware>>
+     */
+    protected function middleware(): array
+    {
+        $summarization = new Summarization(
+            provider: new OpenAILike(
+                baseUri: $this->settings->get('llm.openai.baseUri'),
+                key: $this->settings->get('llm.openai.key'),
+                model: $this->settings->get('llm.openai.modelSummary')
+            ),
+            maxTokens: $this->settings->get('llm.history.contextWindow') / 2,
+            messagesToKeep: 10,
+        );
+
+        return [
+            ChatNode::class => [$summarization],
+            StreamingNode::class => [$summarization],
+            StructuredOutputNode::class => [$summarization],
         ];
     }
 }

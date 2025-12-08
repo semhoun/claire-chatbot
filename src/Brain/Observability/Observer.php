@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Agent\Observability;
+namespace App\Brain\Observability;
 
 use NeuronAI\Chat\Enums\SourceType;
 use NeuronAI\Chat\Messages\Message;
