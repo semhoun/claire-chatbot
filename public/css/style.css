@@ -110,6 +110,16 @@ body.compact .app {
     height: 100%;
 }
 
+/* -----------------------------
+   HTMX indicators visibility
+   ----------------------------- */
+/* Hidden by default */
+.htmx-indicator { display: none; }
+/* When a parent is in request state */
+.htmx-request .htmx-indicator { display: inline; }
+/* When the indicator element itself is marked as requesting (hx-indicator target) */
+.htmx-request.htmx-indicator { display: flex !important; }
+
 .chat-header {
     display: flex;
     align-items: center;

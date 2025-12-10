@@ -8,9 +8,21 @@
             hx-encoding="multipart/form-data"
             hx-target="closest .files-root"
             hx-swap="innerHTML"
+            hx-indicator="#filesUploadIndicator"
             class="file-upload"
-            style="display:flex; gap:8px; align-items:center; min-width:0; flex: 1 1 auto;"
+            style="display:flex; gap:8px; align-items:center; min-width:0; flex: 1 1 auto; position: relative;"
         >
+            {# Indicateur de chargement (sablier) pendant l'upload #}
+            <div id="filesUploadIndicator" class="htmx-indicator" aria-hidden="true"
+                 style="position:absolute; inset:0; display:none; background:rgba(8,0,14,0.55); backdrop-filter:blur(2px); border-radius:10px; align-items:center; justify-content:center; z-index:5;">
+                <div style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(30,0,50,0.9); border:1px solid rgba(255,255,255,0.08); border-radius:999px; box-shadow:0 10px 26px rgba(26,0,41,0.35);">
+                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style="color:#ff7ce5;">
+                        <path d="M7 2h10v4a5 5 0 0 1-2.1 4.1L12 12l2.9 1.9A5 5 0 0 1 17 18v4H7v-4a5 5 0 0 1 2.1-4.1L12 12l-2.9-1.9A5 5 0 0 1 7 6V2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                        <path d="M8 4h8M8 20h8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                    </svg>
+                    <span style="color:#fff0fe; font-size:14px;">Téléversement en cours…</span>
+                </div>
+            </div>
             {# Input fichier masqué visuellement, label stylé « Parcourir » #}
             <input
                 class="file-upload__input"
