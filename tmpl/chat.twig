@@ -102,7 +102,7 @@
                     </svg>
                 </label>
                 <input type="hidden" name="mode" id="chat-input_mode" value="{{ chat_mode|default('chat') }}" />
-                <input class="chat-input__file" type="file" id="chat-upload" name="upload_files[]" multiple accept="{{ settings.get('file.upload.acceptedExt') }}" />
+                <input class="chat-input__file" type="file" id="chat-upload" name="upload_files[]" multiple accept="{{ settings.get('files.upload.acceptedExt') }}" />
                 {# Container for attached file chips (chat mode) #}
                 <span id="chatAttachedFilesChat" class="chat-attached"></span>
                 {# Hidden inputs for selected file IDs (from Files list) #}

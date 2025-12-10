@@ -59,7 +59,8 @@
     "league/html-to-markdown": "^5.1",
     "league/oauth2-client": "^2.9",
     "symfony/var-exporter": "^7.4",
-    "1tomany/twig-filesize": "^0.0.1"
+    "1tomany/twig-filesize": "^0.0.1",
+    "league/flysystem": "^3.0"
   },
   "require-dev": {
     "roave/security-advisories": "dev-latest",

@@ -13,6 +13,6 @@ return static function (App $app): void {
     // OpenID Connect (SSO)
     $app->group('/auth', static function (Group $group): void {
         $group->get('/sso', [AuthController::class, 'ssoRedirect'])->setName('auth.sso');
-        $group->get('/auth/callback', [AuthController::class, 'ssoCallback'])->setName('auth.callback');
+        $group->get('/callback', [AuthController::class, 'ssoCallback'])->setName('auth.callback');
     });
 };

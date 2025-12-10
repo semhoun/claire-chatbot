@@ -106,6 +106,21 @@
                 </div>
                 <div id="filesList" class="options-subpanel files-root" aria-live="polite" style="margin: 0 16px 8px;"></div>
             </div>
+
+            <div class="options-list">
+                <div
+                        class="options-item"
+                        id="ragToggle"
+                        role="button"
+                        tabindex="0"
+                        aria-expanded="false"
+                        aria-controls="ragPanel"
+                        data-open-upload-dialog
+                        data-upload-context="rag"
+                >
+                    <span class="options-item__label">Documents RAG</span>
+                </div>
+            </div>
         </div>
 
         <div class="options-panel__section">
@@ -219,6 +234,145 @@
             if (backdrop) { backdrop.classList.toggle('is-visible', isOpen); }
         });
         observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
+    })();
+
+    // Toggle « Documents RAG »: ouvre/ferme simplement le panneau avec le formulaire (pas de liste ni compteur)
+    (function () {
+        const btn = document.getElementById('ragToggle');
+        const panel = document.getElementById('ragPanel');
+        if (!btn || !panel) return;
+
+        function isExpanded() { return btn.getAttribute('aria-expanded') === 'true'; }
+        function expand() { btn.setAttribute('aria-expanded', 'true'); panel.style.display = ''; }
+        function collapse() { btn.setAttribute('aria-expanded', 'false'); panel.style.display = 'none'; }
+        function toggle() { if (isExpanded()) { collapse(); } else { expand(); } }
+
+        btn.addEventListener('click', function () { toggle(); });
+        btn.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    })();
+
+    // Boîte de dialogue d'upload (réutilisable pour Fichiers et RAG)
+    (function() {
+        const root = document;
+        const dlg = (function createDialog(){
+            // Crée le DOM une seule fois
+            let existing = root.getElementById('uploadDialog');
+            if (existing) return existing;
+            const wrap = root.createElement('div');
+            wrap.id = 'uploadDialog';
+            wrap.setAttribute('role', 'dialog');
+            wrap.setAttribute('aria-modal', 'true');
+            wrap.setAttribute('aria-hidden', 'true');
+            wrap.style.cssText = 'position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:1000;';
+            wrap.innerHTML = `
+                <div class="dialog-backdrop" data-upload-backdrop></div>
+                <div class="dialog-panel" role="document">
+                    <div style="display:flex; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid rgba(0,0,0,.08);">
+                        <div id="uploadDialogTitle" class="options-panel__title" style="font-size:17px;">Téléverser un fichier</div>
+                    </div>
+                    <form id="uploadDialogForm"
+                        style="padding:18px; display:flex; flex-direction:column; gap:14px;"
+                        hx-post="{{ base_url }}/files/upload_rag"
+                        hx-encoding="multipart/form-data"
+                        >
+                        <div class="upload-field" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                            <input type="file" name="file" id="uploadDialogInput"
+                                   accept="{{ settings.get('files.upload.acceptedExt') }}" required
+                                   style="position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden;" />
+                            <label for="uploadDialogInput" class="btn dialog-panel-btn" aria-label="Parcourir" title="Parcourir…">Parcourir…</label>
+                            <span id="uploadDialogFileName" style="min-width:180px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color: wheat;" aria-live="polite">Aucun fichier sélectionné</span>
+                        </div>
+                        <div style="font-size:12px; color:#666;">Extensions autorisées: {{ settings.get('files.upload.acceptedExt') }}</div>
+                        <div style="display:flex; gap:8px; justify-content:flex-end;">
+                            <button type="button" class="btn dialog-panel-btn" data-upload-cancel>Annuler</button>
+                            <button type="submit" class="btn btn--primary" data-upload-submit disabled>Envoyer</button>
+                        </div>
+                    </form>
+                </div>`;
+            root.body.appendChild(wrap);
+            return wrap;
+        })();
+
+        const form = dlg.querySelector('#uploadDialogForm');
+        const input = dlg.querySelector('#uploadDialogInput');
+        const btnClose = dlg.querySelector('[data-upload-close]');
+        const btnCancel = dlg.querySelector('[data-upload-cancel]');
+        const backdrop = dlg.querySelector('[data-upload-backdrop]');
+        const title = dlg.querySelector('#uploadDialogTitle');
+
+        function openDialog(ctx) {
+            // Nettoyage
+            input.value = '';
+            // Retire attributes hx spécifiques précédents
+            form.removeAttribute('hx-target');
+            form.setAttribute('hx-swap', 'none');
+
+            // Enlever anciens écouteurs htmx
+            // Utilise un contrôleur simple via propriété
+            form.__ctx = ctx;
+
+            // Configure selon contexte
+            if (ctx === 'files') {
+                title.textContent = 'Téléverser un fichier';
+                form.setAttribute('hx-post', '{{ base_url }}/files/upload');
+                form.setAttribute('hx-target', '#filesList');
+                form.setAttribute('hx-swap', 'innerHTML');
+                // Fermer après swap + rafraîchir badge
+                const onAfter = function() {
+                    try { if (window.htmx) { window.htmx.ajax('GET', '{{ base_url }}/files/count', {target:'#filesCountBadge', swap:'innerHTML'}); } } catch(_){ }
+                    closeDialog();
+                };
+                form.addEventListener('htmx:afterOnLoad', onAfter, { once: true });
+            } else {
+                title.textContent = 'Téléverser un document RAG';
+                form.setAttribute('hx-post', '{{ base_url }}/rag/upload');
+                form.setAttribute('hx-swap', 'none');
+                const onAfterReq = function() {
+                    // Feedback léger côté RAG
+                    try {
+                        var fb = document.getElementById('ragUploadFeedback');
+                        if (fb) { fb.textContent = 'Fichier envoyé'; fb.style.opacity = '1'; setTimeout(function(){ fb.style.opacity = '0'; }, 1800); }
+                    } catch(_) {}
+                    closeDialog();
+                };
+                form.addEventListener('htmx:afterRequest', onAfterReq, { once: true });
+            }
+
+            dlg.style.display = 'flex';
+            dlg.setAttribute('aria-hidden', 'false');
+            const submitBtn = dlg.querySelector('[data-upload-submit]');
+            if (submitBtn) submitBtn.disabled = true;
+            setTimeout(function(){ const label = dlg.querySelector('label[for="uploadDialogInput"]'); (label||input).focus(); }, 0);
+        }
+
+        function closeDialog() {
+            dlg.style.display = 'none';
+            dlg.setAttribute('aria-hidden', 'true');
+        }
+
+        // Ouvrir via boutons avec data-open-upload-dialog
+        root.addEventListener('click', function(e){
+            const btn = e.target.closest && e.target.closest('[data-open-upload-dialog]');
+            if (!btn) return;
+            const ctx = btn.getAttribute('data-upload-context') === 'rag' ? 'rag' : 'files';
+            openDialog(ctx);
+        });
+
+        // Fermer
+        [btnClose, btnCancel, backdrop].forEach(function(el){ if (el) el.addEventListener('click', closeDialog); });
+        root.addEventListener('keydown', function(e){ if (e.key === 'Escape' && dlg.style.display !== 'none') { e.preventDefault(); closeDialog(); } });
+
+        // Mise à jour du nom choisi et activation du bouton Envoyer
+        input.addEventListener('change', function(){
+            const fileChosen = input.files && input.files.length > 0;
+            const submit = dlg.querySelector('[data-upload-submit]');
+            const nameEl = dlg.querySelector('#uploadDialogFileName');
+            if (nameEl) {
+                nameEl.textContent = fileChosen ? (input.files[0].name || 'Fichier sélectionné') : 'Aucun fichier sélectionné';
+                nameEl.title = nameEl.textContent;
+            }
+            if (submit) submit.disabled = !fileChosen;
+        });
     })();
 
     // Toggle "Réponse en continue" option: updates server and notifies pages

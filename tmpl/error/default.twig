@@ -1,18 +1,24 @@
 {% extends 'error/layout.twig' %}
 
 {% block contents %}
-    <h1>Slim4 Error</h1>
-    <h2>{{ title }}</h2>
+    <div class="center-screen">
+        <h1 class="error-title">{{ code }}</h1>
+        <p class="error-subtitle">{{ title is defined and title ? title : 'Erreur' }}</p>
+        <a href="/" class="btn btn-primary btn-lg">Retour à l'accueil</a>
+    </div>
+
     {% if debug %}
-        <h3>Details</h3>
-        <ul>
-            <li><b>Type: </b>{{ type }}</li>
-            <li><b>Code: </b>{{ code }}</li>
-            <li><b>Message: </b>{{ message }}</li>
-            <li><b>File: </b>{{ file }}</li>
-            <li><b>Line: </b>{{ line }}</li>
-        </ul>
-        <h3>Trace</h3>
-        {{ trace|nl2br }}
+        <div style="max-width:960px;margin:0 auto 40px;background:rgba(0,0,0,0.35);padding:16px 20px;border-radius:12px;">
+            <h3 style="margin-top:0;">Détails</h3>
+            <ul style="margin:0 0 16px 18px;">
+                <li><b>Type: </b>{{ type }}</li>
+                <li><b>Code: </b>{{ code }}</li>
+                <li><b>Message: </b>{{ message }}</li>
+                <li><b>File: </b>{{ file }}</li>
+                <li><b>Line: </b>{{ line }}</li>
+            </ul>
+            <h3>Trace</h3>
+            <div style="overflow:auto;max-height:50vh;white-space:normal;">{{ trace|nl2br }}</div>
+        </div>
     {% endif %}
 {% endblock %}

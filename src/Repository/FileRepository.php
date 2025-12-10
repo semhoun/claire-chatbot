@@ -32,26 +32,4 @@ class FileRepository extends EntityRepository
 
         return (int) $queryBuilder->getQuery()->getSingleScalarResult();
     }
-
-    public function deleteForUser(string $userId, string $id): bool
-    {
-        $entityManager = $this->getEntityManager();
-        $file = $this->find($id);
-        if (! $file instanceof File) {
-            return false;
-        }
-
-        if ($file->getUser()->getId() !== $userId) {
-            return false;
-        }
-
-        $entityManager->remove($file);
-        $entityManager->flush();
-        return true;
-    }
-
-    public function findOneByToken(string $token): ?File
-    {
-        return $this->findOneBy(['token' => $token]);
-    }
 }

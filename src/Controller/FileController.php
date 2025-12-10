@@ -7,9 +7,19 @@ namespace App\Controller;
 use App\Entity\File;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
+use League\Flysystem\Filesystem;
+use League\Flysystem\FilesystemException;
+use League\Flysystem\UnableToReadFile;
+use Monolog\Logger;
+use NeuronAI\RAG\DataLoader\StringDataLoader;
+use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
+use NeuronAI\RAG\Splitter\DelimiterTextSplitter;
+use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 use Odan\Session\SessionInterface;
+use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Ramsey\Uuid\Uuid;
 use Slim\Views\Twig;
 
 final readonly class FileController
@@ -18,6 +28,9 @@ final readonly class FileController
         private Twig $twig,
         private SessionInterface $session,
         private EntityManagerInterface $entityManager,
+        private Filesystem $filesystem,
+        private Logger $logger,
+        private ContainerInterface $container,
     ) {
     }
 
@@ -65,22 +78,64 @@ final readonly class FileController
         $contentStream = $file->getStream();
         $contentStream->rewind();
 
-        $data = $contentStream->getContents();
-
         $user = $this->entityManager->getReference(User::class, $userId);
 
         $entity = new File();
         $entity->setUser($user);
         $entity->setFilename($file->getClientFilename() ?? 'fichier');
         $entity->setMimeType($file->getClientMediaType() ?? 'application/octet-stream');
+        $entity->setFileId(Uuid::uuid7()->toString());
         $entity->setSizeBytes((string) $file->getSize());
-        $entity->setContent($data);
+
+        $this->filesystem->write($entity->getFileId(), $contentStream->getContents());
 
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
 
         // Return refreshed list
         return $this->list($request, $response);
+    }
+
+    public function uploadRag(Request $request, Response $response): Response
+    {
+        $uploadedFiles = $request->getUploadedFiles();
+        $file = $uploadedFiles['file'] ?? null;
+        if ($file === null || $file->getError() !== UPLOAD_ERR_OK) {
+            return $response->withStatus(400);
+        }
+
+        $contentStream = $file->getStream();
+        $contentStream->rewind();
+
+        $data = $contentStream->getContents();
+
+        $entity = new File();
+        $entity->setFilename($file->getClientFilename() ?? 'fichier');
+        $entity->setMimeType($file->getClientMediaType() ?? 'application/octet-stream');
+        $entity->setFileId(Uuid::uuid7()->toString());
+        $entity->setSizeBytes((string) $file->getSize());
+
+        $this->filesystem->write($entity->getFileId(), $data);
+
+        $this->entityManager->persist($entity);
+        $this->entityManager->flush();
+
+        // Ajout dans le RAG
+        $embedder = $this->container->get(EmbeddingsProviderInterface::class);
+        $store = $this->container->get(VectorStoreInterface::class);
+        $documents = StringDataLoader::for($data)->withSplitter(
+            new DelimiterTextSplitter(
+                maxLength: 1000,
+                separator: '.',
+                wordOverlap: 0
+            )
+        )
+        ->getDocuments();
+        $store->addDocuments(
+            $embedder->embedDocuments($documents)
+        );
+
+        return $response->withStatus(201);
     }
 
     public function delete(Request $request, Response $response): Response
@@ -91,10 +146,20 @@ final readonly class FileController
         }
 
         $id = (string) $request->getAttribute('id');
-        $entityRepository = $this->entityManager->getRepository(File::class);
-        if (! $entityRepository->deleteForUser($userId, $id)) {
-            return $response->withStatus(400);
+
+        $file = $this->entityManager->getRepository(File::class)->find($id);
+        if ($file === null) {
+            return $response->withStatus(404);
         }
+
+        if ($file->getUser()->getId() !== $userId) {
+            return $response->withStatus(403);
+        }
+
+        $this->filesystem->delete($file->getFileId());
+
+        $this->entityManager->remove($file);
+        $this->entityManager->flush();
 
         // Return refreshed list (so the badge/count updates via OOB)
         return $this->list($request, $response);
@@ -111,20 +176,22 @@ final readonly class FileController
         }
 
         $entityRepository = $this->entityManager->getRepository(File::class);
-        $file = $entityRepository->findOneBy(['token' => $token]);
-        if (! $file instanceof File) {
+        $fileDB = $entityRepository->findOneBy(['token' => $token]);
+        if (! $fileDB instanceof File) {
             return $response->withStatus(404);
         }
 
-        $stream = $file->getContent();
-        // Blob may be a resource stream depending on driver; normalize to string
-        $data = is_resource($stream) ? stream_get_contents($stream) : (string) $stream;
-        $response->getBody()->write($data);
+        try {
+            $response->getBody()->write($this->filesystem->read($fileDB->getFileId()));
+        } catch (FilesystemException | UnableToReadFile $exception) {
+            $this->logger->error('Failed to read file by token', ['token' => $token, 'exception' => $exception]);
+            return $response->withStatus(404);
+        }
 
-        $disposition = sprintf('attachment; filename="%s"', addslashes($file->getFilename()));
+        $disposition = sprintf('attachment; filename="%s"', addslashes($fileDB->getFilename()));
         return $response
-            ->withHeader('Content-Type', $file->getMimeType())
-            ->withHeader('Content-Length', $file->getSizeBytes())
+            ->withHeader('Content-Type', $fileDB->getMimeType())
+            ->withHeader('Content-Length', $fileDB->getSizeBytes())
             ->withHeader('Content-Disposition', $disposition);
     }
 }

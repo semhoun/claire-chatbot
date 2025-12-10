@@ -12,6 +12,7 @@ return static function (App $app): void {
         $group->get('/list', [FileController::class, 'list'])->setName('files.list');
         $group->get('/by-token/{token}', [FileController::class, 'downloadByToken'])->setName('files.by_token');
         $group->post('/upload', [FileController::class, 'upload'])->setName('files.upload');
+        $group->post('/upload_rag', [FileController::class, 'uploadRag'])->setName('files.upload_rag');
         $group->delete('/delete/{id}', [FileController::class, 'delete'])->setName('files.delete');
     });
 };

@@ -23,6 +23,7 @@ class Claire extends Agent
         protected Connection $connection,
         protected readonly Settings $settings,
         protected readonly SessionInterface $session,
+        protected readonly AIProviderInterface $aiProvider,
     ) {
         parent::__construct();
     }
@@ -48,11 +49,7 @@ class Claire extends Agent
 
     protected function provider(): AIProviderInterface
     {
-        return new OpenAILike(
-            baseUri: $this->settings->get('llm.openai.baseUri'),
-            key: $this->settings->get('llm.openai.key'),
-            model: $this->settings->get('llm.openai.model')
-        );
+        return $this->aiProvider;
     }
 
     protected function tools(): array
@@ -72,11 +69,7 @@ class Claire extends Agent
     protected function middleware(): array
     {
         $summarization = new Summarization(
-            provider: new OpenAILike(
-                baseUri: $this->settings->get('llm.openai.baseUri'),
-                key: $this->settings->get('llm.openai.key'),
-                model: $this->settings->get('llm.openai.modelSummary')
-            ),
+            provider: $this->aiProvider,
             maxTokens: $this->settings->get('llm.history.contextWindow') / 2,
             messagesToKeep: 10,
         );

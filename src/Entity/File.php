@@ -21,7 +21,7 @@ class File
 
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(name: 'user_id', referencedColumnName: 'id', nullable: false)]
-    private User $user;
+    private ?User $user = null;
 
     #[ORM\Column(name: 'filename', type: 'string', length: 255, nullable: false)]
     private string $filename;
@@ -32,15 +32,14 @@ class File
     #[ORM\Column(name: 'size_bytes', type: 'bigint', nullable: false)]
     private string $sizeBytes = '0';
 
-    // store raw content in DB (BLOB/LONGBLOB depending on platform)
-    #[ORM\Column(name: 'content', type: 'blob', nullable: false)]
-    private $content;
+    #[ORM\Column(name: 'file_id', type: 'string', length: 36, nullable: false)]
+    private string $fileId;
 
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable', nullable: false)]
     private \DateTimeImmutable $createdAt;
 
     #[ORM\Column(name: 'token', type: 'string', length: 36, unique: true, nullable: false)]
-    private string $token;
+    private ?string $token = null;
 
     #[ORM\PrePersist]
     public function onPrePersist(): void
@@ -49,6 +48,10 @@ class File
         // Ensure token is set (UUID v7)
         if (! isset($this->token) || ($this->token === '' || $this->token === '0')) {
             $this->token = Uuid::uuid7()->toString();
+        }
+
+        if (! isset($this->fileId) || ($this->fileId === '' || $this->fileId === '0')) {
+            $this->fileId = Uuid::uuid7()->toString();
         }
     }
 
@@ -97,19 +100,14 @@ class File
         $this->sizeBytes = $size;
     }
 
-    public function getContent()
+    public function getFileId(): string
     {
-        return $this->content;
+        return $this->fileId;
     }
 
-    public function getContentAsString(): string
+    public function setFileId(string $fileId): void
     {
-        return stream_get_contents($this->content);
-    }
-
-    public function setContent($content): void
-    {
-        $this->content = $content;
+        $this->fileId = $fileId;
     }
 
     public function getCreatedAt(): \DateTimeImmutable
@@ -117,12 +115,12 @@ class File
         return $this->createdAt;
     }
 
-    public function getToken(): string
+    public function getToken(): ?string
     {
         return $this->token;
     }
 
-    public function setToken(string $token): void
+    public function setToken(?string $token): void
     {
         $this->token = $token;
     }

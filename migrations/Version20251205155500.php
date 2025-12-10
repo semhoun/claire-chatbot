@@ -28,13 +28,13 @@ final class Version20251205155500 extends AbstractMigration
             $this->addSql(<<<SQL
 CREATE TABLE IF NOT EXISTS "file" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT NOT NULL,
+    user_id TEXT,
     filename TEXT NOT NULL,
     mime_type TEXT NOT NULL,
     size_bytes INTEGER NOT NULL DEFAULT 0,
-    content BLOB NOT NULL,
+    file_id TEXT NOT NULL,
     created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
-    token TEXT NULL,
+    token TEXT,
     CONSTRAINT fk_file_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE ON UPDATE NO ACTION
 );
 SQL);
@@ -46,13 +46,13 @@ SQL);
             $this->addSql(<<<SQL
 CREATE TABLE IF NOT EXISTS `file` (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(64) NOT NULL,
+    user_id VARCHAR(64),
     filename VARCHAR(255) NOT NULL,
     mime_type VARCHAR(191) NOT NULL,
     size_bytes BIGINT NOT NULL DEFAULT 0,
-    content LONGBLOB NOT NULL,
+    file_id VARCHAR(36) NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    token VARCHAR(36) NOT NULL,
+    token VARCHAR(36),
     INDEX idx_cf_user_id (user_id),
     UNIQUE ux_file_tole (token),
     CONSTRAINT fk_file_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE ON UPDATE NO ACTION

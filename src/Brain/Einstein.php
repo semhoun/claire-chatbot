@@ -27,6 +27,9 @@ class Einstein extends RAG
         protected Connection $connection,
         protected readonly Settings $settings,
         protected readonly SessionInterface $session,
+        protected AIProviderInterface $aiProvider,
+        protected EmbeddingsProviderInterface $embeddingsProvider,
+        protected VectorStoreInterface $vectorStore,
     ) {
         parent::__construct();
     }
@@ -52,20 +55,12 @@ class Einstein extends RAG
 
     protected function provider(): AIProviderInterface
     {
-        return new OpenAILike(
-            baseUri: $this->settings->get('llm.openai.baseUri'),
-            key: $this->settings->get('llm.openai.key'),
-            model: $this->settings->get('llm.openai.model')
-        );
+        return $this->aiProvider;
     }
 
     protected function embeddings(): EmbeddingsProviderInterface
     {
-        return new OpenAILikeEmbeddings(
-            baseUri: $this->settings->get('llm.openai.baseUri'),
-            key: $this->settings->get('llm.openai.key'),
-            model: $this->settings->get('llm.openai.modelEmbed')
-        );
+        return $this->embeddingsProvider;
     }
 
     protected function tools(): array
@@ -79,10 +74,7 @@ class Einstein extends RAG
 
     protected function vectorStore(): VectorStoreInterface
     {
-        return new FileVectorStore(
-            directory: $this->settings->get('llm.rag.path'),
-            name: 'neuron-rag',
-        );
+        return $this->vectorStore;
     }
 
     /**
@@ -93,11 +85,7 @@ class Einstein extends RAG
     protected function middleware(): array
     {
         $summarization = new Summarization(
-            provider: new OpenAILike(
-                baseUri: $this->settings->get('llm.openai.baseUri'),
-                key: $this->settings->get('llm.openai.key'),
-                model: $this->settings->get('llm.openai.modelSummary')
-            ),
+            provider: $this->aiProvider,
             maxTokens: $this->settings->get('llm.history.contextWindow') / 2,
             messagesToKeep: 10,
         );

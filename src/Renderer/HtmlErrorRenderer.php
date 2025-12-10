@@ -24,7 +24,12 @@ final readonly class HtmlErrorRenderer implements ErrorRendererInterface
         bool $displayErrorDetails
     ): string {
         if ($exception->getCode() === 404) {
-            return $this->twig->fetch('error/404.twig');
+            return $this->twig->fetch('error/404.twig', [
+                'title' => is_a($exception, '\Slim\Exception\HttpException') ?
+                    $exception->getTitle() : '500 - ' .  $exception::class,
+                'code' => $exception->getCode(),
+                'message' => $exception->getMessage(),
+            ]);
         }
 
         $data = [

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Exception;
 use App\Brain\Claire;
 use App\Brain\Summary;
 use App\Services\OidcClient;
@@ -12,13 +13,21 @@ use Doctrine\ORM\Configuration;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\ORMSetup;
+use League\Flysystem\Filesystem;
 use Monolog\Logger;
+use NeuronAI\Providers\AIProviderInterface;
+use NeuronAI\Providers\OpenAILike;
+use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
+use NeuronAI\RAG\Embeddings\OpenAILikeEmbeddings;
+use NeuronAI\RAG\VectorStore\FileVectorStore;
+use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 use Odan\Session\PhpSession;
 use Odan\Session\SessionInterface;
 use Odan\Session\SessionManagerInterface;
 use OneToMany\Twig\FilesizeExtension;
 use Slim\Views\Twig;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
 use Twig\Extension\DebugExtension;
 use Twig\Extension\ProfilerExtension;
@@ -104,17 +113,41 @@ return [
         $twig->getEnvironment()->addGlobal('settings', $settings);
         return $twig;
     },
-    Claire::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Claire {
-        $brain = new Claire($connection, $settings, $session);
+    Claire::class => static function (Connection $connection, Settings $settings, SessionInterface $session, AIProviderInterface $aiProvider): Claire {
+        $brain = new Claire($connection, $settings, $session, $aiProvider);
         $brain->observe(new \App\Brain\Observability\Observer());
         return $brain;
     },
-    Summary::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Summary {
-        $summary = new Summary($connection, $settings, $session);
+    Summary::class => static function (Connection $connection, Settings $settings, SessionInterface $session, AIProviderInterface $aiProvider, EmbeddingsProviderInterface $embeddingsProvider, VectorStoreInterface $vectorStore,): Summary {
+        $summary = new Summary($connection, $settings, $session, $aiProvider, $embeddingsProvider, $vectorStore);
         $summary->observe(new \App\Brain\Observability\Observer());
         return $summary;
     },
     SessionManagerInterface::class => static fn (SessionInterface $session): SessionInterface => $session,
     SessionInterface::class => static fn (Settings $settings): PhpSession => new PhpSession($settings->get('session')),
     OidcClient::class => static fn (Settings $settings): OidcClient => new OidcClient($settings),
+    Filesystem::class => static function (Settings $settings): FileSystem {
+        if ($settings->get('files.fileSystem.type') === 'local') {
+            $adapter = new League\Flysystem\Local\LocalFilesystemAdapter(
+                $settings->get('files.fileSystem.path'),
+            );
+            return new League\Flysystem\Filesystem($adapter);
+        }
+
+        throw new Exception('Unknown filesystem type ' . $settings->get('files.fileSystem.type'));
+    },
+    AIProviderInterface::class => static fn(Settings $settings): AIProviderInterface => new OpenAILike(
+        baseUri: $this->settings->get('llm.openai.baseUri'),
+        key: $this->settings->get('llm.openai.key'),
+        model: $this->settings->get('llm.openai.model')
+    ),
+    EmbeddingsProviderInterface::class => static fn(Settings $settings): EmbeddingsProviderInterface => new OpenAILikeEmbeddings(
+        baseUri: $settings->get('llm.openai.baseUri') . '/embeddings',
+        key: $settings->get('llm.openai.key'),
+        model: $settings->get('llm.openai.modelEmbed')
+    ),
+    VectorStoreInterface::class => static fn(Settings $settings): VectorStoreInterface => new FileVectorStore(
+        directory: $settings->get('llm.rag.path'),
+        name: 'neuron-rag',
+    ),
 ];

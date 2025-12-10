@@ -1,45 +1,42 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <!-- Required meta tags -->
+    <!-- Meta -->
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-
-    <!-- Bootstrap CSS -->
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
-          integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <title>Error</title>
+
+    <!-- Minimal scoped CSS (no Bootstrap) -->
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        html, body { height: 100%; }
+        body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: #fff; }
+
+        /* Background layers are added in <body>, these ensure stacking above them */
+        .error-container { max-width: 960px; margin: 0 auto; padding: 24px; position: relative; z-index: 1; }
+        .center-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 0; }
+
+        .error-title { font-size: clamp(48px, 12vw, 120px); line-height: 1; font-weight: 800; margin: 0 0 12px; color: #fff; text-shadow: 0 2px 16px rgba(0,0,0,0.4); }
+        .error-subtitle { font-size: clamp(16px, 3.5vw, 22px); margin: 0 0 24px; color: rgba(255,255,255,0.9); }
+
+        .btn { display: inline-block; padding: 12px 20px; border-radius: 8px; text-decoration: none; font-weight: 600; line-height: 1.2; transition: transform .06s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease; }
+        .btn:focus-visible { outline: 3px solid rgba(13,110,253,0.5); outline-offset: 2px; }
+        .btn-primary { background: #0d6efd; color: #fff; box-shadow: 0 6px 18px rgba(13,110,253,0.35); }
+        .btn-primary:hover { background: #0b5ed7; transform: translateY(-1px); box-shadow: 0 10px 24px rgba(13,110,253,0.45); }
+        .btn-lg { font-size: 1.125rem; padding: 14px 24px; }
+    </style>
 </head>
 
 <body>
+    <div style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:url('/image/background.png') center/cover no-repeat;z-index:-2;"></div>
+    <div style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.45);z-index:-1;"></div>
 
-<nav class="navbar navbar-expand-lg navbar-light bg-light">
-    <div class="container">
-        <a class="navbar-brand" href="/">Slim 4 Skeleton</a>
-        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent"
-                aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-    </div>
-</nav>
-
-<div class="container mt-4">
+<div class="error-container">
     {% block contents %}
     {% endblock %}
 </div>
 
-<!-- Optional JavaScript -->
-<!-- jQuery first, then Popper.js, then Bootstrap JS -->
-<script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
-        integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
-        crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"
-        integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1"
-        crossorigin="anonymous"></script>
-<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"
-        integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM"
-        crossorigin="anonymous"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

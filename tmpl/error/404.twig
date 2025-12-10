@@ -1,10 +1,9 @@
 {% extends 'error/layout.twig' %}
 
 {% block contents %}
-    <h1>Slim4 Error</h1>
-
-    <h2>404</h2>
-    <hr>
-    <p>Page not found</p>
+    <div class="center-screen">
+        <h1 class="error-title">404</h1>
+        <p class="error-subtitle">Oups ! La page que vous recherchez est introuvable.</p>
+        <a href="/" class="btn btn-primary btn-lg">Retour à l'accueil</a>
+    </div>
 {% endblock %}
-

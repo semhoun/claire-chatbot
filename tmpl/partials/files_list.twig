@@ -1,4 +1,6 @@
 {% set total = files|length %}
+{# OOB update of the files counter badge so it refreshes after each upload/delete #}
+<span id="filesCountBadge" hx-swap-oob="innerHTML">{{ total }}</span>
 <div class="option-list files-root">
     <div class="option-list__actions" style="display:flex; gap:8px; align-items:center; margin: 0 0 8px 0; flex-wrap: wrap;">
         <form
@@ -15,7 +17,7 @@
                 id="fileUploadInput"
                 type="file"
                 name="file"
-                accept="{{ settings.get('file.upload.acceptedExt') }}"
+                accept="{{ settings.get('files.upload.acceptedExt') }}"
                 required
                 onchange="(function(inp){var f=inp.files&&inp.files[0]?inp.files[0].name:'Aucun fichier';var form=inp.closest('form');if(!form) return;var nameEl=form.querySelector('.file-upload__name');if(nameEl){nameEl.textContent=f;nameEl.title=f;}var submit=form.querySelector('button[type=submit]');if(submit){submit.disabled=!(inp.files&&inp.files.length);} })(this)"
             >

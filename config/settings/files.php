@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Services\Settings;
+
 return [
     'upload' => [
         // String used directly in input[type=file] accept="..."
@@ -20,5 +22,9 @@ return [
         'application/typescript',
         'application/xhtml+xml',
         'application/xml',
+    ],
+    'fileSystem' => [
+        'type' => 'local',
+        'path' => Settings::getAppRoot() . '/var/filer',
     ],
 ];

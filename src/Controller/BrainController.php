@@ -8,6 +8,11 @@ use App\Brain\Claire;
 use App\Brain\Summary;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\Exception\ORMException;
+use Doctrine\ORM\OptimisticLockException;
+use League\Flysystem\Filesystem;
+use League\Flysystem\FilesystemException;
+use League\Flysystem\UnableToReadFile;
 use Monolog\Logger;
 use NeuronAI\Chat\Messages\ContentBlocks\TextContent;
 use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
@@ -31,6 +36,7 @@ final readonly class BrainController
         private Logger $logger,
         private EntityManager $entityManager,
         private Settings $settings,
+        private Filesystem $filesystem,
     ) {
     }
 
@@ -158,6 +164,14 @@ final readonly class BrainController
         return $response;
     }
 
+    /**
+     * Manages the generation and persistence of a summary based on chat history.
+     *
+     * This method retrieves the chat history messages, performs logging for debugging purposes,
+     * and triggers the generation and storage of a summary. It is designed to operate
+     * under the assumption that chat messages are present, and optimizations should
+     * be applied to avoid unnecessary summary generation for empty or unmodified messages.
+     */
     private function manageSummary(): void
     {
         $messages = $this->claire->getChatHistory()->getMessages();
@@ -228,28 +242,32 @@ final readonly class BrainController
             }
         }
 
-        foreach ($fileIds as &$fileId) {
-            // choose action by mimetype
-            $file = $this->entityManager->find(\App\Entity\File::class, $fileId);
-            if ($file === null) {
-                continue;
-            }
+        foreach ($fileIds as $fileId) {
+            try {
+                // choose action by mimetype
+                $fileDB = $this->entityManager->find(\App\Entity\File::class, $fileId);
+                if ($fileDB === null) {
+                    continue;
+                }
 
-            $text .= '<file'
-                . ' id="' . $fileId . '"'
-                . ' name="' . $file->getFilename() . '"'
-                . ' type="' . $file->getMimeType() . '"'
-                . ' size="' . $file->getSizeBytes() . '"'
-                . ' url="' . $request->getAttribute('base_url') . '/files/by-token/' . $file->getToken() . '"'
-                . ' user_id="' . $file->getUser()->getId() . '"'
-                . '>';
-            if (in_array($file->getMimeType(), $this->settings->get('file.rawMimeTypes'), true)) {
-                $text .= $file->getContentAsString();
-            } else {
-                $text .= base64_encode((string) $file->getContentAsString());
-            }
+                $text .= '<file'
+                    . ' id="' . $fileId . '"'
+                    . ' name="' . $fileDB->getFilename() . '"'
+                    . ' type="' . $fileDB->getMimeType() . '"'
+                    . ' size="' . $fileDB->getSizeBytes() . '"'
+                    . ' url="' . $request->getAttribute('base_url') . '/files/by-token/' . $fileDB->getToken() . '"'
+                    . '>';
 
-            $text .= '</file>' . "\n";
+                if (in_array($fileDB->getMimeType(), $this->settings->get('files.rawMimeTypes'), true)) {
+                    $text .= $this->filesystem->read($fileDB->getFileId());
+                } else {
+                    $text .= base64_encode($this->filesystem->read($fileDB->getFileId()));
+                }
+
+                $text .= '</file>' . "\n";
+            } catch (OptimisticLockException | ORMException | FilesystemException | UnableToReadFile $exception) {
+                $this->logger->error('Failed to add addAttachments', ['fileId' => $fileId, 'exception' => $exception]);
+            }
         }
 
         $text .= "</files>\n"
