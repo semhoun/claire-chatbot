@@ -137,9 +137,9 @@ return [
         throw new Exception('Unknown filesystem type ' . $settings->get('files.fileSystem.type'));
     },
     AIProviderInterface::class => static fn(Settings $settings): AIProviderInterface => new OpenAILike(
-        baseUri: $this->settings->get('llm.openai.baseUri'),
-        key: $this->settings->get('llm.openai.key'),
-        model: $this->settings->get('llm.openai.model')
+        baseUri: $settings->get('llm.openai.baseUri'),
+        key: $settings->get('llm.openai.key'),
+        model: $settings->get('llm.openai.model')
     ),
     EmbeddingsProviderInterface::class => static fn(Settings $settings): EmbeddingsProviderInterface => new OpenAILikeEmbeddings(
         baseUri: $settings->get('llm.openai.baseUri') . '/embeddings',
