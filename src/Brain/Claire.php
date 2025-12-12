@@ -12,13 +12,14 @@ use NeuronAI\Agent\Middleware\Summarization;
 use NeuronAI\Agent\SystemPrompt;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Providers\AIProviderInterface;
-use NeuronAI\Providers\OpenAILike;
 use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
 use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 use Odan\Session\SessionInterface;
 
-class Claire extends Agent
+class Claire extends Agent implements BrainAvatar
 {
+    use ClaireAvatar;
+
     public function __construct(
         protected Connection $connection,
         protected readonly Settings $settings,

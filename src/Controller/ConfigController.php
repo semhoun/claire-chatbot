@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Brain\BrainRegistry;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Odan\Session\SessionInterface;
@@ -15,11 +16,12 @@ readonly class ConfigController
     public function __construct(
         private SessionInterface $session,
         private EntityManagerInterface $entityManager,
+        private BrainRegistry $brainRegistry,
     ) {
     }
 
     /**
-     * Set current chat mode in session ("chat" | "stream")
+     * Set current chat mode in session ("chat" | "stream").
      */
     public function chatMode(Request $request, Response $response): Response
     {
@@ -45,7 +47,7 @@ readonly class ConfigController
     }
 
     /**
-     * Set current layout width mode in session ("full" | "compact")
+     * Set current layout width mode in session ("full" | "compact").
      */
     public function layoutMode(Request $request, Response $response): Response
     {
@@ -67,6 +69,34 @@ readonly class ConfigController
         $user->setParams($params);
         $this->entityManager->flush();
 
+        return $response->withStatus(204);
+    }
+
+    /**
+     * Set current brain avatar in session (e.g. "claire" | "einstein").
+     */
+    public function brainAvatar(Request $request, Response $response): Response
+    {
+        $data = (array) ($request->getParsedBody() ?? []);
+        $avatar = strtolower((string) ($data['avatar'] ?? ''));
+
+        // Valider dynamiquement via la registry
+        if ($avatar === '' || ! $this->brainRegistry->has($avatar)) {
+            return $response->withStatus(400);
+        }
+
+        $this->session->set('brain_avatar', $avatar);
+
+        // Persist in user params when available
+        $user = $this->entityManager->getRepository(User::class)->find($this->session->get('userId'));
+        if ($user !== null) {
+            $params = $user->getParams() ?? [];
+            $params['brain_avatar'] = $avatar;
+            $user->setParams($params);
+            $this->entityManager->flush();
+        }
+
+        // No content, HTMX-friendly
         return $response->withStatus(204);
     }
 }

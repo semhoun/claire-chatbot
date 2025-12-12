@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Brain\BrainRegistry;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use Doctrine\ORM\EntityManagerInterface;
 use Odan\Session\SessionInterface;
@@ -17,6 +18,7 @@ final readonly class HomeController
         private Twig $twig,
         private SessionInterface $session,
         private EntityManagerInterface $entityManager,
+        private BrainRegistry $brainRegistry,
     ) {
     }
 
@@ -44,6 +46,35 @@ final readonly class HomeController
         // Default layout width mode
         $layoutMode = $this->session->get('layout_mode') ?? 'full';
 
+        // Déterminer l'avatar/assistant courant (session, sinon préférence utilisateur, sinon défaut)
+        $currentBrain = (string) ($this->session->get('brain_avatar') ?? '');
+        if ($currentBrain === '') {
+            $user = $this->entityManager->getRepository(\App\Entity\User::class)->find($this->session->get('userId'));
+            if ($user !== null) {
+                $params = $user->getParams() ?? [];
+                $currentBrain = (string) ($params['brain_avatar'] ?? '');
+            }
+
+            if ($currentBrain === '') {
+                $currentBrain = 'claire';
+            }
+
+            $this->session->set('brain_avatar', $currentBrain);
+        }
+
+        // Métadonnées du brain courant via la registry
+        try {
+            $meta = $this->brainRegistry->getMeta($currentBrain);
+        } catch (\InvalidArgumentException) {
+            // Fallback sur "claire" si le slug n'est pas valide
+            $currentBrain = 'claire';
+            $this->session->set('brain_avatar', $currentBrain);
+            $meta = $this->brainRegistry->getMeta($currentBrain);
+        }
+
+        // Liste complète pour l'UI
+        $brains = $this->brainRegistry->list();
+
         return $this->twig->render($response, 'chat.twig', [
             'time' => $time,
             'message' => $defaultMessage,
@@ -51,6 +82,9 @@ final readonly class HomeController
             'uinfo' => $this->session->get('uinfo'),
             'chat_mode' => $mode,
             'layout_mode' => $layoutMode,
+            'brain_info' => $meta,
+            'current_brain' => $currentBrain,
+            'brains' => $brains,
         ]);
     }
 }

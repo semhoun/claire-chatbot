@@ -23,7 +23,7 @@ final readonly class SummaryController
 
     /**
      * Génère un titre et un résumé pour la conversation courante.
-     * Retourne du JSON: {"title": string, "summary": string}
+     * Retourne du JSON: {"title": string, "summary": string}.
      */
     public function generate(Request $request, Response $response): Response
     {

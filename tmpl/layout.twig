@@ -135,6 +135,32 @@
                         {{ (chat_mode|default('chat')) == 'stream' ? 'On' : 'Off' }}
                     </span>
                 </div>
+                <div class="options-item">
+                    <label for="brainSelector" class="options-item__label" style="cursor: pointer;">Assistant</label>
+                    <span class="options-item__badge" style="padding: 0; background: transparent; box-shadow: none;">
+                        <select id="brainSelector" name="brain"
+                                style="
+                                    appearance: none;
+                                    -webkit-appearance: none;
+                                    -moz-appearance: none;
+                                    background: var(--bg-input);
+                                    border: 1px solid var(--border);
+                                    border-radius: 10px;
+                                    padding: 6px 28px 6px 10px;
+                                    font: inherit;
+                                    color: inherit;
+                                    cursor: pointer;
+                                    min-width: 140px;
+                                "
+                        >
+                            {% for b in brains|default([]) %}
+                                <option value="{{ b.slug }}" {{ (current_brain|default('claire')) == b.slug ? 'selected' : '' }}>
+                                    {{ b.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </span>
+                </div>
                 <div
                         class="options-item"
                         id="toggleLayoutMode"
@@ -234,6 +260,26 @@
             if (backdrop) { backdrop.classList.toggle('is-visible', isOpen); }
         });
         observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
+    })();
+
+    // Sélecteur d'assistant (N assistants)
+    (function() {
+        const sel = document.getElementById('brainSelector');
+        if (!sel) return;
+        sel.addEventListener('change', async function() {
+            const val = sel.value;
+            try {
+                await fetch('{{ base_url }}/config/brain_avatar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ avatar: val }).toString(),
+                });
+            } catch (e) {
+                console.error(e);
+            }
+            // Recharger pour appliquer l'avatar/nom/description
+            window.location.reload();
+        });
     })();
 
     // Toggle « Documents RAG »: ouvre/ferme simplement le panneau avec le formulaire (pas de liste ni compteur)

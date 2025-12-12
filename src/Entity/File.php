@@ -46,7 +46,7 @@ class File
     {
         $this->createdAt ??= new \DateTimeImmutable('now');
         // Ensure token is set (UUID v7)
-        if (! isset($this->token) || ($this->token === '' || $this->token === '0')) {
+        if ($this->token === null || ($this->token === '' || $this->token === '0')) {
             $this->token = Uuid::uuid7()->toString();
         }
 

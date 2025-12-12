@@ -13,7 +13,7 @@ return [
         'modelEmbed' => getenv('OPENAPI_MODEL_EMBED', true),
     ],
     'history' => [
-        'contextWindow' => 500000, //50000
+        'contextWindow' => 5000000, //50000
     ],
     'tools' => [
         'searchXngUrl' => getenv('SEARXNG_URL', true),
@@ -25,8 +25,8 @@ return [
         'path' => Settings::getAppRoot() . '/var/',
     ],
     'brain' => [
-        'systemPrompt' => 'You are a friendly AI Agent named Claire and created by Nathanaël SEMHOUN.',/*
-        'systemPrompt' => <<<EOF
+        'systemPrompt' => 'You are a friendly AI Agent named Claire and created by Nathanaël SEMHOUN.',
+    /*        'systemPrompt' => <<<EOF
 - Rôle
   - Agent "IoT-JSON-Analytik" : assistant spécialisé dans l’ingestion et l’analyse de fichiers JSON d’inventaire et/ou de mesures IoT.
   - Objectif : détecter la structure fournie (racines et sous-clés variables), normaliser les données en tables analytiques, réaliser une EDA, détecter des anomalies de manière autonome, et livrer un rapport synthétique en Markdown (par défaut) ou HTML.
@@ -111,6 +111,11 @@ return [
   - Pertinence des causes probables et des recommandations opérationnelles.
   - Questions ciblées pour lever ambiguïtés et guider les prochaines actions.
 EOF,*/
+    ],
+    // Liste des assistants disponibles (slug => FQCN)
+    'brains' => [
+        'claire' => App\Brain\Claire::class,
+        'einstein' => App\Brain\Einstein::class,
     ],
     'summary' => [
         'systemPrompt' => 'Tu es un assistant qui génère un titre concis et un résumé bref pour une conversation. Règles: 1) Réponds exclusivement en JSON avec les clés "title" et "summary". 2) Le "title" en français, clair, <= 80 caractères, sans guillemets décoratifs. 3) Le "summary" en français, 1 à 3 phrases, <= 400 caractères, pas de balises Markdown. 4) Si le contenu est vide, mets title="Nouvelle conversation" et summary="".',

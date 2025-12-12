@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Brain\Tools;
 
+use App\Services\Markdown;
 use GuzzleHttp\Client;
 use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;
-use League\HTMLToMarkdown\Converter\TableConverter;
-use League\HTMLToMarkdown\HtmlConverter;
 use NeuronAI\Exceptions\ToolException;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
@@ -35,14 +34,7 @@ class WebUrlReader extends Tool
             $response = $client->request('GET', $url);
             $html = (string) $response->getBody();
             $html = $this->absolutizeHtmlUrls($html, $this->baseDocument($url));
-            $htmlConverter = new HtmlConverter([
-                'hard_break' => false,
-                'strip_tags' => true,
-                'use_autolinks' => false,
-                'remove_nodes' => 'script style',
-            ]);
-            $htmlConverter->getEnvironment()->addConverter(new TableConverter());
-            $markdown = $htmlConverter->convert($html);
+            $markdown = Markdown::fromHtml($html);
             $markdown = substr($markdown, 0, (int) $this->maxContentLength);
         } catch (\Exception $exception) {
             throw new ToolException('Failed to read URL: ' . $exception->getMessage());

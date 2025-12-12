@@ -116,18 +116,18 @@ class Observer implements ObserverInterface
 
     protected function prepareMessageItem(Message $message): array
     {
-        $message = $message->jsonSerialize();
-        if (isset($message['content'])) {
-            $message['content'] = \array_map(static function (array $block): array {
+        $messageJson = $message->jsonSerialize();
+        if (isset($messageJson['content'])) {
+            $messageJson['content'] = \array_map(static function (array $block): array {
                 if (isset($block['source_type']) && $block['source_type'] === SourceType::BASE64->value) {
                     unset($block['source']);
                 }
 
                 return $block;
-            }, $message['content']);
+            }, $messageJson['content']);
         }
 
-        return $message;
+        return $messageJson;
     }
 
     protected function spanSetAttributes(Span $span, string $attribute, mixed $data): void
@@ -138,9 +138,7 @@ class Observer implements ObserverInterface
         }
 
         foreach ($data as $key => $value) {
-            if (\is_array($value)) {
-                $this->spanSetAttributes($span, $attribute.'.'.$key, $value);
-            } elseif (\is_string($value)) {
+            if (\is_string($value)) {
                 $span->setAttribute($attribute . '.' . $key, $value);
             } else {
                 $span->setAttribute($attribute . '.' . $key, \json_encode($value));

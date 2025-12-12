@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Entity\File;
 use App\Entity\User;
+use App\Services\Markdown;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
@@ -48,7 +49,7 @@ final readonly class FileController
     }
 
     /**
-     * Retourne le nombre de fichiers pour l'utilisateur courant
+     * Retourne le nombre de fichiers pour l'utilisateur courant.
      */
     public function count(Request $request, Response $response): Response
     {
@@ -121,16 +122,25 @@ final readonly class FileController
         $this->entityManager->flush();
 
         // Ajout dans le RAG
+        if ($file->getClientMediaType() === 'application/xhtml+xml' || $file->getClientMediaType() === 'text/html') {
+            $data = Markdown::fromHtml($data);
+        }
+
+        if ($file->getClientMediaType() === 'application/pdf') {
+            $data = Markdown::fromPdf($data);
+        }
+
         $embedder = $this->container->get(EmbeddingsProviderInterface::class);
         $store = $this->container->get(VectorStoreInterface::class);
-        $documents = StringDataLoader::for($data)->withSplitter(
-            new DelimiterTextSplitter(
-                maxLength: 1000,
-                separator: '.',
-                wordOverlap: 0
+        $documents = StringDataLoader::for($data)
+            ->withSplitter(
+                new DelimiterTextSplitter(
+                    maxLength: 1000,
+                    separator: '.',
+                    wordOverlap: 0
+                )
             )
-        )
-        ->getDocuments();
+            ->getDocuments();
         $store->addDocuments(
             $embedder->embedDocuments($documents)
         );
@@ -166,7 +176,7 @@ final readonly class FileController
     }
 
     /**
-     * Télécharge un fichier via son token public (UUID v7)
+     * Télécharge un fichier via son token public (UUID v7).
      */
     public function downloadByToken(Request $request, Response $response): Response
     {

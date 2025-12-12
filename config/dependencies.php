@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Exception;
 use App\Brain\Claire;
 use App\Brain\Summary;
+use App\Exception;
 use App\Services\OidcClient;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
@@ -27,7 +27,6 @@ use Odan\Session\SessionManagerInterface;
 use OneToMany\Twig\FilesizeExtension;
 use Slim\Views\Twig;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
-use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
 use Twig\Extension\DebugExtension;
 use Twig\Extension\ProfilerExtension;
@@ -118,7 +117,7 @@ return [
         $brain->observe(new \App\Brain\Observability\Observer());
         return $brain;
     },
-    Summary::class => static function (Connection $connection, Settings $settings, SessionInterface $session, AIProviderInterface $aiProvider, EmbeddingsProviderInterface $embeddingsProvider, VectorStoreInterface $vectorStore,): Summary {
+    Summary::class => static function (Connection $connection, Settings $settings, SessionInterface $session, AIProviderInterface $aiProvider, EmbeddingsProviderInterface $embeddingsProvider, VectorStoreInterface $vectorStore): Summary {
         $summary = new Summary($connection, $settings, $session, $aiProvider, $embeddingsProvider, $vectorStore);
         $summary->observe(new \App\Brain\Observability\Observer());
         return $summary;
@@ -136,17 +135,17 @@ return [
 
         throw new Exception('Unknown filesystem type ' . $settings->get('files.fileSystem.type'));
     },
-    AIProviderInterface::class => static fn(Settings $settings): AIProviderInterface => new OpenAILike(
+    AIProviderInterface::class => static fn (Settings $settings): AIProviderInterface => new OpenAILike(
         baseUri: $settings->get('llm.openai.baseUri'),
         key: $settings->get('llm.openai.key'),
         model: $settings->get('llm.openai.model')
     ),
-    EmbeddingsProviderInterface::class => static fn(Settings $settings): EmbeddingsProviderInterface => new OpenAILikeEmbeddings(
+    EmbeddingsProviderInterface::class => static fn (Settings $settings): EmbeddingsProviderInterface => new OpenAILikeEmbeddings(
         baseUri: $settings->get('llm.openai.baseUri') . '/embeddings',
         key: $settings->get('llm.openai.key'),
         model: $settings->get('llm.openai.modelEmbed')
     ),
-    VectorStoreInterface::class => static fn(Settings $settings): VectorStoreInterface => new FileVectorStore(
+    VectorStoreInterface::class => static fn (Settings $settings): VectorStoreInterface => new FileVectorStore(
         directory: $settings->get('llm.rag.path'),
         name: 'neuron-rag',
     ),

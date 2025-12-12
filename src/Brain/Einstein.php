@@ -11,18 +11,17 @@ use NeuronAI\Agent\Middleware\Summarization;
 use NeuronAI\Agent\SystemPrompt;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Providers\AIProviderInterface;
-use NeuronAI\Providers\OpenAILike;
 use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
-use NeuronAI\RAG\Embeddings\OpenAILikeEmbeddings;
 use NeuronAI\RAG\RAG;
-use NeuronAI\RAG\VectorStore\FileVectorStore;
 use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
 use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 use Odan\Session\SessionInterface;
 
-class Einstein extends RAG
+class Einstein extends RAG implements BrainAvatar
 {
+    use EinsteinAvatar;
+
     public function __construct(
         protected Connection $connection,
         protected readonly Settings $settings,

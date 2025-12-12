@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Brain\Claire;
+use App\Brain\BrainRegistry;
 use App\Brain\Summary;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManager;
@@ -20,6 +20,7 @@ use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
 use NeuronAI\Chat\Messages\UserMessage;
+use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Psr7\NonBufferedBody;
@@ -31,12 +32,13 @@ final readonly class BrainController
 
     public function __construct(
         private Twig $twig,
-        private Claire $claire,
+        private BrainRegistry $brainRegistry,
         private Summary $summary,
         private Logger $logger,
         private EntityManager $entityManager,
         private Settings $settings,
         private Filesystem $filesystem,
+        private SessionInterface $session,
     ) {
     }
 
@@ -67,8 +69,18 @@ final readonly class BrainController
         $userMessage = new UserMessage($userStr);
         $userMessage = $this->addAttachments($request, $userMessage);
 
+        // Choisir le cerveau selon la préférence en session (par défaut: Claire)
+        $currentBrain = (string) ($this->session->get('brain_avatar') ?? 'claire');
+        try {
+            $brain = $this->brainRegistry->get($currentBrain);
+        } catch (\InvalidArgumentException) {
+            $currentBrain = 'claire';
+            $this->session->set('brain_avatar', $currentBrain);
+            $brain = $this->brainRegistry->get($currentBrain);
+        }
+
         if ($chatMode === 'chat') {
-            $agentMessage = $this->claire->chat($userMessage);
+            $agentMessage = $brain->chat($userMessage);
             $agentMessageStr = $agentMessage->getContent();
 
             $this->manageSummary();
@@ -87,7 +99,7 @@ final readonly class BrainController
 
             $body = $response->getBody();
 
-            $stream = $this->claire->stream($userMessage);
+            $stream = $brain->stream($userMessage);
 
             $streamId = null;
             $toolCallId = null;
@@ -174,7 +186,15 @@ final readonly class BrainController
      */
     private function manageSummary(): void
     {
-        $messages = $this->claire->getChatHistory()->getMessages();
+        // Choisir le chat history du brain courant pour générer le résumé approprié
+        $currentBrain = (string) ($this->session->get('brain_avatar') ?? 'claire');
+        try {
+            $brain = $this->brainRegistry->get($currentBrain);
+        } catch (\InvalidArgumentException) {
+            $brain = $this->brainRegistry->get('claire');
+        }
+
+        $messages = $brain->getChatHistory()->getMessages();
         // TODO ne pas générer le summary si le message est vide, et pas à chaque message
         $this->logger->debug('Manage summary', $messages);
         $this->summary->generateAndPersist();

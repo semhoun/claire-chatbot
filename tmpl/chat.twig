@@ -5,10 +5,10 @@
     <div class="chat-shell">
         <header class="chat-header">
             <div class="chat-header__main">
-                <img class="chat-header__avatar" src="{{ base_url }}/image/claire.png" alt="Photo de claire">
+                <img class="chat-header__avatar" src="{{ brain_info.avatar }}">
                 <div class="chat-header__info">
-                    <span class="chat-header__title">Claire</span>
-                    <span class="chat-header__subtitle">Votre assistante en PHP</span>
+                    <span class="chat-header__title">{{ brain_info.name }}</span>
+                    <span class="chat-header__subtitle">{{ brain_info.description }}</span>
                 </div>
             </div>
             <button
