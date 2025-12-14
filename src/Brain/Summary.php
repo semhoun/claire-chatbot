@@ -127,7 +127,19 @@ class Summary extends Agent
     protected function instructions(): string
     {
         return (string) new SystemPrompt(
-            background: [$this->settings->get('llm.summary.systemPrompt')],
+            background: [
+                'Tu es un assistant qui génère un titre concis et un résumé bref pour une conversation.',
+            ],
+            steps: [
+                'Ne prends pas en compte ce dernier message dans le titre.',
+                'Ne prends pas en compte ce dernier message dans le résumé.',
+            ],
+            output: [
+                '1) Réponds exclusivement en JSON avec les clés "title" et "summary".',
+                '2) Le "title" en français, clair, <= 80 caractères, sans guillemets décoratifs.',
+                '3) Le "summary" en français, 1 à 3 phrases, <= 400 caractères, pas de balises Markdown.',
+                '4) Si le contenu est vide, mets title="Nouvelle conversation" et summary',
+            ]
         );
     }
 

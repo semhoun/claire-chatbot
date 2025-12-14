@@ -30,7 +30,6 @@ use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
 use Twig\Extension\DebugExtension;
 use Twig\Extension\ProfilerExtension;
-use Twig\Extra\Markdown\DefaultMarkdown;
 use Twig\Extra\Markdown\MarkdownExtension;
 use Twig\Extra\Markdown\MarkdownRuntime;
 use Twig\Profiler\Profile;
@@ -102,7 +101,7 @@ return [
             {
                 if ($class === MarkdownRuntime::class) {
                     // Provide the Markdown runtime with a default League/CommonMark-based implementation
-                    return new MarkdownRuntime(new DefaultMarkdown());
+                    return new MarkdownRuntime(new \App\Services\Markdown());
                 }
 
                 return null;

@@ -11,6 +11,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ base_url }}/css/style.css">
+    <link rel="stylesheet" href="{{ base_url }}/css/{{ brain_info.css }}">
+
+    <link rel="stylesheet" href="{{ base_url }}/css/highlight.min.css">
+    <script src="{{ base_url }}/js/highlight.min.js"></script>
 </head>
 <body class="{{ (layout_mode|default('full')) == 'compact' ? 'compact' : '' }}">
 <div class="app">
@@ -57,7 +61,7 @@
                         // Rafraîchir le compteur
                         const countUrl = '{{ base_url }}/history/count';
                         if (window.htmx) { htmx.ajax('GET', countUrl, {target: '#historyCountBadge', swap: 'innerHTML'}); }
-                    }
+                    }}
                 "
             >
                 <span class="options-item__label">Nouvelle conversation</span>
@@ -136,23 +140,9 @@
                     </span>
                 </div>
                 <div class="options-item">
-                    <label for="brainSelector" class="options-item__label" style="cursor: pointer;">Assistant</label>
-                    <span class="options-item__badge" style="padding: 0; background: transparent; box-shadow: none;">
-                        <select id="brainSelector" name="brain"
-                                style="
-                                    appearance: none;
-                                    -webkit-appearance: none;
-                                    -moz-appearance: none;
-                                    background: var(--bg-input);
-                                    border: 1px solid var(--border);
-                                    border-radius: 10px;
-                                    padding: 6px 28px 6px 10px;
-                                    font: inherit;
-                                    color: inherit;
-                                    cursor: pointer;
-                                    min-width: 140px;
-                                "
-                        >
+                    <label for="brainSelector" class="options-item__label brain-selector" style="cursor: pointer;">Assistant</label>
+                    <span class="options-item__badge brain-selector">
+                        <select id="brainSelector" name="brain">
                             {% for b in brains|default([]) %}
                                 <option value="{{ b.slug }}" {{ (current_brain|default('claire')) == b.slug ? 'selected' : '' }}>
                                     {{ b.name }}

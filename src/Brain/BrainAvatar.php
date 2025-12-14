@@ -11,4 +11,6 @@ interface BrainAvatar
     public const string DESCRIPTION = 'undefined';
 
     public const string AVATAR = 'undefined';
+
+    public const string CSS = '';
 }

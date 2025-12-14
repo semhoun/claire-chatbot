@@ -49,6 +49,7 @@ final readonly class BrainRegistry
                 'name' => $class::NAME,
                 'description' => $class::DESCRIPTION,
                 'avatar' => $class::AVATAR,
+                'css' => $class::CSS,
             ];
         }
 
@@ -92,6 +93,7 @@ final readonly class BrainRegistry
             'description' => $class::DESCRIPTION,
             'avatar' => $class::AVATAR,
             'class' => $class,
+            'css' => $class::CSS,
         ];
     }
 }

@@ -44,7 +44,15 @@ class Claire extends Agent implements BrainAvatar
     protected function instructions(): string
     {
         return (string) new SystemPrompt(
-            background: [$this->settings->get('llm.brain.systemPrompt')],
+            background: [
+                "Tu es Claire mon assistant personnel.",
+                "Ton rôle est de m’aider à organiser mes idées, planifier mes tâches, et répondre rapidement à mes demandes.",
+                "Tu dois être clair, synthétique, proactif.",
+            ],
+            steps: [],
+            output: [
+                "Pose-moi toujours une question à la fin pour m’aider à avancer.",
+            ]
         );
     }
 
@@ -55,6 +63,7 @@ class Claire extends Agent implements BrainAvatar
 
     protected function tools(): array
     {
+        // TODO gérer les erreurs
         return [
             CalculatorToolkit::make(),
             CalendarToolkit::make(),

@@ -61,7 +61,8 @@
     "symfony/var-exporter": "^7.4",
     "1tomany/twig-filesize": "^0.0.1",
     "league/flysystem": "^3.0",
-    "iamgerwin/php-pdf-to-markdown-parser": "^0.0.1"
+    "iamgerwin/php-pdf-to-markdown-parser": "^0.0.1",
+    "spatie/commonmark-highlighter": "^3.0"
   },
   "require-dev": {
     "roave/security-advisories": "dev-latest",
