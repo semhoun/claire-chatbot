@@ -186,18 +186,14 @@ final readonly class BrainController
      */
     private function manageSummary(): void
     {
-        // Choisir le chat history du brain courant pour générer le résumé approprié
-        $currentBrain = (string) ($this->session->get('brain_avatar') ?? 'claire');
-        try {
-            $brain = $this->brainRegistry->get($currentBrain);
-        } catch (\InvalidArgumentException) {
-            $brain = $this->brainRegistry->get('claire');
+        $messages = $this->summary->getChatHistory()->getMessages();
+        if ($messages === []) {
+            return;
         }
 
-        $messages = $brain->getChatHistory()->getMessages();
         // TODO ne pas générer le summary si le message est vide, et pas à chaque message
-        $this->logger->debug('Manage summary', $messages);
-        $this->summary->generateAndPersist();
+        $result = $this->summary->generateAndPersist();
+        $this->logger->debug('Manage summary', ['messages' => $messages, 'summary' => $result]);
     }
 
     /**

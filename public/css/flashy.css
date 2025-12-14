@@ -53,6 +53,7 @@ html, body {
 
 .message--sent .message__bubble {
     background: linear-gradient(135deg, var(--accent), var(--accent-light));
+    color: var(--ink);
     box-shadow: 0 24px 36px rgba(0, 92, 159, 0.25);
 }
 
