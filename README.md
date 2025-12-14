@@ -1,5 +1,10 @@
 # Claire — Agent de Chat IA (PHP, Slim 4)
 
+![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white)
+![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B)
+![Twig](https://img.shields.io/badge/Twig-3.x-43A047)
+![License](https://img.shields.io/badge/License-MIT-blue)
+
 Claire est une application web minimaliste de chat IA construite avec Slim 4 et Twig. Elle s’appuie sur la bibliothèque neuron-core pour piloter un LLM compatible OpenAI et fournit une petite interface web ainsi qu’un endpoint API pour échanger des messages.
 
 ## Fonctionnalités
@@ -13,7 +18,7 @@ Claire est une application web minimaliste de chat IA construite avec Slim 4 et 
 
 ## Pile technique
 
-- PHP 8.2+
+- PHP 8.4+
 - [Slim 4](https://www.slimframework.com/) (routing, middlewares)
 - [PHP-DI](https://php-di.org/) (container)
 - [Twig](https://twig.symfony.com/) (templates)
@@ -79,6 +84,14 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
       - `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` — endpoint logs (optionnel; surcharge de `..._ENDPOINT`).
 
   Note: les endpoints OTLP et les headers sont optionnels. Si vous ne les définissez pas, l’exporteur appliquera ses valeurs par défaut. Par exemple, pour afficher les logs uniquement en console, il suffit de définir `OTEL_LOGS_EXPORTER=console` sans renseigner d’endpoint OTLP.
+
+### Avatars / Cerveaux (BrainRegistry)
+
+L’application permet de sélectionner différents « cerveaux » (avatars) pour l’agent (ex.: Claire, Einstein). La sélection est mémorisée en session sous la clé `brain_avatar`.
+
+- La logique de sélection est gérée par le registre `BrainRegistry`.
+- Si une valeur invalide est fournie, l’application revient automatiquement sur l’avatar par défaut: `claire`.
+- Vous pouvez exposer ce choix dans l’UI (ex.: select) ou via un paramètre de requête selon vos besoins.
 
 ### Authentification OpenID Connect (SSO)
 
@@ -276,12 +289,101 @@ Notes:
   ```
 - Si vous utilisez un autre proxy (Nginx, Traefik, etc.), désactivez la bufferisation équivalente (ex. Nginx: `proxy_buffering off;` sur l’emplacement concerné).
 
+### Endpoint de chat: POST /brain/chat
+
+L’agent supporte deux modes de réponse:
+
+- Mode « chat » (synchrone): la réponse complète est rendue côté serveur et renvoyée en une fois.
+- Mode streaming SSE: la réponse est envoyée progressivement via un flux `text/stream` (utilise une sortie non tamponnée côté application; veillez à désactiver la bufferisation côté proxy, voir plus haut).
+
+La sélection du mode peut se faire via le champ `mode` dans le corps de la requête (`chat` par défaut, ou `stream`).
+
+#### Requête JSON simple (mode chat)
+
+```http
+POST /brain/chat HTTP/1.1
+Content-Type: application/json
+
+{
+  "message": "Bonjour Claire !",
+  "mode": "chat"
+}
+```
+
+Réponses possibles:
+- 200: corps HTML fragment (ex.: rendu Twig `partials/message.twig`) ou contenu texte selon l’intégration front.
+- 422: si le champ `message` est vide.
+
+#### Streaming SSE (mode stream)
+
+```http
+POST /brain/chat HTTP/1.1
+Accept: text/event-stream
+Content-Type: application/json
+
+{
+  "message": "Explique-moi la relativité en 3 points",
+  "mode": "stream"
+}
+```
+
+La réponse aura des en-têtes: `content-type: text/stream`, `cache-control: no-cache`. Les chunks contiendront du texte (et potentiellement des informations d’outillage) au fil de l’eau.
+
+#### Pièces jointes et fichiers
+
+Deux mécanismes sont pris en charge côté serveur pour enrichir le contexte utilisateur:
+
+1) Upload direct de fichiers via `multipart/form-data` avec le champ `upload_files[]`.
+2) Référence à des fichiers déjà connus de l’application via une liste d’identifiants `file_ids` (IDs de l’entité `App\Entity\File`).
+
+Exemple multipart (upload direct):
+
+```http
+POST /brain/chat HTTP/1.1
+Content-Type: multipart/form-data; boundary=----BOUND
+
+------BOUND
+Content-Disposition: form-data; name="message"
+
+Analyse ces documents, s'il te plaît.
+------BOUND
+Content-Disposition: form-data; name="mode"
+
+chat
+------BOUND
+Content-Disposition: form-data; name="upload_files[]"; filename="notes.txt"
+Content-Type: text/plain
+
+(contenu du fichier)
+------BOUND--
+```
+
+Exemple JSON (fichiers déjà stockés):
+
+```http
+POST /brain/chat HTTP/1.1
+Content-Type: application/json
+
+{
+  "message": "Utilise mes fichiers pour répondre.",
+  "mode": "chat",
+  "file_ids": ["e7a4f2d8-...", "6b0e9c1a-..."]
+}
+```
+
+Comportement serveur:
+- Si `message` est vide ou absent → 422.
+- Les fichiers uploadés sont lus en mémoire et intégrés au contexte interne du message utilisateur.
+- Les fichiers référencés par `file_ids` sont récupérés depuis le stockage applicatif et exposés à l’agent via un lien signé/tokenisé (`/files/by-token/{token}`) et/ou leur contenu encodé.
+- Les erreurs de lecture d’un fichier n’interrompent pas la requête: elles sont journalisées (best‑effort).
+
 ## Sécurité
 
 - Ne commitez jamais vos clés ou secrets (`OPENAPI_KEY`, etc.).
 - En production, désactivez `DEBUG_MODE` et vérifiez les permissions du répertoire `var/` (cache, logs, tmp).
 - Si l’agent dispose d’outils web (lecture d’URL, recherche), restreignez l’accès public ou placez l’instance derrière une authentification/reverse proxy.
 - Configurez le CORS en amont si vous exposez l’API à des origines externes.
+- Les URLs de fichiers exposées sous la forme `/files/by-token/{token}` doivent être protégées par des contrôles d’accès et/ou des tokens suffisamment aléatoires avec des durées de vie adaptées.
 
 ## Développement & Qualité
 
