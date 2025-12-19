@@ -8,7 +8,7 @@ trait ClaireAvatar
 {
     public const string NAME = 'Claire';
 
-    public const string DESCRIPTION = 'Claire votre assitante personnelle, prête à vous accompagner dans vos tâches quotidiennes.';
+    public const string DESCRIPTION = 'Claire votre assistante personnelle, prête à vous accompagner dans vos tâches quotidiennes.';
 
     public const string CSS = 'claire.css';
 

@@ -80,7 +80,7 @@ final readonly class BrainController
         }
 
         if ($chatMode === 'chat') {
-            $agentMessage = $brain->chat($userMessage);
+            $agentMessage = $brain->chat($userMessage)->getMessage();
             $agentMessageStr = $agentMessage->getContent();
 
             $this->manageSummary();

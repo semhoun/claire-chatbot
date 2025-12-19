@@ -40,7 +40,7 @@ class Summary extends Agent
             "Génère 'title' et 'summary'."
         );
 
-        $message = $this->chat($userMessage);
+        $message = $this->chat($userMessage)->getMessage();
         $content = $message->getContent();
 
         // On isole la partie JSON entre le premier "{" et le dernier "}"

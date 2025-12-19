@@ -54,8 +54,8 @@ final readonly class SummaryController
             "Analyse toute la conversation en ne prenant pas en compte ce message et réponds strictement en JSON avec les clés 'title' et 'summary'."
         );
 
-        $message = $this->summary->chat($userMessage);
-        $content = trim($message->getContent());
+        $agentHandler = $this->summary->chat($userMessage);
+        $content = trim($agentHandler->getContent());
 
         $title = null;
         $summary = null;
