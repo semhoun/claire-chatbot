@@ -34,6 +34,7 @@ Claire est une application web minimaliste de chat IA construite avec Slim 4 et 
   - `ext-sqlite3` ou 'ext-mysql' ou 'ext-pgsql'
   - `ext-libxml`
 - Composer
+- Ajustez `max_execution_time` dans php.ini (ex: `max_execution_time=300`) car les appels LLM peuvent être longs.
 
 ## Installation
 

@@ -78,7 +78,6 @@ final readonly class BrainController
             $this->session->set('brain_avatar', $currentBrain);
             $brain = $this->brainRegistry->get($currentBrain);
         }
-
         if ($chatMode === 'chat') {
             $agentMessage = $brain->chat($userMessage)->getMessage();
             $agentMessageStr = $agentMessage->getContent();
@@ -91,6 +90,12 @@ final readonly class BrainController
                 'sent' => false,
             ]);
         } else {
+            // Some init for htmx
+            $streamId = null;
+            $toolCallId = null;
+            $streamedText = '';
+            $toolText = null;
+
             // SSE headers
             $response = $response
                 ->withBody(new NonBufferedBody())
@@ -99,16 +104,10 @@ final readonly class BrainController
 
             $body = $response->getBody();
 
-            $stream = $brain->stream($userMessage);
-
-            $streamId = null;
-            $toolCallId = null;
-
-            $streamedText = '';
-            $toolText = null;
+            $handler = $brain->stream($userMessage);
 
             // Iterate chunks
-            foreach ($stream as $chunk) {
+            foreach ($handler->events() as $chunk) {
                 if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
                     $toolText = '';
                     if ($toolCallId === null) {

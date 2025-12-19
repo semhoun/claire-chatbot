@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Entity\User;
 use App\Exception;
+use App\Services\Auth;
 use App\Services\OidcClient;
 use Doctrine\ORM\EntityManagerInterface;
 use Odan\Session\SessionInterface;
@@ -17,14 +18,14 @@ final readonly class AuthController
     public function __construct(
         private SessionInterface $session,
         private OidcClient $oidcClient,
-        private EntityManagerInterface $entityManager,
+        private readonly Auth $auth,
     ) {
     }
 
     public function ssoRedirect(Request $request, Response $response): Response
     {
-        if (! $this->oidcClient->isEnabled()) {
-            $this->userLogged($this->oidcClient->getDefaultUser());
+        if (!$this->oidcClient->isEnabled()) {
+            $this->auth->login($this->oidcClient->getDefaultUser());
             return $response->withStatus(302)->withHeader('Location', '/');
         }
 
@@ -40,60 +41,13 @@ final readonly class AuthController
             return $response->withHeader('Location', '/auth/sso')->withStatus(302);
         }
 
-        $this->userLogged($result['uinfo']);
-
+        $this->auth->login($result['uinfo']);
         return $response->withStatus(302)->withHeader('Location', '/');
     }
 
     public function logout(Request $request, Response $response): Response
     {
-        $this->session->set('logged', false);
-        $this->session->set('uinfo', null);
+        $this->auth->logout();
         return $response->withStatus(302)->withHeader('Location', '/');
-    }
-
-    /**
-     * @throws \Exception
-     */
-    private function userLogged(array $uinfo): void
-    {
-        $this->session->set('logged', true);
-        $this->session->set('userId', $uinfo['id']);
-
-        // Vérifier l'existence de l'utilisateur en base via son id (sub OIDC).
-        // Le créer s'il n'existe pas, sinon mettre à jour les infos de base.
-        $userId = (string) ($uinfo['id'] ?? '');
-        if ($userId === '') {
-            throw new Exception('User id not provided by OIDC provider:');
-        }
-
-        $this->session->set('uinfo', $uinfo);
-
-        try {
-            /** @var User|null $user */
-            $user = $this->entityManager->getRepository(User::class)->find($userId);
-            if ($user === null) {
-                $user = new User();
-                $user->setId($userId);
-                $this->entityManager->persist($user);
-                $this->entityManager->flush();
-            }
-
-            $user = $this->entityManager->getRepository(User::class)->find($userId);
-            $user->setFirstName($uinfo['firstName']);
-            $user->setLastName($uinfo['lastName']);
-            $user->setEmail($uinfo['email']);
-            if (($uinfo['firstName'] ?? null) === null && ($uinfo['lastName'] ?? null) === null && ($uinfo['name'] ?? null) !== null) {
-                $user->setFirstName($uinfo['name']);
-            }
-
-            $this->entityManager->flush();
-
-            foreach ($user->getParams() ?? [] as $key => $value) {
-                $this->session->set($key, $value);
-            }
-        } catch (\Exception $exception) {
-            throw new Exception('User not found in database: ' . $exception->getMessage());
-        }
     }
 }

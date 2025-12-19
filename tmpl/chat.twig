@@ -80,9 +80,10 @@
                   hx-indicator="#typingIndicator"
                   hx-encoding="multipart/form-data"
                   hx-on::after-request="clearInput(event)"
+                  hx-on::before-request="chatClick(event)"
                   data-mode="{{ chat_mode|default('chat') }}"
             >
-                <label class="chat-icon-btn chat-icon-btn--upload" for="chat-upload" aria-label="Joindre un fichier">
+                <label class="chat-icon-btn chat-icon-btn--upload form_disabler" for="chat-upload" aria-label="Joindre un fichier">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
                     </svg>
@@ -93,9 +94,9 @@
                 <span id="chatAttachedFilesChat" class="chat-attached"></span>
                 {# Hidden inputs for selected file IDs (from Files list) #}
                 <span id="chatAttachedFilesChatHidden" hidden></span>
-                <input class="chat-input__field" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required />
+                <input class="chat-input__field form_disabler" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required />
                 <div class="chat-input__actions">
-                    <button class="chat-icon-btn" type="submit" aria-label="Envoyer">
+                    <button class="chat-icon-btn form_disabler" type="submit" aria-label="Envoyer">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M3.4 20.6L4.8 14.2 16.2 12 4.8 9.8 3.4 3.4 22 12 3.4 20.6Z"/>
                         </svg>
@@ -109,36 +110,6 @@
 
 {% block script %}
 <script>
-    // Append the user's message immediately, then let HTMX show the typing indicator and load the agent reply
-    document.addEventListener('htmx:beforeRequest', function (evt) {
-        const forms = Array.from(document.querySelectorAll('.chat-input__form'));
-        if (!forms.length || !forms.includes(evt.target)) return;
-        const form = evt.target;
-        const input = form.querySelector('[name="message"]');
-        if (!input) return;
-        const text = (input.value || '').trim();
-        if (!text) return; // nothing to append
-        const messages = document.getElementById('messages');
-        const chatBody = document.querySelector('.chat-body');
-        const scrollBtn = document.getElementById('scrollDownBtn');
-        if (!messages || !chatBody) return;
-        // Build the message bubble
-        const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = '<article class="message message--sent">\
-            <div class="message__bubble"></div>\
-            <span class="message__meta"></span>\
-        </article>';
-        const article = wrapper.firstElementChild;
-        article.querySelector('.message__bubble').textContent = text;
-        article.querySelector('.message__meta').textContent = time + ' • Vous';
-        messages.appendChild(article);
-        // Ensure we scroll to the bottom to keep the newest message in view
-        chatBody.scrollTop = chatBody.scrollHeight;
-        if (scrollBtn) scrollBtn.style.display = 'none';
-        // Do not clear input here; it will be cleared on successful response via hx-on::after-request
-    });
-
     // Bascule du mode chat/stream selon l'option (événement global)
     (function () {
         window.addEventListener('chat-mode-changed', function (e) {
@@ -153,7 +124,44 @@
 
     // Gestion locale des pièces jointes: chips avec suppression + synchronisation du formulaire
     (function () {
-        window.clearInput =  function clearInput(event) {
+        window.chatClick = function chatClick(event) {
+            const form = event.target;
+            console.log(form);
+           // Désactiver tous les éléments du formulaire avec la classe form_disabler
+            const disablers = form.querySelectorAll('.form_disabler');
+            disablers.forEach(el => { el.setAttribute('disabled', true); });
+
+            const input = form.querySelector('[name="message"]');
+            if (!input) return;
+            const text = (input.value || '').trim();
+            if (!text) return; // nothing to append
+            const messages = document.getElementById('messages');
+            const chatBody = document.querySelector('.chat-body');
+            const scrollBtn = document.getElementById('scrollDownBtn');
+            if (!messages || !chatBody) return;
+            // Build the message bubble
+            const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = '<article class="message message--sent">\
+            <div class="message__bubble"></div>\
+            <span class="message__meta"></span>\
+        </article>';
+            const article = wrapper.firstElementChild;
+            article.querySelector('.message__bubble').textContent = text;
+            article.querySelector('.message__meta').textContent = time + ' • Vous';
+            messages.appendChild(article);
+            // Ensure we scroll to the bottom to keep the newest message in view
+            chatBody.scrollTop = chatBody.scrollHeight;
+            if (scrollBtn) scrollBtn.style.display = 'none';
+            // Do not clear input here; it will be cleared on successful response via hx-on::after-request
+        }
+
+        window.clearInput = function clearInput(event) {
+            const form = event.target;
+
+            const disablers = form.querySelectorAll('.form_disabler');
+            disablers.forEach(el => { el.removeAttribute('disabled'); });
+
             if(!event.detail.successful) {
                 return;
             }
@@ -194,7 +202,7 @@
 
         function createIdChip(fileId, fileName) {
             const chip = document.createElement('span');
-            chip.className = 'chat-chip';
+            chip.className = 'chat-chip form_disabler';
             chip.setAttribute('data-type', 'id');
             chip.setAttribute('data-file-id', String(fileId));
             chip.title = fileName || '';

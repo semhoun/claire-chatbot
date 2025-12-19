@@ -20,9 +20,9 @@ use Spatie\CommonMarkHighlighter\FencedCodeRenderer;
 use Spatie\CommonMarkHighlighter\IndentedCodeRenderer;
 use Twig\Extra\Markdown\MarkdownInterface;
 
-class Markdown implements MarkdownInterface
+readonly class Markdown implements MarkdownInterface
 {
-    private readonly MarkdownConverter $markdownConverter;
+    private MarkdownConverter $markdownConverter;
 
     public function __construct()
     {

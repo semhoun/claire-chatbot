@@ -34,7 +34,8 @@ final class OidcClient
         $this->scopes = $this->settings->get('oidc.scopes');
         $this->redirectUri = $this->settings->get('oidc.redirect_uri_base') .  '/auth/callback';
 
-        if ($wellKnownUrl === '' || $clientId === '') {
+        if (empty($wellKnownUrl) || empty($clientId)) {
+            $this->enabled = false;
             return;
         }
 

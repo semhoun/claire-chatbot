@@ -8,3 +8,4 @@ composer.lock
 .local/share/composer
 .bash_history
 compose.yml
+local_data

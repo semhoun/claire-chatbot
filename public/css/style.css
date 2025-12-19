@@ -73,6 +73,15 @@ p {
     margin: 5px;
 }
 
+.form_disabler:disabled,
+.form_disabler[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(1);
+    transform: none !important;
+    box-shadow: none;
+}
+
 .app {
     width: 100%;
     max-width: 100%;
@@ -1016,6 +1025,14 @@ body.compact .chat-input {
 .btn--secondary:hover {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 124, 229, 0.35);
+}
+
+.btn:disabled,
+.btn[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed !important;
+    filter: saturate(0.5);
+    pointer-events: none;
 }
 
 .btn--primary {
