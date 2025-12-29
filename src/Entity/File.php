@@ -38,17 +38,10 @@ class File
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable', nullable: false)]
     private \DateTimeImmutable $createdAt;
 
-    #[ORM\Column(name: 'token', type: 'string', length: 36, unique: true, nullable: false)]
-    private ?string $token = null;
-
     #[ORM\PrePersist]
     public function onPrePersist(): void
     {
         $this->createdAt ??= new \DateTimeImmutable('now');
-        // Ensure token is set (UUID v7)
-        if ($this->token === null || ($this->token === '' || $this->token === '0')) {
-            $this->token = Uuid::uuid7()->toString();
-        }
 
         if (! isset($this->fileId) || ($this->fileId === '' || $this->fileId === '0')) {
             $this->fileId = Uuid::uuid7()->toString();
@@ -113,15 +106,5 @@ class File
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
-    }
-
-    public function getToken(): ?string
-    {
-        return $this->token;
-    }
-
-    public function setToken(?string $token): void
-    {
-        $this->token = $token;
     }
 }

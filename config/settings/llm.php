@@ -30,4 +30,5 @@ return [
         'einstein' => App\Brain\Einstein::class,
         'flashy' => App\Brain\Flashy::class,
     ],
+    'defaultBrain' => 'claire',
 ];

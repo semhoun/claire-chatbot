@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Brain\Claire;
+use App\Brain\ChatHistory\UserChatHistory;
+use App\Brain\Provider\OpenAI;
 use App\Brain\Summary;
 use App\Exception;
 use App\Services\OidcClient;
@@ -16,7 +17,6 @@ use Doctrine\ORM\ORMSetup;
 use League\Flysystem\Filesystem;
 use Monolog\Logger;
 use NeuronAI\Providers\AIProviderInterface;
-use NeuronAI\Providers\OpenAILike;
 use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
 use NeuronAI\RAG\Embeddings\OpenAILikeEmbeddings;
 use NeuronAI\RAG\VectorStore\FileVectorStore;
@@ -111,13 +111,8 @@ return [
         $twig->getEnvironment()->addGlobal('settings', $settings);
         return $twig;
     },
-    Claire::class => static function (Connection $connection, Settings $settings, SessionInterface $session, AIProviderInterface $aiProvider): Claire {
-        $brain = new Claire($connection, $settings, $session, $aiProvider);
-        $brain->observe(new \App\Brain\Observability\Observer());
-        return $brain;
-    },
-    Summary::class => static function (Connection $connection, Settings $settings, SessionInterface $session, AIProviderInterface $aiProvider, EmbeddingsProviderInterface $embeddingsProvider, VectorStoreInterface $vectorStore): Summary {
-        $summary = new Summary($connection, $settings, $session, $aiProvider, $embeddingsProvider, $vectorStore);
+    Summary::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Summary {
+        $summary = new Summary($connection, $settings, $session);
         $summary->observe(new \App\Brain\Observability\Observer());
         return $summary;
     },
@@ -134,7 +129,7 @@ return [
 
         throw new Exception('Unknown filesystem type ' . $settings->get('files.fileSystem.type'));
     },
-    AIProviderInterface::class => static fn (Settings $settings): AIProviderInterface => new OpenAILike(
+    AIProviderInterface::class => static fn (Settings $settings): AIProviderInterface => new OpenAI(
         baseUri: $settings->get('llm.openai.baseUri'),
         key: $settings->get('llm.openai.key'),
         model: $settings->get('llm.openai.model')
@@ -147,5 +142,11 @@ return [
     VectorStoreInterface::class => static fn (Settings $settings): VectorStoreInterface => new FileVectorStore(
         directory: $settings->get('llm.rag.path'),
         name: 'neuron-rag',
+    ),
+    UserChatHistory::class => static fn (Settings $settings, Connection $connection, SessionInterface $session): UserChatHistory => new UserChatHistory(
+        session: $session,
+        pdo: $connection->getNativeConnection(),
+        table: 'chat_history',
+        contextWindow: $settings->get('llm.history.contextWindow')
     ),
 ];

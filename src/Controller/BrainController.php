@@ -6,7 +6,6 @@ namespace App\Controller;
 
 use App\Brain\BrainRegistry;
 use App\Brain\Summary;
-use App\Services\Settings;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\OptimisticLockException;
@@ -14,7 +13,8 @@ use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\UnableToReadFile;
 use Monolog\Logger;
-use NeuronAI\Chat\Messages\ContentBlocks\TextContent;
+use NeuronAI\Chat\Enums\SourceType;
+use NeuronAI\Chat\Messages\ContentBlocks\FileContent;
 use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
@@ -36,7 +36,6 @@ final readonly class BrainController
         private Summary $summary,
         private Logger $logger,
         private EntityManager $entityManager,
-        private Settings $settings,
         private Filesystem $filesystem,
         private SessionInterface $session,
     ) {
@@ -78,6 +77,7 @@ final readonly class BrainController
             $this->session->set('brain_avatar', $currentBrain);
             $brain = $this->brainRegistry->get($currentBrain);
         }
+
         if ($chatMode === 'chat') {
             $agentMessage = $brain->chat($userMessage)->getMessage();
             $agentMessageStr = $agentMessage->getContent();
@@ -171,7 +171,7 @@ final readonly class BrainController
             }
         }
 
-        $this->manageSummary();
+        //$this->manageSummary();
         return $response;
     }
 
@@ -196,17 +196,13 @@ final readonly class BrainController
     }
 
     /**
-     * Adds attachments to the provided UserMessage based on file IDs and uploaded files from the request.
+     * Adds attachments from the request to the user message.
+     * Processes both uploaded files and files identified by IDs.
      *
-     * This method processes file IDs and uploaded files passed via the request, generates
-     * the required content based on these inputs, and appends the generated content
-     * to the given UserMessage. Files are handled with best-effort, allowing the
-     * process to continue even if an error occurs while reading files.
+     * @param Request $request The HTTP request containing the uploaded files and/or file IDs.
+     * @param UserMessage $userMessage The user message to which the attachments will be added.
      *
-     * @param Request $request The request containing file IDs and/or uploaded files.
-     * @param UserMessage $userMessage The message to which the attachments will be added.
-     *
-     * @return UserMessage The updated UserMessage containing the added attachments.
+     * @return UserMessage The updated user message with the added attachments.
      */
     private function addAttachments(Request $request, UserMessage $userMessage): UserMessage
     {
@@ -217,15 +213,6 @@ final readonly class BrainController
         if ($fileIds === [] && $uploadedFiles === []) {
             return $userMessage;
         }
-
-        $text = "<!-- SYSTEM CONTEXT (NOT PART OF USER QUERY) -->\n"
-            . "<context.instruction>following part contains context information injected by the system. Please follow these instructions:\n\n"
-            . "1. Always prioritize handling user-visible content.\n"
-            . "2. the context is only required when user's queries rely on it.\n"
-            . "</context.instruction>\n"
-            . "<files_info>\n"
-            . "<files>\n"
-            . "<files_docstring>here are user upload files you can refer to</files_docstring>\n";
 
         foreach ($uploadedFiles as $uploadedFile) {
             try {
@@ -239,18 +226,14 @@ final readonly class BrainController
 
                 $stream = $uploadedFile->getStream();
                 $stream->rewind();
-                $text .= '<file'
-                    . ' name="' . ($uploadedFile->getClientFilename() ?? 'fichier') . '"'
-                    . ' type="' . ($uploadedFile->getClientMediaType() ?? 'application/octet-stream') . '"'
-                    . ' size="' . $uploadedFile->getSize() . '"'
-                    . '>';
-                if (in_array($uploadedFile->getClientMediaType(), $this->settings->get('files.rawMimeTypes'), true)) {
-                    $text .= $stream->getContents();
-                } else {
-                    $text .= base64_encode((string) $stream->getContents());
-                }
 
-                $text .= '</file>' . "\n";
+                $content = new FileContent(
+                    base64_encode((string) $stream->getContents()),
+                    SourceType::BASE64,
+                    $uploadedFile->getClientMediaType() ?? 'application/octet-stream',
+                    $uploadedFile->getClientFilename() ?? 'file'
+                );
+                $userMessage->addContent($content);
             } catch (\Throwable $e) {
                 // best-effort; ignore faulty upload and continue
                 $this->logger->warning('Failed to read inline upload', ['error' => $e->getMessage()]);
@@ -265,31 +248,16 @@ final readonly class BrainController
                     continue;
                 }
 
-                $text .= '<file'
-                    . ' id="' . $fileId . '"'
-                    . ' name="' . $fileDB->getFilename() . '"'
-                    . ' type="' . $fileDB->getMimeType() . '"'
-                    . ' size="' . $fileDB->getSizeBytes() . '"'
-                    . ' url="' . $request->getAttribute('base_url') . '/files/by-token/' . $fileDB->getToken() . '"'
-                    . '>';
-
-                if (in_array($fileDB->getMimeType(), $this->settings->get('files.rawMimeTypes'), true)) {
-                    $text .= $this->filesystem->read($fileDB->getFileId());
-                } else {
-                    $text .= base64_encode($this->filesystem->read($fileDB->getFileId()));
-                }
-
-                $text .= '</file>' . "\n";
+                $content = new FileContent(
+                    base64_encode($this->filesystem->read($fileDB->getFileId())),
+                    SourceType::BASE64,
+                    $fileDB->getMimeType(),
+                    $fileDB->getFilename(),
+                );
             } catch (OptimisticLockException | ORMException | FilesystemException | UnableToReadFile $exception) {
                 $this->logger->error('Failed to add addAttachments', ['fileId' => $fileId, 'exception' => $exception]);
             }
         }
-
-        $text .= "</files>\n"
-            . "</files_info>\n"
-            . '<!-- END SYSTEM CONTEXT -->';
-
-        $userMessage->addContent(new TextContent($text));
 
         return $userMessage;
     }

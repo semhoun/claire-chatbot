@@ -18,7 +18,7 @@ final readonly class AuthController
     public function __construct(
         private SessionInterface $session,
         private OidcClient $oidcClient,
-        private readonly Auth $auth,
+        private Auth $auth,
     ) {
     }
 

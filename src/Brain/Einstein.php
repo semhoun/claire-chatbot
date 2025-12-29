@@ -4,50 +4,31 @@ declare(strict_types=1);
 
 namespace App\Brain;
 
-use App\Brain\ChatHistory\UserChatHistory;
-use App\Services\Settings;
-use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Middleware\Summarization;
-use NeuronAI\Chat\History\ChatHistoryInterface;
-use NeuronAI\Providers\AIProviderInterface;
-use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
-use NeuronAI\RAG\RAG;
 use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
 use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
-use Odan\Session\SessionInterface;
 
 class Einstein extends RAG implements BrainAvatar
 {
     use EinsteinAvatar;
 
-    public function __construct(
-        protected Connection $connection,
-        protected readonly Settings $settings,
-        protected readonly SessionInterface $session,
-        protected AIProviderInterface $aiProvider,
-        protected EmbeddingsProviderInterface $embeddingsProvider,
-        protected VectorStoreInterface $vectorStore,
-    ) {
-        parent::__construct();
-    }
+    public const string NAME = 'Einstein';
 
-    #[\Override]
-    protected function chatHistory(): ChatHistoryInterface
+    public const string DESCRIPTION = 'Votre assitant virtuel qui utilise sa base de connaissance pour vous aider';
+
+    public const string CSS = 'einstein.css';
+
+    public function getOpeningText(): string
     {
-        return new UserChatHistory(
-            session: $this->session,
-            pdo: $this->connection->getNativeConnection(),
-            table: 'chat_history',
-            contextWindow: $this->settings->get('llm.history.contextWindow')
-        );
+        return "Bonjour et bienvenue ! Comment puis-je t'aider aujourd'hui ?";
     }
 
     #[\Override]
     protected function instructions(): string
     {
         return <<<EOF
-Rôle et voix
+Rôle et personnalité
 
 Tu es « Einstein », un agent expert, clair et concis. Ton style est pédagogique, rigoureux, empathique et factuel. Tu privilégies la simplicité et la précision plutôt que l’emphase.
 Par défaut, réponds dans la langue de l’utilisateur. Si non spécifiée, réponds en français.
@@ -127,16 +108,6 @@ Tu es « Einstein »: privilégie la clarté, la rigueur et la pédagogie. Toujo
 EOF;
     }
 
-    protected function provider(): AIProviderInterface
-    {
-        return $this->aiProvider;
-    }
-
-    protected function embeddings(): EmbeddingsProviderInterface
-    {
-        return $this->embeddingsProvider;
-    }
-
     protected function tools(): array
     {
         return [
@@ -146,6 +117,7 @@ EOF;
         ];
     }
 
+    #[\Override]
     protected function vectorStore(): VectorStoreInterface
     {
         return $this->vectorStore;
@@ -156,6 +128,7 @@ EOF;
      *
      * @return array<class-string<NodeInterface>, array<WorkflowMiddleware>>
      */
+    #[\Override]
     protected function middleware(): array
     {
         $summarization = new Summarization(

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Brain\BrainRegistry;
+use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use Doctrine\ORM\EntityManagerInterface;
+use NeuronAI\Chat\Messages\AssistantMessage;
 use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -17,6 +20,8 @@ final readonly class HistoryController
         private Twig $twig,
         private SessionInterface $session,
         private EntityManagerInterface $entityManager,
+        private UserChatHistory $userChatHistory,
+        private BrainRegistry $brainRegistry,
     ) {
     }
 
@@ -32,9 +37,15 @@ final readonly class HistoryController
         $threadId = uniqid('', true);
         $this->session->set('chatId', $threadId);
 
-        // Retourne une liste de messages vide pour remplacer #messages
+        $currentBrain = $this->session->get('brain_avatar');
+        $messages = [
+            new AssistantMessage(
+                $this->brainRegistry->get($currentBrain)->getOpeningText()
+            ),
+        ];
+
         return $this->twig->render($response, 'partials/messages_list.twig', [
-            'messages' => [],
+            'messages' => $messages,
         ]);
     }
 
@@ -94,12 +105,12 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
-        $messages = $this->entityManager->getRepository(ChatHistoryEntity::class)->getShareGptMessages($userId, $threadId);
-        if ($messages === null) {
+        $this->session->set('chatId', $threadId);
+        $this->userChatHistory->setThreadId($threadId);
+        $messages = $this->userChatHistory->getMessages();
+        if ($messages === []) {
             return $response->withStatus(400);
         }
-
-        $this->session->set('chatId', $threadId);
 
         return $this->twig->render($response, 'partials/messages_list.twig', [
             'messages' => $messages,

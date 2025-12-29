@@ -6,13 +6,13 @@ use App\Entity\User;
 use App\Exception;
 use Doctrine\ORM\EntityManager;
 use Odan\Session\SessionInterface;
-use Slim\Views\Twig;
 
 class Auth
 {
     public function __construct(
-        private SessionInterface $session,
-        private EntityManager $entityManager,
+        private readonly SessionInterface $session,
+        private readonly EntityManager $entityManager,
+        private readonly Settings $settings,
     ) {
     }
 
@@ -37,7 +37,6 @@ class Auth
      *                     an 'id' key and may include 'firstName', 'lastName',
      *                     'email', and 'name'.
      *
-     * @return void
      *
      * @throws Exception If the 'id' key is not provided in the user information
      *                   or if the user could not be processed in the database.
@@ -79,6 +78,12 @@ class Auth
             foreach ($user->getParams() ?? [] as $key => $value) {
                 $this->session->set($key, $value);
             }
+
+            // Déterminer l'avatar/assistant courant (session, sinon préférence utilisateur, sinon défaut)
+            $currentBrain = (string) ($this->session->get('brain_avatar') ?? '');
+            if ($currentBrain === '') {
+                $this->session->set('brain_avatar', $this->settings->get('llm.defaultBrain'));
+            }
         } catch (\Exception $exception) {
             throw new Exception('User not found in database: ' . $exception->getMessage());
         }
@@ -87,8 +92,6 @@ class Auth
     /**
      * Logs out the current user by updating session data to reflect
      * that the user is no longer authenticated and clearing user information.
-     *
-     * @return void
      */
     public function logout(): void
     {

@@ -33,12 +33,11 @@ final readonly class AuthMiddleware implements MiddlewareInterface
         '/css',
         '/js',
         '/image',
-        '/files/by-token/',
     ];
 
     public function __construct(
         private Twig $twig,
-        private readonly Auth $auth,
+        private Auth $auth,
         private ContainerInterface $container,
     ) {
     }
@@ -49,7 +48,7 @@ final readonly class AuthMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
 
-        if (!$this->container->get(OidcClient::class)->isEnabled()) {
+        if (! $this->container->get(OidcClient::class)->isEnabled()) {
             $this->auth->login($this->container->get(OidcClient::class)->getDefaultUser());
             return $handler->handle($request);
         }

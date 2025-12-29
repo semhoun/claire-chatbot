@@ -4,40 +4,23 @@ declare(strict_types=1);
 
 namespace App\Brain;
 
-use App\Brain\ChatHistory\UserChatHistory;
-use App\Services\Settings;
-use Doctrine\DBAL\Connection;
-use NeuronAI\Agent\Agent;
-use NeuronAI\Agent\Middleware\Summarization;
 use NeuronAI\Agent\SystemPrompt;
-use NeuronAI\Chat\History\ChatHistoryInterface;
-use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
 use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
-use Odan\Session\SessionInterface;
 
 class Claire extends Agent implements BrainAvatar
 {
     use ClaireAvatar;
 
-    public function __construct(
-        protected Connection $connection,
-        protected readonly Settings $settings,
-        protected readonly SessionInterface $session,
-        protected readonly AIProviderInterface $aiProvider,
-    ) {
-        parent::__construct();
-    }
+    public const string NAME = 'Claire';
 
-    #[\Override]
-    protected function chatHistory(): ChatHistoryInterface
+    public const string DESCRIPTION = 'Claire votre assistante personnelle, prête à vous accompagner dans vos tâches quotidiennes.';
+
+    public const string CSS = 'claire.css';
+
+    public function getOpeningText(): string
     {
-        return new UserChatHistory(
-            session: $this->session,
-            pdo: $this->connection->getNativeConnection(),
-            table: 'chat_history',
-            contextWindow: $this->settings->get('llm.history.contextWindow')
-        );
+        return "Bonjour et bienvenue ! Comment puis-je t'aider aujourd'hui ?";
     }
 
     #[\Override]
@@ -56,11 +39,6 @@ class Claire extends Agent implements BrainAvatar
         );
     }
 
-    protected function provider(): AIProviderInterface
-    {
-        return $this->aiProvider;
-    }
-
     protected function tools(): array
     {
         // TODO gérer les erreurs
@@ -68,26 +46,6 @@ class Claire extends Agent implements BrainAvatar
             CalculatorToolkit::make(),
             CalendarToolkit::make(),
             Tools\WebToolkit::make($this->settings->get('llm.tools.searchXngUrl')),
-        ];
-    }
-
-    /**
-     * Define your middleware here.
-     *
-     * @return array<class-string<NodeInterface>, array<WorkflowMiddleware>>
-     */
-    protected function middleware(): array
-    {
-        $summarization = new Summarization(
-            provider: $this->aiProvider,
-            maxTokens: $this->settings->get('llm.history.contextWindow') / 2,
-            messagesToKeep: 10,
-        );
-
-        return [
-            ChatNode::class => [$summarization],
-            StreamingNode::class => [$summarization],
-            StructuredOutputNode::class => [$summarization],
         ];
     }
 }

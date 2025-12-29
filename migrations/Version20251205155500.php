@@ -34,13 +34,11 @@ CREATE TABLE IF NOT EXISTS "file" (
     size_bytes INTEGER NOT NULL DEFAULT 0,
     file_id TEXT NOT NULL,
     created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
-    token TEXT,
     CONSTRAINT fk_file_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE ON UPDATE NO ACTION
 );
 SQL);
             // Indexes
             $this->addSql('CREATE INDEX IF NOT EXISTS idx_cf_user_id ON "file"(user_id)');
-            $this->addSql('CREATE UNIQUE INDEX IF NOT EXISTS ux_file_token ON "file" (token)');
         } else {
             // MySQL and others
             $this->addSql(<<<SQL
@@ -52,9 +50,7 @@ CREATE TABLE IF NOT EXISTS `file` (
     size_bytes BIGINT NOT NULL DEFAULT 0,
     file_id VARCHAR(36) NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    token VARCHAR(36),
     INDEX idx_cf_user_id (user_id),
-    UNIQUE ux_file_tole (token),
     CONSTRAINT fk_file_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE ON UPDATE NO ACTION
 );
 SQL);

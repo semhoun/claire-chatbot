@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Brain;
 
-use App\Brain\ChatHistory\ReadOnlyChatHistory;
+use App\Brain\ChatHistory\SummaryChatHistory;
+use App\Brain\Provider\OpenAI;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Providers\AIProviderInterface;
-use NeuronAI\Providers\OpenAILike;
 use Odan\Session\SessionInterface;
 
 /**
@@ -44,17 +44,17 @@ class Summary extends Agent
         $content = $message->getContent();
 
         // On isole la partie JSON entre le premier "{" et le dernier "}"
-        $startPos = strpos($content, '{');
-        $endPos = strrpos($content, '}');
+        $startPos = strpos((string) $content, '{');
+        $endPos = strrpos((string) $content, '}');
         if ($startPos !== false && $endPos !== false && $endPos >= $startPos) {
-            $content = substr($content, $startPos, $endPos - $startPos + 1);
+            $content = substr((string) $content, $startPos, $endPos - $startPos + 1);
         }
 
         $title = 'Nouvelle conversation';
         $summary = '';
 
         try {
-            $decoded = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
+            $decoded = json_decode((string) $content, true, 512, JSON_THROW_ON_ERROR);
             $t = (string) ($decoded['title'] ?? '');
             $s = (string) ($decoded['summary'] ?? '');
             if ($t !== '') {
@@ -122,7 +122,7 @@ class Summary extends Agent
     #[\Override]
     protected function chatHistory(): ChatHistoryInterface
     {
-        return new ReadOnlyChatHistory(
+        return new SummaryChatHistory(
             session: $this->session,
             pdo: $this->connection->getNativeConnection(),
             table: 'chat_history'
@@ -144,10 +144,10 @@ EOF;
 
     protected function provider(): AIProviderInterface
     {
-        return new OpenAILike(
+        return new OpenAI(
             baseUri: $this->settings->get('llm.openai.baseUri'),
             key: $this->settings->get('llm.openai.key'),
-            model: $this->settings->get('llm.openai.model')
+            model: $this->settings->get('llm.openai.modelSummary')
         );
     }
 }

@@ -140,9 +140,14 @@ final class OidcClient
             'firstName' => $data['given_name'] ?? null,
             'lastName' => $data['family_name'] ?? null,
             'username' => $data['preferred_username'] ?? null,
-            'name' => $data['name'] ?? trim(($data['given_name'] ?? '') . ' ' . ($data['family_name'] ?? '')),
+            'displayName' => trim(($data['given_name'] ?? '') . ' ' . ($data['family_name'] ?? '')),
             'email' => $data['email'] ?? null,
         ];
+
+        if (empty($uinfo['displayName']) && !empty($data['name'])) {
+            $uinfo['displayName'] = $data['name'];
+            $uinfo['firstName'] = $data['name'];
+        }
 
         return [
             'logged' => true,

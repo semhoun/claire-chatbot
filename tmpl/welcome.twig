@@ -1,6 +1,17 @@
-{% extends 'layout.twig' %}
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Claire</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#ff3cac">
+    <link rel="icon" href="{{ base_url }}/image/icon-192.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ base_url }}/css/style.css">
 
-{% block app %}
     <style>
         .welcome-page {
             position: relative;
@@ -51,7 +62,9 @@
             .bubble { top: 12px; left: 12px; right: 12px; }
         }
     </style>
-
+</head>
+<body>
+<div class="app">
     <div class="welcome-page">
         <div class="bubble" role="dialog" aria-label="Connexion">
             <h2>Bienvenue</h2>
@@ -59,4 +72,7 @@
             <a href="{{ base_url }}/auth/sso" class="sso-btn">Se connecter</a>
         </div>
     </div>
-{% endblock %}
+</div>
+</body>
+</html>
+

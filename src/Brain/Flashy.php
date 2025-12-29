@@ -4,37 +4,19 @@ declare(strict_types=1);
 
 namespace App\Brain;
 
-use App\Brain\ChatHistory\UserChatHistory;
-use App\Services\Settings;
-use Doctrine\DBAL\Connection;
-use NeuronAI\Agent\Agent;
-use NeuronAI\Chat\History\ChatHistoryInterface;
-use NeuronAI\Providers\AIProviderInterface;
-use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
-use Odan\Session\SessionInterface;
-
 class Flashy extends Agent implements BrainAvatar
 {
     use FlashyAvatar;
 
-    public function __construct(
-        protected Connection $connection,
-        protected readonly Settings $settings,
-        protected readonly SessionInterface $session,
-        protected readonly AIProviderInterface $aiProvider,
-    ) {
-        parent::__construct();
-    }
+    public const string NAME = 'Flashy';
 
-    #[\Override]
-    protected function chatHistory(): ChatHistoryInterface
+    public const string DESCRIPTION = 'Votre assistant IoT';
+
+    public const string CSS = 'flashy.css';
+
+    public function getOpeningText(): string
     {
-        return new UserChatHistory(
-            session: $this->session,
-            pdo: $this->connection->getNativeConnection(),
-            table: 'chat_history',
-            contextWindow: $this->settings->get('llm.history.contextWindow')
-        );
+        return 'Comment puis-je vous aider avec vos objets connectés ?';
     }
 
     #[\Override]
@@ -125,17 +107,5 @@ class Flashy extends Agent implements BrainAvatar
   - Pertinence des causes probables et des recommandations opérationnelles.
   - Questions ciblées pour lever ambiguïtés et guider les prochaines actions.
 EOF;
-    }
-
-    protected function provider(): AIProviderInterface
-    {
-        return $this->aiProvider;
-    }
-
-    protected function tools(): array
-    {
-        return [
-            CalculatorToolkit::make(),
-        ];
     }
 }

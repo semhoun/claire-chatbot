@@ -9,9 +9,6 @@ use App\Entity\User;
 use App\Services\Markdown;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
-use League\Flysystem\FilesystemException;
-use League\Flysystem\UnableToReadFile;
-use Monolog\Logger;
 use NeuronAI\RAG\DataLoader\StringDataLoader;
 use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
 use NeuronAI\RAG\Splitter\DelimiterTextSplitter;
@@ -30,7 +27,6 @@ final readonly class FileController
         private SessionInterface $session,
         private EntityManagerInterface $entityManager,
         private Filesystem $filesystem,
-        private Logger $logger,
         private ContainerInterface $container,
     ) {
     }
@@ -173,35 +169,5 @@ final readonly class FileController
 
         // Return refreshed list (so the badge/count updates via OOB)
         return $this->list($request, $response);
-    }
-
-    /**
-     * Télécharge un fichier via son token public (UUID v7).
-     */
-    public function downloadByToken(Request $request, Response $response): Response
-    {
-        $token = (string) $request->getAttribute('token');
-        if ($token === '') {
-            return $response->withStatus(400);
-        }
-
-        $entityRepository = $this->entityManager->getRepository(File::class);
-        $fileDB = $entityRepository->findOneBy(['token' => $token]);
-        if (! $fileDB instanceof File) {
-            return $response->withStatus(404);
-        }
-
-        try {
-            $response->getBody()->write($this->filesystem->read($fileDB->getFileId()));
-        } catch (FilesystemException | UnableToReadFile $exception) {
-            $this->logger->error('Failed to read file by token', ['token' => $token, 'exception' => $exception]);
-            return $response->withStatus(404);
-        }
-
-        $disposition = sprintf('attachment; filename="%s"', addslashes($fileDB->getFilename()));
-        return $response
-            ->withHeader('Content-Type', $fileDB->getMimeType())
-            ->withHeader('Content-Length', $fileDB->getSizeBytes())
-            ->withHeader('Content-Disposition', $disposition);
     }
 }

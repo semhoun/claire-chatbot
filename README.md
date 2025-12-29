@@ -375,7 +375,6 @@ Content-Type: application/json
 Comportement serveur:
 - Si `message` est vide ou absent → 422.
 - Les fichiers uploadés sont lus en mémoire et intégrés au contexte interne du message utilisateur.
-- Les fichiers référencés par `file_ids` sont récupérés depuis le stockage applicatif et exposés à l’agent via un lien signé/tokenisé (`/files/by-token/{token}`) et/ou leur contenu encodé.
 - Les erreurs de lecture d’un fichier n’interrompent pas la requête: elles sont journalisées (best‑effort).
 
 ## Sécurité
@@ -384,7 +383,6 @@ Comportement serveur:
 - En production, désactivez `DEBUG_MODE` et vérifiez les permissions du répertoire `var/` (cache, logs, tmp).
 - Si l’agent dispose d’outils web (lecture d’URL, recherche), restreignez l’accès public ou placez l’instance derrière une authentification/reverse proxy.
 - Configurez le CORS en amont si vous exposez l’API à des origines externes.
-- Les URLs de fichiers exposées sous la forme `/files/by-token/{token}` doivent être protégées par des contrôles d’accès et/ou des tokens suffisamment aléatoires avec des durées de vie adaptées.
 
 ## Développement & Qualité
 
