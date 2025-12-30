@@ -32,6 +32,7 @@ return static function (App $app): void {
     } else {
         $errorMiddleware = $app->addErrorMiddleware(false, true, true);
     }
+
     $errorHandler = $errorMiddleware->getDefaultErrorHandler();
     $errorHandler->registerErrorRenderer('text/html', HtmlErrorRenderer::class);
     $errorHandler->registerErrorRenderer('application/json', JsonErrorRenderer::class);

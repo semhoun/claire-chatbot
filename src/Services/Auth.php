@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
 use App\Entity\User;
@@ -22,7 +24,8 @@ class Auth
      *
      * @return bool True if the user is authenticated, false otherwise.
      */
-    public function isAuthenticated(): bool {
+    public function isAuthenticated(): bool
+    {
         return $this->session->has('logged') && $this->session->get('logged');
     }
 
@@ -36,7 +39,6 @@ class Auth
      *                     typically provided by an OIDC provider. It must include
      *                     an 'id' key and may include 'firstName', 'lastName',
      *                     'email', and 'name'.
-     *
      *
      * @throws Exception If the 'id' key is not provided in the user information
      *                   or if the user could not be processed in the database.

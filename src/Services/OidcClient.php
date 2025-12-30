@@ -144,7 +144,7 @@ final class OidcClient
             'email' => $data['email'] ?? null,
         ];
 
-        if (empty($uinfo['displayName']) && !empty($data['name'])) {
+        if (empty($uinfo['displayName']) && ! empty($data['name'])) {
             $uinfo['displayName'] = $data['name'];
             $uinfo['firstName'] = $data['name'];
         }

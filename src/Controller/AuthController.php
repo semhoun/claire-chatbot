@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Entity\User;
-use App\Exception;
 use App\Services\Auth;
 use App\Services\OidcClient;
-use Doctrine\ORM\EntityManagerInterface;
 use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -24,7 +21,7 @@ final readonly class AuthController
 
     public function ssoRedirect(Request $request, Response $response): Response
     {
-        if (!$this->oidcClient->isEnabled()) {
+        if (! $this->oidcClient->isEnabled()) {
             $this->auth->login($this->oidcClient->getDefaultUser());
             return $response->withStatus(302)->withHeader('Location', '/');
         }

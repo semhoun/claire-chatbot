@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Services\Settings;
 use Doctrine\ORM\Configuration;
-use Twig\Profiler\Profile;
 use Tracy\Debugger;
+use Twig\Profiler\Profile;
 
 // terminal.js full URI
 $consoleTerminalJs = 'https://cdnjs.cloudflare.com';
@@ -63,7 +63,7 @@ return [
             // See \Tracy\Debugger::enable
             'mode' => Debugger::Development,
             'logDirectory' => null,
-            'email' => null
+            'email' => null,
         ],
     ],
 ];

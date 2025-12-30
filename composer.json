@@ -75,7 +75,8 @@
     "rector-check": "rector process --dry-run",
     "rector-fix": "rector process",
     "insights-check": "phpinsights --config-path=./phpinsights.php",
-    "insights-fix": "phpinsights --config-path=./phpinsights.php -- fix"
+    "insights-fix": "phpinsights --config-path=./phpinsights.php -- fix",
+    "pre-commit": "find . -name '*.php' -o -name '*.css' -o -name '*.js' -o -name '*.twig' ! -path './vendor/*' -print0 | xargs -0 dos2unix -l -q -s && composer insights-fix && composer rector-fix"
   },
   "config": {
     "allow-plugins": {

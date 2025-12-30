@@ -48,5 +48,5 @@ return [
     'httpClient' => [
         'timeout' => 300.0,
         'connectTimeout' => 10.0,
-    ]
+    ],
 ];

@@ -1,18 +1,20 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Renderer;
 
 use League\CommonMark\Extension\CommonMark\Node\Block\FencedCode;
-use League\CommonMark\Util\HtmlElement;
-use Spatie\CommonMarkHighlighter\FencedCodeRenderer;
 use League\CommonMark\Node\Node;
 use League\CommonMark\Renderer\ChildNodeRendererInterface;
 use League\CommonMark\Renderer\NodeRendererInterface;
+use League\CommonMark\Util\HtmlElement;
 use League\CommonMark\Util\Xml;
+use Spatie\CommonMarkHighlighter\FencedCodeRenderer;
 
 readonly class ExtendedFencedCodeRendered implements NodeRendererInterface
 {
-    public function __construct(private FencedCodeRenderer $defaultRenderer)
+    public function __construct(private FencedCodeRenderer $fencedCodeRenderer)
     {
     }
 
@@ -27,6 +29,6 @@ readonly class ExtendedFencedCodeRendered implements NodeRendererInterface
         }
 
         // Nope - use the default renderer instead
-        return $this->defaultRenderer->render($node, $childRenderer);
+        return $this->fencedCodeRenderer->render($node, $childRenderer);
     }
 }

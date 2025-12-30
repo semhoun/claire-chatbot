@@ -6,8 +6,6 @@ namespace App\Controller;
 
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
-use App\Entity\ChatHistory as ChatHistoryEntity;
-use Doctrine\ORM\EntityManagerInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
