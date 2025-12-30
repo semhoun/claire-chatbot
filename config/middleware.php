@@ -12,13 +12,12 @@ use RKA\Middleware\ProxyDetection;
 use Slim\App;
 use Slim\Views\Twig;
 use Slim\Views\TwigMiddleware;
-use Tracy\Debugger;
 
 return static function (App $app): void {
     $container = $app->getContainer();
     $settings = $container->get(Settings::class);
 
-    // Must first because called in reverse order
+    // Must be first because called in reverse order
     $app->add(AuthMiddleware::class);
 
     $app->add(SessionStartMiddleware::class);
@@ -29,12 +28,10 @@ return static function (App $app): void {
     // Add error handling middleware.
     if ($settings->get('debug')) {
         $app->add(new SlimTracy\Middlewares\TracyMiddleware($app, $settings->get('tracy')));
-        Debugger::enable(Debugger::Development);
         $errorMiddleware = $app->addErrorMiddleware(true, true, true);
     } else {
         $errorMiddleware = $app->addErrorMiddleware(false, true, true);
     }
-
     $errorHandler = $errorMiddleware->getDefaultErrorHandler();
     $errorHandler->registerErrorRenderer('text/html', HtmlErrorRenderer::class);
     $errorHandler->registerErrorRenderer('application/json', JsonErrorRenderer::class);

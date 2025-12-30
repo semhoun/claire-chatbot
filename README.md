@@ -57,6 +57,7 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 
 - Mode et logs:
   - `DEBUG_MODE` = `true|false` (active un niveau de logs plus verbeux)
+  - `DISABLE_TRACY_BAR` = `true|false` (permet de désactiver la barre de debug Tracy, activée par défaut si non spécifié)
 
 - Observabilité (OpenTelemetry — requis):
   - Journalisation OpenTelemetry: les logs de l’application sont émis via l’intégration Monolog/OpenTelemetry.
@@ -187,6 +188,7 @@ services:
     environment:
       SERVER_ADMIN: webmaster@example.com
       DEBUG_MODE: "true"
+      DISABLE_TRACY_BAR: "false"
 
       # OpenTelemetry (requis)
       OTEL_PHP_AUTOLOAD_ENABLED: "true"

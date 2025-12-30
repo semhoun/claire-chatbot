@@ -254,6 +254,7 @@ final readonly class BrainController
                     $fileDB->getMimeType(),
                     $fileDB->getFilename(),
                 );
+                $userMessage->addContent($content);
             } catch (OptimisticLockException | ORMException | FilesystemException | UnableToReadFile $exception) {
                 $this->logger->error('Failed to add addAttachments', ['fileId' => $fileId, 'exception' => $exception]);
             }

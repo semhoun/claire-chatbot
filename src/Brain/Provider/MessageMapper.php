@@ -12,6 +12,17 @@ use Ramsey\Uuid\Uuid;
 
 class MessageMapper extends \NeuronAI\Providers\OpenAI\MessageMapper
 {
+
+    /**
+     * Constructor method to initialize the object with the provided raw MIME type data.
+     *
+     * @param array $rawMimeTypes An array containing raw MIME type information.
+     * @return void
+     */
+    public function __construct(protected array $rawMimeTypes)
+    {
+    }
+
     protected function mapFileBlocks(array $blocks): array
     {
         $text = "<!-- SYSTEM CONTEXT (NOT PART OF USER QUERY) -->\n"
@@ -33,13 +44,22 @@ class MessageMapper extends \NeuronAI\Providers\OpenAI\MessageMapper
             }
 
             $findFile = true;
+
             $text .= '<file'
-                            . ' id="' . Uuid::uuid7()->toString() . '"'
-                            . ' name="' . $block->filename . '"'
-                            . ' type="' . $block->mediaType . '"'
-                            . '>'
-                            . $block->content
-                            . '</file>';
+                . ' id="' . Uuid::uuid7()->toString() . '"'
+                . ' name="' . $block->filename . '"'
+                . ' type="' . $block->mediaType . '"';
+            if (in_array($block->mediaType, $this->rawMimeTypes, false)) {
+                $text .= '>'
+                    . base64_decode($block->content)
+                    . '</file>';
+            }
+            else {
+                $text .= ' encoding="base64"'
+                    . '>'
+                    . $block->content
+                    . '</file>';
+            }
         }
 
         if ($findFile === false) {

@@ -68,7 +68,7 @@
     "roave/security-advisories": "dev-latest",
     "nunomaduro/phpinsights": "^2.13",
     "rector/rector": "^2.2",
-    "semhoun/slim-tracy": "^1.0"
+    "semhoun/slim-tracy": "^1.1"
   },
   "scripts": {
     "start": "php -S localhost:8080 -t public public/index.php",

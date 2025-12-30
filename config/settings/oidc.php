@@ -14,5 +14,6 @@ return [
         'lastname' => null,
         'display' => 'Demo',
         'email' => null,
+        'brain_avatar' => 'claire',
     ],
 ];

@@ -31,4 +31,22 @@ return [
         'flashy' => App\Brain\Flashy::class,
     ],
     'defaultBrain' => 'claire',
+    'rawMimeTypes' => [
+        'application/x-csh',
+        'text/css',
+        'text/csv',
+        'text/html',
+        'text/calendar',
+        'application/javascript',
+        'application/json',
+        'application/x-sh',
+        'image/svg+xml',
+        'application/typescript',
+        'application/xhtml+xml',
+        'application/xml',
+    ],
+    'httpClient' => [
+        'timeout' => 300.0,
+        'connectTimeout' => 10.0,
+    ]
 ];

@@ -7,7 +7,7 @@ use DI\Bridge\Slim\Bridge;
 use DI\ContainerBuilder;
 
 // Set the absolute path to the root directory.
-$rootPath = realpath(__DIR__ . '/..');
+$rootPath = dirname(__DIR__);
 
 // Include the composer autoloader.
 include_once $rootPath . '/vendor/autoload.php';

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Renderer\ExtendedFencedCodeRendered;
 use Iamgerwin\PdfToMarkdownParser\PdfToMarkdownParser;
 use League\CommonMark\Environment\Environment;
 use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
@@ -33,7 +34,7 @@ readonly class Markdown implements MarkdownInterface
         $environment->addExtension(new HighlightExtension());
         $environment->addExtension(new TableExtension());
         $environment->addExtension(new CommonMarkCoreExtension());
-        $environment->addRenderer(FencedCode::class, new FencedCodeRenderer());
+        $environment->addRenderer(FencedCode::class, new ExtendedFencedCodeRendered(new FencedCodeRenderer()));
         $environment->addRenderer(IndentedCode::class, new IndentedCodeRenderer());
 
         $this->markdownConverter = new MarkdownConverter($environment);

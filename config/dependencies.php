@@ -16,6 +16,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\ORMSetup;
 use League\Flysystem\Filesystem;
 use Monolog\Logger;
+use NeuronAI\HttpClient\GuzzleHttpClient;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
 use NeuronAI\RAG\Embeddings\OpenAILikeEmbeddings;
@@ -132,7 +133,9 @@ return [
     AIProviderInterface::class => static fn (Settings $settings): AIProviderInterface => new OpenAI(
         baseUri: $settings->get('llm.openai.baseUri'),
         key: $settings->get('llm.openai.key'),
-        model: $settings->get('llm.openai.model')
+        model: $settings->get('llm.openai.model'),
+        rawMimeTypes: $settings->get('llm.rawMimeTypes'),
+        httpClient: new GuzzleHttpClient(customHeaders: [], timeout: $settings->get('llm.httpClient.timeout'), connectTimeout: $settings->get('llm.httpClient.connectTimeout'), handler: null)
     ),
     EmbeddingsProviderInterface::class => static fn (Settings $settings): EmbeddingsProviderInterface => new OpenAILikeEmbeddings(
         baseUri: $settings->get('llm.openai.baseUri') . '/embeddings',
