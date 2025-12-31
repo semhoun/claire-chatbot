@@ -39,6 +39,7 @@ return [
         'text/calendar',
         'application/javascript',
         'application/json',
+        'application/jsonl',
         'application/x-sh',
         'image/svg+xml',
         'application/typescript',
