@@ -63,8 +63,12 @@ final readonly class BrainRegistry
         return is_string($class) && class_exists($class) && is_subclass_of($class, BrainAvatar::class);
     }
 
-    public function get(string $slug): BrainAvatar
+    public function get(?string $slug): BrainAvatar
     {
+        if ($slug === null) {
+            $slug = $this->settings->get('llm.defaultBrain');
+        }
+
         $brains = (array) $this->settings->get('llm.brains');
         $class = (string) ($brains[$slug] ?? '');
         if ($class === '' || ! class_exists($class) || ! is_subclass_of($class, BrainAvatar::class)) {
