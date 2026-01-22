@@ -16,8 +16,6 @@ class MessageMapper extends \NeuronAI\Providers\OpenAI\MessageMapper
      * Constructor method to initialize the object with the provided raw MIME type data.
      *
      * @param array $rawMimeTypes An array containing raw MIME type information.
-     *
-     * @return void
      */
     public function __construct(protected array $rawMimeTypes)
     {

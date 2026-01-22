@@ -11,7 +11,7 @@
   ],
   "authors": [
     {
-      "name": "Nathanael Semhoun",
+      "name": "Nathanaël SEMHOUN",
       "email": "nathanael@semhoun.net",
       "homepage": "https://www.semhoun.net"
     }
@@ -21,7 +21,10 @@
   "autoload": {
     "psr-4": {
       "App\\": "src/"
-    }
+    },
+    "files": [
+      "src/helpers.php"
+    ]
   },
   "require": {
     "php": "^8.4",
@@ -62,13 +65,15 @@
     "1tomany/twig-filesize": "^0.0.1",
     "league/flysystem": "^3.0",
     "iamgerwin/php-pdf-to-markdown-parser": "^0.0.1",
-    "spatie/commonmark-highlighter": "^3.0"
+    "spatie/commonmark-highlighter": "^3.0",
+    "vlucas/phpdotenv": "^5.6"
   },
   "require-dev": {
     "roave/security-advisories": "dev-latest",
     "nunomaduro/phpinsights": "^2.13",
     "rector/rector": "^2.2",
-    "semhoun/slim-tracy": "^1.1"
+    "semhoun/slim-tracy": "^1.1",
+    "phpunit/phpunit": "^12.5"
   },
   "scripts": {
     "start": "php -S localhost:8080 -t public public/index.php",

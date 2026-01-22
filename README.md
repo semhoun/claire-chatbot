@@ -59,6 +59,9 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
   - `DEBUG_MODE` = `true|false` (active un niveau de logs plus verbeux)
   - `DISABLE_TRACY_BAR` = `true|false` (permet de désactiver la barre de debug Tracy, activée par défaut si non spécifié)
 
+- Stockage des fichiers:
+  - `FILES_PATH` — chemin vers le répertoire de stockage des fichiers (par défaut: `var/filer`).
+
 - Observabilité (OpenTelemetry — requis):
   - Journalisation OpenTelemetry: les logs de l’application sont émis via l’intégration Monolog/OpenTelemetry.
   - Pour afficher les logs dans la console en développement, définissez `OTEL_LOGS_EXPORTER=console` (et éventuellement `OTEL_LOGS_PROCESSOR=simple`).
@@ -189,6 +192,8 @@ services:
       SERVER_ADMIN: webmaster@example.com
       DEBUG_MODE: "true"
       DISABLE_TRACY_BAR: "false"
+
+      FILES_PATH: /filer
 
       # OpenTelemetry (requis)
       OTEL_PHP_AUTOLOAD_ENABLED: "true"

@@ -4,19 +4,25 @@ declare(strict_types=1);
 
 use App\Services\Settings;
 
+// Mandatory environment variables
+env_required([
+    'OPENAPI_URL',
+    'OPENAPI_MODEL',
+]);
+
 return [
     'openai' => [
-        'key' => getenv('OPENAPI_KEY', true),
-        'baseUri' => getenv('OPENAPI_URL', true),
-        'model' => getenv('OPENAPI_MODEL', true),
-        'modelSummary' => getenv('OPENAPI_MODEL_SUMMARY', true) ?? getenv('OPENAPI_MODEL', true),
-        'modelEmbed' => getenv('OPENAPI_MODEL_EMBED', true),
+        'key' => env('OPENAPI_KEY'),
+        'baseUri' => env('OPENAPI_URL'),
+        'model' => env('OPENAPI_MODEL'),
+        'modelSummary' => env('OPENAPI_MODEL_SUMMARY') ?? env('OPENAPI_MODEL'),
+        'modelEmbed' => env('OPENAPI_MODEL_EMBED'),
     ],
     'history' => [
         'contextWindow' => 5000000, //50000
     ],
     'tools' => [
-        'searchXngUrl' => getenv('SEARXNG_URL', true),
+        'searchXngUrl' => env('SEARXNG_URL'),
     ],
     'rag' => [
         'type' => 'file', // Could be 'file'
