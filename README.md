@@ -1,9 +1,6 @@
 # Claire — Agent de Chat IA (PHP, Slim 4)
 
-![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white)
-![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B)
-![Twig](https://img.shields.io/badge/Twig-3.x-43A047)
-![License](https://img.shields.io/badge/License-MIT-blue)
+![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![Twig](https://img.shields.io/badge/Twig-3.x-43A047) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
 Claire est une application web minimaliste de chat IA construite avec Slim 4 et Twig. Elle s’appuie sur la bibliothèque neuron-core pour piloter un LLM compatible OpenAI et fournit une petite interface web ainsi qu’un endpoint API pour échanger des messages.
 
