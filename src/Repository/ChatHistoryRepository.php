@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\ChatHistory;
+use App\Entity\User;
 use Doctrine\ORM\EntityRepository;
 
 /**
@@ -12,16 +13,23 @@ use Doctrine\ORM\EntityRepository;
  */
 class ChatHistoryRepository extends EntityRepository
 {
+    private const int MIN_MESSAGES_LENGTH = 4;
+
     /**
      * Compte le nombre d'entrées d'historique pour un utilisateur donné.
      */
     public function countByUserId(string $userId): int
     {
+        $user = $this->getUser($userId);
+        if (!$user instanceof \App\Entity\User) {
+            return 0;
+        }
+
         $queryBuilder = $this->createQueryBuilder('h')
             ->select('COUNT(h.id)')
-            ->leftJoin('h.user', 'u')
-            ->where('u.id = :userId')
-            ->setParameter('userId', $userId);
+            ->where('h.user = :user')
+            ->andWhere('LENGTH(h.messages) > ' . self::MIN_MESSAGES_LENGTH)
+            ->setParameter('user', $user);
 
         return (int) $queryBuilder->getQuery()->getSingleScalarResult();
     }
@@ -33,13 +41,37 @@ class ChatHistoryRepository extends EntityRepository
      */
     public function getHistoryList(string $userId): array
     {
+        $user = $this->getUser($userId);
+        if (!$user instanceof \App\Entity\User) {
+            return [];
+        }
+
         return $this->createQueryBuilder('h')
-            ->leftJoin('h.user', 'u')
-            ->where('u.id = :userId')
-            ->setParameter('userId', $userId)
+            ->where('h.user = :user')
+            ->andWhere('LENGTH(h.messages) > ' . self::MIN_MESSAGES_LENGTH)
+            ->setParameter('user', $user)
             ->orderBy('h.updatedAt', 'DESC')
             ->getQuery()
             ->getResult();
+    }
+
+    /**
+     * Supprime les conversations vides d'un utilisateur (titre par défaut et résumé vide/null).
+     */
+    public function deleteEmptyConversations(string $userId): int
+    {
+        $user = $this->getUser($userId);
+        if (!$user instanceof \App\Entity\User) {
+            return 0;
+        }
+
+        return (int) $this->createQueryBuilder('h')
+            ->delete()
+            ->where('h.user = :user')
+            ->andWhere('LENGTH(h.messages) < ' . self::MIN_MESSAGES_LENGTH . ' OR h.messages IS NULL')
+            ->setParameter('user', $user)
+            ->getQuery()
+            ->execute();
     }
 
     /**
@@ -52,11 +84,15 @@ class ChatHistoryRepository extends EntityRepository
      */
     public function deleteThread(string $userId, string $threadId): bool
     {
+        $user = $this->getUser($userId);
+        if (!$user instanceof \App\Entity\User) {
+            return false;
+        }
+
         $queryBuilder = $this->createQueryBuilder('h')
-            ->innerJoin('h.user', 'u')
-            ->where('h.threadId = :threadId AND u.id = :userId')
+            ->where('h.threadId = :threadId AND h.user = :user')
             ->setParameter('threadId', $threadId)
-            ->setParameter('userId', $userId)
+            ->setParameter('user', $user)
             ->setMaxResults(1);
 
         $history = $queryBuilder->getQuery()->getOneOrNullResult();
@@ -68,5 +104,10 @@ class ChatHistoryRepository extends EntityRepository
         $this->getEntityManager()->flush();
 
         return true;
+    }
+
+    private function getUser(string $userId): ?User
+    {
+        return $this->getEntityManager()->getRepository(User::class)->find($userId);
     }
 }

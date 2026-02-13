@@ -6,6 +6,8 @@ namespace App\Controller;
 
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
+use App\Entity\ChatHistory as ChatHistoryEntity;
+use Doctrine\ORM\EntityManagerInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -19,6 +21,7 @@ final readonly class HomeController
         private SessionInterface $session,
         private BrainRegistry $brainRegistry,
         private UserChatHistory $userChatHistory,
+        private EntityManagerInterface $entityManager,
     ) {
     }
 
@@ -31,6 +34,12 @@ final readonly class HomeController
         if (! $chatId) {
             $chatId = uniqid('', true);
             $this->session->set('chatId', $chatId);
+
+            // Nettoyage des conversations vides de l'utilisateur
+            $userId = (string) $this->session->get('userId');
+            if ($userId !== '') {
+                $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
+            }
         }
 
         $currentBrain = $this->session->get('brain_avatar');

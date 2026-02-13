@@ -33,6 +33,12 @@ final readonly class HistoryController
      */
     public function create(Request $request, Response $response): Response
     {
+        // Nettoyage des conversations vides de l'utilisateur
+        $userId = (string) $this->session->get('userId');
+        if ($userId !== '') {
+            $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
+        }
+
         // Nouveau thread
         $threadId = uniqid('', true);
         $this->session->set('chatId', $threadId);
@@ -99,6 +105,9 @@ final readonly class HistoryController
         if ($userId === '') {
             return $response->withStatus(403);
         }
+
+        // Nettoyage des conversations vides de l'utilisateur
+        $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
 
         $threadId = $request->getAttribute('threadId');
         if ($threadId === null) {
