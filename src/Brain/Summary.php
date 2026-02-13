@@ -142,6 +142,7 @@ Règles:
 EOF;
     }
 
+    #[\Override]
     protected function provider(): AIProviderInterface
     {
         return new OpenAI(

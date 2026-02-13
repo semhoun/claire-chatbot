@@ -40,6 +40,7 @@ if (! function_exists('env')) {
         if ($value === false) {
             return $default;
         }
+
         return match (strtolower((string) $value)) {
             'true', '(true)' => true,
             'false', '(false)' => false,

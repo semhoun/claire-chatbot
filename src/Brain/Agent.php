@@ -30,6 +30,7 @@ class Agent extends \NeuronAI\Agent\Agent
         return $this->chatHistory;
     }
 
+    #[\Override]
     protected function provider(): AIProviderInterface
     {
         return $this->aiProvider;
@@ -40,6 +41,7 @@ class Agent extends \NeuronAI\Agent\Agent
      *
      * @return array<class-string<NodeInterface>, array<WorkflowMiddleware>>
      */
+    #[\Override]
     protected function middleware(): array
     {
         $summarization = new Summarization(

@@ -38,16 +38,19 @@ class RAG extends \NeuronAI\RAG\RAG
         );
     }
 
+    #[\Override]
     protected function provider(): AIProviderInterface
     {
         return $this->aiProvider;
     }
 
+    #[\Override]
     protected function embeddings(): EmbeddingsProviderInterface
     {
         return $this->embeddingsProvider;
     }
 
+    #[\Override]
     protected function vectorStore(): VectorStoreInterface
     {
         return $this->vectorStore;
@@ -58,6 +61,7 @@ class RAG extends \NeuronAI\RAG\RAG
      *
      * @return array<class-string<NodeInterface>, array<WorkflowMiddleware>>
      */
+    #[\Override]
     protected function middleware(): array
     {
         $summarization = new Summarization(

@@ -108,6 +108,7 @@ Tu es « Einstein »: privilégie la clarté, la rigueur et la pédagogie. Toujo
 EOF;
     }
 
+    #[\Override]
     protected function tools(): array
     {
         return [

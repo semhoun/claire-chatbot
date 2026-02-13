@@ -39,6 +39,7 @@ class Claire extends Agent implements BrainAvatar
         );
     }
 
+    #[\Override]
     protected function tools(): array
     {
         // TODO gérer les erreurs
