@@ -120,20 +120,19 @@ final readonly class BrainController
                     $toolText = '<span class="tools-done-flag" style="display:none"></span>' . "\n";
                 }
 
-                foreach ($chunk->tools as $tool) {
-                    $toolText .= "Utilisation de l'outil : " . $tool->getName() . "<br>\n";
-                    $toolText .= "Paramètres : <br>\n";
-                    $toolText .= "<ul>\n";
-                    foreach ($tool->getInputs() as $name => $value) {
-                        $toolText .= '<li>' . $name . ' : ' . $value . "</li>\n";
-                    }
+                $tool = $chunk->tool;
+                $toolText .= "Utilisation de l'outil : " . $tool->getName() . "<br>\n";
+                $toolText .= "Paramètres : <br>\n";
+                $toolText .= "<ul>\n";
+                foreach ($tool->getInputs() as $name => $value) {
+                    $toolText .= '<li>' . $name . ' : ' . $value . "</li>\n";
+                }
 
-                    $toolText .= "</ul>\n";
-                    if ($chunk instanceof ToolResultChunk) {
-                        $toolText .= "Réponse : <br>\n";
-                        if ($tool->getResult()) {
-                            $toolText .= '<pre class="toolcall__result">' . $tool->getResult() . "</pre>\n";
-                        }
+                $toolText .= "</ul>\n";
+                if ($chunk instanceof ToolResultChunk) {
+                    $toolText .= "Réponse : <br>\n";
+                    if ($tool->getResult() !== '' && $tool->getResult() !== '0') {
+                        $toolText .= '<pre class="toolcall__result">' . $tool->getResult() . "</pre>\n";
                     }
                 }
             } elseif ($chunk instanceof ReasoningChunk) {
