@@ -30,9 +30,6 @@ final readonly class AuthMiddleware implements MiddlewareInterface
         '/health',
         '/logout',
         '/auth',
-        '/css',
-        '/js',
-        '/image',
     ];
 
     public function __construct(
@@ -44,17 +41,21 @@ final readonly class AuthMiddleware implements MiddlewareInterface
 
     public function process(Request $request, Handler $handler): Response
     {
-        if ($this->auth->isAuthenticated()) {
+        if ($request->getMethod() === 'OPTIONS') {
             return $handler->handle($request);
         }
 
-        if (! $this->container->get(OidcClient::class)->isEnabled()) {
-            $this->auth->login($this->container->get(OidcClient::class)->getDefaultUser());
+        if ($this->auth->isAuthenticated()) {
             return $handler->handle($request);
         }
 
         $path = $request->getUri()->getPath();
         if (array_any(self::publicPrefixes, static fn ($prefix): bool => $path === $prefix || str_starts_with($path, rtrim((string) $prefix, '/') . '/'))) {
+            return $handler->handle($request);
+        }
+
+        if (! $this->container->get(OidcClient::class)->isEnabled()) {
+            $this->auth->login($this->container->get(OidcClient::class)->getDefaultUser());
             return $handler->handle($request);
         }
 

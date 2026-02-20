@@ -22,6 +22,7 @@ class Agent extends \NeuronAI\Agent\Agent
         protected readonly UserChatHistory $chatHistory,
     ) {
         parent::__construct();
+        $this->observe(new \App\Brain\Observability\Observer());
     }
 
     #[\Override]

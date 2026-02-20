@@ -25,6 +25,7 @@ class Summary extends Agent
         protected readonly SessionInterface $session,
     ) {
         parent::__construct();
+        $this->observe(new \App\Brain\Observability\Observer());
     }
 
     /**

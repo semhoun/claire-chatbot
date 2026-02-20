@@ -21,7 +21,7 @@ class ChatHistoryRepository extends EntityRepository
     public function countByUserId(string $userId): int
     {
         $user = $this->getUser($userId);
-        if (!$user instanceof \App\Entity\User) {
+        if (! $user instanceof \App\Entity\User) {
             return 0;
         }
 
@@ -42,7 +42,7 @@ class ChatHistoryRepository extends EntityRepository
     public function getHistoryList(string $userId): array
     {
         $user = $this->getUser($userId);
-        if (!$user instanceof \App\Entity\User) {
+        if (! $user instanceof \App\Entity\User) {
             return [];
         }
 
@@ -61,7 +61,7 @@ class ChatHistoryRepository extends EntityRepository
     public function deleteEmptyConversations(string $userId): int
     {
         $user = $this->getUser($userId);
-        if (!$user instanceof \App\Entity\User) {
+        if (! $user instanceof \App\Entity\User) {
             return 0;
         }
 
@@ -85,7 +85,7 @@ class ChatHistoryRepository extends EntityRepository
     public function deleteThread(string $userId, string $threadId): bool
     {
         $user = $this->getUser($userId);
-        if (!$user instanceof \App\Entity\User) {
+        if (! $user instanceof \App\Entity\User) {
             return false;
         }
 

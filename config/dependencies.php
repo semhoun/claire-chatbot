@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Provider\OpenAI;
-use App\Brain\Summary;
 use App\Exception;
 use App\Services\OidcClient;
 use App\Services\Settings;
@@ -111,11 +110,6 @@ return [
         // Expose settings to Twig templates
         $twig->getEnvironment()->addGlobal('settings', $settings);
         return $twig;
-    },
-    Summary::class => static function (Connection $connection, Settings $settings, SessionInterface $session): Summary {
-        $summary = new Summary($connection, $settings, $session);
-        $summary->observe(new \App\Brain\Observability\Observer());
-        return $summary;
     },
     SessionManagerInterface::class => static fn (SessionInterface $session): SessionInterface => $session,
     SessionInterface::class => static fn (Settings $settings): PhpSession => new PhpSession($settings->get('session')),
