@@ -94,6 +94,7 @@ p {
     box-shadow: var(--shadow);
     border-left: 1px solid var(--border-weak);
     border-right: 1px solid var(--border-weak);
+    overflow: hidden;
 }
 
 /* Backdrop pour le panneau d'options flottant */
@@ -178,6 +179,8 @@ body.compact .app {
     position: sticky;
     top: 0;
     z-index: 10;
+    border-top-left-radius: var(--radius);
+    border-top-right-radius: var(--radius);
 }
 
 .chat-header__main {
@@ -1333,7 +1336,8 @@ body.modal-open {
     }
 
     .app { /* conserver des arrondis comme en mode 800px */
-        border-radius: 20px;
+        border-radius: var(--radius);
+        overflow: hidden;
     }
 
     body.compact {
@@ -1398,9 +1402,10 @@ body.modal-open {
     }
 
     .app {
-        border-radius: 0;
+        border-radius: var(--radius);
         min-height: 100vh;
         height: 100dvh;
+        overflow: hidden;
     }
 
     .chat-header {
