@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Brain\ChatHistory;
 
+use App\Services\Auth;
 use NeuronAI\Chat\History\AbstractChatHistory;
 use NeuronAI\Chat\History\SQLChatHistory;
-use Odan\Session\SessionInterface;
+use App\Session\SessionInterface;
 use PDO;
 
 class UserChatHistory extends SQLChatHistory
@@ -19,7 +20,7 @@ class UserChatHistory extends SQLChatHistory
         protected string $table = 'chat_history',
         protected int $contextWindow = 50000
     ) {
-        $this->user_id = $session->get('userId');
+        $this->user_id = $session->get(Auth::USERID);
 
         $thread_id = $session->get('chatId');
         if ($thread_id === null) {

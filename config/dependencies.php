@@ -7,6 +7,7 @@ use App\Brain\Provider\OpenAI;
 use App\Exception;
 use App\Services\OidcClient;
 use App\Services\Settings;
+use App\Session\ArraySession;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\Configuration;
@@ -21,14 +22,12 @@ use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
 use NeuronAI\RAG\Embeddings\OpenAILikeEmbeddings;
 use NeuronAI\RAG\VectorStore\FileVectorStore;
 use NeuronAI\RAG\VectorStore\VectorStoreInterface;
-use Odan\Session\PhpSession;
-use Odan\Session\SessionInterface;
-use Odan\Session\SessionManagerInterface;
+use App\Session\SessionInterface;
+use App\Session\SessionManagerInterface;
 use OneToMany\Twig\FilesizeExtension;
 use Slim\Views\Twig;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
-use Telegram\Bot\Api;
 use Twig\Extension\DebugExtension;
 use Twig\Extension\ProfilerExtension;
 use Twig\Extra\Markdown\MarkdownExtension;
@@ -113,7 +112,7 @@ return [
         return $twig;
     },
     SessionManagerInterface::class => static fn (SessionInterface $session): SessionInterface => $session,
-    SessionInterface::class => static fn (Settings $settings): PhpSession => new PhpSession($settings->get('session')),
+    SessionInterface::class => ArraySession::getInstance(),
     OidcClient::class => static fn (Settings $settings): OidcClient => new OidcClient($settings),
     Filesystem::class => static function (Settings $settings): FileSystem {
         if ($settings->get('files.fileSystem.type') === 'local') {
@@ -147,5 +146,5 @@ return [
         table: 'chat_history',
         contextWindow: $settings->get('llm.history.contextWindow')
     ),
-    Api::class => static fn (Settings $settings): Api => new Api($settings->get('telegram.bot_token')),
+    \Telegram\Bot\Api::class => static fn (Settings $settings): \Telegram\Bot\Api => new \Telegram\Bot\Api($settings->get('telegram.bot_token')),
 ];

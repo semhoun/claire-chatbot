@@ -116,6 +116,18 @@ Dépannage rapide:
 - Erreur `invalid_client` lors de l’échange de code: vérifiez l’ID et le secret, et surtout que la méthode d’authentification configurée pour VOTRE client au token endpoint côté IdP correspond à celle attendue (souvent `client_secret_basic` ou `client_secret_post`). Assurez‑vous également que l’URI de redirection enregistrée correspond exactement à `https://votre-domaine/auth/callback`.
 - Erreur de redirection: vérifiez `OPENID_REDIRECT_URI_BASE` et les règles de proxy/host (Traefik) afin que l’URL publique corresponde bien au host utilisé par les utilisateurs.
 
+### Session Management (JWT)
+
+Claire uses a stateless JWT-based session system. Session data is stored in a signed JWT cookie, eliminating the need for server-side session storage.
+
+- Configuration: `config/settings/session.php`
+- Key environment variables:
+  - `JWT_SECRET` — Secret key for JWT signing (required in production)
+  - `JWT_ALGORITHM` — Algorithm for signing (default: HS256)
+- Public routes (bypass session): configured in `config/settings/security.php`
+
+For detailed documentation, see `src/Session/README.md`.
+
 ### Base de données (Doctrine ORM / DBAL)
 
 Le projet inclut Doctrine ORM/DBAL et peut fonctionner avec SQLite (par défaut), MySQL/MariaDB ou PostgreSQL. La configuration est lue depuis `config/settings/database.php` et pilotée par des variables d’environnement prefixées `DATABASE_`.

@@ -6,7 +6,7 @@ namespace App\Controller;
 
 use App\Services\Auth;
 use App\Services\OidcClient;
-use Odan\Session\SessionInterface;
+use App\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -22,7 +22,7 @@ final readonly class AuthController
     public function ssoRedirect(Request $request, Response $response): Response
     {
         if (! $this->oidcClient->isEnabled()) {
-            $this->auth->login($this->oidcClient->getDefaultUser());
+            $this->auth->login($this->oidcClient->getDefaultUserId(), $this->oidcClient->getDefaultUserData());
             return $response->withStatus(302)->withHeader('Location', '/');
         }
 
@@ -33,12 +33,17 @@ final readonly class AuthController
     public function ssoCallback(Request $request, Response $response): Response
     {
         $result = $this->oidcClient->handleCallback($this->session, $request->getQueryParams());
+
         if (! ($result['logged'] ?? false)) {
             // Auth uniquement via SSO: en cas d'échec, on renvoie vers l'init SSO
             return $response->withHeader('Location', '/auth/sso')->withStatus(302);
         }
 
-        $this->auth->login($result['uinfo']);
+        if ($result['id'] === null) {
+            return $response->withStatus(500);
+        }
+
+        $this->auth->login($result['id'], $result['data']);
         return $response->withStatus(302)->withHeader('Location', '/');
     }
 

@@ -14,9 +14,9 @@ use App\Services\Auth;
 
 use App\Services\Settings;
 
-use Doctrine\ORM\EntityManager;
+use App\Session\SessionInterface;
 
-use Odan\Session\SessionInterface;
+use Doctrine\ORM\EntityManager;
 
 use PHPUnit\Framework\TestCase;
 
@@ -98,7 +98,7 @@ final class AuthTest extends TestCase
 
                     ['logged', false],
 
-                    ['uinfo', null]
+                    ['data', null]
 
                 ];
 

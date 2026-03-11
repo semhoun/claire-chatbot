@@ -7,9 +7,10 @@ namespace App\Controller;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
+use App\Services\Auth;
 use Doctrine\ORM\EntityManagerInterface;
+use App\Session\SessionInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
-use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
@@ -36,7 +37,7 @@ final readonly class HomeController
             $this->session->set('chatId', $chatId);
 
             // Nettoyage des conversations vides de l'utilisateur
-            $userId = (string) $this->session->get('userId');
+            $userId = (string) $this->session->get(Auth::USERID);
             if ($userId !== '') {
                 $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
             }
@@ -70,7 +71,7 @@ final readonly class HomeController
         return $this->twig->render($response, 'chat.twig', [
             'time' => $time,
             'messages' => $messages,
-            'uinfo' => $this->session->get('uinfo'),
+            'uinfo' => $this->session->get(Auth::USERINFO),
             'chat_mode' => $mode,
             'layout_mode' => $layoutMode,
             'brain_info' => $meta,

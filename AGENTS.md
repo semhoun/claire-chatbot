@@ -102,7 +102,7 @@ use App\Entity\ChatHistory;
 ### Key Project Conventions
 - Use `env()` helper for environment variables (defined in `src/helpers.php`)
 - Use `Settings::get('key.subkey')` for configuration access
-- Session handling via `Odan\Session\SessionInterface`
+- Session handling via JWT-based stateless session (`App\Session\SessionManager`)
 - Container injection via PHP-DI (autowiring enabled)
 - Twig templates in `tmpl/` directory
 - Public assets served from `public/`

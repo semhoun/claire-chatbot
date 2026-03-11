@@ -7,9 +7,10 @@ namespace App\Controller;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
+use App\Services\Auth;
 use Doctrine\ORM\EntityManagerInterface;
+use App\Session\SessionInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
-use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
@@ -34,7 +35,7 @@ final readonly class HistoryController
     public function create(Request $request, Response $response): Response
     {
         // Nettoyage des conversations vides de l'utilisateur
-        $userId = (string) $this->session->get('userId');
+        $userId = (string) $this->session->get(Auth::USERID);
         if ($userId !== '') {
             $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
         }
@@ -68,7 +69,7 @@ final readonly class HistoryController
      */
     public function count(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get('userId');
+        $userId = (string) $this->session->get(Auth::USERID);
         $count = $this->entityManager->getRepository(ChatHistoryEntity::class)->countByUserId($userId);
         $response->getBody()->write((string) $count);
         return $response;
@@ -86,7 +87,7 @@ final readonly class HistoryController
      */
     public function list(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get('userId');
+        $userId = (string) $this->session->get(Auth::USERID);
         $histories = $this->entityManager->getRepository(ChatHistoryEntity::class)->getHistoryList($userId);
         return $this->twig->render($response, 'partials/history_list.twig', [
             'histories' => $histories,
@@ -101,7 +102,7 @@ final readonly class HistoryController
      */
     public function open(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get('userId');
+        $userId = (string) $this->session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }
@@ -132,7 +133,7 @@ final readonly class HistoryController
      */
     public function delete(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get('userId');
+        $userId = (string) $this->session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }

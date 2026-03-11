@@ -6,6 +6,7 @@ namespace App\Middleware;
 
 use App\Services\Auth;
 use App\Services\OidcClient;
+use App\Services\Settings;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -26,17 +27,11 @@ use Slim\Views\Twig;
  */
 final readonly class AuthMiddleware implements MiddlewareInterface
 {
-    private const array publicPrefixes = [
-        '/health',
-        '/logout',
-        '/auth',
-        '/webhook/telegram',
-    ];
-
     public function __construct(
         private Twig $twig,
         private Auth $auth,
         private ContainerInterface $container,
+        private Settings $settings,
     ) {
     }
 
@@ -46,17 +41,19 @@ final readonly class AuthMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
 
+        $path = $request->getUri()->getPath();
+        $publicRoutes = $this->settings->get('security.public_routes');
+        if (array_any($publicRoutes, static fn ($prefix): bool => $path === $prefix || str_starts_with($path, rtrim((string) $prefix, '/') . '/'))) {
+            return $handler->handle($request);
+        }
+
         if ($this->auth->isAuthenticated()) {
             return $handler->handle($request);
         }
 
-        $path = $request->getUri()->getPath();
-        if (array_any(self::publicPrefixes, static fn ($prefix): bool => $path === $prefix || str_starts_with($path, rtrim((string) $prefix, '/') . '/'))) {
-            return $handler->handle($request);
-        }
-
-        if (! $this->container->get(OidcClient::class)->isEnabled()) {
-            $this->auth->login($this->container->get(OidcClient::class)->getDefaultUser());
+        $oidcClient = $this->container->get(OidcClient::class);
+        if (! $oidcClient->isEnabled()) {
+            $this->auth->login($oidcClient->getDefaultUserId(), $oidcClient->getDefaultUserData());
             return $handler->handle($request);
         }
 

@@ -8,7 +8,7 @@ use App\Middleware\CorsMiddleware;
 use App\Renderer\HtmlErrorRenderer;
 use App\Renderer\JsonErrorRenderer;
 use App\Services\Settings;
-use Odan\Session\Middleware\SessionStartMiddleware;
+use App\Session\JwtSessionMiddleware;
 use RKA\Middleware\ProxyDetection;
 use Slim\App;
 use Slim\Views\Twig;
@@ -18,10 +18,10 @@ return static function (App $app): void {
     $container = $app->getContainer();
     $settings = $container->get(Settings::class);
 
-    // Must be first because called in reverse order
+    // Must be first because called in reverse order, so Auth must be the last called
     $app->add(AuthMiddleware::class);
 
-    $app->add(SessionStartMiddleware::class);
+    $app->add(JwtSessionMiddleware::class);
     $app->add(TwigMiddleware::create($app, $container->get(Twig::class)));
     $app->add(BaseUrlMiddleware::class);
     $app->add(new ProxyDetection());

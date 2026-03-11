@@ -9,15 +9,20 @@ use League\OAuth2\Client\OptionProvider\HttpBasicAuthOptionProvider;
 use League\OAuth2\Client\OptionProvider\PostAuthOptionProvider;
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use League\OAuth2\Client\Provider\GenericProvider;
-use Odan\Session\SessionInterface;
+use App\Session\SessionInterface;
 
 final class OidcClient
 {
     private bool $enabled = false;
+
     private array $discovery;
+
     private readonly GenericProvider $genericProvider;
+
     private readonly string $redirectUri;
+
     private string $tokenAuthMethod;
+
     private readonly array $scopes;
 
     public function __construct(
@@ -74,9 +79,14 @@ final class OidcClient
         return $this->enabled;
     }
 
-    public function getDefaultUser(): array
+    public function getDefaultUserId(): string
     {
-        return $this->settings->get('oidc.default_user');
+        return $this->settings->get('oidc.default_user.id');
+    }
+
+    public function getDefaultUserData(): array
+    {
+        return $this->settings->get('oidc.default_user.data');
     }
 
     public function getAuthorizationUrl(SessionInterface $session): string
@@ -90,7 +100,7 @@ final class OidcClient
     }
 
     /**
-     * @return array{logged:bool,uinfo?:array<string,mixed>} Normalized outcome
+     * @return array{logged:bool,id?:string,data?:array<string,mixed>} Normalized outcome
      */
     public function handleCallback(SessionInterface $session, array $queryParams): array
     {
@@ -123,30 +133,33 @@ final class OidcClient
         );
         $client = $this->genericProvider->getHttpClient();
         $response = $client->send($request);
-        $data = json_decode((string) $response->getBody(), true);
+        $tokenInfo = json_decode((string) $response->getBody(), true);
 
-        if (! is_array($data)) {
+        if (! is_array($tokenInfo)) {
             return ['logged' => false];
         }
 
         // Normalize
-        $uinfo = [
-            'id' => $data['sub'] ?? null,
-            'firstName' => $data['given_name'] ?? null,
-            'lastName' => $data['family_name'] ?? null,
-            'username' => $data['preferred_username'] ?? null,
-            'displayName' => trim(($data['given_name'] ?? '') . ' ' . ($data['family_name'] ?? '')),
-            'email' => $data['email'] ?? null,
+        $id = $tokenInfo['sub'] ?? null;
+        $data = [
+            'firstName' => $tokenInfo['given_name'] ?? null,
+            'lastName' => $tokenInfo['family_name'] ?? null,
+            'username' => $tokenInfo['preferred_username'] ?? null,
+            'displayName' => trim(($tokenInfo['given_name'] ?? '') . ' ' . ($tokenInfo['family_name'] ?? '')),
+            'email' => $tokenInfo['email'] ?? null,
         ];
 
-        if (empty($uinfo['displayName']) && ! empty($data['name'])) {
-            $uinfo['displayName'] = $data['name'];
-            $uinfo['firstName'] = $data['name'];
+        if (empty($data['displayName']) && ! empty($tokenInfo['name'])) {
+            $data['displayName'] = $tokenInfo['name'];
+            $data['firstName'] = $tokenInfo['name'];
         }
+
+        $session->delete('oidc_state');
 
         return [
             'logged' => true,
-            'uinfo' => $uinfo,
+            'id' => $id,
+            'data' => $data,
         ];
     }
 }

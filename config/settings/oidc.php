@@ -10,10 +10,12 @@ return [
     'scopes' => ['openid', 'profile', 'email'],
     'default_user' => [
         'id' => 'default',
-        'firstname' => 'Demo',
-        'lastname' => null,
-        'display' => 'Demo',
-        'email' => null,
-        'brain_avatar' => 'claire',
+        'data' => [
+            'firstname' => 'Demo',
+            'lastname' => null,
+            'display' => 'Demo',
+            'email' => null,
+            'brain_avatar' => 'claire',
+        ],
     ],
 ];

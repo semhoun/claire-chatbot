@@ -53,7 +53,7 @@ final readonly class TelegramService
     {
         $chatId = (string) $message->getChat()->getId();
         $telegramUserId = (string) $message->getFrom()->getId();
-        $username = $message->getFrom()->getUsername() ?? 'Telegram User';
+        $message->getFrom()->getUsername() ?? 'Telegram User';
 
         $user = $this->getOrCreateUserByTelegramId($telegramUserId);
         $brainName = $this->getBrainNameForUser($user);

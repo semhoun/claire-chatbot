@@ -8,9 +8,9 @@ use App\Brain\ChatHistory\UserChatHistory;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Middleware\Summarization;
+use App\Session\SessionInterface;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Providers\AIProviderInterface;
-use Odan\Session\SessionInterface;
 
 class Agent extends \NeuronAI\Agent\Agent
 {

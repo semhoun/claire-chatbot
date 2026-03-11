@@ -20,7 +20,6 @@ final class TelegramWebhookCommand extends Command
     public function __construct(
         private readonly Api $api,
         private readonly Logger $logger,
-        private readonly Settings $settings
     ) {
         parent::__construct();
     }

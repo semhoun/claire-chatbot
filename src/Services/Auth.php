@@ -6,57 +6,52 @@ namespace App\Services;
 
 use App\Entity\User;
 use App\Exception;
+use App\Session\SessionInterface;
 use Doctrine\ORM\EntityManager;
-use Odan\Session\SessionInterface;
 
 class Auth
 {
+    public const string AUTHENTICATED = 'logged';
+
+    public const string USERID = 'user_id';
+
+    public const string USERINFO = 'user_info';
+
     public function __construct(
         private readonly SessionInterface $session,
         private readonly EntityManager $entityManager,
         private readonly Settings $settings,
-    ) {
+    )
+    {
     }
 
     /**
      * Checks if the current user is authenticated by verifying the presence
-     * and value of the 'logged' session key.
+     * and value of the self::AUTHENTICATED session key.
      *
      * @return bool True if the user is authenticated, false otherwise.
      */
     public function isAuthenticated(): bool
     {
-        return $this->session->has('logged') && $this->session->get('logged');
+        return $this->session->has(self::AUTHENTICATED) && $this->session->get(self::AUTHENTICATED);
     }
 
     /**
-     * Logs in a user by setting session variables and ensuring the user exists
-     * in the database. If the user does not exist, it creates a new record;
-     * otherwise, it updates their basic information. The method also synchronizes
-     * additional user parameters with the session.
+     * Authenticates and logs in a user by their identifier.
      *
-     * @param array $uinfo An associative array containing user information,
-     *                     typically provided by an OIDC provider. It must include
-     *                     an 'id' key and may include 'firstName', 'lastName',
-     *                     'email', and 'name'.
+     * Creates the user in the database if they do not exist, or updates their
+     * information if they do. Persists user details from the provided info array,
+     * sets user parameters in the session, initializes the brain avatar, and marks
+     * the session as authenticated.
      *
-     * @throws Exception If the 'id' key is not provided in the user information
-     *                   or if the user could not be processed in the database.
+     * @param string $userId The unique user identifier (OIDC sub).
+     * @param array $userInfo Associative array containing user details such as firstName, lastName, email, and name.
+     * @throws Exception If the user cannot be found or persisted in the database.
      */
-    public function login(array $uinfo): void
+    public function login(string $userId, array $userInfo): void
     {
-        $this->session->set('logged', true);
-        $this->session->set('userId', $uinfo['id']);
-
         // Vérifier l'existence de l'utilisateur en base via son id (sub OIDC).
         // Le créer s'il n'existe pas, sinon mettre à jour les infos de base.
-        $userId = (string) ($uinfo['id'] ?? '');
-        if ($userId === '') {
-            throw new Exception('User id not provided by OIDC provider:');
-        }
-
-        $this->session->set('uinfo', $uinfo);
-
         try {
             /** @var User|null $user */
             $user = $this->entityManager->getRepository(User::class)->find($userId);
@@ -68,11 +63,11 @@ class Auth
             }
 
             $user = $this->entityManager->getRepository(User::class)->find($userId);
-            $user->setFirstName($uinfo['firstName']);
-            $user->setLastName($uinfo['lastName']);
-            $user->setEmail($uinfo['email']);
-            if (($uinfo['firstName'] ?? null) === null && ($uinfo['lastName'] ?? null) === null && ($uinfo['name'] ?? null) !== null) {
-                $user->setFirstName($uinfo['name']);
+            $user->setFirstName($userInfo['firstName']);
+            $user->setLastName($userInfo['lastName']);
+            $user->setEmail($userInfo['email']);
+            if (($userInfo['firstName'] ?? null) === null && ($userInfo['lastName'] ?? null) === null && ($userInfo['name'] ?? null) !== null) {
+                $user->setFirstName($userInfo['name']);
             }
 
             $this->entityManager->flush();
@@ -87,8 +82,12 @@ class Auth
                 $this->session->set('brain_avatar', $this->settings->get('llm.defaultBrain'));
             }
         } catch (\Exception $exception) {
-            throw new Exception('User not found in database: ' . $exception->getMessage(), $exception->getCode(), $exception);
+            throw new Exception('User [' . $userId . "] not found in database and can't add it: " . $exception->getMessage(), $exception->getCode(), $exception);
         }
+
+        $this->session->set(self::AUTHENTICATED, true);
+        $this->session->set(self::USERID, $userId);
+        $this->session->set(self::USERINFO, $userInfo);
     }
 
     /**
@@ -97,7 +96,6 @@ class Auth
      */
     public function logout(): void
     {
-        $this->session->set('logged', false);
-        $this->session->set('uinfo', null);
+        $this->session->clear();
     }
 }

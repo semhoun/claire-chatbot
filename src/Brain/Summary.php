@@ -6,13 +6,14 @@ namespace App\Brain;
 
 use App\Brain\ChatHistory\SummaryChatHistory;
 use App\Brain\Provider\OpenAI;
+use App\Services\Auth;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Chat\Messages\UserMessage;
+use App\Session\SessionInterface;
 use NeuronAI\Providers\AIProviderInterface;
-use Odan\Session\SessionInterface;
 
 /**
  *
@@ -83,7 +84,7 @@ class Summary extends Agent
      */
     public function persist(array $data): void
     {
-        $userId = (string) ($this->session->get('userId') ?? '');
+        $userId = (string) ($this->session->get(Auth::USERID) ?? '');
         $threadId = (string) ($this->session->get('chatId') ?? '');
         if ($userId === '' || $threadId === '') {
             return;

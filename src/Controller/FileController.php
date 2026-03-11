@@ -6,14 +6,15 @@ namespace App\Controller;
 
 use App\Entity\File;
 use App\Entity\User;
+use App\Services\Auth;
 use App\Services\Markdown;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use NeuronAI\RAG\DataLoader\StringDataLoader;
 use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
 use NeuronAI\RAG\Splitter\DelimiterTextSplitter;
+use App\Session\SessionInterface;
 use NeuronAI\RAG\VectorStore\VectorStoreInterface;
-use Odan\Session\SessionInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -33,7 +34,7 @@ final readonly class FileController
 
     public function list(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get('userId');
+        $userId = (string) $this->session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }
@@ -49,7 +50,7 @@ final readonly class FileController
      */
     public function count(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get('userId');
+        $userId = (string) $this->session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }
@@ -61,7 +62,7 @@ final readonly class FileController
 
     public function upload(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get('userId');
+        $userId = (string) $this->session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }
@@ -146,7 +147,7 @@ final readonly class FileController
 
     public function delete(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get('userId');
+        $userId = (string) $this->session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }
