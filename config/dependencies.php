@@ -28,6 +28,7 @@ use OneToMany\Twig\FilesizeExtension;
 use Slim\Views\Twig;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
+use Telegram\Bot\Api;
 use Twig\Extension\DebugExtension;
 use Twig\Extension\ProfilerExtension;
 use Twig\Extra\Markdown\MarkdownExtension;
@@ -146,4 +147,5 @@ return [
         table: 'chat_history',
         contextWindow: $settings->get('llm.history.contextWindow')
     ),
+    Api::class => static fn (Settings $settings): Api => new Api($settings->get('telegram.bot_token')),
 ];

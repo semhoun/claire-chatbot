@@ -173,6 +173,53 @@
                         <span class="options-item__label">{{ uinfo.displayName }}</span>
                     </div>
                     <div
+                        class="options-item"
+                        role="button"
+                        tabindex="0"
+                        hx-get="{{ base_url }}/config/telegram_form"
+                        hx-target="#modalBody"
+                        hx-swap="innerHTML"
+                        hx-on::after-request="
+                            document.getElementById('modalTitle').textContent = 'Configuration Telegram';
+                            const confirmBtn = document.getElementById('modalConfirm');
+                            const cancelBtn = document.getElementById('modalCancel');
+                            confirmBtn.textContent = 'Enregistrer';
+                            const form = document.getElementById('telegram-config-form');
+                            confirmBtn.disabled = false;
+                            confirmBtn.onclick = function(e) {
+                                e.preventDefault();
+                                e.stopImmediatePropagation();
+                                confirmBtn.disabled = true;
+
+                            if (form && window.htmx) {
+                                const formData = new FormData(form);
+                                const values = {};
+                                for (const [key, value] of formData) {
+                                    values[key] = value;
+                                }
+                                window.htmx.ajax('POST', form.getAttribute('hx-post'), {
+                                    target: '#modalBody',
+                                    swap: 'innerHTML',
+                                    values: values
+                                });
+                            }
+                            };
+                            cancelBtn.onclick = function() {
+                                document.getElementById('modalRoot').classList.remove('is-open');
+                                document.getElementById('modalBackdrop').classList.remove('is-visible');
+                                document.body.classList.remove('modal-open');
+                                confirmBtn.onclick = null;
+                            };
+                            document.getElementById('modalBackdrop').classList.add('is-visible');
+                            document.getElementById('modalRoot').classList.add('is-open');
+                            document.getElementById('modalRoot').setAttribute('aria-hidden', 'false');
+                            document.getElementById('modalRoot').setAttribute('aria-autoclose', 'false');
+                            document.body.classList.add('modal-open');
+                        "
+                    >
+                        <span class="options-item__label">Configuration Telegram</span>
+                    </div>
+                    <div
                             class="options-item"
                             role="button"
                             tabindex="0"
@@ -188,7 +235,7 @@
 
     {# Global reusable modal dialog #}
     <div id="modalBackdrop" class="modal-backdrop" aria-hidden="true"></div>
-    <div id="modalRoot" class="modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="modalTitle" aria-describedby="modalBody" data-variant="default">
+    <div id="modalRoot" class="modal" role="dialog" aria-modal="true" aria-autoclose="true" aria-hidden="true" aria-labelledby="modalTitle" aria-describedby="modalBody" data-variant="default">
         <div class="modal__container">
             <div class="modal__header">
                 <h2 id="modalTitle" class="modal__title">Confirmation</h2>
@@ -640,6 +687,7 @@
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
         });
     })();
+
 </script>
 <script src="{{ base_url }}/js/dialog.js"></script>
 <script type="module">

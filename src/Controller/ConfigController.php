@@ -10,10 +10,12 @@ use Doctrine\ORM\EntityManagerInterface;
 use Odan\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Slim\Views\Twig;
 
 readonly class ConfigController
 {
     public function __construct(
+        private Twig $twig,
         private SessionInterface $session,
         private EntityManagerInterface $entityManager,
         private BrainRegistry $brainRegistry,
@@ -98,5 +100,43 @@ readonly class ConfigController
 
         // No content, HTMX-friendly
         return $response->withStatus(204);
+    }
+
+    public function telegram(Request $request, Response $response): Response
+    {
+        $data = (array) ($request->getParsedBody() ?? []);
+        $telegramId = trim((string) ($data['telegram_id'] ?? ''));
+
+        $user = $this->entityManager->getRepository(User::class)->find($this->session->get('userId'));
+        if ($user === null) {
+            return $response->withStatus(404);
+        }
+
+        $user->setTelegramId($telegramId === '' ? null : $telegramId);
+        $this->entityManager->flush();
+
+        // Return form with success message for HTMX
+        return $this->twig->render($response, 'partials/telegram_config.twig', [
+            'telegram_id' => $telegramId,
+            'success' => 'Configuration Telegram enregistrée avec succès',
+        ]);
+    }
+
+    public function telegramForm(Request $request, Response $response): Response
+    {
+        $userId = (string) $this->session->get('userId');
+        if ($userId === '') {
+            return $response->withStatus(401);
+        }
+
+        $user = $this->entityManager->getRepository(User::class)->find($userId);
+
+        if ($user === null) {
+            return $response->withStatus(404);
+        }
+
+        return $this->twig->render($response, 'partials/telegram_config.twig', [
+            'telegram_id' => $user->getTelegramId(),
+        ]);
     }
 }

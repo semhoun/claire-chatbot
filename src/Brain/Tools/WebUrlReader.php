@@ -37,7 +37,7 @@ class WebUrlReader extends Tool
             $markdown = Markdown::fromHtml($html);
             $markdown = substr($markdown, 0, (int) $this->maxContentLength);
         } catch (\Exception $exception) {
-            throw new ToolException('Failed to read URL: ' . $exception->getMessage());
+            throw new ToolException('Failed to read URL: ' . $exception->getMessage(), $exception->getCode(), $exception);
         }
 
         return $markdown;

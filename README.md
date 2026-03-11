@@ -52,6 +52,9 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
   - `OPENAPI_MODEL_SUMMARY` — modèle dédié aux tâches de synthèse/résumé (optionnel; si absent, `OPENAPI_MODEL` sera utilisé)
   - `OPENAPI_MODEL_EMBED` — modèle dédié aux embeddings (optionnel; si absent, le RAG est désactivé)
 
+- Telegram (voir `config/settings/telegram.php`):
+  - `TELEGRAM_BOT_TOKEN` — Token de votre bot Telegram (obtenu via @BotFather).
+
 - Mode et logs:
   - `DEBUG_MODE` = `true|false` (active un niveau de logs plus verbeux)
   - `DISABLE_TRACY_BAR` = `true|false` (permet de désactiver la barre de debug Tracy, activée par défaut si non spécifié)
@@ -387,6 +390,142 @@ Comportement serveur:
 - En production, désactivez `DEBUG_MODE` et vérifiez les permissions du répertoire `var/` (cache, logs, tmp).
 - Si l’agent dispose d’outils web (lecture d’URL, recherche), restreignez l’accès public ou placez l’instance derrière une authentification/reverse proxy.
 - Configurez le CORS en amont si vous exposez l’API à des origines externes.
+
+### Bot Telegram
+
+Claire peut être utilisée comme bot Telegram avec deux modes de fonctionnement : **webhook** (recommandé pour la production) ou **daemon** (polling, utile pour le développement local).
+
+#### Vue d'ensemble
+
+L'intégration Telegram permet d'interagir avec Claire directement depuis l'application Telegram. Le bot supporte les messages texte, les photos et les documents, avec une historique de conversation persistante par utilisateur.
+
+#### Prérequis
+
+1. Créez un bot via [@BotFather](https://t.me/BotFather) sur Telegram.
+2. Récupérez le token API fourni (format: `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`).
+
+#### Configuration
+
+Variables d'environnement (définies dans `.env` ou via Docker):
+
+| Variable | Obligatoire | Défaut | Description |
+|----------|-------------|--------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Oui | — | Token du bot fourni par @BotFather |
+| `TELEGRAM_WEBHOOK_ENABLED` | Non | `true` | Active le mode webhook |
+| `TELEGRAM_WEBHOOK_URL` | Non* | — | URL publique complète du webhook (ex: `https://claire.example.com/webhook/telegram`) |
+| `TELEGRAM_WEBHOOK_SECRET` | Non | — | Secret pour sécuriser les appels webhook (optionnel) |
+| `TELEGRAM_DAEMON_ENABLED` | Non | `false` | Active le mode daemon (polling) |
+| `TELEGRAM_POLLING_INTERVAL` | Non | `1` | Intervalle entre les requêtes polling (secondes) |
+| `TELEGRAM_POLLING_TIMEOUT` | Non | `30` | Timeout des requêtes long polling (secondes) |
+
+*Requis si `TELEGRAM_WEBHOOK_ENABLED=true`
+
+#### Mode Webhook (recommandé pour la production)
+
+Le mode webhook permet à Telegram d'envoyer les mises à jour directement à votre serveur via HTTPS.
+
+**Configuration du webhook:**
+
+```bash
+# Configurer le webhook
+./console telegram:webhook --url=https://votre-domaine.com/webhook/telegram
+
+# Vérifier le statut
+./console telegram:webhook --info
+
+# Supprimer le webhook (revenir au mode polling manuel)
+./console telegram:webhook --delete
+```
+
+**Points d'entrée:**
+- Endpoint webhook: `POST /webhook/telegram`
+- Doit être accessible publiquement en HTTPS
+
+**Exemple Docker Compose:**
+```yaml
+environment:
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set_me}
+  TELEGRAM_WEBHOOK_ENABLED: "true"
+  TELEGRAM_WEBHOOK_URL: https://claire.example.com/webhook/telegram
+  # Optionnel: sécuriser avec un secret
+  # TELEGRAM_WEBHOOK_SECRET: votre_secret_aleatoire
+```
+
+#### Mode Daemon (polling, utile pour le développement)
+
+Le mode daemon interroge périodiquement les serveurs Telegram pour récupérer les nouveaux messages.
+
+**Lancer le daemon:**
+
+```bash
+# Mode simple
+./console telegram:daemon
+
+# Avec options personnalisées
+./console telegram:daemon --timeout=60 --limit=50
+
+# Arrêt gracieux: Ctrl+C
+```
+
+**Options disponibles:**
+- `--timeout`: Timeout des requêtes long polling (défaut: 30s)
+- `--limit`: Nombre maximum de messages à récupérer par requête (défaut: 100)
+
+**Configuration Docker Compose:**
+```yaml
+services:
+  claire:
+    # ... configuration web ...
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set_me}
+      TELEGRAM_WEBHOOK_ENABLED: "false"
+      TELEGRAM_DAEMON_ENABLED: "true"
+      TELEGRAM_POLLING_INTERVAL: "1"
+      TELEGRAM_POLLING_TIMEOUT: "30"
+```
+
+#### Fonctionnalités
+
+Le bot Telegram supporte:
+
+- **Messages texte**: Dialogue standard avec historique persistant
+- **Photos**: Envoi d'images avec analyse (si un modèle de vision est configuré)
+- **Documents**: Upload de fichiers pour analyse
+- **Changement de cerveau**: Commande `/<nom_du_cerveau>` pour basculer d'avatar
+- **Commandes intégrées:**
+  - `/start`: Message de bienvenue
+  - `/help`: Aide et liste des cerveaux disponibles
+  - `/list`: Liste des cerveaux disponibles
+
+#### Configuration de la base de données
+
+Le bot Telegram nécessite une colonne supplémentaire dans la table des utilisateurs pour stocker l'identifiant Telegram:
+
+```bash
+./console migrations:migrate
+```
+
+#### Exemples d'utilisation
+
+**Démarrer une conversation:**
+```
+/start
+Bonjour Claire, peux-tu m'aider avec un problème de mathématiques?
+```
+
+**Changer de cerveau:**
+```
+/einstein
+Quelle est la théorie de la relativité restreinte?
+```
+
+**Envoyer une photo:**
+- Joindre une image avec ou sans légende
+- Le bot analyse l'image si un modèle de vision est configuré
+
+**Envoyer un document:**
+- Joindre un fichier PDF, texte, etc.
+- Le bot peut analyser le contenu du document
 
 ## Développement & Qualité
 

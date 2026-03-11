@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 use Dotenv\Dotenv;
 
-if (! function_exists('env')) {
+if (! function_exists('_env')) {
     /**
      * Gets the value of an environment variable.
      *
      * @throws \RuntimeException
      */
-    function env(string $key, mixed $default = null): mixed
+    function _env(string $key, mixed $default = null): mixed
     {
         static $dotenv = null;
         static $dotenvLoaded = false;
@@ -25,7 +25,7 @@ if (! function_exists('env')) {
             $dotenvLoaded = true;
         }
 
-        if ($key === '' && is_array($default)) {
+        if ($key === '') {
             try {
                 $dotenv->required($default);
             } catch (\Dotenv\Exception\ValidationException $e) {
@@ -61,6 +61,6 @@ if (! function_exists('env_required')) {
      */
     function env_required(array|string $keys): void
     {
-        env('', (array) $keys);
+        _env('', (array) $keys);
     }
 }

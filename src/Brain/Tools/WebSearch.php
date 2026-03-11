@@ -49,7 +49,7 @@ EOT
             ]);
             return $response->getBody()->getContents();
         } catch (\Exception $exception) {
-            throw new ToolException('Failed to read URL: ' . $exception->getMessage());
+            throw new ToolException('Failed to read URL: ' . $exception->getMessage(), $exception->getCode(), $exception);
         }
     }
 

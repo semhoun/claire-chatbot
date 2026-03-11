@@ -30,6 +30,7 @@ final readonly class AuthMiddleware implements MiddlewareInterface
         '/health',
         '/logout',
         '/auth',
+        '/webhook/telegram',
     ];
 
     public function __construct(

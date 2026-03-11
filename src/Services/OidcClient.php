@@ -14,15 +14,10 @@ use Odan\Session\SessionInterface;
 final class OidcClient
 {
     private bool $enabled = false;
-
     private array $discovery;
-
     private readonly GenericProvider $genericProvider;
-
     private readonly string $redirectUri;
-
     private string $tokenAuthMethod;
-
     private readonly array $scopes;
 
     public function __construct(

@@ -7,7 +7,7 @@ namespace App\Entity;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Table(name: 'user')]
-#[ORM\Entity]
+#[ORM\Entity(repositoryClass: \App\Repository\UserRepository::class)]
 class User
 {
     #[ORM\Id]
@@ -31,6 +31,9 @@ class User
     // BLOB en base; Doctrine recommande un type LOB. On utilise string|null pour simplicité.
     #[ORM\Column(name: 'picture', type: 'blob', nullable: true)]
     private ?string $picture = null;
+
+    #[ORM\Column(name: 'telegram_id', type: 'string', length: 64, unique: true, nullable: true)]
+    private ?string $telegramId = null;
 
     public function getParams(): ?array
     {
@@ -103,5 +106,15 @@ class User
     public function setPicture(?string $picture): void
     {
         $this->picture = $picture;
+    }
+
+    public function getTelegramId(): ?string
+    {
+        return $this->telegramId;
+    }
+
+    public function setTelegramId(?string $telegramId): void
+    {
+        $this->telegramId = $telegramId;
     }
 }

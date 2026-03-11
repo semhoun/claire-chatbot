@@ -6,14 +6,14 @@ use App\Services\Settings;
 
 return [
     // Driver: sqlite, mysql, postgres
-    'driver' => env('DATABASE_KIND'),
+    'driver' => _env('DATABASE_KIND'),
 
     // Used for mysql, postgres, mariadb
-    'host' => env('DATABASE_HOST'),
-    'port' => env('DATABASE_PORT'),
-    'dbname' => env('DATABASE_NAME'),
-    'user' => env('DATABASE_USER'),
-    'password' => env('DATABASE_PASSWORD'),
+    'host' => _env('DATABASE_HOST'),
+    'port' => _env('DATABASE_PORT'),
+    'dbname' => _env('DATABASE_NAME'),
+    'user' => _env('DATABASE_USER'),
+    'password' => _env('DATABASE_PASSWORD'),
 
     // Used only for sqlite
     'path' => Settings::getAppRoot() . '/var/database.sqlite',

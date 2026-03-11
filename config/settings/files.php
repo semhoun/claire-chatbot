@@ -11,6 +11,6 @@ return [
     ],
     'fileSystem' => [
         'type' => 'local',
-        'path' => env('FILES_PATH', Settings::getAppRoot() . '/var/filer'),
+        'path' => _env('FILES_PATH', Settings::getAppRoot() . '/var/filer'),
     ],
 ];

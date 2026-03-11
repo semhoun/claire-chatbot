@@ -1,0 +1,142 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Console;
+
+use App\Services\TelegramService;
+use Monolog\Handler\StreamHandler;
+use Monolog\Logger;
+use Symfony\Component\Console\Attribute\AsCommand;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
+use Telegram\Bot\Api;
+use Telegram\Bot\Objects\Update;
+
+#[AsCommand(
+    name: 'telegram:daemon',
+    description: 'Run Telegram bot in daemon mode (polling)'
+)]
+final class TelegramDaemonCommand extends Command
+{
+    private bool $running = true;
+
+    public function __construct(
+        private readonly Api $api,
+        private readonly TelegramService $telegramService,
+        private readonly Logger $logger,
+    ) {
+        parent::__construct();
+    }
+
+    protected function configure(): void
+    {
+        $this
+            ->addOption(
+                'timeout',
+                't',
+                InputOption::VALUE_OPTIONAL,
+                'Polling timeout in seconds',
+                30
+            )
+            ->addOption(
+                'limit',
+                'l',
+                InputOption::VALUE_OPTIONAL,
+                'Number of updates to fetch per request',
+                100
+            );
+    }
+
+    protected function execute(
+        InputInterface $input,
+        OutputInterface $output
+    ): int {
+        $this->setupSignalHandlers();
+        $streamHandler = new StreamHandler($output->getStream(), Logger::DEBUG);
+        $this->logger->pushHandler($streamHandler);
+
+        try {
+            $botInfo = $this->api->getMe();
+            $botUsername = $botInfo->getUsername();
+
+            $output->writeln(sprintf(
+                '<info>Starting Telegram daemon for bot: @%s</info>',
+                $botUsername
+            ));
+            $output->writeln('<comment>Press Ctrl+C to stop</comment>');
+            $output->writeln('');
+        } catch (\Throwable $throwable) {
+            $output->writeln(sprintf(
+                '<error>Failed to get bot info: %s</error>',
+                $throwable->getMessage()
+            ));
+
+            return Command::FAILURE;
+        }
+
+        $timeout = (int) $input->getOption('timeout');
+        $limit = (int) $input->getOption('limit');
+        $offset = 0;
+
+        while ($this->running) {
+            try {
+                $updates = $this->api->getUpdates([
+                    'offset' => $offset,
+                    'limit' => $limit,
+                    'timeout' => $timeout,
+                ]);
+
+                /** @var Update $update */
+                foreach ($updates as $update) {
+                    $updateId = $update->getUpdateId();
+
+                    if ($updateId >= $offset) {
+                        $offset = $updateId + 1;
+                    }
+
+                    $this->telegramService->processUpdate($update);
+                }
+            } catch (\Throwable $throwable) {
+                $this->logger->error('Telegram polling error: ' . $throwable->getMessage(), [
+                    'exception' => $throwable,
+                ]);
+
+                $output->writeln(sprintf(
+                    '<error>Polling error: %s</error>',
+                    $throwable->getMessage()
+                ));
+            }
+
+            if ($this->running) {
+                sleep(1);
+            }
+        }
+
+        $output->writeln('');
+        $output->writeln('<info>Telegram daemon stopped gracefully</info>');
+
+        return Command::SUCCESS;
+    }
+
+    private function setupSignalHandlers(): void
+    {
+        if (! function_exists('pcntl_signal')) {
+            $this->logger->debug('pcntl extension not available, signal handling disabled');
+
+            return;
+        }
+
+        pcntl_signal(SIGTERM, function (): void {
+            $this->logger->info('SIGTERM received, shutting down gracefully...');
+            $this->running = false;
+        });
+
+        pcntl_signal(SIGINT, function (): void {
+            $this->logger->info('SIGINT received, shutting down gracefully...');
+            $this->running = false;
+        });
+    }
+}

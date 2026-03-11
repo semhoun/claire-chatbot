@@ -12,17 +12,17 @@ env_required([
 
 return [
     'openai' => [
-        'key' => env('OPENAPI_KEY'),
-        'baseUri' => env('OPENAPI_URL'),
-        'model' => env('OPENAPI_MODEL'),
-        'modelSummary' => env('OPENAPI_MODEL_SUMMARY') ?? env('OPENAPI_MODEL'),
-        'modelEmbed' => env('OPENAPI_MODEL_EMBED'),
+        'key' => _env('OPENAPI_KEY'),
+        'baseUri' => _env('OPENAPI_URL'),
+        'model' => _env('OPENAPI_MODEL'),
+        'modelSummary' => _env('OPENAPI_MODEL_SUMMARY') ?? _env('OPENAPI_MODEL'),
+        'modelEmbed' => _env('OPENAPI_MODEL_EMBED'),
     ],
     'history' => [
         'contextWindow' => 5000000, //50000
     ],
     'tools' => [
-        'searchXngUrl' => env('SEARXNG_URL'),
+        'searchXngUrl' => _env('SEARXNG_URL'),
     ],
     'rag' => [
         'type' => 'file', // Could be 'file'

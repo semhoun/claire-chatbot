@@ -87,7 +87,7 @@ class Auth
                 $this->session->set('brain_avatar', $this->settings->get('llm.defaultBrain'));
             }
         } catch (\Exception $exception) {
-            throw new Exception('User not found in database: ' . $exception->getMessage());
+            throw new Exception('User not found in database: ' . $exception->getMessage(), $exception->getCode(), $exception);
         }
     }
 

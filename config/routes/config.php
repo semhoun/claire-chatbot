@@ -13,5 +13,7 @@ return static function (
         $group->post('/chat_mode', [ConfigController::class, 'chatMode'])->setName('config.mode');
         $group->post('/layout_mode', [ConfigController::class, 'layoutMode'])->setName('config.layout');
         $group->post('/brain_avatar', [ConfigController::class, 'brainAvatar'])->setName('config.brain_avatar');
+        $group->post('/telegram', [ConfigController::class, 'telegram'])->setName('config.telegram');
+        $group->get('/telegram_form', [ConfigController::class, 'telegramForm'])->setName('config.telegram_form');
     });
 };

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Middleware\AuthMiddleware;
 use App\Middleware\BaseUrlMiddleware;
+use App\Middleware\CorsMiddleware;
 use App\Renderer\HtmlErrorRenderer;
 use App\Renderer\JsonErrorRenderer;
 use App\Services\Settings;
@@ -24,6 +25,10 @@ return static function (App $app): void {
     $app->add(TwigMiddleware::create($app, $container->get(Twig::class)));
     $app->add(BaseUrlMiddleware::class);
     $app->add(new ProxyDetection());
+    $app->add(CorsMiddleware::class);
+
+    // Telegram webhook needs to bypass some middlewares if they are too restrictive (like OIDC)
+    // But usually OIDC is only on specific routes or handled via session
 
     // Add error handling middleware.
     if ($settings->get('debug')) {

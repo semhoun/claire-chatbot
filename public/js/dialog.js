@@ -62,6 +62,7 @@
         titleEl.textContent = title;
         bodyEl.textContent = message;
         confirmBtn.textContent = confirmLabel;
+        confirmBtn.disabled = false;
         cancelBtn.textContent = cancelLabel;
         setVariant(variant);
         currentOnConfirm = typeof onConfirm === 'function' ? onConfirm : null;
@@ -69,6 +70,7 @@
         backdrop.classList.add('is-visible');
         modal.classList.add('is-open');
         modal.setAttribute('aria-hidden', 'false');
+        modal.setAttribute('aria-autoclose', 'true');
         doc.body.classList.add('modal-open');
 
         // Focus management
@@ -105,7 +107,9 @@
     confirmBtn.addEventListener('click', () => {
         const fn = currentOnConfirm;
         currentOnConfirm = null;
-        close();
+        if (modal.getAttribute('aria-autoclose') === 'true') {
+            close();
+        }
         if (typeof fn === 'function') {
             // Defer to next tick to let the DOM/state settle
             setTimeout(() => fn(), 0);
