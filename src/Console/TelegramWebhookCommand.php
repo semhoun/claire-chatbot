@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Console;
 
-use App\Services\Settings;
 use InvalidArgumentException;
 use Monolog\Logger;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -81,7 +80,7 @@ final class TelegramWebhookCommand extends Command
         $webhookInfo = $this->api->getWebhookInfo();
 
         $output->writeln('<info>Current Webhook Info:</info>');
-        $output->writeln('  URL: ' . ($webhookInfo->url ?: '(not set)'));
+        $output->writeln('  URL: ' . ($webhookInfo->url !== null && $webhookInfo->url !== '' ? $webhookInfo->url : '(not set)'));
         $output->writeln('  Has Custom Certificate: ' . ($webhookInfo->has_custom_certificate ? 'Yes' : 'No'));
         $output->writeln('  Pending Update Count: ' . $webhookInfo->pending_update_count);
 

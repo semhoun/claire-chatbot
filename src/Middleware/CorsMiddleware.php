@@ -8,7 +8,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface as Handler;
-use Slim\Psr7\Response as SlimResponse;
+use Slim\Psr7\NonBufferedBody;
 
 /**
  * Middleware pour gérer CORS (Cross-Origin Resource Sharing).
@@ -17,13 +17,14 @@ final class CorsMiddleware implements MiddlewareInterface
 {
     public function process(Request $request, Handler $handler): Response
     {
-        // Gérer la requête de pré-vérification (OPTIONS)
-        if ($request->getMethod() === 'OPTIONS') {
-            $response = new SlimResponse();
-            return $this->addCorsHeaders($request, $response);
+        $response = $handler->handle($request);
+
+        // Don't modify headers if response is streaming (NonBufferedBody)
+        // as output has already started
+        if ($response->getBody() instanceof NonBufferedBody) {
+            return $response;
         }
 
-        $response = $handler->handle($request);
         return $this->addCorsHeaders($request, $response);
     }
 

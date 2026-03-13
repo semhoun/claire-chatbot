@@ -6,7 +6,7 @@ namespace App\Controller;
 
 use App\Services\Auth;
 use App\Services\OidcClient;
-use App\Session\SessionInterface;
+use App\Services\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 

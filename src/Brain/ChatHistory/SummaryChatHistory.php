@@ -29,7 +29,8 @@ class SummaryChatHistory extends UserChatHistory
 
         // Legacy format: simple string - convert to TextContent for migration
         if (is_string($content)) {
-            if ($json = json_decode($content, true)) {
+            $json = json_decode($content, true);
+            if ($json !== null && $json !== false) {
                 return $this->deserializeContent($json);
             }
 

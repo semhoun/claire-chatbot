@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Controller\TelegramConfigController;
 use App\Controller\TelegramController;
 use Slim\App;
 

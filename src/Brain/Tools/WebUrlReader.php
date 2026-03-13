@@ -81,7 +81,9 @@ class WebUrlReader extends Tool
         }
 
         if (str_starts_with($maybeRelative, '//')) {
-            $scheme = parse_url($base, PHP_URL_SCHEME) ?: 'http';
+            $scheme = parse_url($base, PHP_URL_SCHEME) !== false && parse_url($base, PHP_URL_SCHEME) !== null
+                ? parse_url($base, PHP_URL_SCHEME)
+                : 'http';
             return $scheme . ':' . $maybeRelative;
         }
 

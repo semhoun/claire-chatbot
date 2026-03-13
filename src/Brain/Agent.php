@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Brain;
 
 use App\Brain\ChatHistory\UserChatHistory;
+use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Middleware\Summarization;
-use App\Session\SessionInterface;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Providers\AIProviderInterface;
 

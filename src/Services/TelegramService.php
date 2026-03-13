@@ -174,11 +174,10 @@ final readonly class TelegramService
         $command = substr($parts[0], 1);
 
         if ($command === 'start') {
+            $brainList = $this->getBrainListText();
             $this->sendMessage(
                 $chatId,
-                "Bonjour ! Je suis Claire, votre assistante IA.\n\n" .
-                "Vous pouvez me parler directement ou utiliser /<nom_du_cerveau> pour changer d'expert.\n\n" .
-                "Cerveaux disponibles :\n" . $this->getBrainListText()
+                "Bonjour ! Je suis Claire, votre assistante IA.\n\nVous pouvez me parler directement ou utiliser /<nom_du_cerveau> pour changer d'expert.\n\nCerveaux disponibles :\n{$brainList}"
             );
             return true;
         }
@@ -186,12 +185,7 @@ final readonly class TelegramService
         if ($command === 'help') {
             $this->sendMessage(
                 $chatId,
-                "Commandes disponibles :\n" .
-                "/start - Démarrer la conversation\n" .
-                "/help - Afficher cette aide\n" .
-                "/list - Liste des cerveaux disponibles\n" .
-                "/<nom_du_cerveau> - Changer de cerveau\n\n" .
-                "Vous pouvez aussi m'envoyer des photos et des documents."
+                "Commandes disponibles :\n/start - Démarrer la conversation\n/help - Afficher cette aide\n/list - Liste des cerveaux disponibles\n/<nom_du_cerveau> - Changer de cerveau\n\nVous pouvez aussi m'envoyer des photos et des documents."
             );
             return true;
         }

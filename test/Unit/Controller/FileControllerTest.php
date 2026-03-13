@@ -11,37 +11,20 @@ namespace App\Test\Unit\Controller;
 
 
 use App\Controller\FileController;
-
 use App\Entity\File;
-
 use App\Entity\User;
-
 use App\Repository\FileRepository;
-
+use App\Services\Session\SessionInterface;
 use Doctrine\ORM\EntityManagerInterface;
-
-use App\Session\SessionInterface;
-
 use League\Flysystem\Filesystem;
-
-use PHPUnit\Framework\TestCase;
-
-use Psr\Container\ContainerInterface;
-
-use Psr\Http\Message\ResponseInterface;
-
-use Psr\Http\Message\ServerRequestInterface;
-
-use Psr\Http\Message\UploadedFileInterface;
-
-use Slim\Psr7\Factory\ResponseFactory;
-
-use Slim\Views\Twig;
-
 use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
-
 use NeuronAI\RAG\VectorStore\VectorStoreInterface;
-
+use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\UploadedFileInterface;
+use Slim\Psr7\Factory\ResponseFactory;
+use Slim\Views\Twig;
 
 
 final class FileControllerTest extends TestCase

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Session;
+namespace App\Services\Session;
 
 interface SessionInterface
 {

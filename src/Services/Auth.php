@@ -6,7 +6,7 @@ namespace App\Services;
 
 use App\Entity\User;
 use App\Exception;
-use App\Session\SessionInterface;
+use App\Services\Session\SessionInterface;
 use Doctrine\ORM\EntityManager;
 
 class Auth

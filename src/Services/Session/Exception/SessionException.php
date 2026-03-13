@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Session\Exception;
+namespace App\Services\Session\Exception;
 
 use RuntimeException;
 

@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Session;
-
-use App\Session\FlashInterface;
+namespace App\Services\Session;
 
 /**
  * Flash messages stored in memory with JWT serialization support.

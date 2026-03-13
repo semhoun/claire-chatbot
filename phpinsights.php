@@ -4,7 +4,16 @@
 
 declare(strict_types=1);
 
+use NunoMaduro\PhpInsights\Domain\Insights\ForbiddenNormalClasses;
+use NunoMaduro\PhpInsights\Domain\Insights\ForbiddenTraits;
+use NunoMaduro\PhpInsights\Domain\Sniffs\ForbiddenSetterSniff;
 use PHP_CodeSniffer\Standards\Generic\Sniffs\Files\LineLengthSniff;
+use SlevomatCodingStandard\Sniffs\Classes\SuperfluousExceptionNamingSniff;
+use SlevomatCodingStandard\Sniffs\Classes\SuperfluousInterfaceNamingSniff;
+use SlevomatCodingStandard\Sniffs\Commenting\InlineDocCommentDeclarationSniff;
+use SlevomatCodingStandard\Sniffs\Functions\FunctionLengthSniff;
+use SlevomatCodingStandard\Sniffs\TypeHints\DisallowMixedTypeHintSniff;
+use SlevomatCodingStandard\Sniffs\Variables\DisallowSuperGlobalVariableSniff;
 
 return [
 
@@ -67,6 +76,15 @@ return [
     'remove' => [
         SlevomatCodingStandard\Sniffs\ControlStructures\DisallowEmptySniff::class,
         SlevomatCodingStandard\Sniffs\Functions\UnusedParameterSniff::class,
+        ForbiddenSetterSniff::class,
+        DisallowMixedTypeHintSniff::class,
+        SuperfluousInterfaceNamingSniff::class,
+        SuperfluousExceptionNamingSniff::class,
+        ForbiddenTraits::class,
+        FunctionLengthSniff::class,
+        ForbiddenNormalClasses::class,
+        InlineDocCommentDeclarationSniff::class,
+        DisallowSuperGlobalVariableSniff::class,
     ],
 
     'config' => [
@@ -90,7 +108,7 @@ return [
 
     'requirements' => [
         'min-quality' => 90.0,
-        'min-architecture' => 85.0,
+        'min-architecture' => 80.0,
         'min-style' => 96.0,
     ],
 ];

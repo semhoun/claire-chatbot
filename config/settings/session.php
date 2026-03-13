@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 env_required([
-    'JWT_SECRET'
+    'JWT_SECRET',
 ]);
 
 return [

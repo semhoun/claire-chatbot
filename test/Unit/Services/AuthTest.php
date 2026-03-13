@@ -11,15 +11,10 @@ namespace App\Test\Unit\Services;
 
 
 use App\Services\Auth;
-
+use App\Services\Session\SessionInterface;
 use App\Services\Settings;
-
-use App\Session\SessionInterface;
-
 use Doctrine\ORM\EntityManager;
-
 use PHPUnit\Framework\TestCase;
-
 
 
 final class AuthTest extends TestCase

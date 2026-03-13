@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Session;
+namespace App\Middleware;
 
+use App\Services\Session\ArraySession;
 use App\Services\Settings;
 use DateTimeImmutable;
 use InvalidArgumentException;
@@ -22,6 +23,7 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface as Handler;
 use Ramsey\Uuid\Uuid;
 use RuntimeException;
+use Slim\Psr7\NonBufferedBody;
 
 /**
  * Middleware for JWT-based session management via cookies.
@@ -71,6 +73,13 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         }
 
         $response = $handler->handle($request);
+
+        // Don't modify headers if response is streaming (NonBufferedBody)
+        // as output has already started
+        if ($response->getBody() instanceof NonBufferedBody) {
+            return $response;
+        }
+
         // Only write cookie if data changed or token needs refresh
         if ($this->shouldWriteCookie()) {
             return $this->writeSessionToCookie($response, $secret);

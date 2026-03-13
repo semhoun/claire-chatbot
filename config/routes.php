@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Services\Settings;
 use Slim\App;
 use Slim\Psr7\Request;
+use Slim\Psr7\Response;
 
 return static function (App $app): void {
     $container = $app->getContainer();
@@ -22,6 +23,11 @@ return static function (App $app): void {
         $route = require $file;
         $route($app);
     }
+
+    // OPTIONS
+    $app->map(['OPTIONS'], '/{routes:.*}', function (Request $request, Response $response, $args) {
+        return $response->withStatus(204);
+    });
 
     // Not Found
     $app->map(

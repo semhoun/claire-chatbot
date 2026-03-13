@@ -7,12 +7,12 @@ namespace App\Brain;
 use App\Brain\ChatHistory\SummaryChatHistory;
 use App\Brain\Provider\OpenAI;
 use App\Services\Auth;
+use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Agent;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Chat\Messages\UserMessage;
-use App\Session\SessionInterface;
 use NeuronAI\Providers\AIProviderInterface;
 
 /**

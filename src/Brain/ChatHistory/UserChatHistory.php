@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Brain\ChatHistory;
 
 use App\Services\Auth;
+use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\History\AbstractChatHistory;
 use NeuronAI\Chat\History\SQLChatHistory;
-use App\Session\SessionInterface;
 use PDO;
 
 class UserChatHistory extends SQLChatHistory

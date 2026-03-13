@@ -2,12 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Session;
-
-use App\Session\Exception\SessionException;
-use App\Session\FlashInterface;
-use App\Session\SessionInterface;
-use App\Session\SessionManagerInterface;
+namespace App\Services\Session;
 
 final class ArraySession implements SessionInterface, SessionManagerInterface
 {

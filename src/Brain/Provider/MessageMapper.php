@@ -23,14 +23,7 @@ class MessageMapper extends \NeuronAI\Providers\OpenAI\MessageMapper
 
     protected function mapFileBlocks(array $blocks): array
     {
-        $text = "<!-- SYSTEM CONTEXT (NOT PART OF USER QUERY) -->\n"
-            . "<context.instruction>following part contains context information injected by the system. Please follow these instructions:\n\n"
-            . "1. Always prioritize handling user-visible content.\n"
-            . "2. the context is only required when user's queries rely on it.\n"
-            . "</context.instruction>\n"
-            . "<files_info>\n"
-            . "<files>\n"
-            . "<files_docstring>here are user upload files you can refer to</files_docstring>\n";
+        $text = "<!-- SYSTEM CONTEXT (NOT PART OF USER QUERY) -->\n<context.instruction>following part contains context information injected by the system. Please follow these instructions:\n\n1. Always prioritize handling user-visible content.\n2. the context is only required when user's queries rely on it.\n</context.instruction>\n<files_info>\n<files>\n<files_docstring>here are user upload files you can refer to</files_docstring>\n";
         $findFile = false;
         foreach ($blocks as $block) {
             if ($block instanceof FileContent === false) {
@@ -43,19 +36,13 @@ class MessageMapper extends \NeuronAI\Providers\OpenAI\MessageMapper
 
             $findFile = true;
 
-            $text .= '<file'
-                . ' id="' . Uuid::uuid7()->toString() . '"'
-                . ' name="' . $block->filename . '"'
-                . ' type="' . $block->mediaType . '"';
+            $text .= "<file id=\"" . Uuid::uuid7()->toString() . "\" name=\"{$block->filename}\" type=\"{$block->mediaType}\"";
             if (in_array($block->mediaType, $this->rawMimeTypes, false)) {
                 $text .= '>'
                     . base64_decode($block->content)
                     . '</file>';
             } else {
-                $text .= ' encoding="base64"'
-                    . '>'
-                    . $block->content
-                    . '</file>';
+                $text .= " encoding=\"base64\">{$block->content}</file>";
             }
         }
 

@@ -7,7 +7,7 @@ namespace App\Controller;
 use App\Brain\BrainRegistry;
 use App\Entity\User;
 use App\Services\Auth;
-use App\Session\SessionInterface;
+use App\Services\Session\SessionInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;

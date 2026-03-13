@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Brain;
 
 use App\Brain\ChatHistory\UserChatHistory;
+use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Middleware\Summarization;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
-use App\Session\SessionInterface;
 use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 
 class RAG extends \NeuronAI\RAG\RAG
