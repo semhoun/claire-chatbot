@@ -122,8 +122,8 @@ Claire uses a stateless JWT-based session system. Session data is stored in a si
 
 - Configuration: `config/settings/session.php`
 - Key environment variables:
-  - `JWT_SECRET` — Secret key for JWT signing (required in production)
-  - `JWT_ALGORITHM` — Algorithm for signing (default: HS256)
+  - `SESSION_JWT_SECRET` — Secret key for JWT signing (required in production)
+  - `SESSION_JWT_ALGORITHM` — Algorithm for signing (default: HS256)
 - Public routes (bypass session): configured in `config/settings/security.php`
 
 For detailed documentation, see `src/Session/README.md`.
