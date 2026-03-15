@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Brain\Provider\OpenAI;
 use App\Exception;
 use App\Services\OidcClient;
 use App\Services\Settings;
@@ -14,12 +13,6 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\ORMSetup;
 use League\Flysystem\Filesystem;
 use Monolog\Logger;
-use NeuronAI\HttpClient\GuzzleHttpClient;
-use NeuronAI\Providers\AIProviderInterface;
-use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
-use NeuronAI\RAG\Embeddings\OpenAILikeEmbeddings;
-use NeuronAI\RAG\VectorStore\FileVectorStore;
-use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 use OneToMany\Twig\FilesizeExtension;
 use Slim\Views\Twig;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
@@ -107,7 +100,6 @@ return [
         $twig->getEnvironment()->addGlobal('settings', $settings);
         return $twig;
     },
-
     OidcClient::class => static fn (Settings $settings): OidcClient => new OidcClient($settings),
     Filesystem::class => static function (Settings $settings): FileSystem {
         if ($settings->get('files.fileSystem.type') === 'local') {
@@ -119,23 +111,4 @@ return [
 
         throw new Exception('Unknown filesystem type ' . $settings->get('files.fileSystem.type'));
     },
-    AIProviderInterface::class => static fn (Settings $settings): AIProviderInterface => new OpenAI(
-        baseUri: $settings->get('llm.openai.baseUri'),
-        key: $settings->get('llm.openai.key'),
-        model: $settings->get('llm.openai.model'),
-        rawMimeTypes: $settings->get('llm.rawMimeTypes'),
-        httpClient: new GuzzleHttpClient(customHeaders: [], timeout: $settings->get('llm.httpClient.timeout'), connectTimeout: $settings->get('llm.httpClient.connectTimeout'))
-    ),
-    EmbeddingsProviderInterface::class => static fn (Settings $settings): EmbeddingsProviderInterface => new OpenAILikeEmbeddings(
-        baseUri: $settings->get('llm.openai.baseUri') . '/embeddings',
-        key: $settings->get('llm.openai.key'),
-        model: $settings->get('llm.openai.modelEmbed')
-    ),
-    VectorStoreInterface::class => static fn (Settings $settings): VectorStoreInterface => new FileVectorStore(
-        directory: $settings->get('llm.rag.path'),
-        name: 'neuron-rag',
-    ),
-
-    \Telegram\Bot\Api::class => static fn (Settings $settings): \Telegram\Bot\Api => new \Telegram\Bot\Api($settings->get('telegram.bot_token')),
-    TelegramSession::class => static fn (EntityManagerInterface $entityManager): TelegramSession => new TelegramSession($entityManager),
 ];

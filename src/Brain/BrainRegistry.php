@@ -4,17 +4,16 @@ declare(strict_types=1);
 
 namespace App\Brain;
 
-use App\Brain\ChatHistory\UserChatHistory;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
+use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Agent;
-use Psr\Container\ContainerInterface;
 
 final readonly class BrainRegistry
 {
     public function __construct(
+        private Connection $connection,
         private Settings $settings,
-        private ContainerInterface $container,
     ) {
     }
 
@@ -78,46 +77,7 @@ final readonly class BrainRegistry
             throw new \InvalidArgumentException('Assistant inconnu: ' . $slug);
         }
 
-        // Création manuelle avec injection de la session
-        /** @var Agent $instance */
-        return $this->createBrain($class, $session);
-    }
-
-    /**
-     * @param class-string<BrainAvatar> $class
-     */
-    private function createBrain(string $class, SessionInterface $session): Agent
-    {
-        $connection = $this->container->get(\Doctrine\DBAL\Connection::class);
-        $settings = $this->settings;
-        $aiProvider = $this->container->get(\NeuronAI\Providers\AIProviderInterface::class);
-
-        if (is_subclass_of($class, RAG::class)) {
-            $instance = new $class(
-                connection: $connection,
-                settings: $settings,
-                session: $session,
-                aiProvider: $aiProvider,
-                embeddingsProvider: $this->container->get(\NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface::class),
-                vectorStore: $this->container->get(\NeuronAI\RAG\VectorStore\VectorStoreInterface::class),
-            );
-            assert($instance instanceof Agent);
-            return $instance;
-        }
-
-        // Agent class (Claire, Flashy, etc.)
-        $instance = new $class(
-            connection: $connection,
-            settings: $settings,
-            session: $session,
-            aiProvider: $aiProvider,
-            chatHistory: new UserChatHistory(
-                session: $session,
-                pdo: $connection->getNativeConnection(),
-                table: UserChatHistory::TABLE,
-                contextWindow: (int) $settings->get('llm.history.contextWindow')
-            ),
-        );
+        $instance = new $class($this->connection, $this->settings, $session);
         assert($instance instanceof Agent);
         return $instance;
     }

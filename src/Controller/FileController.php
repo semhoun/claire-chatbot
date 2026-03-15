@@ -8,7 +8,7 @@ use App\Entity\File;
 use App\Entity\User;
 use App\Services\Auth;
 use App\Services\Markdown;
-use App\Services\Session\SessionInterface;
+use App\Services\Session\SessionFromRequestTrait;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use NeuronAI\RAG\DataLoader\StringDataLoader;
@@ -23,6 +23,8 @@ use Slim\Views\Twig;
 
 final readonly class FileController
 {
+    use SessionFromRequestTrait;
+
     public function __construct(
         private Twig $twig,
         private EntityManagerInterface $entityManager,
@@ -31,18 +33,9 @@ final readonly class FileController
     ) {
     }
 
-    private function getSession(Request $request): ?SessionInterface
-    {
-        $session = $request->getAttribute('session');
-        return $session instanceof SessionInterface ? $session : null;
-    }
-
     public function list(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {
@@ -61,9 +54,6 @@ final readonly class FileController
     public function count(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {
@@ -78,9 +68,6 @@ final readonly class FileController
     public function upload(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {
@@ -168,9 +155,6 @@ final readonly class FileController
     public function delete(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {

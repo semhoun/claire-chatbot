@@ -8,7 +8,8 @@ use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Services\Auth;
-use App\Services\Session\SessionInterface;
+use App\Services\Session\SessionFromRequestTrait;
+use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -17,17 +18,14 @@ use Slim\Views\Twig;
 
 final readonly class HistoryController
 {
+    use SessionFromRequestTrait;
+
     public function __construct(
         private Twig $twig,
         private EntityManagerInterface $entityManager,
         private BrainRegistry $brainRegistry,
+        private Settings $settings,
     ) {
-    }
-
-    private function getSession(Request $request): ?SessionInterface
-    {
-        $session = $request->getAttribute('session');
-        return $session instanceof SessionInterface ? $session : null;
     }
 
     /**
@@ -39,9 +37,6 @@ final readonly class HistoryController
     public function create(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         // Nettoyage des conversations vides de l'utilisateur
         $userId = (string) $session->get(Auth::USERID);
@@ -79,9 +74,6 @@ final readonly class HistoryController
     public function count(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $userId = (string) $session->get(Auth::USERID);
         $count = $this->entityManager->getRepository(ChatHistoryEntity::class)->countByUserId($userId);
@@ -102,9 +94,6 @@ final readonly class HistoryController
     public function list(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $userId = (string) $session->get(Auth::USERID);
         $histories = $this->entityManager->getRepository(ChatHistoryEntity::class)->getHistoryList($userId);
@@ -122,9 +111,6 @@ final readonly class HistoryController
     public function open(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {
@@ -140,12 +126,11 @@ final readonly class HistoryController
         }
 
         $session->set('chatId', $threadId);
-
         $userChatHistory = new UserChatHistory(
             session: $session,
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
             table: UserChatHistory::TABLE,
-            contextWindow: 50000
+            contextWindow: $this->settings->get('llm.openai.contextWindow')
         );
         $userChatHistory->setThreadId($threadId);
 
@@ -166,9 +151,6 @@ final readonly class HistoryController
     public function delete(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {

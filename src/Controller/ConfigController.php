@@ -7,7 +7,7 @@ namespace App\Controller;
 use App\Brain\BrainRegistry;
 use App\Entity\User;
 use App\Services\Auth;
-use App\Services\Session\SessionInterface;
+use App\Services\Session\SessionFromRequestTrait;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -15,17 +15,13 @@ use Slim\Views\Twig;
 
 readonly class ConfigController
 {
+    use SessionFromRequestTrait;
+
     public function __construct(
         private Twig $twig,
         private EntityManagerInterface $entityManager,
         private BrainRegistry $brainRegistry,
     ) {
-    }
-
-    private function getSession(Request $request): ?SessionInterface
-    {
-        $session = $request->getAttribute('session');
-        return $session instanceof SessionInterface ? $session : null;
     }
 
     /**
@@ -34,9 +30,6 @@ readonly class ConfigController
     public function chatMode(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $data = (array) ($request->getParsedBody() ?? []);
         $mode = (string) ($data['mode'] ?? '');
@@ -65,9 +58,6 @@ readonly class ConfigController
     public function layoutMode(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $data = (array) ($request->getParsedBody() ?? []);
         $mode = (string) ($data['mode'] ?? '');
@@ -96,9 +86,6 @@ readonly class ConfigController
     public function brainAvatar(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $data = (array) ($request->getParsedBody() ?? []);
         $avatar = strtolower((string) ($data['avatar'] ?? ''));
@@ -126,9 +113,6 @@ readonly class ConfigController
     public function telegram(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $data = (array) ($request->getParsedBody() ?? []);
         $telegramId = trim((string) ($data['telegram_id'] ?? ''));
@@ -151,9 +135,6 @@ readonly class ConfigController
     public function telegramForm(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        if (!$session instanceof \App\Services\Session\SessionInterface) {
-            return $response->withStatus(500);
-        }
 
         $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {

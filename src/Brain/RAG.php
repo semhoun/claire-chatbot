@@ -4,78 +4,32 @@ declare(strict_types=1);
 
 namespace App\Brain;
 
-use App\Brain\ChatHistory\UserChatHistory;
-use App\Services\Session\SessionInterface;
-use App\Services\Settings;
-use Doctrine\DBAL\Connection;
-use NeuronAI\Agent\Middleware\Summarization;
-use NeuronAI\Agent\Nodes\ChatNode;
-use NeuronAI\Agent\Nodes\StreamingNode;
-use NeuronAI\Agent\Nodes\StructuredOutputNode;
-use NeuronAI\Chat\History\ChatHistoryInterface;
-use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
 use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 
 class RAG extends \NeuronAI\RAG\RAG
 {
-    public function __construct(
-        protected Connection $connection,
-        protected readonly Settings $settings,
-        protected readonly SessionInterface $session,
-        protected AIProviderInterface $aiProvider,
-        protected EmbeddingsProviderInterface $embeddingsProvider,
-        protected VectorStoreInterface $vectorStore,
-    ) {
-        parent::__construct();
-    }
-
-    #[\Override]
-    protected function chatHistory(): ChatHistoryInterface
-    {
-        return new UserChatHistory(
-            session: $this->session,
-            pdo: $this->connection->getNativeConnection(),
-            table: UserChatHistory::TABLE,
-            contextWindow: $this->settings->get('llm.history.contextWindow')
-        );
-    }
-
-    #[\Override]
-    protected function provider(): AIProviderInterface
-    {
-        return $this->aiProvider;
-    }
+    use AgentTrait\AIProvider;
+    use AgentTrait\UserChatHistory;
+    use AgentTrait\Constructor;
+    use AgentTrait\Middleware;
 
     #[\Override]
     protected function embeddings(): EmbeddingsProviderInterface
     {
-        return $this->embeddingsProvider;
+        return new \NeuronAI\RAG\Embeddings\OpenAILikeEmbeddings(
+            baseUri: $this->settings->get('llm.openai.baseUri') . '/embeddings',
+            key: $this->settings->get('llm.openai.key'),
+            model: $this->settings->get('llm.openai.modelEmbed')
+        );
     }
 
     #[\Override]
     protected function vectorStore(): VectorStoreInterface
     {
-        return $this->vectorStore;
-    }
-
-    /**
-     * Define your middleware here.
-     *
-     * @return array<class-string<NodeInterface>, array<WorkflowMiddleware>>
-     */
-    #[\Override]
-    protected function middleware(): array
-    {
-        $summarization = new Summarization(
-            provider: $this->aiProvider,
-            maxTokens: $this->settings->get('llm.history.contextWindow') / 2,
-            messagesToKeep: 10,
+        return new \NeuronAI\RAG\VectorStore\FileVectorStore(
+            directory: $this->settings->get('llm.rag.path'),
+            name: 'neuron-rag',
         );
-        return [
-            ChatNode::class => [$summarization],
-            StreamingNode::class => [$summarization],
-            StructuredOutputNode::class => [$summarization],
-        ];
     }
 }

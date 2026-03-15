@@ -93,11 +93,15 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 
 ### Avatars / Cerveaux (BrainRegistry)
 
-L’application permet de sélectionner différents « cerveaux » (avatars) pour l’agent (ex.: Claire, Einstein). La sélection est mémorisée en session sous la clé `brain_avatar`.
+L’application permet de sélectionner différents « cerveaux » (avatars) pour l’agent (ex.: Claire, Einstein, Flashy). La sélection est mémorisée en session sous la clé `brain_avatar`.
 
 - La logique de sélection est gérée par le registre `BrainRegistry`.
 - Si une valeur invalide est fournie, l’application revient automatiquement sur l’avatar par défaut: `claire`.
 - Vous pouvez exposer ce choix dans l’UI (ex.: select) ou via un paramètre de requête selon vos besoins.
+- Cerveaux disponibles:
+  - `claire` — Assistante généraliste
+  - `einstein` — Expert scientifique
+  - `flashy` — Réponses rapides et concises
 
 ### Authentification OpenID Connect (SSO)
 

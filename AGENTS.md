@@ -110,6 +110,8 @@ use App\Entity\ChatHistory;
 - **Repositories**: Database access, extend `Doctrine\ORM\EntityRepository`
 - **Brain/Avatar Pattern**: AI agents implement `BrainAvatar` interface with constants NAME, DESCRIPTION, AVATAR, CSS
 - **Middleware**: PSR-15 middleware in `App\Middleware\`
+- **Session Management**: JWT-based stateless sessions via `SessionManager`
+- **Telegram Sessions**: Dedicated `TelegramSession` entity for bot user persistence
 
 ### Key Project Conventions
 - Use `env()` helper for environment variables (defined in `src/helpers.php`)

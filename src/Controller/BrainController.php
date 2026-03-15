@@ -6,7 +6,9 @@ namespace App\Controller;
 
 use App\Brain\BrainRegistry;
 use App\Brain\Summary;
+use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Session\SessionInterface;
+use App\Services\Settings;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\OptimisticLockException;
@@ -28,15 +30,17 @@ use Slim\Views\Twig;
 
 final readonly class BrainController
 {
+    use SessionFromRequestTrait;
+
     private const string STREAM_STOP = "\n§STREAM-STOP§\n";
 
     public function __construct(
         private Twig $twig,
         private BrainRegistry $brainRegistry,
-        private Summary $summary,
         private Logger $logger,
         private EntityManager $entityManager,
         private Filesystem $filesystem,
+        private Settings $settings,
     ) {
     }
 
@@ -50,10 +54,7 @@ final readonly class BrainController
      */
     public function chat(Request $request, Response $response): Response
     {
-        $session = $request->getAttribute('session');
-        if (! $session instanceof SessionInterface) {
-            return $response->withStatus(500);
-        }
+        $session = $this->getSession($request);
 
         if ($request->getMethod() === 'POST') {
             $data = (array) ($request->getParsedBody() ?? []);
@@ -189,19 +190,13 @@ final readonly class BrainController
      */
     private function manageSummary(SessionInterface $session): void
     {
-        $this->summary->setSession($session);
-        $messages = $this->summary->getChatHistory()->getMessages();
-        if ($messages === []) {
+        $summary = new Summary($this->entityManager->getConnection(), $this->settings, $session);
+        $messages = $summary->getChatHistory()->getMessages();
+        if ($messages === [] || count($messages) < 5) {
             return;
         }
 
-        if ((int) (count($messages) / 2) > 3) {
-            // ne gère le résumé que pour les conversations de 3 messages minimum
-            return;
-        }
-
-        $result = $this->summary->generateAndPersist();
-        $this->logger->debug('Manage summary', ['messages' => $messages, 'summary' => $result]);
+        $summary->generateAndPersist();
     }
 
     /**

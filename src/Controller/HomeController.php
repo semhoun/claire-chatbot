@@ -8,7 +8,8 @@ use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Services\Auth;
-use App\Services\Session\SessionInterface;
+use App\Services\Session\SessionFromRequestTrait;
+use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -17,19 +18,19 @@ use Slim\Views\Twig;
 
 final readonly class HomeController
 {
+    use SessionFromRequestTrait;
+
     public function __construct(
         private Twig $twig,
         private BrainRegistry $brainRegistry,
         private EntityManagerInterface $entityManager,
+        private Settings $settings,
     ) {
     }
 
     public function index(Request $request, Response $response): Response
     {
-        $session = $request->getAttribute('session');
-        if (! $session instanceof SessionInterface) {
-            return $response->withStatus(500);
-        }
+        $session = $this->getSession($request);
 
         $time = new \DateTime()->format('H:i');
 
@@ -53,7 +54,7 @@ final readonly class HomeController
             session: $session,
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
             table: UserChatHistory::TABLE,
-            contextWindow: 50000
+            contextWindow: $this->settings->get('llm.openai.contextWindow')
         );
         $messages = $userChatHistory->getMessages();
         if ($messages === []) {

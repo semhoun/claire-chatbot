@@ -6,44 +6,18 @@ namespace App\Brain;
 
 use App\Brain\ChatHistory\SummaryChatHistory;
 use App\Brain\ChatHistory\UserChatHistory;
-use App\Brain\Provider\OpenAI;
 use App\Services\Auth;
-use App\Services\Session\SessionInterface;
-use App\Services\Settings;
-use Doctrine\DBAL\Connection;
-use NeuronAI\Agent\Agent;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Providers\AIProviderInterface;
 
 /**
- *
+ * Agent responsible for generating concise titles and summaries for chat conversations
+ * using an AI provider and persisting them to the database.
  */
-class Summary extends Agent
+class Summary extends \NeuronAI\Agent\Agent
 {
-    private ?SessionInterface $session = null;
-
-    public function __construct(
-        protected Connection $connection,
-        protected readonly Settings $settings,
-    ) {
-        parent::__construct();
-        $this->observe(new \App\Brain\Observability\Observer());
-    }
-
-    public function setSession(SessionInterface $session): void
-    {
-        $this->session = $session;
-    }
-
-    private function getSession(): SessionInterface
-    {
-        if (!$this->session instanceof \App\Services\Session\SessionInterface) {
-            throw new \RuntimeException('Session not set in Summary');
-        }
-
-        return $this->session;
-    }
+    use AgentTrait\AIProvider;
+    use AgentTrait\Constructor;
 
     /**
      * Generates a title and summary based on the processed content.
@@ -100,9 +74,8 @@ class Summary extends Agent
      */
     public function persist(array $data): void
     {
-        $session = $this->getSession();
-        $userId = (string) ($session->get(Auth::USERID) ?? '');
-        $threadId = (string) ($session->get('chatId') ?? '');
+        $userId = (string) ($this->session->get(Auth::USERID) ?? '');
+        $threadId = (string) ($this->session->get('chatId') ?? '');
         if ($userId === '' || $threadId === '') {
             return;
         }
@@ -142,9 +115,8 @@ class Summary extends Agent
     protected function chatHistory(): ChatHistoryInterface
     {
         return new SummaryChatHistory(
-            session: $this->getSession(),
-            pdo: $this->connection->getNativeConnection(),
-            table: UserChatHistory::TABLE
+            session: $this->session,
+            pdo: $this->connection->getNativeConnection()
         );
     }
 
@@ -159,15 +131,5 @@ Règles:
   3) Le résumé "summary" en français, 1 à 3 phrases, <= 400 caractères, pas de balises Markdown.
   4 ) Si le contenu est vide, mets title="Nouvelle conversation" et summary="".
 EOF;
-    }
-
-    #[\Override]
-    protected function provider(): AIProviderInterface
-    {
-        return new OpenAI(
-            baseUri: $this->settings->get('llm.openai.baseUri'),
-            key: $this->settings->get('llm.openai.key'),
-            model: $this->settings->get('llm.openai.modelSummary')
-        );
     }
 }

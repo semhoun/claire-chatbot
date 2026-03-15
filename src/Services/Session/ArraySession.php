@@ -20,42 +20,12 @@ final class ArraySession implements SessionInterface, SessionManagerInterface
     private readonly ArrayFlash $arrayFlash;
 
     /**
-     * The Singleton's instance is stored in a static field.
-     */
-    private static ?self $arraySession = null;
-
-    /**
      * The Singleton's constructor should always be private to prevent direct
      * construction calls with the `new` operator.
      */
-    private function __construct()
+    public function __construct()
     {
         $this->arrayFlash = new ArrayFlash();
-    }
-
-    /**
-     * Singletons should not be cloneable.
-     */
-    private function __clone()
-    {
-    }
-
-    /**
-     * This is the static method that controls the access to the singleton
-     * instance. On the first run, it creates a singleton object and places it
-     * into the static field. On subsequent runs, it returns the client existing
-     * object stored in the static field.
-     *
-     * This implementation lets you subclass the Singleton class while keeping
-     * just one instance of each subclass around.
-     */
-    public static function getInstance(): self
-    {
-        if (is_null(self::$arraySession)) {
-            self::$arraySession = new ArraySession();
-        }
-
-        return self::$arraySession;
     }
 
     /**

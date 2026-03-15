@@ -6,12 +6,15 @@ namespace App\Controller;
 
 use App\Services\Auth;
 use App\Services\OidcClient;
+use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 final readonly class AuthController
 {
+    use SessionFromRequestTrait;
+
     public function __construct(
         private OidcClient $oidcClient,
         private Auth $auth,
@@ -20,10 +23,7 @@ final readonly class AuthController
 
     public function ssoRedirect(Request $request, Response $response): Response
     {
-        $session = $request->getAttribute('session');
-        if (! $session instanceof SessionInterface) {
-            return $response->withStatus(500);
-        }
+        $session = $this->getSession($request);
 
         if (! $this->oidcClient->isEnabled()) {
             $this->auth->login($session, $this->oidcClient->getDefaultUserId(), $this->oidcClient->getDefaultUserData());

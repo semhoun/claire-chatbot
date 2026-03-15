@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Brain\BrainRegistry;
-use App\Brain\ChatHistory\TelegramChatHistory;
 use App\Entity\User;
 use App\Repository\UserRepository;
 use App\Services\Session\TelegramSession;
@@ -13,21 +12,22 @@ use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;
 use Monolog\Logger;
 use NeuronAI\Chat\Messages\UserMessage;
-use Telegram\Bot\Api;
 use Telegram\Bot\Objects\Message;
 use Telegram\Bot\Objects\Update;
 
 final readonly class TelegramService
 {
+    public $telegramSession;
+    private \Telegram\Bot\Api $api;
+
     public function __construct(
-        private Api $api,
         private BrainRegistry $brainRegistry,
         private EntityManager $entityManager,
         private Settings $settings,
         private Logger $logger,
         private Filesystem $filesystem,
-        private TelegramSession $telegramSession,
     ) {
+        $this->api = new \Telegram\Bot\Api($settings->get('telegram.bot_token'));
     }
 
     public function processUpdate(Update $update): void
@@ -44,18 +44,6 @@ final readonly class TelegramService
         }
     }
 
-    public function getOrCreateUserByTelegramId(string $telegramId): User
-    {
-        $entityRepository = $this->entityManager->getRepository(User::class);
-
-        return $entityRepository->findByTelegramId($telegramId);
-    }
-
-    public function getSession(): TelegramSession
-    {
-        return $this->telegramSession;
-    }
-
     public function handleMessage(Message $message): void
     {
         $chatId = (string) $message->getChat()->getId();
@@ -65,7 +53,8 @@ final readonly class TelegramService
         // Initialize session for this Telegram user
         $this->telegramSession->initialize($telegramUserId);
 
-        $user = $this->getOrCreateUserByTelegramId($telegramUserId);
+        $entityRepository = $this->entityManager->getRepository(User::class);
+        $user = $entityRepository->findByTelegramId($telegramId);
         $brainName = $this->getBrainNameForUser($user);
 
         if ($message->getPhoto() !== null && $message->getPhoto() !== []) {
@@ -178,6 +167,11 @@ final readonly class TelegramService
         }
     }
 
+    private function getSession(): TelegramSession
+    {
+        return $this->telegramSession;
+    }
+
     private function handleCommand(string $text, string $chatId, User $user): bool
     {
         $parts = explode(' ', $text);
@@ -228,14 +222,14 @@ Cerveaux disponibles :
         $this->sendChatAction($chatId, 'typing');
 
         try {
-            $brain = $this->brainRegistry->get($brainName);
-            $telegramChatHistory = new TelegramChatHistory(
-                userId: $user->getId(),
-                chatId: 'tg_' . $chatId,
-                entityManager: $this->entityManager,
-                contextWindow: (int) $this->settings->get('llm.history.contextWindow')
-            );
-            $brain->setChatHistory($telegramChatHistory);
+            $currentBrain = $session->get('defaultBrain');
+            try {
+                $brain = $this->brainRegistry->get($currentBrain, $session);
+            } catch (\InvalidArgumentException) {
+                $currentBrain = 'claire';
+                $session->set('brain_avatar', $currentBrain);
+                $brain = $this->brainRegistry->get($currentBrain, $session);
+            }
 
             $userMessage = new UserMessage($text);
             $agentMessage = $brain->chat($userMessage)->getMessage();

@@ -33,6 +33,9 @@ use Slim\Psr7\NonBufferedBody;
  */
 final class JwtSessionMiddleware implements MiddlewareInterface
 {
+
+    public const string SESSION_ATTRIBUTE = 'session';
+
     private const string SESSION_ID_KEY = 'sub';
 
     private const string SESSION_DATA_KEY = 'data';
@@ -73,7 +76,7 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         }
 
         // Add session to request for controllers
-        $request = $request->withAttribute('session', $this->arraySession);
+        $request = $request->withAttribute(self::SESSION_ATTRIBUTE, $this->arraySession);
 
         $response = $handler->handle($request);
 
