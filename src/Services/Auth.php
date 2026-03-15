@@ -18,7 +18,6 @@ class Auth
     public const string USERINFO = 'user_info';
 
     public function __construct(
-        private readonly SessionInterface $session,
         private readonly EntityManager $entityManager,
         private readonly Settings $settings,
     ) {
@@ -30,9 +29,9 @@ class Auth
      *
      * @return bool True if the user is authenticated, false otherwise.
      */
-    public function isAuthenticated(): bool
+    public function isAuthenticated(SessionInterface $session): bool
     {
-        return $this->session->has(self::AUTHENTICATED) && $this->session->get(self::AUTHENTICATED);
+        return $session->has(self::AUTHENTICATED) && $session->get(self::AUTHENTICATED);
     }
 
     /**
@@ -48,7 +47,7 @@ class Auth
      *
      * @throws Exception If the user cannot be found or persisted in the database.
      */
-    public function login(string $userId, array $userInfo): void
+    public function login(SessionInterface $session, string $userId, array $userInfo): void
     {
         // Vérifier l'existence de l'utilisateur en base via son id (sub OIDC).
         // Le créer s'il n'existe pas, sinon mettre à jour les infos de base.
@@ -73,29 +72,29 @@ class Auth
             $this->entityManager->flush();
 
             foreach ($user->getParams() ?? [] as $key => $value) {
-                $this->session->set($key, $value);
+                $session->set($key, $value);
             }
 
             // Déterminer l'avatar/assistant courant (session, sinon préférence utilisateur, sinon défaut)
-            $currentBrain = (string) ($this->session->get('brain_avatar') ?? '');
+            $currentBrain = (string) ($session->get('brain_avatar') ?? '');
             if ($currentBrain === '') {
-                $this->session->set('brain_avatar', $this->settings->get('llm.defaultBrain'));
+                $session->set('brain_avatar', $this->settings->get('llm.defaultBrain'));
             }
         } catch (\Exception $exception) {
             throw new Exception('User [' . $userId . "] not found in database and can't add it: " . $exception->getMessage(), $exception->getCode(), $exception);
         }
 
-        $this->session->set(self::AUTHENTICATED, true);
-        $this->session->set(self::USERID, $userId);
-        $this->session->set(self::USERINFO, $userInfo);
+        $session->set(self::AUTHENTICATED, true);
+        $session->set(self::USERID, $userId);
+        $session->set(self::USERINFO, $userInfo);
     }
 
     /**
      * Logs out the current user by updating session data to reflect
      * that the user is no longer authenticated and clearing user information.
      */
-    public function logout(): void
+    public function logout(SessionInterface $session): void
     {
-        $this->session->clear();
+        $session->clear();
     }
 }

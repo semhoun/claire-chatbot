@@ -12,12 +12,14 @@ use PDO;
 
 class UserChatHistory extends SQLChatHistory
 {
+    public const string TABLE = 'chat_history';
+
     protected string $user_id;
 
     public function __construct(
         SessionInterface $session,
         protected PDO $pdo,
-        protected string $table = 'chat_history',
+        protected string $table = self::TABLE,
         protected int $contextWindow = 50000
     ) {
         $this->user_id = $session->get(Auth::USERID);

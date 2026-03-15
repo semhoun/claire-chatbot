@@ -17,9 +17,7 @@ return [
         'model' => _env('OPENAPI_MODEL'),
         'modelSummary' => _env('OPENAPI_MODEL_SUMMARY') ?? _env('OPENAPI_MODEL'),
         'modelEmbed' => _env('OPENAPI_MODEL_EMBED'),
-    ],
-    'history' => [
-        'contextWindow' => 5000000, //50000
+        'contextWindow' => (int)_env('OPENAPI_CONTEXT_WINDOW', 50000),
     ],
     'tools' => [
         'searchXngUrl' => _env('SEARXNG_URL'),

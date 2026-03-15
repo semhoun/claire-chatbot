@@ -2,13 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Provider\OpenAI;
 use App\Exception;
 use App\Services\OidcClient;
-use App\Services\Session\ArraySession;
-use App\Services\Session\SessionInterface;
-use App\Services\Session\SessionManagerInterface;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
@@ -111,8 +107,7 @@ return [
         $twig->getEnvironment()->addGlobal('settings', $settings);
         return $twig;
     },
-    SessionManagerInterface::class => static fn (SessionInterface $session): SessionInterface => $session,
-    SessionInterface::class => ArraySession::getInstance(),
+
     OidcClient::class => static fn (Settings $settings): OidcClient => new OidcClient($settings),
     Filesystem::class => static function (Settings $settings): FileSystem {
         if ($settings->get('files.fileSystem.type') === 'local') {
@@ -140,11 +135,7 @@ return [
         directory: $settings->get('llm.rag.path'),
         name: 'neuron-rag',
     ),
-    UserChatHistory::class => static fn (Settings $settings, Connection $connection, SessionInterface $session): UserChatHistory => new UserChatHistory(
-        session: $session,
-        pdo: $connection->getNativeConnection(),
-        table: 'chat_history',
-        contextWindow: $settings->get('llm.history.contextWindow')
-    ),
+
     \Telegram\Bot\Api::class => static fn (Settings $settings): \Telegram\Bot\Api => new \Telegram\Bot\Api($settings->get('telegram.bot_token')),
+    TelegramSession::class => static fn (EntityManagerInterface $entityManager): TelegramSession => new TelegramSession($entityManager),
 ];

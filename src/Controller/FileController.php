@@ -25,16 +25,26 @@ final readonly class FileController
 {
     public function __construct(
         private Twig $twig,
-        private SessionInterface $session,
         private EntityManagerInterface $entityManager,
         private Filesystem $filesystem,
         private ContainerInterface $container,
     ) {
     }
 
+    private function getSession(Request $request): ?SessionInterface
+    {
+        $session = $request->getAttribute('session');
+        return $session instanceof SessionInterface ? $session : null;
+    }
+
     public function list(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get(Auth::USERID);
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
+        $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }
@@ -50,7 +60,12 @@ final readonly class FileController
      */
     public function count(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get(Auth::USERID);
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
+        $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }
@@ -62,7 +77,12 @@ final readonly class FileController
 
     public function upload(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get(Auth::USERID);
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
+        $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }
@@ -147,7 +167,12 @@ final readonly class FileController
 
     public function delete(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get(Auth::USERID);
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
+        $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }

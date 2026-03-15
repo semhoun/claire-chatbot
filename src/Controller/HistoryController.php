@@ -19,11 +19,15 @@ final readonly class HistoryController
 {
     public function __construct(
         private Twig $twig,
-        private SessionInterface $session,
         private EntityManagerInterface $entityManager,
-        private UserChatHistory $userChatHistory,
         private BrainRegistry $brainRegistry,
     ) {
+    }
+
+    private function getSession(Request $request): ?SessionInterface
+    {
+        $session = $request->getAttribute('session');
+        return $session instanceof SessionInterface ? $session : null;
     }
 
     /**
@@ -34,20 +38,25 @@ final readonly class HistoryController
      */
     public function create(Request $request, Response $response): Response
     {
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
         // Nettoyage des conversations vides de l'utilisateur
-        $userId = (string) $this->session->get(Auth::USERID);
+        $userId = (string) $session->get(Auth::USERID);
         if ($userId !== '') {
             $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
         }
 
         // Nouveau thread
         $threadId = uniqid('', true);
-        $this->session->set('chatId', $threadId);
+        $session->set('chatId', $threadId);
 
-        $currentBrain = $this->session->get('brain_avatar');
+        $currentBrain = $session->get('brain_avatar');
         $messages = [
             new AssistantMessage(
-                $this->brainRegistry->get($currentBrain)->getOpeningText()
+                $this->brainRegistry->get($currentBrain, $session)->getOpeningText()
             ),
         ];
 
@@ -69,7 +78,12 @@ final readonly class HistoryController
      */
     public function count(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get(Auth::USERID);
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
+        $userId = (string) $session->get(Auth::USERID);
         $count = $this->entityManager->getRepository(ChatHistoryEntity::class)->countByUserId($userId);
         $response->getBody()->write((string) $count);
         return $response;
@@ -87,7 +101,12 @@ final readonly class HistoryController
      */
     public function list(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get(Auth::USERID);
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
+        $userId = (string) $session->get(Auth::USERID);
         $histories = $this->entityManager->getRepository(ChatHistoryEntity::class)->getHistoryList($userId);
         return $this->twig->render($response, 'partials/history_list.twig', [
             'histories' => $histories,
@@ -102,7 +121,12 @@ final readonly class HistoryController
      */
     public function open(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get(Auth::USERID);
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
+        $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }
@@ -115,9 +139,17 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
-        $this->session->set('chatId', $threadId);
-        $this->userChatHistory->setThreadId($threadId);
-        $messages = $this->userChatHistory->getMessages();
+        $session->set('chatId', $threadId);
+
+        $userChatHistory = new UserChatHistory(
+            session: $session,
+            pdo: $this->entityManager->getConnection()->getNativeConnection(),
+            table: UserChatHistory::TABLE,
+            contextWindow: 50000
+        );
+        $userChatHistory->setThreadId($threadId);
+
+        $messages = $userChatHistory->getMessages();
         if ($messages === []) {
             return $response->withStatus(400);
         }
@@ -133,7 +165,12 @@ final readonly class HistoryController
      */
     public function delete(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get(Auth::USERID);
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
+        $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(403);
         }

@@ -17,10 +17,15 @@ readonly class ConfigController
 {
     public function __construct(
         private Twig $twig,
-        private SessionInterface $session,
         private EntityManagerInterface $entityManager,
         private BrainRegistry $brainRegistry,
     ) {
+    }
+
+    private function getSession(Request $request): ?SessionInterface
+    {
+        $session = $request->getAttribute('session');
+        return $session instanceof SessionInterface ? $session : null;
     }
 
     /**
@@ -28,14 +33,19 @@ readonly class ConfigController
      */
     public function chatMode(Request $request, Response $response): Response
     {
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
         $data = (array) ($request->getParsedBody() ?? []);
         $mode = (string) ($data['mode'] ?? '');
         if (! in_array($mode, ['chat', 'stream'], true)) {
             return $response->withStatus(400);
         }
 
-        $this->session->set('chat_mode', $mode);
-        $user = $this->entityManager->getRepository(User::class)->find($this->session->get(Auth::USERID));
+        $session->set('chat_mode', $mode);
+        $user = $this->entityManager->getRepository(User::class)->find($session->get(Auth::USERID));
         if ($user === null) {
             return $response->withStatus(404);
         }
@@ -54,15 +64,20 @@ readonly class ConfigController
      */
     public function layoutMode(Request $request, Response $response): Response
     {
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
         $data = (array) ($request->getParsedBody() ?? []);
         $mode = (string) ($data['mode'] ?? '');
         if (! in_array($mode, ['full', 'compact'], true)) {
             return $response->withStatus(400);
         }
 
-        $this->session->set('layout_mode', $mode);
+        $session->set('layout_mode', $mode);
 
-        $user = $this->entityManager->getRepository(User::class)->find($this->session->get(Auth::USERID));
+        $user = $this->entityManager->getRepository(User::class)->find($session->get(Auth::USERID));
         if ($user === null) {
             return $response->withStatus(404);
         }
@@ -80,6 +95,11 @@ readonly class ConfigController
      */
     public function brainAvatar(Request $request, Response $response): Response
     {
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
         $data = (array) ($request->getParsedBody() ?? []);
         $avatar = strtolower((string) ($data['avatar'] ?? ''));
 
@@ -88,10 +108,10 @@ readonly class ConfigController
             return $response->withStatus(400);
         }
 
-        $this->session->set('brain_avatar', $avatar);
+        $session->set('brain_avatar', $avatar);
 
         // Persist in user params when available
-        $user = $this->entityManager->getRepository(User::class)->find($this->session->get(Auth::USERID));
+        $user = $this->entityManager->getRepository(User::class)->find($session->get(Auth::USERID));
         if ($user !== null) {
             $params = $user->getParams() ?? [];
             $params['brain_avatar'] = $avatar;
@@ -105,10 +125,15 @@ readonly class ConfigController
 
     public function telegram(Request $request, Response $response): Response
     {
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
         $data = (array) ($request->getParsedBody() ?? []);
         $telegramId = trim((string) ($data['telegram_id'] ?? ''));
 
-        $user = $this->entityManager->getRepository(User::class)->find($this->session->get(Auth::USERID));
+        $user = $this->entityManager->getRepository(User::class)->find($session->get(Auth::USERID));
         if ($user === null) {
             return $response->withStatus(404);
         }
@@ -125,7 +150,12 @@ readonly class ConfigController
 
     public function telegramForm(Request $request, Response $response): Response
     {
-        $userId = (string) $this->session->get(Auth::USERID);
+        $session = $this->getSession($request);
+        if (!$session instanceof \App\Services\Session\SessionInterface) {
+            return $response->withStatus(500);
+        }
+
+        $userId = (string) $session->get(Auth::USERID);
         if ($userId === '') {
             return $response->withStatus(401);
         }

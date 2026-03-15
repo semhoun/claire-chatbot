@@ -8,6 +8,7 @@ use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\TelegramChatHistory;
 use App\Entity\User;
 use App\Repository\UserRepository;
+use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;
 use Monolog\Logger;
@@ -25,6 +26,7 @@ final readonly class TelegramService
         private Settings $settings,
         private Logger $logger,
         private Filesystem $filesystem,
+        private TelegramSession $telegramSession,
     ) {
     }
 
@@ -49,11 +51,19 @@ final readonly class TelegramService
         return $entityRepository->findByTelegramId($telegramId);
     }
 
+    public function getSession(): TelegramSession
+    {
+        return $this->telegramSession;
+    }
+
     public function handleMessage(Message $message): void
     {
         $chatId = (string) $message->getChat()->getId();
         $telegramUserId = (string) $message->getFrom()->getId();
         $message->getFrom()->getUsername() ?? 'Telegram User';
+
+        // Initialize session for this Telegram user
+        $this->telegramSession->initialize($telegramUserId);
 
         $user = $this->getOrCreateUserByTelegramId($telegramUserId);
         $brainName = $this->getBrainNameForUser($user);

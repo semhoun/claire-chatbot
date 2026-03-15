@@ -9,6 +9,9 @@ use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Middleware\Summarization;
+use NeuronAI\Agent\Nodes\ChatNode;
+use NeuronAI\Agent\Nodes\StreamingNode;
+use NeuronAI\Agent\Nodes\StructuredOutputNode;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
@@ -33,7 +36,7 @@ class RAG extends \NeuronAI\RAG\RAG
         return new UserChatHistory(
             session: $this->session,
             pdo: $this->connection->getNativeConnection(),
-            table: 'chat_history',
+            table: UserChatHistory::TABLE,
             contextWindow: $this->settings->get('llm.history.contextWindow')
         );
     }

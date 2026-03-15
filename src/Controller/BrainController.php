@@ -37,7 +37,6 @@ final readonly class BrainController
         private Logger $logger,
         private EntityManager $entityManager,
         private Filesystem $filesystem,
-        private SessionInterface $session,
     ) {
     }
 
@@ -51,6 +50,11 @@ final readonly class BrainController
      */
     public function chat(Request $request, Response $response): Response
     {
+        $session = $request->getAttribute('session');
+        if (! $session instanceof SessionInterface) {
+            return $response->withStatus(500);
+        }
+
         if ($request->getMethod() === 'POST') {
             $data = (array) ($request->getParsedBody() ?? []);
             $userStr = trim((string) ($data['message'] ?? ''));
@@ -69,13 +73,13 @@ final readonly class BrainController
         $userMessage = $this->addAttachments($request, $userMessage);
 
         // Choisir le cerveau selon la préférence en session
-        $currentBrain = $this->session->get('defaultBrain');
+        $currentBrain = $session->get('defaultBrain');
         try {
-            $brain = $this->brainRegistry->get($currentBrain);
+            $brain = $this->brainRegistry->get($currentBrain, $session);
         } catch (\InvalidArgumentException) {
             $currentBrain = 'claire';
-            $this->session->set('brain_avatar', $currentBrain);
-            $brain = $this->brainRegistry->get($currentBrain);
+            $session->set('brain_avatar', $currentBrain);
+            $brain = $this->brainRegistry->get($currentBrain, $session);
         }
 
         if ($chatMode === 'chat') {
@@ -83,7 +87,7 @@ final readonly class BrainController
             $agentMessage = $brain->chat($userMessage)->getMessage();
             $agentMessageStr = $agentMessage->getContent();
 
-            $this->manageSummary();
+            $this->manageSummary($session);
 
             return $this->twig->render($response, 'partials/message.twig', [
                 'message' => $agentMessageStr,
@@ -106,10 +110,10 @@ final readonly class BrainController
 
         $stream = $response->getBody();
 
-        $handler = $brain->stream($userMessage);
+        $agentHandler = $brain->stream($userMessage);
 
         // Iterate chunks
-        foreach ($handler->events() as $chunk) {
+        foreach ($agentHandler->events() as $chunk) {
             if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
                 $toolText = '';
                 if ($toolCallId === null) {
@@ -171,7 +175,7 @@ final readonly class BrainController
             }
         }
 
-        $this->manageSummary();
+        $this->manageSummary($session);
         return $response;
     }
 
@@ -183,8 +187,9 @@ final readonly class BrainController
      * under the assumption that chat messages are present, and optimizations should
      * be applied to avoid unnecessary summary generation for empty or unmodified messages.
      */
-    private function manageSummary(): void
+    private function manageSummary(SessionInterface $session): void
     {
+        $this->summary->setSession($session);
         $messages = $this->summary->getChatHistory()->getMessages();
         if ($messages === []) {
             return;

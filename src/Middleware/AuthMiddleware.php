@@ -6,6 +6,7 @@ namespace App\Middleware;
 
 use App\Services\Auth;
 use App\Services\OidcClient;
+use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -47,13 +48,18 @@ final readonly class AuthMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
 
-        if ($this->auth->isAuthenticated()) {
+        $session = $request->getAttribute('session');
+        if (! $session instanceof SessionInterface) {
+            return $handler->handle($request);
+        }
+
+        if ($this->auth->isAuthenticated($session)) {
             return $handler->handle($request);
         }
 
         $oidcClient = $this->container->get(OidcClient::class);
         if (! $oidcClient->isEnabled()) {
-            $this->auth->login($oidcClient->getDefaultUserId(), $oidcClient->getDefaultUserData());
+            $this->auth->login($session, $oidcClient->getDefaultUserId(), $oidcClient->getDefaultUserData());
             return $handler->handle($request);
         }
 

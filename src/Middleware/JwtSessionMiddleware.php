@@ -53,7 +53,7 @@ final class JwtSessionMiddleware implements MiddlewareInterface
     public function __construct(
         private readonly Settings $settings,
     ) {
-        $this->arraySession = ArraySession::getInstance();
+        $this->arraySession = new ArraySession();
     }
 
     public function process(Request $request, Handler $handler): Response
@@ -71,6 +71,9 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         } else {
             $this->arraySession->start();
         }
+
+        // Add session to request for controllers
+        $request = $request->withAttribute('session', $this->arraySession);
 
         $response = $handler->handle($request);
 

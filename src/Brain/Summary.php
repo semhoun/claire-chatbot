@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Brain;
 
 use App\Brain\ChatHistory\SummaryChatHistory;
+use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Provider\OpenAI;
 use App\Services\Auth;
 use App\Services\Session\SessionInterface;
@@ -20,13 +21,28 @@ use NeuronAI\Providers\AIProviderInterface;
  */
 class Summary extends Agent
 {
+    private ?SessionInterface $session = null;
+
     public function __construct(
         protected Connection $connection,
         protected readonly Settings $settings,
-        protected readonly SessionInterface $session,
     ) {
         parent::__construct();
         $this->observe(new \App\Brain\Observability\Observer());
+    }
+
+    public function setSession(SessionInterface $session): void
+    {
+        $this->session = $session;
+    }
+
+    private function getSession(): SessionInterface
+    {
+        if (!$this->session instanceof \App\Services\Session\SessionInterface) {
+            throw new \RuntimeException('Session not set in Summary');
+        }
+
+        return $this->session;
     }
 
     /**
@@ -84,8 +100,9 @@ class Summary extends Agent
      */
     public function persist(array $data): void
     {
-        $userId = (string) ($this->session->get(Auth::USERID) ?? '');
-        $threadId = (string) ($this->session->get('chatId') ?? '');
+        $session = $this->getSession();
+        $userId = (string) ($session->get(Auth::USERID) ?? '');
+        $threadId = (string) ($session->get('chatId') ?? '');
         if ($userId === '' || $threadId === '') {
             return;
         }
@@ -103,7 +120,7 @@ class Summary extends Agent
             return;
         }
 
-        $this->connection->update('chat_history', $fields, [
+        $this->connection->update(UserChatHistory::TABLE, $fields, [
             'user_id' => $userId,
             'thread_id' => $threadId,
         ]);
@@ -125,9 +142,9 @@ class Summary extends Agent
     protected function chatHistory(): ChatHistoryInterface
     {
         return new SummaryChatHistory(
-            session: $this->session,
+            session: $this->getSession(),
             pdo: $this->connection->getNativeConnection(),
-            table: 'chat_history'
+            table: UserChatHistory::TABLE
         );
     }
 
