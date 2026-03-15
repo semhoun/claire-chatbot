@@ -46,11 +46,12 @@ Claire est une application web minimaliste de chat IA construite avec Slim 4 et 
 Les paramètres sont chargés depuis `config/settings/*.php` et complétés par des variables d’environnement. Les clés importantes:
 
 - LLM (voir `config/settings/llm.php`):
-  - `OPENAPI_KEY`   — clé d’API du fournisseur (compatible OpenAI)
-  - `OPENAPI_URL`   — base URL de l’API (ex: https://api.openai.com/v1 ou un proxy type LiteLLM)
+  - `OPENAPI_KEY`   — clé d'API du fournisseur (compatible OpenAI)
+  - `OPENAPI_URL`   — base URL de l'API (ex: https://api.openai.com/v1 ou un proxy type LiteLLM)
   - `OPENAPI_MODEL` — identifiant du modèle par défaut (ex: gpt-4o-mini, gpt-5.1, etc.)
   - `OPENAPI_MODEL_SUMMARY` — modèle dédié aux tâches de synthèse/résumé (optionnel; si absent, `OPENAPI_MODEL` sera utilisé)
   - `OPENAPI_MODEL_EMBED` — modèle dédié aux embeddings (optionnel; si absent, le RAG est désactivé)
+  - `SEARXNG_URL` — URL de l'instance SearXNG pour la recherche web (optionnel)
 
 - Telegram (voir `config/settings/telegram.php`):
   - `TELEGRAM_BOT_TOKEN` — Token de votre bot Telegram (obtenu via @BotFather).
@@ -118,15 +119,15 @@ Dépannage rapide:
 
 ### Session Management (JWT)
 
-Claire uses a stateless JWT-based session system. Session data is stored in a signed JWT cookie, eliminating the need for server-side session storage.
+Claire utilise un système de session stateless basé sur JWT. Les données de session sont stockées dans un cookie JWT signé, éliminant le besoin de stockage côté serveur.
 
 - Configuration: `config/settings/session.php`
-- Key environment variables:
-  - `SESSION_JWT_SECRET` — Secret key for JWT signing (required in production)
-  - `SESSION_JWT_ALGORITHM` — Algorithm for signing (default: HS256)
-- Public routes (bypass session): configured in `config/settings/security.php`
+- Variables d'environnement obligatoires:
+  - `SESSION_JWT_SECRET` — Clé secrète pour la signature JWT (obligatoire)
+  - `SESSION_JWT_ALGORITHM` — Algorithme de signature (défaut: HS256)
+- Routes publiques (contournent la session): configurées dans `config/settings/security.php`
 
-For detailed documentation, see `src/Session/README.md`.
+Pour plus de détails, voir `src/Session/README.md`.
 
 ### Base de données (Doctrine ORM / DBAL)
 
@@ -207,6 +208,9 @@ services:
 
       FILES_PATH: /filer
 
+      # Session JWT (obligatoire)
+      SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?set_me}
+
       # OpenTelemetry (requis)
       OTEL_PHP_AUTOLOAD_ENABLED: "true"
       OTEL_SERVICE_NAME: claire
@@ -280,6 +284,30 @@ Démarrez ensuite votre stack avec votre orchestrateur habituel (ex. `docker com
     ```
   - Utilisation typique: sonde de conteneur/orchestrateur (Docker, Traefik, Kubernetes, etc.).
   - Aucun corps requis, pas d’authentification par défaut.
+
+### Gestion des fichiers (/files)
+
+- `GET /files/count` — Nombre total de fichiers stockés
+- `GET /files/list` — Liste des fichiers (JSON)
+- `POST /files/upload` — Upload de fichier(s) standard
+- `POST /files/upload_rag` — Upload de fichier pour le RAG (vectorisation)
+- `DELETE /files/delete/{id}` — Suppression d'un fichier
+
+### Historique des conversations (/history)
+
+- `GET /history/count` — Nombre de conversations
+- `GET /history/list` — Liste des conversations
+- `GET /history/open/{threadId}` — Ouvrir une conversation existante
+- `POST /history/new` — Créer une nouvelle conversation
+- `DELETE /history/delete/{threadId}` — Supprimer une conversation
+
+### Configuration (/config)
+
+- `POST /config/chat_mode` — Changer le mode de chat (sync/stream)
+- `POST /config/layout_mode` — Changer le mode d'affichage
+- `POST /config/brain_avatar` — Changer l'avatar/cerveau actif
+- `POST /config/telegram` — Configurer Telegram
+- `GET /config/telegram_form` — Formulaire de configuration Telegram
 
 ### Streaming SSE (Server‑Sent Events) et proxy HTTP
 
@@ -418,19 +446,11 @@ L'intégration Telegram permet d'interagir avec Claire directement depuis l'appl
 
 #### Configuration
 
-Variables d'environnement (définies dans `.env` ou via Docker):
+Variable d'environnement (définie dans `.env` ou via Docker):
 
-| Variable | Obligatoire | Défaut | Description |
-|----------|-------------|--------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Oui | — | Token du bot fourni par @BotFather |
-| `TELEGRAM_WEBHOOK_ENABLED` | Non | `true` | Active le mode webhook |
-| `TELEGRAM_WEBHOOK_URL` | Non* | — | URL publique complète du webhook (ex: `https://claire.example.com/webhook/telegram`) |
-| `TELEGRAM_WEBHOOK_SECRET` | Non | — | Secret pour sécuriser les appels webhook (optionnel) |
-| `TELEGRAM_DAEMON_ENABLED` | Non | `false` | Active le mode daemon (polling) |
-| `TELEGRAM_POLLING_INTERVAL` | Non | `1` | Intervalle entre les requêtes polling (secondes) |
-| `TELEGRAM_POLLING_TIMEOUT` | Non | `30` | Timeout des requêtes long polling (secondes) |
-
-*Requis si `TELEGRAM_WEBHOOK_ENABLED=true`
+| Variable | Obligatoire | Description |
+|----------|-------------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Oui | Token du bot fourni par @BotFather |
 
 #### Mode Webhook (recommandé pour la production)
 
@@ -453,14 +473,10 @@ Le mode webhook permet à Telegram d'envoyer les mises à jour directement à vo
 - Endpoint webhook: `POST /webhook/telegram`
 - Doit être accessible publiquement en HTTPS
 
-**Exemple Docker Compose:**
+**Exemple Docker Compose (webhook):**
 ```yaml
 environment:
   TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set_me}
-  TELEGRAM_WEBHOOK_ENABLED: "true"
-  TELEGRAM_WEBHOOK_URL: https://claire.example.com/webhook/telegram
-  # Optionnel: sécuriser avec un secret
-  # TELEGRAM_WEBHOOK_SECRET: votre_secret_aleatoire
 ```
 
 #### Mode Daemon (polling, utile pour le développement)
@@ -483,17 +499,13 @@ Le mode daemon interroge périodiquement les serveurs Telegram pour récupérer 
 - `--timeout`: Timeout des requêtes long polling (défaut: 30s)
 - `--limit`: Nombre maximum de messages à récupérer par requête (défaut: 100)
 
-**Configuration Docker Compose:**
+**Configuration Docker Compose (daemon):**
 ```yaml
 services:
   claire:
     # ... configuration web ...
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set_me}
-      TELEGRAM_WEBHOOK_ENABLED: "false"
-      TELEGRAM_DAEMON_ENABLED: "true"
-      TELEGRAM_POLLING_INTERVAL: "1"
-      TELEGRAM_POLLING_TIMEOUT: "30"
 ```
 
 #### Fonctionnalités
@@ -541,9 +553,14 @@ Quelle est la théorie de la relativité restreinte?
 
 ## Développement & Qualité
 
-Outils disponibles:
+### Commandes Composer
 
-- Rector (refactoring):
+- Démarrer le serveur de développement:
+  ```bash
+  composer start
+  ```
+
+- Rector (modernisation PHP 8.4):
   - Vérifier: `composer rector-check`
   - Appliquer: `composer rector-fix`
 
@@ -551,7 +568,47 @@ Outils disponibles:
   - Vérifier: `composer insights-check`
   - Corriger: `composer insights-fix`
 
-- Slim Tracy (debug console) peut être activé en mode debug si configuré.
+- Pre-commit (tous les checks):
+  ```bash
+  composer pre-commit
+  ```
+  Corrige les fins de ligne (LF), applique PHP Insights et Rector.
+
+### Commandes Console
+
+Le fichier `./console` fournit des commandes pour la gestion du cache et des migrations:
+
+- **Cache:**
+  - `./console cache:clear` — Vide le cache (conteneur, routes, etc.)
+  - `./console cache:init` — Initialise/régénère le cache
+  - `./console generate:proxies` — Génère les proxies Doctrine
+
+- **Migrations Doctrine:**
+  - `./console migrations:migrate` — Applique les migrations
+  - `./console migrations:diff` — Génère une migration depuis les entités
+  - `./console migrations:generate` — Crée une migration vide
+  - `./console migrations:status` — Affiche le statut des migrations
+
+- **Telegram:**
+  - `./console telegram:webhook --url=https://...` — Configure le webhook
+  - `./console telegram:webhook --info` — Vérifie le statut du webhook
+  - `./console telegram:webhook --delete` — Supprime le webhook
+  - `./console telegram:daemon` — Lance le daemon (polling)
+
+### Tests
+
+PHPUnit est configuré pour les tests unitaires:
+
+```bash
+vendor/bin/phpunit                              # Tous les tests
+vendor/bin/phpunit test/Unit/Services/FooTest.php      # Fichier spécifique
+vendor/bin/phpunit --filter testMethodName    # Méthode spécifique
+```
+
+### Debug
+
+- Slim Tracy (debug console) est activable en mode debug via la configuration.
+- Définissez `DISABLE_TRACY_BAR=false` pour activer la barre de debug.
 
 ## Dépannage
 

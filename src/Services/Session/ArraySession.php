@@ -61,7 +61,7 @@ final class ArraySession implements SessionInterface, SessionManagerInterface
     /**
      * Get all session data including flash messages for JWT encoding.
      *
-     * @return null|array<string, mixed>
+     * @return array<string, mixed>|null
      */
     public function getStorageAsArray(): ?array
     {

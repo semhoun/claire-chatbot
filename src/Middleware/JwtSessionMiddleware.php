@@ -117,7 +117,7 @@ final class JwtSessionMiddleware implements MiddlewareInterface
             return true;
         }
 
-        return $elapsed > ($totalLifetime / 2);
+        return $elapsed > $totalLifetime / 2;
     }
 
     /**
@@ -333,5 +333,4 @@ final class JwtSessionMiddleware implements MiddlewareInterface
             }
         };
     }
-
 }

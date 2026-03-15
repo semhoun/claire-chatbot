@@ -177,7 +177,12 @@ final readonly class TelegramService
             $brainList = $this->getBrainListText();
             $this->sendMessage(
                 $chatId,
-                "Bonjour ! Je suis Claire, votre assistante IA.\n\nVous pouvez me parler directement ou utiliser /<nom_du_cerveau> pour changer d'expert.\n\nCerveaux disponibles :\n{$brainList}"
+                'Bonjour ! Je suis Claire, votre assistante IA.
+
+Vous pouvez me parler directement ou utiliser /<nom_du_cerveau> pour changer d\'expert.
+
+Cerveaux disponibles :
+' . $brainList
             );
             return true;
         }

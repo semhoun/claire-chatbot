@@ -25,9 +25,7 @@ return static function (App $app): void {
     }
 
     // OPTIONS
-    $app->map(['OPTIONS'], '/{routes:.*}', function (Request $request, Response $response, $args) {
-        return $response->withStatus(204);
-    });
+    $app->map(['OPTIONS'], '/{routes:.*}', static fn (Request $request, Response $response, $args): Response => $response->withStatus(204));
 
     // Not Found
     $app->map(

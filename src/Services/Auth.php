@@ -21,8 +21,7 @@ class Auth
         private readonly SessionInterface $session,
         private readonly EntityManager $entityManager,
         private readonly Settings $settings,
-    )
-    {
+    ) {
     }
 
     /**
@@ -46,6 +45,7 @@ class Auth
      *
      * @param string $userId The unique user identifier (OIDC sub).
      * @param array $userInfo Associative array containing user details such as firstName, lastName, email, and name.
+     *
      * @throws Exception If the user cannot be found or persisted in the database.
      */
     public function login(string $userId, array $userInfo): void

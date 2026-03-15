@@ -36,13 +36,13 @@ class MessageMapper extends \NeuronAI\Providers\OpenAI\MessageMapper
 
             $findFile = true;
 
-            $text .= "<file id=\"" . Uuid::uuid7()->toString() . "\" name=\"{$block->filename}\" type=\"{$block->mediaType}\"";
+            $text .= '<file id="' . Uuid::uuid7()->toString() . sprintf('" name="%s" type="%s"', $block->filename, $block->mediaType);
             if (in_array($block->mediaType, $this->rawMimeTypes, false)) {
                 $text .= '>'
                     . base64_decode($block->content)
                     . '</file>';
             } else {
-                $text .= " encoding=\"base64\">{$block->content}</file>";
+                $text .= sprintf(' encoding="base64">%s</file>', $block->content);
             }
         }
 

@@ -30,6 +30,18 @@ vendor/bin/phpunit --filter testGetReturnsValueForValidKey  # Run single test me
 ./console migrations:migrate      # Apply Doctrine migrations
 ./console migrations:diff         # Generate migration from entities
 ./console migrations:generate     # Create empty migration
+./console migrations:status       # Show migration status
+
+# Cache management
+./console cache:clear             # Clear container/route cache
+./console cache:init              # Initialize/regenerate cache
+./console generate:proxies        # Generate Doctrine proxies
+
+# Telegram bot
+./console telegram:webhook --url=https://...  # Set webhook URL
+./console telegram:webhook --info             # Show webhook status
+./console telegram:webhook --delete           # Remove webhook
+./console telegram:daemon                     # Run polling daemon
 ```
 
 ## Code Style Guidelines
