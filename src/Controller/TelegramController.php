@@ -4,25 +4,31 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Services\Settings;
 use App\Services\TelegramService;
+use InvalidArgumentException;
+use Monolog\Logger;
+use Phptg\BotApi\Type\Update\Update;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
-use Psr\Log\LoggerInterface;
-use Phptg\BotApi\Type\Update;
 
 final readonly class TelegramController
 {
     public function __construct(
         private TelegramService $telegramService,
-        private LoggerInterface $logger
+        private Logger $logger,
+        private Settings $settings,
     ) {
     }
 
     public function webhook(Request $request, Response $response): Response
     {
         try {
-            $update = Update::fromArray((array) $request->getParsedBody());
+            $this->validateSecretToken($request);
+            $update = Update::fromJson($request->getBody()->getContents());
             $this->telegramService->processUpdate($update);
+        } catch (InvalidArgumentException) {
+            return $response->withStatus(401);
         } catch (\Throwable $throwable) {
             $this->logger->error('Telegram Webhook Error: ' . $throwable->getMessage(), [
                 'exception' => $throwable,
@@ -31,5 +37,20 @@ final readonly class TelegramController
         }
 
         return $response->withStatus(200);
+    }
+
+    private function validateSecretToken(Request $request): void
+    {
+        $expectedSecret = $this->settings->get('telegram.webhook_secret');
+
+        if (! is_string($expectedSecret) || $expectedSecret === '') {
+            return;
+        }
+
+        $headerValue = $request->getHeaderLine('X-Telegram-Bot-Api-Secret-Token');
+
+        if ($headerValue !== $expectedSecret) {
+            throw new InvalidArgumentException('Invalid webhook secret token');
+        }
     }
 }

@@ -4,21 +4,26 @@ declare(strict_types=1);
 
 namespace App\Console;
 
+use App\Services\Settings;
 use InvalidArgumentException;
 use Monolog\Logger;
+use Phptg\BotApi\TelegramBotApi;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Phptg\BotApi\TelegramBotApi;
 
 #[AsCommand(name: 'telegram:webhook', description: 'Configure Telegram webhook URL')]
 final class TelegramWebhookCommand extends Command
 {
+
+    private const string WEBHOOK_PATH = '/webhook/telegram';
+
     public function __construct(
         private readonly TelegramBotApi $telegramBotApi,
         private readonly Logger $logger,
+        private readonly Settings $settings,
     ) {
         parent::__construct();
     }
@@ -29,7 +34,12 @@ final class TelegramWebhookCommand extends Command
             ->addOption(
                 name: 'url',
                 mode: InputOption::VALUE_REQUIRED,
-                description: 'The webhook URL to set (e.g., https://example.com/webhook/telegram)'
+                description: 'Full webhook URL (e.g., https://example.com/webhook/telegram)'
+            )
+            ->addOption(
+                name: 'domain',
+                mode: InputOption::VALUE_REQUIRED,
+                description: 'Domain name for webhook (path auto-generated, always HTTPS)'
             )
             ->addOption(
                 name: 'delete',
@@ -54,11 +64,32 @@ final class TelegramWebhookCommand extends Command
                 return $this->deleteWebhook($output);
             }
 
-            $url = $input->getOption('url');
+            $urlOption = $input->getOption('url');
+            $domainOption = $input->getOption('domain');
 
-            if (! is_string($url) || $url === '') {
+            if ((is_string($urlOption) && $urlOption !== '') && (is_string($domainOption) && $domainOption !== '')) {
                 throw new InvalidArgumentException(
-                    'Please provide a valid URL using --url option, or use --delete to remove the webhook, or --info to get current webhook info'
+                    'Cannot use both --url and --domain options. Please use only one.'
+                );
+            }
+
+            if (is_string($urlOption) && $urlOption !== '') {
+                $url = $urlOption;
+            } elseif (is_string($domainOption) && $domainOption !== '') {
+                $url = $this->buildWebhookUrl($domainOption);
+            } else {
+                throw new InvalidArgumentException(
+                    "No webhook URL or domain provided.\n\n" .
+                    "Usage examples:\n" .
+                    "  ./console telegram:webhook --domain=example.com\n" .
+                    "  ./console telegram:webhook --url=https://example.com/webhook/telegram\n" .
+                    "  ./console telegram:webhook --info\n" .
+                    "  ./console telegram:webhook --delete\n\n" .
+                    "Options:\n" .
+                    "  --domain    Domain name only (HTTPS will be used, path auto-generated)\n" .
+                    "  --url       Full webhook URL (for custom paths or protocols)\n" .
+                    "  --info      Show current webhook status\n" .
+                    '  --delete    Remove the webhook'
                 );
             }
 
@@ -118,10 +149,32 @@ final class TelegramWebhookCommand extends Command
             throw new InvalidArgumentException('Invalid URL provided: ' . $url);
         }
 
-        $this->telegramBotApi->setWebhook(url: $url);
+        $secretToken = $this->settings->get('telegram.webhook_secret');
+
+        if (! is_string($secretToken) || $secretToken === '') {
+            throw new InvalidArgumentException(
+                'TELEGRAM_WEBHOOK_SECRET must be configured in environment to set webhook'
+            );
+        }
+
+        $this->telegramBotApi->setWebhook(url: $url, secretToken: $secretToken);
         $output->writeln('<info>Webhook set successfully to: ' . $url . '</info>');
         $this->logger->info('Telegram webhook set', ['url' => $url]);
 
         return Command::SUCCESS;
+    }
+
+    private function buildWebhookUrl(string $domain): string
+    {
+        $domain = trim($domain);
+
+        // Remove scheme if provided, we always use HTTPS with --domain
+        if (str_starts_with($domain, 'http://')) {
+            $domain = substr($domain, 7);
+        } elseif (str_starts_with($domain, 'https://')) {
+            $domain = substr($domain, 8);
+        }
+
+        return 'https://' . rtrim($domain, '/') . self::WEBHOOK_PATH;
     }
 }

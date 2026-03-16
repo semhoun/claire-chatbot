@@ -463,6 +463,7 @@ Variable d'environnement (définie dans `.env` ou via Docker):
 | Variable | Obligatoire | Description |
 |----------|-------------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Oui | Token du bot fourni par @BotFather |
+| `TELEGRAM_WEBHOOK_SECRET` | Recommandé | Token secret pour sécuriser le webhook (générez une chaîne aléatoire de 32+ caractères) |
 
 #### Mode Webhook (recommandé pour la production)
 
@@ -470,8 +471,14 @@ Le mode webhook permet à Telegram d'envoyer les mises à jour directement à vo
 
 **Configuration du webhook:**
 
+1. Définissez `TELEGRAM_WEBHOOK_SECRET` dans votre fichier `.env` (générez une chaîne aléatoire sécurisée)
+2. Configurez le webhook:
+
 ```bash
-# Configurer le webhook
+# Option 1: Utiliser --domain (recommandé, HTTPS forcé)
+./console telegram:webhook --domain=votre-domaine.com
+
+# Option 2: Utiliser --url (URL complète personnalisée)
 ./console telegram:webhook --url=https://votre-domaine.com/webhook/telegram
 
 # Vérifier le statut
@@ -484,11 +491,13 @@ Le mode webhook permet à Telegram d'envoyer les mises à jour directement à vo
 **Points d'entrée:**
 - Endpoint webhook: `POST /webhook/telegram`
 - Doit être accessible publiquement en HTTPS
+- Vérifie le header `X-Telegram-Bot-Api-Secret-Token` (si `TELEGRAM_WEBHOOK_SECRET` est configuré)
 
 **Exemple Docker Compose (webhook):**
 ```yaml
 environment:
   TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set_me}
+  TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?set_me}
 ```
 
 #### Mode Daemon (polling, utile pour le développement)

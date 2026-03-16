@@ -20,7 +20,6 @@ use Phptg\BotApi\Type\Update\Update;
 
 final readonly class TelegramService
 {
-    private TelegramSession $telegramSession;
 
     public const array COMMANDS = [
         'start' => 'Démarrer une nouvelle conversation',
@@ -28,6 +27,8 @@ final readonly class TelegramService
         'list' => 'Lister les personnalités',
         'brain' => 'Voir ou changer de personnalité',
     ];
+
+    private TelegramSession $telegramSession;
 
     public function __construct(
         private BrainRegistry $brainRegistry,
@@ -44,7 +45,7 @@ final readonly class TelegramService
     {
         try {
             $message = $update->message;
-            if ($message === null) {
+            if (!$message instanceof \Phptg\BotApi\Type\Message) {
                 return;
             }
 
@@ -57,51 +58,12 @@ final readonly class TelegramService
         }
     }
 
-    private function manageSession(string $telegramUserId, bool $renew = false):bool
-    {
-        // Initialize session for this Telegram user
-        $this->telegramSession->load($telegramUserId);
-        if ($renew || $this->telegramSession->get(Auth::AUTHENTICATED, false) !== true) {
-            $user = $this->entityManager->getRepository(User::class)->findByTelegramId($telegramUserId);
-            if ($user === null) {
-                return false;
-            }
-
-            $this->telegramSession->set(Auth::USERID, $user->getId());
-            $this->telegramSession->set('telegram_id', $telegramUserId);
-            $this->telegramSession->set(Auth::AUTHENTICATED, true);
-            $this->telegramSession->set(Auth::USERINFO, [
-                'firstName' => $user->getFirstName(),
-                'lastName' => $user->getLastName(),
-                'email' => $user->getEmail(),
-                'displayName' => trim($user->getFirstName() . ' ' . $user->getLastName()),
-            ]);
-            foreach ($user->getParams() ?? [] as $key => $value) {
-                $this->telegramSession->set($key, $value);
-            }
-
-            // Déterminer l'avatar/assistant courant (session, sinon préférence utilisateur, sinon défaut)
-            $currentBrain = (string) ($this->telegramSession->get('brain_avatar') ?? '');
-            if ($currentBrain === '') {
-                $this->telegramSession->set('brain_avatar', $this->settings->get('llm.defaultBrain'));
-            }
-
-            $chatId = $this->telegramSession->get('chatId');
-            if ($renew || ! $chatId) {
-                $chatId = uniqid(UserChatHistory::CHAT_TELEGRAM, true);
-                $this->telegramSession->set('chatId', $chatId);
-            }
-        }
-
-        return true;
-    }
-
     public function handleMessage(Message $message): void
     {
         $chatId = (string) $message->chat->id;
 
         $telegramUserId = (string) $message->from->id;
-        if (!$this->manageSession($telegramUserId)) {
+        if (! $this->manageSession($telegramUserId)) {
             $this->sendMessage($chatId, "Je ne vous reconnais pas, merci d'ajouter votre id " . $telegramUserId . " sur l'interface web");
             return;
         }
@@ -127,9 +89,10 @@ final readonly class TelegramService
 
         if (str_starts_with($text, '/')) {
             $handled = $this->handleCommand($text, $chatId);
-            if (!$handled) {
-                $this->sendMessage($chatId, "⚠ Commande inconnue");
+            if (! $handled) {
+                $this->sendMessage($chatId, '⚠ Commande inconnue');
             }
+
             $this->telegramSession->flush();
             return;
         }
@@ -181,7 +144,7 @@ final readonly class TelegramService
         $chatId = (string) $message->chat->id;
         $document = $message->document;
 
-        if (!$document instanceof \Phptg\BotApi\Type\Document) {
+        if (! $document instanceof \Phptg\BotApi\Type\Document) {
             return;
         }
 
@@ -215,12 +178,51 @@ final readonly class TelegramService
         }
     }
 
+    private function manageSession(string $telegramUserId, bool $renew = false): bool
+    {
+        // Initialize session for this Telegram user
+        $this->telegramSession->load($telegramUserId);
+        if ($renew || $this->telegramSession->get(Auth::AUTHENTICATED, false) !== true) {
+            $user = $this->entityManager->getRepository(User::class)->findByTelegramId($telegramUserId);
+            if ($user === null) {
+                return false;
+            }
+
+            $this->telegramSession->set(Auth::USERID, $user->getId());
+            $this->telegramSession->set('telegram_id', $telegramUserId);
+            $this->telegramSession->set(Auth::AUTHENTICATED, true);
+            $this->telegramSession->set(Auth::USERINFO, [
+                'firstName' => $user->getFirstName(),
+                'lastName' => $user->getLastName(),
+                'email' => $user->getEmail(),
+                'displayName' => trim($user->getFirstName() . ' ' . $user->getLastName()),
+            ]);
+            foreach ($user->getParams() ?? [] as $key => $value) {
+                $this->telegramSession->set($key, $value);
+            }
+
+            // Déterminer l'avatar/assistant courant (session, sinon préférence utilisateur, sinon défaut)
+            $currentBrain = (string) ($this->telegramSession->get('brain_avatar') ?? '');
+            if ($currentBrain === '') {
+                $this->telegramSession->set('brain_avatar', $this->settings->get('llm.defaultBrain'));
+            }
+
+            $chatId = $this->telegramSession->get('chatId');
+            if ($renew || ! $chatId) {
+                $chatId = uniqid(UserChatHistory::CHAT_TELEGRAM, true);
+                $this->telegramSession->set('chatId', $chatId);
+            }
+        }
+
+        return true;
+    }
+
     private function handleCommand(string $text, string $chatId): bool
     {
         $parts = explode(' ', $text);
         $command = substr(array_shift($parts), 1);
 
-        if (!isset(self::COMMANDS[$command])) {
+        if (! isset(self::COMMANDS[$command])) {
             return false;
         }
 
@@ -348,7 +350,7 @@ final readonly class TelegramService
             return;
         }
 
-        $brain = (string)$args[0];
+        $brain = (string) $args[0];
         try {
             $meta = $this->brainRegistry->getMeta($brain);
             $this->telegramSession->set('brain_avatar', $brain);

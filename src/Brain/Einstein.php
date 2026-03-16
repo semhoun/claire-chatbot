@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace App\Brain;
 
-use NeuronAI\Agent\Middleware\Summarization;
-use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
 use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 
 class Einstein extends RAG implements BrainAvatar
 {
- public const string NAME = 'Einstein';
+    public const string NAME = 'Einstein';
 
     public const string DESCRIPTION = 'Votre assitant virtuel qui utilise sa base de connaissance pour vous aider';
 

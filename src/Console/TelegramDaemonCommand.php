@@ -7,13 +7,13 @@ namespace App\Console;
 use App\Services\TelegramService;
 use Monolog\Handler\StreamHandler;
 use Monolog\Logger;
+use Phptg\BotApi\TelegramBotApi;
+use Phptg\BotApi\Type\Update;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Phptg\BotApi\TelegramBotApi;
-use Phptg\BotApi\Type\Update;
 
 #[AsCommand(
     name: 'telegram:daemon',

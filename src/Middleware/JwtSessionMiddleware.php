@@ -33,7 +33,6 @@ use Slim\Psr7\NonBufferedBody;
  */
 final class JwtSessionMiddleware implements MiddlewareInterface
 {
-
     public const string SESSION_ATTRIBUTE = 'session';
 
     private const string SESSION_ID_KEY = 'sub';

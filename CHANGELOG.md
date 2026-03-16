@@ -7,7 +7,11 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-16
+
 ### Added
+- Sécurisation du webhook Telegram avec token secret (`TELEGRAM_WEBHOOK_SECRET`)
+- Commande `telegram:webhook` avec options `--domain` (HTTPS forcé, chemin auto-généré) et `--url` (URL complète)
 - Sessions JWT stateless pour l'authentification
 - Support de Telegram Bot avec sessions dédiées (`TelegramSession`)
 - Gestion des sessions depuis la requête HTTP via `SessionFromRequestTrait`
@@ -94,5 +98,6 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.0.0...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.1.0...HEAD
+[1.1.0]: https://github.com/semhoun/claire-chatbot/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/semhoun/claire-chatbot/releases/tag/1.0.0
