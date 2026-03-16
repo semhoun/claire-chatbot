@@ -83,7 +83,7 @@ final class TelegramSession implements SessionInterface
         $this->entityManager->flush();
     }
 
-    public function flush()
+    public function flush(): void
     {
         $this->ensureLoaded();
         $this->save();

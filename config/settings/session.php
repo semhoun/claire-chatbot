@@ -8,8 +8,8 @@ env_required([
 
 return [
     // JWT-specific settings
-    'jwt_secret' => _env('SESSION_JWT_SECRET'),
-    'jwt_algorithm' => _env('SESSION_JWT_ALGORITHM', 'HS256'),
+    'jwt_secret' => env('SESSION_JWT_SECRET'),
+    'jwt_algorithm' => env('SESSION_JWT_ALGORITHM', 'HS256'),
 
     // Cookie settings
     'name' => 'claire_chatbot',

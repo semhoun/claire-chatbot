@@ -13,10 +13,15 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Gestion des sessions depuis la requête HTTP
 - Tests unitaires supplémentaires
 - Commande console `cache:init` pour initialiser le cache
+- Nouvelle commande console `telegram:set-commands` pour configurer le menu des commandes du bot Telegram
+- Outil de recherche web (`web_search`) via SearXNG
+- Support du SDK Telegram `phptg/bot-api` (remplace `irazasyed/telegram-bot-sdk`)
+- Commandes Telegram mises à jour: `/start`, `/help`, `/list`, `/brain`
 
 ### Changed
 - Nettoyage du code avec Rector et PHP Insights
 - Refactoring de la gestion des sessions
+- Remplacement de la bibliothèque Telegram par `phptg/bot-api`
 
 ### Fixed
 - Correction de bugs sur les bordures d'affichage

@@ -75,11 +75,11 @@ final readonly class BrainController
 
         // Choisir le cerveau selon la préférence en session
         $currentBrain = $session->get('brain_avatar');
-        $brain = $this->brainRegistry->get($currentBrain, $session);
+        $agent = $this->brainRegistry->get($currentBrain, $session);
 
         if ($chatMode === 'chat') {
             // Manage chat mode
-            $agentMessage = $brain->chat($userMessage)->getMessage();
+            $agentMessage = $agent->chat($userMessage)->getMessage();
             $agentMessageStr = $agentMessage->getContent();
 
             $this->manageSummary($session);
@@ -105,7 +105,7 @@ final readonly class BrainController
 
         $stream = $response->getBody();
 
-        $agentHandler = $brain->stream($userMessage);
+        $agentHandler = $agent->stream($userMessage);
 
         // Iterate chunks
         foreach ($agentHandler->events() as $chunk) {

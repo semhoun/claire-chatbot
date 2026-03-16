@@ -62,14 +62,15 @@ class Auth
             }
 
             $user = $this->entityManager->getRepository(User::class)->find($userId);
-            $user->setFirstName($userInfo['firstName']);
-            $user->setLastName($userInfo['lastName']);
-            $user->setEmail($userInfo['email']);
+            $user->setFirstName($data['firstName']);
+            $user->setLastName($data['lastName']);
+            $user->setEmail($data['email']);
             $this->entityManager->flush();
 
             foreach ($user->getParams() ?? [] as $key => $value) {
                 $session->set($key, $value);
             }
+
             // Déterminer l'avatar/assistant courant (session, sinon préférence utilisateur, sinon défaut)
             $currentBrain = (string) ($session->get('brain_avatar') ?? '');
             if ($currentBrain === '') {

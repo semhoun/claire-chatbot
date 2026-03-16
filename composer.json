@@ -64,7 +64,7 @@
     "iamgerwin/php-pdf-to-markdown-parser": "^0.0.1",
     "spatie/commonmark-highlighter": "^3.0",
     "vlucas/phpdotenv": "^5.6",
-    "irazasyed/telegram-bot-sdk": "^3.15",
+    "phptg/bot-api": "^0.17",
     "lcobucci/jwt": "^5.5",
     "ramsey/uuid": "^4.9"
   },

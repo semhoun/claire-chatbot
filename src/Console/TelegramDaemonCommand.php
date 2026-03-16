@@ -12,8 +12,8 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Telegram\Bot\Api;
-use Telegram\Bot\Objects\Update;
+use Phptg\BotApi\TelegramBotApi;
+use Phptg\BotApi\Type\Update;
 
 #[AsCommand(
     name: 'telegram:daemon',
@@ -24,7 +24,7 @@ final class TelegramDaemonCommand extends Command
     private bool $running = true;
 
     public function __construct(
-        private readonly Api $api,
+        private readonly TelegramBotApi $telegramBotApi,
         private readonly TelegramService $telegramService,
         private readonly Logger $logger,
     ) {
@@ -59,8 +59,8 @@ final class TelegramDaemonCommand extends Command
         $this->logger->pushHandler($streamHandler);
 
         try {
-            $botInfo = $this->api->getMe();
-            $botUsername = $botInfo->getUsername();
+            $botInfo = $this->telegramBotApi->getMe();
+            $botUsername = $botInfo->username;
 
             $output->writeln(sprintf(
                 '<info>Starting Telegram daemon for bot: @%s</info>',
@@ -83,15 +83,15 @@ final class TelegramDaemonCommand extends Command
 
         while ($this->running) {
             try {
-                $updates = $this->api->getUpdates([
-                    'offset' => $offset,
-                    'limit' => $limit,
-                    'timeout' => $timeout,
-                ]);
+                $updates = $this->telegramBotApi->getUpdates(
+                    offset: $offset,
+                    limit: $limit,
+                    timeout: $timeout,
+                );
 
                 /** @var Update $update */
                 foreach ($updates as $update) {
-                    $updateId = $update->getUpdateId();
+                    $updateId = $update->updateId;
 
                     if ($updateId >= $offset) {
                         $offset = $updateId + 1;

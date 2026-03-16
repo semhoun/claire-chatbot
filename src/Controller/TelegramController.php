@@ -8,7 +8,7 @@ use App\Services\TelegramService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Log\LoggerInterface;
-use Telegram\Bot\Objects\Update;
+use Phptg\BotApi\Type\Update;
 
 final readonly class TelegramController
 {
@@ -21,7 +21,7 @@ final readonly class TelegramController
     public function webhook(Request $request, Response $response): Response
     {
         try {
-            $update = new Update((array) $request->getParsedBody());
+            $update = Update::fromArray((array) $request->getParsedBody());
             $this->telegramService->processUpdate($update);
         } catch (\Throwable $throwable) {
             $this->logger->error('Telegram Webhook Error: ' . $throwable->getMessage(), [

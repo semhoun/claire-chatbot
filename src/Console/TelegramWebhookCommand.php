@@ -11,13 +11,13 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Telegram\Bot\Api;
+use Phptg\BotApi\TelegramBotApi;
 
 #[AsCommand(name: 'telegram:webhook', description: 'Configure Telegram webhook URL')]
 final class TelegramWebhookCommand extends Command
 {
     public function __construct(
-        private readonly Api $api,
+        private readonly TelegramBotApi $telegramBotApi,
         private readonly Logger $logger,
     ) {
         parent::__construct();
@@ -77,27 +77,27 @@ final class TelegramWebhookCommand extends Command
 
     private function getWebhookInfo(OutputInterface $output): int
     {
-        $webhookInfo = $this->api->getWebhookInfo();
+        $webhookInfo = $this->telegramBotApi->getWebhookInfo();
 
         $output->writeln('<info>Current Webhook Info:</info>');
         $output->writeln('  URL: ' . ($webhookInfo->url !== null && $webhookInfo->url !== '' ? $webhookInfo->url : '(not set)'));
-        $output->writeln('  Has Custom Certificate: ' . ($webhookInfo->has_custom_certificate ? 'Yes' : 'No'));
-        $output->writeln('  Pending Update Count: ' . $webhookInfo->pending_update_count);
+        $output->writeln('  Has Custom Certificate: ' . ($webhookInfo->hasCustomCertificate ? 'Yes' : 'No'));
+        $output->writeln('  Pending Update Count: ' . $webhookInfo->pendingUpdateCount);
 
-        if ($webhookInfo->last_error_date !== null) {
-            $output->writeln('  Last Error Date: ' . date('Y-m-d H:i:s', $webhookInfo->last_error_date));
+        if ($webhookInfo->lastErrorDate !== null) {
+            $output->writeln('  Last Error Date: ' . date('Y-m-d H:i:s', $webhookInfo->lastErrorDate));
         }
 
-        if ($webhookInfo->last_error_message !== null && $webhookInfo->last_error_message !== '') {
-            $output->writeln('  Last Error Message: ' . $webhookInfo->last_error_message);
+        if ($webhookInfo->lastErrorMessage !== null && $webhookInfo->lastErrorMessage !== '') {
+            $output->writeln('  Last Error Message: ' . $webhookInfo->lastErrorMessage);
         }
 
-        if ($webhookInfo->max_connections !== null) {
-            $output->writeln('  Max Connections: ' . $webhookInfo->max_connections);
+        if ($webhookInfo->maxConnections !== null) {
+            $output->writeln('  Max Connections: ' . $webhookInfo->maxConnections);
         }
 
-        if ($webhookInfo->ip_address !== null && $webhookInfo->ip_address !== '') {
-            $output->writeln('  IP Address: ' . $webhookInfo->ip_address);
+        if ($webhookInfo->ipAddress !== null && $webhookInfo->ipAddress !== '') {
+            $output->writeln('  IP Address: ' . $webhookInfo->ipAddress);
         }
 
         return Command::SUCCESS;
@@ -105,7 +105,7 @@ final class TelegramWebhookCommand extends Command
 
     private function deleteWebhook(OutputInterface $output): int
     {
-        $this->api->deleteWebhook();
+        $this->telegramBotApi->deleteWebhook();
         $output->writeln('<info>Webhook deleted successfully.</info>');
         $this->logger->info('Telegram webhook deleted');
 
@@ -118,7 +118,7 @@ final class TelegramWebhookCommand extends Command
             throw new InvalidArgumentException('Invalid URL provided: ' . $url);
         }
 
-        $this->api->setWebhook(['url' => $url]);
+        $this->telegramBotApi->setWebhook(url: $url);
         $output->writeln('<info>Webhook set successfully to: ' . $url . '</info>');
         $this->logger->info('Telegram webhook set', ['url' => $url]);
 

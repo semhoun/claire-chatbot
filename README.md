@@ -22,6 +22,7 @@ Claire est une application web minimaliste de chat IA construite avec Slim 4 et 
 - [Monolog](https://github.com/Seldaek/monolog) (logs)
 - [Doctrine ORM](https://www.doctrine-project.org/) (présent, non requis pour l’usage basique)
 - [Neuron AI](https://www.neuron-ai.dev/) (agent LLM)
+- [phptg/bot-api](https://github.com/phptg/bot-api) (bot Telegram)
 - [OpenTelemetry](https://opentelemetry.io/docs/languages/php/) (observabilité)
 
 ## Prérequis
@@ -93,15 +94,22 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 
 ### Avatars / Cerveaux (BrainRegistry)
 
-L’application permet de sélectionner différents « cerveaux » (avatars) pour l’agent (ex.: Claire, Einstein, Flashy). La sélection est mémorisée en session sous la clé `brain_avatar`.
+L'application permet de sélectionner différents « cerveaux » (avatars) pour l'agent (ex.: Claire, Einstein, Flashy). La sélection est mémorisée en session sous la clé `brain_avatar`.
 
 - La logique de sélection est gérée par le registre `BrainRegistry`.
-- Si une valeur invalide est fournie, l’application revient automatiquement sur l’avatar par défaut: `claire`.
-- Vous pouvez exposer ce choix dans l’UI (ex.: select) ou via un paramètre de requête selon vos besoins.
+- Si une valeur invalide est fournie, l'application revient automatiquement sur l'avatar par défaut: `claire`.
+- Vous pouvez exposer ce choix dans l'UI (ex.: select) ou via un paramètre de requête selon vos besoins.
 - Cerveaux disponibles:
   - `claire` — Assistante généraliste
   - `einstein` — Expert scientifique
   - `flashy` — Réponses rapides et concises
+
+#### Recherche Web (Web Search)
+
+L'application prend en charge la recherche web via SearXNG lorsque la variable d'environnement `SEARXNG_URL` est configurée. Cette fonctionnalité ajoute l'outil `web_search` aux agents, leur permettant d'effectuer des recherches sur internet pour enrichir leurs réponses.
+
+- Configuration: définissez `SEARXNG_URL` avec l'URL de votre instance SearXNG (ex: `http://searxng:8080`)
+- L'outil est automatiquement disponible pour tous les cerveaux lorsque la configuration est présente
 
 ### Authentification OpenID Connect (SSO)
 
@@ -521,9 +529,10 @@ Le bot Telegram supporte:
 - **Documents**: Upload de fichiers pour analyse
 - **Changement de cerveau**: Commande `/<nom_du_cerveau>` pour basculer d'avatar
 - **Commandes intégrées:**
-  - `/start`: Message de bienvenue
-  - `/help`: Aide et liste des cerveaux disponibles
-  - `/list`: Liste des cerveaux disponibles
+  - `/start` — Démarrer une nouvelle conversation
+  - `/help` — Afficher l'aide
+  - `/list` — Lister les personnalités
+  - `/brain` — Voir ou changer de personnalité
 
 #### Configuration de la base de données
 
@@ -598,6 +607,7 @@ Le fichier `./console` fournit des commandes pour la gestion du cache et des mig
   - `./console telegram:webhook --info` — Vérifie le statut du webhook
   - `./console telegram:webhook --delete` — Supprime le webhook
   - `./console telegram:daemon` — Lance le daemon (polling)
+  - `./console telegram:set-commands` — Configure le menu des commandes du bot Telegram (SetMyCommands)
 
 ### Tests
 

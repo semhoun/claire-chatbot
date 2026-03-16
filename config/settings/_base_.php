@@ -6,7 +6,7 @@ use App\Services\Settings;
 
 return [
     'version' => '1.0.0',
-    'debug' => _env('DEBUG_MODE', false),
+    'debug' => env('DEBUG_MODE', false),
     'temporary_path' => Settings::getAppRoot() . '/var/tmp',
     'cache_dir' => Settings::getAppRoot() . '/var/cache',
 ];

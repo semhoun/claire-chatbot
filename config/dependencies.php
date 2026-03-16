@@ -111,4 +111,6 @@ return [
 
         throw new Exception('Unknown filesystem type ' . $settings->get('files.fileSystem.type'));
     },
+    // Telegram Bot API
+    \Phptg\BotApi\TelegramBotApi::class => static fn (Settings $settings): \Phptg\BotApi\TelegramBotApi => new \Phptg\BotApi\TelegramBotApi($settings->get('telegram.bot_token')),
 ];

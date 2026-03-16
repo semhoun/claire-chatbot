@@ -6,21 +6,19 @@ namespace App\Services;
 
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
-use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Entity\User;
-use App\Repository\UserRepository;
 use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;
 use Monolog\Logger;
 use NeuronAI\Chat\Messages\UserMessage;
-use Telegram\Bot\Objects\Message;
-use Telegram\Bot\Objects\Update;
+use Phptg\BotApi\TelegramBotApi;
+use Phptg\BotApi\Type\Message;
+use Phptg\BotApi\Type\Update\Update;
 
 final readonly class TelegramService
 {
-    private TelegramSession $session;
-    private \Telegram\Bot\Api $api;
+    private TelegramSession $telegramSession;
 
     public function __construct(
         private BrainRegistry $brainRegistry,
@@ -28,21 +26,21 @@ final readonly class TelegramService
         private Settings $settings,
         private Logger $logger,
         private Filesystem $filesystem,
+        private TelegramBotApi $telegramBotApi,
     ) {
-        $this->api = new \Telegram\Bot\Api($settings->get('telegram.bot_token'));
-        $this->session = new TelegramSession($entityManager);
+        $this->telegramSession = new TelegramSession($entityManager);
     }
 
     public function processUpdate(Update $update): void
     {
         try {
-            $message = $update->getMessage();
+            $message = $update->message;
 
             $this->handleMessage($message);
         } catch (\Throwable $throwable) {
             $this->logger->error('Telegram update processing error: ' . $throwable->getMessage(), [
                 'exception' => $throwable,
-                'update_id' => $update->getUpdateId(),
+                'update_id' => $update->updateId,
             ]);
         }
     }
@@ -50,27 +48,29 @@ final readonly class TelegramService
     private function manageSession(string $telegramUserId, bool $renew = false):bool
     {
         // Initialize session for this Telegram user
-        $this->session->load($telegramUserId);
-        if ($renew || $this->session->get(Auth::AUTHENTICATED, false) !== true) {
+        $this->telegramSession->load($telegramUserId);
+        if ($renew || $this->telegramSession->get(Auth::AUTHENTICATED, false) !== true) {
             $user = $this->entityManager->getRepository(User::class)->findByTelegramId($telegramUserId);
             if ($user === null) {
                 return false;
             }
-            $this->session->set(Auth::USERID, $user->getId());
-            $this->session->set(Auth::AUTHENTICATED, true);
-            $this->session->set(Auth::USERINFO, [
+
+            $this->telegramSession->set(Auth::USERID, $user->getId());
+            $this->telegramSession->set(Auth::AUTHENTICATED, true);
+            $this->telegramSession->set(Auth::USERINFO, [
                 'firstName' => $user->getFirstName(),
                 'lastName' => $user->getLastName(),
                 'email' => $user->getEmail(),
                 'displayName' => trim($user->getFirstName() . ' ' . $user->getLastName()),
             ]);
             foreach ($user->getParams() ?? [] as $key => $value) {
-                $this->session->set($key, $value);
+                $this->telegramSession->set($key, $value);
             }
-            $chatId = $this->session->get('chatId');
+
+            $chatId = $this->telegramSession->get('chatId');
             if ($renew || ! $chatId) {
                 $chatId = uniqid(UserChatHistory::CHAT_TELEGRAM, true);
-                $this->session->set('chatId', $chatId);
+                $this->telegramSession->set('chatId', $chatId);
             }
         }
 
@@ -79,28 +79,28 @@ final readonly class TelegramService
 
     public function handleMessage(Message $message): void
     {
-        $chatId = (string) $message->getChat()->getId();
+        $chatId = (string) $message->chat->id;
 
-        $telegramUserId = (string) $message->getFrom()->getId();
+        $telegramUserId = (string) $message->from->id;
         if (!$this->manageSession($telegramUserId)) {
-            $this->sendMessage($chatId, 'Je ne vous reconnais pas, merci d\'ajouter votre id ' . $telegramUserId . ' sur l\'interface web');
+            $this->sendMessage($chatId, "Je ne vous reconnais pas, merci d'ajouter votre id " . $telegramUserId . " sur l'interface web");
             return;
         }
 
         $entityRepository = $this->entityManager->getRepository(User::class);
         $user = $entityRepository->findByTelegramId($telegramUserId);
 
-        if ($message->getPhoto() !== null && $message->getPhoto() !== []) {
-            $this->handlePhoto($message, $user, $brainName);
+        if ($message->photo !== null && $message->photo !== []) {
+            $this->handlePhoto($message, $user);
             return;
         }
 
-        if ($message->getDocument() !== null) {
-            $this->handleDocument($message, $user, $brainName);
+        if ($message->document instanceof \Phptg\BotApi\Type\Document) {
+            $this->handleDocument($message, $user);
             return;
         }
 
-        $text = $message->getText();
+        $text = $message->text;
         if ($text === null) {
             $this->sendMessage($chatId, 'Je ne peux traiter que du texte, des photos et des documents.');
             return;
@@ -118,21 +118,21 @@ final readonly class TelegramService
 
     public function handlePhoto(Message $message, User $user): void
     {
-        $chatId = (string) $message->getChat()->getId();
-        $photos = $message->getPhoto();
+        $chatId = (string) $message->chat->id;
+        $photos = $message->photo;
 
         if ($photos === null || $photos === []) {
             return;
         }
 
         $photo = $photos[count($photos) - 1];
-        $fileId = $photo->getFileId();
+        $fileId = $photo->fileId;
 
         $this->sendChatAction($chatId, 'typing');
 
         try {
-            $file = $this->api->getFile(['file_id' => $fileId]);
-            $filePath = $file->getFilePath();
+            $file = $this->telegramBotApi->getFile(fileId: $fileId);
+            $filePath = $file->filePath;
             $fileUrl = sprintf('https://api.telegram.org/file/bot%s/%s', $this->settings->get('telegram.bot_token'), $filePath);
 
             $imageContent = file_get_contents($fileUrl);
@@ -143,7 +143,7 @@ final readonly class TelegramService
             $localPath = sprintf('telegram/%s/', $user->getId()) . uniqid('photo_', true) . '.jpg';
             $this->filesystem->write($localPath, $imageContent);
 
-            $caption = $message->getCaption() ?? 'Décris cette image';
+            $caption = $message->caption ?? 'Décris cette image';
 
             $this->processChatMessage(
                 "[Image: {$localPath}]\n\n{$caption}",
@@ -158,22 +158,22 @@ final readonly class TelegramService
 
     public function handleDocument(Message $message, User $user): void
     {
-        $chatId = (string) $message->getChat()->getId();
-        $document = $message->getDocument();
+        $chatId = (string) $message->chat->id;
+        $document = $message->document;
 
-        if ($document === null) {
+        if (!$document instanceof \Phptg\BotApi\Type\Document) {
             return;
         }
 
-        $fileId = $document->getFileId();
-        $fileName = $document->getFileName() ?? 'document';
-        $mimeType = $document->getMimeType() ?? 'application/octet-stream';
+        $fileId = $document->fileId;
+        $fileName = $document->fileName ?? 'document';
+        $mimeType = $document->mimeType ?? 'application/octet-stream';
 
         $this->sendChatAction($chatId, 'typing');
 
         try {
-            $file = $this->api->getFile(['file_id' => $fileId]);
-            $filePath = $file->getFilePath();
+            $file = $this->telegramBotApi->getFile(fileId: $fileId);
+            $filePath = $file->filePath;
             $fileUrl = sprintf('https://api.telegram.org/file/bot%s/%s', $this->settings->get('telegram.bot_token'), $filePath);
 
             $fileContent = file_get_contents($fileUrl);
@@ -185,7 +185,7 @@ final readonly class TelegramService
             $localPath = sprintf('telegram/%s/', $user->getId()) . uniqid('doc_', true) . '.' . $extension;
             $this->filesystem->write($localPath, $fileContent);
 
-            $caption = $message->getCaption() ?? 'Analyse ce document';
+            $caption = $message->caption ?? 'Analyse ce document';
 
             $this->processChatMessage(
                 "[Document: {$localPath} ({$mimeType})]\n\n{$caption}",
@@ -207,7 +207,7 @@ final readonly class TelegramService
             $this->manageSession($user->getTelegramId(), true);
             $this->sendMessage(
                 $chatId,
-                $this->brainRegistry->get($this->session->get('brain_avatar'), $this->session)->getOpeningText()
+                $this->brainRegistry->get($this->telegramSession->get('brain_avatar'), $this->telegramSession)->getOpeningText()
             );
             return true;
         }
@@ -254,8 +254,8 @@ EOF;
         $this->sendChatAction($chatId, 'typing');
 
         try {
-            $currentBrain = $this->session->get('brain_avatar');
-            $brain = $this->brainRegistry->get($currentBrain, $this->session);
+            $currentBrain = $this->telegramSession->get('brain_avatar');
+            $brain = $this->brainRegistry->get($currentBrain, $this->telegramSession);
 
             $userMessage = new UserMessage($text);
             $agentMessage = $brain->chat($userMessage)->getMessage();
@@ -279,10 +279,7 @@ EOF;
     private function sendChatAction(string $chatId, string $action): void
     {
         try {
-            $this->api->sendChatAction([
-                'chat_id' => $chatId,
-                'action' => $action,
-            ]);
+            $this->telegramBotApi->sendChatAction(chatId: $chatId, action: $action);
         } catch (\Throwable $throwable) {
             $msg = 'Failed to send chat action: ' . $throwable->getMessage();
             $this->logger->debug($msg);
@@ -294,20 +291,13 @@ EOF;
         try {
             $chunks = $this->splitMessage($text);
             foreach ($chunks as $chunk) {
-                $this->api->sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => $chunk,
-                    'parse_mode' => 'Markdown',
-                ]);
+                $this->telegramBotApi->sendMessage(chatId: $chatId, text: $chunk, parseMode: 'Markdown');
             }
         } catch (\Throwable $throwable) {
             $msg = 'Failed to send message: ' . $throwable->getMessage();
             $this->logger->error($msg);
             try {
-                $this->api->sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => $text,
-                ]);
+                $this->telegramBotApi->sendMessage(chatId: $chatId, text: $text);
             } catch (\Throwable $e2) {
                 $msg = 'Failed to send plain message: ' . $e2->getMessage();
                 $this->logger->error($msg);

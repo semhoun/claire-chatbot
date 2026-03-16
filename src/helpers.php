@@ -10,7 +10,7 @@ if (! function_exists('_env')) {
      *
      * @throws \RuntimeException
      */
-    function _env(string $key, mixed $default = null): mixed
+    function env(string $key, mixed $default = null): mixed
     {
         static $dotenv = null;
         static $dotenvLoaded = false;
@@ -61,6 +61,6 @@ if (! function_exists('env_required')) {
      */
     function env_required(array|string $keys): void
     {
-        _env('', (array) $keys);
+        env('', (array) $keys);
     }
 }
