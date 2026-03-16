@@ -10,18 +10,24 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ### Added
 - Sessions JWT stateless pour l'authentification
 - Support de Telegram Bot avec sessions dédiées (`TelegramSession`)
-- Gestion des sessions depuis la requête HTTP
-- Tests unitaires supplémentaires
+- Gestion des sessions depuis la requête HTTP via `SessionFromRequestTrait`
+- Tests unitaires supplémentaires (Auth, Settings, FileController, etc.)
 - Commande console `cache:init` pour initialiser le cache
 - Nouvelle commande console `telegram:set-commands` pour configurer le menu des commandes du bot Telegram
 - Outil de recherche web (`web_search`) via SearXNG
 - Support du SDK Telegram `phptg/bot-api` (remplace `irazasyed/telegram-bot-sdk`)
 - Commandes Telegram mises à jour: `/start`, `/help`, `/list`, `/brain`
+- Entité `TelegramSession` pour persister les sessions utilisateurs Telegram
+- Repository `TelegramSessionRepository` pour la gestion des sessions Telegram
 
 ### Changed
 - Nettoyage du code avec Rector et PHP Insights
-- Refactoring de la gestion des sessions
+- Refactoring complet de la gestion des sessions (passage à JWT stateless)
 - Remplacement de la bibliothèque Telegram par `phptg/bot-api`
+- Mise à jour des contrôleurs pour utiliser `SessionFromRequestTrait`
+- Refactoring de `Agent` avec séparation des traits (AIProvider, Constructor, Middleware, UserChatHistory)
+- Amélioration du `BrainRegistry` pour la gestion des avatars
+- Simplification de la gestion des réponses JSON avec `JsonRenderer`
 
 ### Fixed
 - Correction de bugs sur les bordures d'affichage
@@ -30,8 +36,10 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Correction du mode streaming
 - Correction des fins de ligne (CRLF → LF)
 - Correction des permissions de fichiers
+- Correction du chat Telegram avec gestion appropriée des sessions
+- Correction du brain par défaut lors de la sélection invalide
 
-## [1.0.0] - 2025-XX-XX
+## [1.0.0] - 2026-03-15
 
 ### Added
 - **Multi-brains** : Support de multiples agents IA (brains) avec sélection dynamique

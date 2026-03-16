@@ -13,7 +13,9 @@ use PDO;
 class UserChatHistory extends SQLChatHistory
 {
     public const string TABLE = 'chat_history';
+
     public const string CHAT_WEB = 'ordinary';
+
     public const string CHAT_TELEGRAM = 'telegram';
 
     protected string $user_id;

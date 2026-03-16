@@ -113,7 +113,6 @@ final class TelegramSession implements SessionInterface
     {
         $this->ensureLoaded();
         $this->storage[$key] = $value;
-        $this->save();
     }
 
     public function setValues(array $values): void

@@ -11,9 +11,7 @@ use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 
 class Einstein extends RAG implements BrainAvatar
 {
-    use EinsteinAvatar;
-
-    public const string NAME = 'Einstein';
+ public const string NAME = 'Einstein';
 
     public const string DESCRIPTION = 'Votre assitant virtuel qui utilise sa base de connaissance pour vous aider';
 
@@ -115,33 +113,6 @@ EOF;
             CalculatorToolkit::make(),
             CalendarToolkit::make(),
             Tools\WebToolkit::make($this->settings->get('llm.tools.searchXngUrl')),
-        ];
-    }
-
-    #[\Override]
-    protected function vectorStore(): VectorStoreInterface
-    {
-        return $this->vectorStore;
-    }
-
-    /**
-     * Define your middleware here.
-     *
-     * @return array<class-string<NodeInterface>, array<WorkflowMiddleware>>
-     */
-    #[\Override]
-    protected function middleware(): array
-    {
-        $summarization = new Summarization(
-            provider: $this->aiProvider,
-            maxTokens: $this->settings->get('llm.history.contextWindow') / 2,
-            messagesToKeep: 10,
-        );
-
-        return [
-            ChatNode::class => [$summarization],
-            StreamingNode::class => [$summarization],
-            StructuredOutputNode::class => [$summarization],
         ];
     }
 }
