@@ -111,6 +111,38 @@ L'application prend en charge la recherche web via SearXNG lorsque la variable d
 - Configuration: définissez `SEARXNG_URL` avec l'URL de votre instance SearXNG (ex: `http://searxng:8080`)
 - L'outil est automatiquement disponible pour tous les cerveaux lorsque la configuration est présente
 
+#### Personnalisation de Claire
+
+L'avatar Claire peut être personnalisé via des variables d'environnement pour adapter son comportement et ses messages d'accueil.
+
+**Prompt système (unique)**
+
+| Variable | Description |
+|----------|-------------|
+| `CLAIRE_PROMPT` | Prompt système complet remplaçant le prompt par défaut. Si non défini, le prompt original de Claire est utilisé. |
+
+**Messages d'accueil (sélection aléatoire)**
+
+| Variable | Description |
+|----------|-------------|
+| `CLAIRE_WELCOME_MESSAGES` | Liste de messages d'accueil séparés par `\|\|\|`. Un message est choisi au hasard à chaque nouvelle conversation. |
+| `CLAIRE_WELCOME_MESSAGE` | Message d'accueil unique (fallback si `CLAIRE_WELCOME_MESSAGES` n'est pas défini). |
+
+Si aucune variable d'environnement n'est définie pour les messages d'accueil, le message par défaut est : *"Bonjour et bienvenue ! Comment puis-je t'aider aujourd'hui ?"*
+
+**Exemples d'utilisation**
+
+```bash
+# Prompt personnalisé
+export CLAIRE_PROMPT="Tu es un expert en programmation PHP et Symfony. Tu dois être précis, technique et proposer des solutions optimisées."
+
+# Un seul message d'accueil
+export CLAIRE_WELCOME_MESSAGE="Bonjour ! Je suis prêt à t'aider avec tes projets PHP."
+
+# Plusieurs messages d'accueil (sélection aléatoire)
+export CLAIRE_WELCOME_MESSAGES="Bonjour ! ||| Salut ! Comment ça va ? ||| Hello ! Prêt à coder ? ||| Coucou ! Que puis-je faire pour toi ?"
+```
+
 ### Authentification OpenID Connect (SSO)
 
 L’application prend en charge une authentification via SSO OpenID Connect, si les paramètres sont définis sinon elle utilise un utilisateur par défaut. La configuration est lue dans `config/settings/oidc.php` et repose sur les variables d’environnement suivantes:
