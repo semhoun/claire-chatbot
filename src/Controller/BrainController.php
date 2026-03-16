@@ -74,14 +74,8 @@ final readonly class BrainController
         $userMessage = $this->addAttachments($request, $userMessage);
 
         // Choisir le cerveau selon la préférence en session
-        $currentBrain = $session->get('defaultBrain');
-        try {
-            $brain = $this->brainRegistry->get($currentBrain, $session);
-        } catch (\InvalidArgumentException) {
-            $currentBrain = 'claire';
-            $session->set('brain_avatar', $currentBrain);
-            $brain = $this->brainRegistry->get($currentBrain, $session);
-        }
+        $currentBrain = $session->get('brain_avatar');
+        $brain = $this->brainRegistry->get($currentBrain, $session);
 
         if ($chatMode === 'chat') {
             // Manage chat mode

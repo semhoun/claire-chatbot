@@ -37,7 +37,7 @@ final readonly class HomeController
         // Conserver le chatId courant s'il existe, sinon en générer un nouveau
         $chatId = $session->get('chatId');
         if (! $chatId) {
-            $chatId = uniqid('', true);
+            $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
             $session->set('chatId', $chatId);
 
             // Nettoyage des conversations vides de l'utilisateur

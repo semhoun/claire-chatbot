@@ -45,7 +45,7 @@ final readonly class HistoryController
         }
 
         // Nouveau thread
-        $threadId = uniqid('', true);
+        $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
         $session->set('chatId', $threadId);
 
         $currentBrain = $session->get('brain_avatar');

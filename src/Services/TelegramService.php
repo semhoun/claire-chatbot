@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Brain\BrainRegistry;
+use App\Brain\ChatHistory\UserChatHistory;
+use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Entity\User;
 use App\Repository\UserRepository;
 use App\Services\Session\TelegramSession;
@@ -17,7 +19,7 @@ use Telegram\Bot\Objects\Update;
 
 final readonly class TelegramService
 {
-    public $telegramSession;
+    private TelegramSession $session;
     private \Telegram\Bot\Api $api;
 
     public function __construct(
@@ -28,6 +30,7 @@ final readonly class TelegramService
         private Filesystem $filesystem,
     ) {
         $this->api = new \Telegram\Bot\Api($settings->get('telegram.bot_token'));
+        $this->session = new TelegramSession($entityManager);
     }
 
     public function processUpdate(Update $update): void
@@ -44,18 +47,48 @@ final readonly class TelegramService
         }
     }
 
+    private function manageSession(string $telegramUserId, bool $renew = false):bool
+    {
+        // Initialize session for this Telegram user
+        $this->session->load($telegramUserId);
+        if ($renew || $this->session->get(Auth::AUTHENTICATED, false) !== true) {
+            $user = $this->entityManager->getRepository(User::class)->findByTelegramId($telegramUserId);
+            if ($user === null) {
+                return false;
+            }
+            $this->session->set(Auth::USERID, $user->getId());
+            $this->session->set(Auth::AUTHENTICATED, true);
+            $this->session->set(Auth::USERINFO, [
+                'firstName' => $user->getFirstName(),
+                'lastName' => $user->getLastName(),
+                'email' => $user->getEmail(),
+                'displayName' => trim($user->getFirstName() . ' ' . $user->getLastName()),
+            ]);
+            foreach ($user->getParams() ?? [] as $key => $value) {
+                $this->session->set($key, $value);
+            }
+            $chatId = $this->session->get('chatId');
+            if ($renew || ! $chatId) {
+                $chatId = uniqid(UserChatHistory::CHAT_TELEGRAM, true);
+                $this->session->set('chatId', $chatId);
+            }
+        }
+
+        return true;
+    }
+
     public function handleMessage(Message $message): void
     {
         $chatId = (string) $message->getChat()->getId();
-        $telegramUserId = (string) $message->getFrom()->getId();
-        $message->getFrom()->getUsername() ?? 'Telegram User';
 
-        // Initialize session for this Telegram user
-        $this->telegramSession->initialize($telegramUserId);
+        $telegramUserId = (string) $message->getFrom()->getId();
+        if (!$this->manageSession($telegramUserId)) {
+            $this->sendMessage($chatId, 'Je ne vous reconnais pas, merci d\'ajouter votre id ' . $telegramUserId . ' sur l\'interface web');
+            return;
+        }
 
         $entityRepository = $this->entityManager->getRepository(User::class);
-        $user = $entityRepository->findByTelegramId($telegramId);
-        $brainName = $this->getBrainNameForUser($user);
+        $user = $entityRepository->findByTelegramId($telegramUserId);
 
         if ($message->getPhoto() !== null && $message->getPhoto() !== []) {
             $this->handlePhoto($message, $user, $brainName);
@@ -80,10 +113,10 @@ final readonly class TelegramService
             }
         }
 
-        $this->processChatMessage($text, $chatId, $user, $brainName);
+        $this->processChatMessage($text, $chatId, $user);
     }
 
-    public function handlePhoto(Message $message, User $user, string $brainName): void
+    public function handlePhoto(Message $message, User $user): void
     {
         $chatId = (string) $message->getChat()->getId();
         $photos = $message->getPhoto();
@@ -115,8 +148,7 @@ final readonly class TelegramService
             $this->processChatMessage(
                 "[Image: {$localPath}]\n\n{$caption}",
                 $chatId,
-                $user,
-                $brainName
+                $user
             );
         } catch (\Throwable $throwable) {
             $this->logger->error('Photo handling error: ' . $throwable->getMessage());
@@ -124,7 +156,7 @@ final readonly class TelegramService
         }
     }
 
-    public function handleDocument(Message $message, User $user, string $brainName): void
+    public function handleDocument(Message $message, User $user): void
     {
         $chatId = (string) $message->getChat()->getId();
         $document = $message->getDocument();
@@ -158,18 +190,12 @@ final readonly class TelegramService
             $this->processChatMessage(
                 "[Document: {$localPath} ({$mimeType})]\n\n{$caption}",
                 $chatId,
-                $user,
-                $brainName
+                $user
             );
         } catch (\Throwable $throwable) {
             $this->logger->error('Document handling error: ' . $throwable->getMessage());
             $this->sendMessage($chatId, 'Désolé, je n\'ai pas pu traiter ce document.');
         }
-    }
-
-    private function getSession(): TelegramSession
-    {
-        return $this->telegramSession;
     }
 
     private function handleCommand(string $text, string $chatId, User $user): bool
@@ -178,23 +204,29 @@ final readonly class TelegramService
         $command = substr($parts[0], 1);
 
         if ($command === 'start') {
-            $brainList = $this->getBrainListText();
+            $this->manageSession($user->getTelegramId(), true);
             $this->sendMessage(
                 $chatId,
-                'Bonjour ! Je suis Claire, votre assistante IA.
-
-Vous pouvez me parler directement ou utiliser /<nom_du_cerveau> pour changer d\'expert.
-
-Cerveaux disponibles :
-' . $brainList
+                $this->brainRegistry->get($this->session->get('brain_avatar'), $this->session)->getOpeningText()
             );
             return true;
         }
 
         if ($command === 'help') {
+            $message = <<<EOF
+Commandes disponibles :
+/start - Démarrer la conversation
+/help - Afficher cette aide
+
+EOF;
+            $brains = $this->brainRegistry->list();
+            foreach ($brains as $brain) {
+                $message .= sprintf('/%s - Agent %s (%s)', $brain['slug'], $brain['name'], $brain['description']) . "\n";
+            }
+
             $this->sendMessage(
                 $chatId,
-                "Commandes disponibles :\n/start - Démarrer la conversation\n/help - Afficher cette aide\n/list - Liste des cerveaux disponibles\n/<nom_du_cerveau> - Changer de cerveau\n\nVous pouvez aussi m'envoyer des photos et des documents."
+                $message
             );
             return true;
         }
@@ -217,19 +249,13 @@ Cerveaux disponibles :
         return false;
     }
 
-    private function processChatMessage(string $text, string $chatId, User $user, string $brainName): void
+    private function processChatMessage(string $text, string $chatId, User $user): void
     {
         $this->sendChatAction($chatId, 'typing');
 
         try {
-            $currentBrain = $session->get('defaultBrain');
-            try {
-                $brain = $this->brainRegistry->get($currentBrain, $session);
-            } catch (\InvalidArgumentException) {
-                $currentBrain = 'claire';
-                $session->set('brain_avatar', $currentBrain);
-                $brain = $this->brainRegistry->get($currentBrain, $session);
-            }
+            $currentBrain = $this->session->get('brain_avatar');
+            $brain = $this->brainRegistry->get($currentBrain, $this->session);
 
             $userMessage = new UserMessage($text);
             $agentMessage = $brain->chat($userMessage)->getMessage();
@@ -239,42 +265,15 @@ Cerveaux disponibles :
         } catch (\Throwable $throwable) {
             $this->logger->error('Chat processing error: ' . $throwable->getMessage(), [
                 'user_id' => $user->getId(),
-                'brain' => $brainName,
             ]);
             $this->sendMessage($chatId, 'Désolé, une erreur est survenue lors du traitement de votre message.');
         }
     }
 
-    private function getBrainNameForUser(User $user): string
-    {
-        $params = $user->getParams();
-
-        return $params['brain'] ?? (string) $this->settings->get('llm.defaultBrain');
-    }
-
     private function setBrainForUser(User $user, string $brainName): void
     {
         $entityRepository = $this->entityManager->getRepository(User::class);
-
-        if ($entityRepository instanceof UserRepository) {
-            $entityRepository->updateBrainAvatar($user, $brainName);
-        } else {
-            $params = $user->getParams() ?? [];
-            $params['brain'] = $brainName;
-            $user->setParams($params);
-            $this->entityManager->flush();
-        }
-    }
-
-    private function getBrainListText(): string
-    {
-        $brains = $this->brainRegistry->list();
-        $lines = [];
-        foreach ($brains as $brain) {
-            $lines[] = sprintf('/%s - %s', $brain['slug'], $brain['name']);
-        }
-
-        return implode("\n", $lines);
+        $entityRepository->updateBrainAvatar($user, $brainName);
     }
 
     private function sendChatAction(string $chatId, string $action): void

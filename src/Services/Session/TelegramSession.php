@@ -27,7 +27,6 @@ final class TelegramSession implements SessionInterface
     /**
      * @var array<string, mixed>
      */
-
     private array $storage = [];
 
     private bool $loaded = false;
@@ -40,24 +39,29 @@ final class TelegramSession implements SessionInterface
     }
 
     /**
-     * Initialize the session for a specific Telegram user.
-     *
-     * This must be called before any other session operations.
+     * Load session data from database.
      */
-
-    public function initialize(string $telegramId): void
+    public function load(string $telegramId): void
     {
+        $this->clear();
         $this->telegramId = $telegramId;
 
-        $this->load();
+        $telegramSessionRepository = $this->getRepository();
+        $this->telegramSessionEntity = $telegramSessionRepository->findOrCreateByTelegramId($this->telegramId);
+        $this->storage = $this->telegramSessionEntity->getSessionData();
+        $this->loaded = true;
+
+        // Initialize flash handler with storage reference
+        $this->telegramFlash = new TelegramFlash($this->storage);
     }
 
     /**
      * Persist session data to database.
      */
-
     public function save(): void
     {
+        $this->ensureLoaded();
+
         if (! $this->telegramSessionEntity instanceof \App\Entity\TelegramSession || ! $this->loaded) {
             return;
         }
@@ -79,6 +83,15 @@ final class TelegramSession implements SessionInterface
         $this->entityManager->flush();
     }
 
+    public function flush()
+    {
+        $this->ensureLoaded();
+        $this->save();
+        $this->clear();
+        $this->loaded = false;
+        $this->telegramSessionEntity = null;
+    }
+
     public function get(string $key, mixed $default = null): mixed
     {
         $this->ensureLoaded();
@@ -91,20 +104,15 @@ final class TelegramSession implements SessionInterface
         $this->ensureLoaded();
 
         // Return all data except flash messages
-
         $data = $this->storage;
-
         unset($data[self::FLASH_KEY]);
-
         return $data;
     }
 
     public function set(string $key, mixed $value): void
     {
         $this->ensureLoaded();
-
         $this->storage[$key] = $value;
-
         $this->save();
     }
 
@@ -115,14 +123,11 @@ final class TelegramSession implements SessionInterface
         foreach ($values as $key => $value) {
             $this->storage[$key] = $value;
         }
-
-        $this->save();
     }
 
     public function has(string $key): bool
     {
         $this->ensureLoaded();
-
         return array_key_exists($key, $this->storage);
     }
 
@@ -131,21 +136,15 @@ final class TelegramSession implements SessionInterface
         $this->ensureLoaded();
 
         unset($this->storage[$key]);
-
-        $this->save();
     }
 
     public function clear(): void
     {
-        $this->ensureLoaded();
-
         $this->storage = [];
 
         if ($this->telegramFlash instanceof \App\Services\Session\TelegramFlash) {
             $this->telegramFlash->clear();
         }
-
-        $this->save();
     }
 
     public function getFlash(): FlashInterface
@@ -159,67 +158,11 @@ final class TelegramSession implements SessionInterface
         return $this->telegramFlash;
     }
 
-    /**
-     * Get the Telegram ID associated with this session.
-     */
-
-    public function getTelegramId(): ?string
-    {
-        return $this->telegramId;
-    }
-
-    /**
-     * Check if the session has been initialized.
-     */
-
-    public function isInitialized(): bool
-    {
-        return $this->telegramId !== null;
-    }
-
-    /**
-     * Get the underlying entity (for advanced use cases).
-     */
-
-    public function getEntity(): ?TelegramSessionEntity
-    {
-        return $this->telegramSessionEntity;
-    }
-
-    /**
-     * Load session data from database.
-     */
-
-    private function load(): void
-    {
-        if ($this->telegramId === null) {
-            throw new Exception\SessionException(
-                'TelegramSession not initialized. Call initialize() first.'
-            );
-        }
-
-        if ($this->loaded) {
-            return;
-        }
-
-        $telegramSessionRepository = $this->getRepository();
-
-        $this->telegramSessionEntity = $telegramSessionRepository->findOrCreateByTelegramId($this->telegramId);
-
-        $this->storage = $this->telegramSessionEntity->getSessionData();
-
-        $this->loaded = true;
-
-        // Initialize flash handler with storage reference
-
-        $this->telegramFlash = new TelegramFlash($this->storage);
-    }
-
     private function ensureLoaded(): void
     {
         if (! $this->loaded) {
             throw new Exception\SessionException(
-                'TelegramSession not initialized. Call initialize() first with a telegram_id.'
+                'TelegramSession not loaded. Call load() first with a telegram_id.'
             );
         }
     }

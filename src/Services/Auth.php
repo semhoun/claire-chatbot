@@ -43,11 +43,11 @@ class Auth
      * the session as authenticated.
      *
      * @param string $userId The unique user identifier (OIDC sub).
-     * @param array $userInfo Associative array containing user details such as firstName, lastName, email, and name.
+     * @param array $data Associative array containing user details such as firstName, lastName, email, and name.
      *
      * @throws Exception If the user cannot be found or persisted in the database.
      */
-    public function login(SessionInterface $session, string $userId, array $userInfo): void
+    public function login(SessionInterface $session, string $userId, array $data): void
     {
         // Vérifier l'existence de l'utilisateur en base via son id (sub OIDC).
         // Le créer s'il n'existe pas, sinon mettre à jour les infos de base.
@@ -65,16 +65,11 @@ class Auth
             $user->setFirstName($userInfo['firstName']);
             $user->setLastName($userInfo['lastName']);
             $user->setEmail($userInfo['email']);
-            if (($userInfo['firstName'] ?? null) === null && ($userInfo['lastName'] ?? null) === null && ($userInfo['name'] ?? null) !== null) {
-                $user->setFirstName($userInfo['name']);
-            }
-
             $this->entityManager->flush();
 
             foreach ($user->getParams() ?? [] as $key => $value) {
                 $session->set($key, $value);
             }
-
             // Déterminer l'avatar/assistant courant (session, sinon préférence utilisateur, sinon défaut)
             $currentBrain = (string) ($session->get('brain_avatar') ?? '');
             if ($currentBrain === '') {
@@ -86,7 +81,12 @@ class Auth
 
         $session->set(self::AUTHENTICATED, true);
         $session->set(self::USERID, $userId);
-        $session->set(self::USERINFO, $userInfo);
+        $session->set(self::USERINFO, [
+            'firstName' => $data['firstName'],
+            'lastName' => $data['lastName'],
+            'email' => $data['email'],
+            'displayName' => trim($data['firstName'] . ' ' . $data['lastName']),
+        ]);
     }
 
     /**
