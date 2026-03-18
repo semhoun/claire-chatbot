@@ -7,9 +7,10 @@ Claire est une application web minimaliste de chat IA construite avec Slim 4 et 
 ## Fonctionnalités
 
 - Interface web de chat basique (Twig + CSS).
-- Endpoint API `POST /brain/chat` pour envoyer un message et récupérer la réponse de l’agent.
+- Endpoint API `POST /brain/chat` pour envoyer un message et récupérer la réponse de l'agent.
 - Healthcheck `GET /health` (JSON) pour la supervision.
-- Intégration d’un fournisseur LLM « OpenAI-like » (URL, clé et modèle configurables).
+- Intégration d'un fournisseur LLM « OpenAI-like » (URL, clé et modèle configurables).
+- Génération d'images avec ComfyUI (optionnel).
 - Journalisation via Monolog, exportée par OpenTelemetry.
 - Intégration OpenTelemetry pour traces/metrics/logs.
 
@@ -142,6 +143,43 @@ export CLAIRE_WELCOME_MESSAGE="Bonjour ! Je suis prêt à t'aider avec tes proje
 # Plusieurs messages d'accueil (sélection aléatoire)
 export CLAIRE_WELCOME_MESSAGES="Bonjour ! ||| Salut ! Comment ça va ? ||| Hello ! Prêt à coder ? ||| Coucou ! Que puis-je faire pour toi ?"
 ```
+
+### Génération d'images avec ComfyUI
+
+L'application peut générer des images via ComfyUI lorsque la configuration appropriée est définie. Cette fonctionnalité ajoute l'outil `generate_image` aux agents, leur permettant de créer des images à partir de descriptions textuelles.
+
+**Configuration requise:**
+
+| Variable | Obligatoire | Description |
+|----------|-------------|-------------|
+| `COMFYUI_ENABLED` | Oui | Active la génération d'images (`true` ou `false`) |
+| `COMFYUI_URL` | Non | URL de l'instance ComfyUI (défaut: `http://localhost:8188`) |
+| `COMFYUI_WORKFLOW` | Oui | Workflow ComfyUI au format JSON avec placeholder `{{PROMPT}}` |
+| `COMFYUI_TIMEOUT` | Non | Timeout en secondes (défaut: 300) |
+| `COMFYUI_PROMPT_STYLE` | Non | Style de prompt: `sdxl` (keywords) ou `flux` (natural language) - défaut: `sdxl` |
+
+**Exemple de configuration:**
+
+```bash
+# Activation de ComfyUI
+export COMFYUI_ENABLED=true
+export COMFYUI_URL=http://comfyui:8188
+export COMFYUI_WORKFLOW='{"3":{"inputs":{"seed":0,"steps":20,"cfg":8,"sampler_name":"euler","scheduler":"normal","denoise":1,"model":["4",0],"positive":["6",0],"negative":["7",0],"latent_image":["5",0]},"class_type":"KSampler"},...}'
+export COMFYUI_PROMPT_STYLE=flux
+```
+
+Note: Le workflow doit contenir un placeholder `{{PROMPT}}` qui sera remplacé par la description de l'image à générer.
+
+**Styles de prompts:**
+- `sdxl`: Prompts optimisés pour SDXL (mots-clés séparés par des virgules)
+- `flux`: Prompts en langage naturel pour Flux
+
+**Fonctionnement:**
+- Lorsqu'activé, l'outil `generate_image` est disponible pour tous les cerveaux
+- L'agent peut décider de générer une image en réponse à une demande utilisateur
+- Les images générées sont stockées dans `var/generated_images/`
+- Les images sont servies via l'endpoint `/files/generated/{filename}`
+- Le bot Telegram supporte l'envoi des images générées
 
 ### Authentification OpenID Connect (SSO)
 
@@ -280,6 +318,12 @@ services:
       # Optionnel
       # SEARXNG_URL: http://searxng:8080
 
+      # ComfyUI (génération d'images, optionnel)
+      # COMFYUI_ENABLED: true
+      # COMFYUI_URL: http://comfyui:8188
+      # COMFYUI_WORKFLOW: '{"3":{"inputs":{...}},...}' # JSON avec placeholder {{PROMPT}}
+      # COMFYUI_PROMPT_STYLE: flux
+
       # OpenID Connect (SSO)
       OPENID_WELLKNOWN_URL: https://auth.example.com/.well-known/openid-configuration
       OPENID_CLIENT_ID: ${OPENID_CLIENT_ID:?set_me}
@@ -336,6 +380,7 @@ Démarrez ensuite votre stack avec votre orchestrateur habituel (ex. `docker com
 - `POST /files/upload` — Upload de fichier(s) standard
 - `POST /files/upload_rag` — Upload de fichier pour le RAG (vectorisation)
 - `DELETE /files/delete/{id}` — Suppression d'un fichier
+- `GET /files/generated/{filename}` — Récupération d'une image générée
 
 ### Historique des conversations (/history)
 
@@ -568,6 +613,7 @@ Le bot Telegram supporte:
 - **Messages texte**: Dialogue standard avec historique persistant
 - **Photos**: Envoi d'images avec analyse (si un modèle de vision est configuré)
 - **Documents**: Upload de fichiers pour analyse
+- **Génération d'images**: Création d'images via ComfyUI (si configuré)
 - **Changement de cerveau**: Commande `/<nom_du_cerveau>` pour basculer d'avatar
 - **Commandes intégrées:**
   - `/start` — Démarrer une nouvelle conversation
@@ -604,6 +650,13 @@ Quelle est la théorie de la relativité restreinte?
 **Envoyer un document:**
 - Joindre un fichier PDF, texte, etc.
 - Le bot peut analyser le contenu du document
+
+**Demander une génération d'image:**
+```
+Claire, peux-tu générer une image d'un chat sur la lune?
+```
+- L'agent génère l'image via ComfyUI et l'envoie sur Telegram
+- Nécessite la configuration de ComfyUI (voir section dédiée)
 
 ## Développement & Qualité
 
@@ -645,6 +698,7 @@ Le fichier `./console` fournit des commandes pour la gestion du cache et des mig
 
 - **Telegram:**
   - `./console telegram:webhook --url=https://...` — Configure le webhook
+  - `./console telegram:webhook --domain=...` — Configure le webhook avec domaine (HTTPS forcé)
   - `./console telegram:webhook --info` — Vérifie le statut du webhook
   - `./console telegram:webhook --delete` — Supprime le webhook
   - `./console telegram:daemon` — Lance le daemon (polling)
@@ -671,6 +725,7 @@ vendor/bin/phpunit --filter testMethodName    # Méthode spécifique
 - 404 partout: vérifiez que le serveur pointe bien sur `public/index.php` et que vos règles de réécriture sont actives.
 - Pas de logs: les logs sont gérés par OpenTelemetry. Pour les voir dans la console, définissez `OTEL_LOGS_EXPORTER=console` (et `OTEL_LOGS_PROCESSOR=simple` pour un affichage immédiat). En alternance, configurez un export OTLP (`OTEL_LOGS_EXPORTER=otlp`) vers un collecteur comme l’OTel Collector.
 - RAG inactif: assurez-vous que `OPENAPI_MODEL_EMBED` est défini. S’il est absent, le RAG est désactivé par conception.
+- Génération d'images non disponible: vérifiez que `COMFYUI_ENABLED=true` et que `COMFYUI_WORKFLOW` contient un workflow JSON valide avec le placeholder `{{PROMPT}}`. Assurez-vous que l'instance ComfyUI est accessible à l'URL définie dans `COMFYUI_URL`.
 
 ## Licence
 

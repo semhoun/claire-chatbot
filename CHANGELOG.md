@@ -7,6 +7,23 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-19
+
+### Added
+- Génération d'images avec ComfyUI (outil `generate_image`)
+- Personnalisation du prompt système de Claire via `CLAIRE_PROMPT`
+- Messages d'accueil personnalisables avec sélection aléatoire (`CLAIRE_WELCOME_MESSAGES` ou `CLAIRE_WELCOME_MESSAGE`)
+- Service `ComfyUIService` pour l'intégration avec ComfyUI
+- Extension Twig `GeneratedImageExtension` pour l'affichage des images générées
+- Post-processing des messages avec `PostProcessChatNode` et `PostProcessStreamingNode`
+- Endpoint `/files/generated/{filename}` pour servir les images générées
+- Support de deux styles de prompts pour ComfyUI : SDXL (keywords) et Flux (natural language)
+
+### Changed
+- Amélioration du service Telegram avec support des images générées
+- Refactoring des traits de l'Agent (ajout de `Nodes` et `Tools`)
+- Extension de l'interface `MessagePostProcessorInterface` pour le traitement des messages
+
 ## [1.1.0] - 2026-03-16
 
 ### Added
@@ -98,6 +115,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.1.0...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.2.0...HEAD
+[1.2.0]: https://github.com/semhoun/claire-chatbot/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/semhoun/claire-chatbot/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/semhoun/claire-chatbot/releases/tag/1.0.0
