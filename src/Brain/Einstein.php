@@ -9,6 +9,9 @@ use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 
 class Einstein extends RAG implements BrainAvatar
 {
+    use EinsteinAvatar;
+    use AgentTrait\Tools;
+
     public const string NAME = 'Einstein';
 
     public const string DESCRIPTION = 'Votre assitant virtuel qui utilise sa base de connaissance pour vous aider';
@@ -111,6 +114,7 @@ EOF;
             CalculatorToolkit::make(),
             CalendarToolkit::make(),
             Tools\WebToolkit::make($this->settings->get('llm.tools.searchXngUrl')),
+            $this->container->get(Tools\GenerateImageTool::class),
         ];
     }
 }

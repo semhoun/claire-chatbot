@@ -180,4 +180,37 @@ final readonly class FileController
         // Return refreshed list (so the badge/count updates via OOB)
         return $this->list($request, $response);
     }
+
+    /**
+     * Serve a file from the filesystem (for generated images, etc.).
+     */
+    public function serve(Request $request, Response $response): Response
+    {
+        $session = $this->getSession($request);
+
+        $userId = (string) $session->get(Auth::USERID);
+        if ($userId === '') {
+            return $response->withStatus(403);
+        }
+
+        $path = (string) $request->getAttribute('path');
+
+        // Security: prevent directory traversal
+        if (str_contains($path, '..') || str_starts_with($path, '/')) {
+            return $response->withStatus(403);
+        }
+
+        if (! $this->filesystem->fileExists($path)) {
+            return $response->withStatus(404);
+        }
+
+        $mimeType = $this->filesystem->mimeType($path);
+        $content = $this->filesystem->read($path);
+
+        $response->getBody()->write($content);
+
+        return $response
+            ->withHeader('Content-Type', $mimeType)
+            ->withHeader('Content-Length', (string) strlen($content));
+    }
 }

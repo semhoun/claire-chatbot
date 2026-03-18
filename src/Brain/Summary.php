@@ -7,8 +7,13 @@ namespace App\Brain;
 use App\Brain\ChatHistory\SummaryChatHistory;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Services\Auth;
+use App\Services\Session\SessionInterface;
+use App\Services\Settings;
+use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManager;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Chat\Messages\UserMessage;
+use Psr\Container\ContainerInterface;
 
 /**
  * Agent responsible for generating concise titles and summaries for chat conversations
@@ -17,7 +22,16 @@ use NeuronAI\Chat\Messages\UserMessage;
 class Summary extends \NeuronAI\Agent\Agent
 {
     use AgentTrait\AIProvider;
-    use AgentTrait\Constructor;
+
+    public function __construct(
+        protected readonly Connection $connection,
+        protected readonly Settings $settings,
+        protected readonly SessionInterface $session,
+    ) {
+        parent::__construct();
+
+        $this->observe(new \App\Brain\Observability\Observer());
+    }
 
     /**
      * Generates a title and summary based on the processed content.

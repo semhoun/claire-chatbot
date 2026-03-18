@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Exception;
+use App\Services\ComfyUIService;
 use App\Services\OidcClient;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
@@ -14,11 +15,13 @@ use Doctrine\ORM\ORMSetup;
 use League\Flysystem\Filesystem;
 use Monolog\Logger;
 use OneToMany\Twig\FilesizeExtension;
+use Phptg\BotApi\TelegramBotApi;
 use Slim\Views\Twig;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
 use Twig\Extension\DebugExtension;
 use Twig\Extension\ProfilerExtension;
+use App\Services\Twig\GeneratedImageExtension;
 use Twig\Extra\Markdown\MarkdownExtension;
 use Twig\Extra\Markdown\MarkdownRuntime;
 use Twig\Profiler\Profile;
@@ -85,6 +88,7 @@ return [
 
         $twig->addExtension(new MarkdownExtension());
         $twig->addExtension(new FilesizeExtension());
+        $twig->addExtension(new GeneratedImageExtension());
         $twig->addRuntimeLoader(new class() implements \Twig\RuntimeLoader\RuntimeLoaderInterface {
             public function load($class): ?MarkdownRuntime
             {
@@ -111,6 +115,6 @@ return [
 
         throw new Exception('Unknown filesystem type ' . $settings->get('files.fileSystem.type'));
     },
-    // Telegram Bot API
-    \Phptg\BotApi\TelegramBotApi::class => static fn (Settings $settings): \Phptg\BotApi\TelegramBotApi => new \Phptg\BotApi\TelegramBotApi($settings->get('telegram.bot_token')),
+    TelegramBotApi::class => static fn (Settings $settings): TelegramBotApi => new TelegramBotApi($settings->get('telegram.bot_token')),
+    ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem): ComfyUIService => new ComfyUIService($settings, $filesystem),
 ];

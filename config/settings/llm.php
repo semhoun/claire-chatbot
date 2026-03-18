@@ -20,7 +20,7 @@ return [
         'contextWindow' => (int) env('OPENAPI_CONTEXT_WINDOW', 50000),
     ],
     'tools' => [
-        'searchXngUrl' => env('SEARXNG_URL'),
+        'searchXngUrl' => env('SEARXNG_URL', null),
     ],
     'rag' => [
         'type' => 'file', // Could be 'file'

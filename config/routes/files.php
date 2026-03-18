@@ -13,5 +13,6 @@ return static function (App $app): void {
         $group->post('/upload', [FileController::class, 'upload'])->setName('files.upload');
         $group->post('/upload_rag', [FileController::class, 'uploadRag'])->setName('files.upload_rag');
         $group->delete('/delete/{id}', [FileController::class, 'delete'])->setName('files.delete');
+        $group->get('/serve/{path:.*}', [FileController::class, 'serve'])->setName('files.serve');
     });
 };

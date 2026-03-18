@@ -11,6 +11,7 @@ use NeuronAI\Observability\Events\ToolsBootstrapped;
 use NeuronAI\Tools\ProviderToolInterface;
 use NeuronAI\Tools\ToolInterface;
 use OpenTelemetry\API\Trace\SpanInterface as Span;
+use TypeError;
 
 trait HandleToolEvents
 {
@@ -62,11 +63,21 @@ trait HandleToolEvents
             return;
         }
 
+        $output = null;
+        try {
+            $output = $toolCalled->tool->getResult();
+        } catch (TypeError) {
+            // The tool may not have run due to an error, like ToolMaxTries.
+            // In that case getResult will throw an error due to a null result.
+            $output = null;
+        }
+
         $this->spanSetAttributes($this->toolBootstrap, 'neuron', [
             'Properties' => $toolCalled->tool->getProperties(),
             'Inputs' => $toolCalled->tool->getInputs(),
-            'Output' => $toolCalled->tool->getResult(),
+            'Output' => $output,
         ]);
+
         $this->toolCalls[$toolCalled->tool::class]->end();
     }
 }

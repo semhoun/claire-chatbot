@@ -10,17 +10,18 @@ use App\Entity\User;
 use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;
+use League\Flysystem\FilesystemException;
 use Monolog\Logger;
 use NeuronAI\Chat\Messages\UserMessage;
 use Phptg\BotApi\Constant\ParseMode;
 use Phptg\BotApi\FailResult;
 use Phptg\BotApi\TelegramBotApi;
+use Phptg\BotApi\Type\InputFile;
 use Phptg\BotApi\Type\Message;
 use Phptg\BotApi\Type\Update\Update;
 
 final readonly class TelegramService
 {
-
     public const array COMMANDS = [
         'start' => 'Démarrer une nouvelle conversation',
         'help' => "Afficher l'aide",
@@ -245,11 +246,17 @@ final readonly class TelegramService
             $userMessage = new UserMessage($text);
             $agentMessage = $brain->chat($userMessage)->getMessage();
             $responseText = $agentMessage->getContent();
+
+            // Check for generated images in the response
+            $imagePaths = $this->extractImagePaths($responseText);
+            if ($imagePaths !== []) {
+                $this->handleImageResponse($chatId, $responseText, $imagePaths);
+                return;
+            }
+
             $this->sendMessage($chatId, $responseText);
         } catch (\Throwable $throwable) {
-            $this->logger->error('Chat processing error: ' . $throwable->getMessage(), [
-                'user_id' => $user->getId(),
-            ]);
+            $this->logger->error('Chat processing error: ' . $throwable->getMessage());
             $this->sendMessage($chatId, 'Désolé, une erreur est survenue lors du traitement de votre message.');
         }
     }
@@ -310,6 +317,105 @@ final readonly class TelegramService
         }
 
         return $chunks;
+    }
+
+    /**
+     * Extract image paths from text matching pattern generated/generated_*.png.
+     *
+     * @return array<int, string>
+     */
+    private function extractImagePaths(string $text): array
+    {
+        $pattern = '/generated\/generated_\w+\.png/';
+        preg_match_all($pattern, $text, $matches);
+
+        return $matches[0] ?? [];
+    }
+
+    /**
+     * Handle response containing images by sending them with captions.
+     *
+     * @param array<int, string> $imagePaths
+     */
+    private function handleImageResponse(string $chatId, string $responseText, array $imagePaths): void
+    {
+        // Remove image paths from text to create caption
+        $caption = preg_replace('/generated\/generated_\w+\.png/', '', $responseText);
+        $caption = trim((string) $caption);
+
+        // Send each image
+        $imageCount = count($imagePaths);
+        foreach ($imagePaths as $index => $imagePath) {
+            $isLast = $index === $imageCount - 1;
+            // Only add caption to the last image, or if there's only one image
+            $imageCaption = $isLast || $imageCount === 1 ? $caption : null;
+            $this->sendPhoto($chatId, $imagePath, $imageCaption);
+        }
+    }
+
+    /**
+     * Send a photo to Telegram chat.
+     */
+    private function sendPhoto(string $chatId, string $imagePath, ?string $caption = null): void
+    {
+        try {
+            // Read file from Flysystem
+            if (!$this->filesystem->fileExists($imagePath)) {
+                $this->logger->error('Image file not found', ['path' => $imagePath]);
+                $this->sendMessage($chatId, 'Désolé, l\'image générée n\'a pas pu être trouvée.');
+
+                return;
+            }
+
+            $fileContent = $this->filesystem->read($imagePath);
+
+            // Create temporary file
+            $tempFile = tempnam(sys_get_temp_dir(), 'telegram_');
+            if ($tempFile === false) {
+                throw new \RuntimeException('Failed to create temporary file');
+            }
+
+            file_put_contents($tempFile, $fileContent);
+
+            // Prepare caption
+            $escapedCaption = null;
+            if ($caption !== null && $caption !== '') {
+                $escapedCaption = $this->escapeMarkdownV2($caption);
+                // Telegram captions have a 1024 character limit
+                if (strlen($escapedCaption) > 1024) {
+                    $escapedCaption = substr($escapedCaption, 0, 1021) . '...';
+                }
+            }
+
+            // Send photo using InputFile
+            $inputFile = InputFile::fromLocalFile($tempFile, basename($imagePath));
+            $result = $this->telegramBotApi->sendPhoto(
+                chatId: $chatId,
+                photo: $inputFile,
+                caption: $escapedCaption,
+                parseMode: ParseMode::MARKDOWN_V2
+            );
+
+            if ($result instanceof FailResult) {
+                $this->logger->error('Failed to send photo', [
+                    'chatId' => $chatId,
+                    'path' => $imagePath,
+                    'error' => $result,
+                ]);
+                $this->sendMessage($chatId, 'Désolé, je n\'ai pas pu envoyer l\'image.');
+            }
+        } catch (FilesystemException $e) {
+            $this->logger->error('Filesystem error sending photo: ' . $e->getMessage(), ['path' => $imagePath]);
+            $this->sendMessage($chatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
+        } catch (\Throwable $throwable) {
+            $this->logger->error('Error sending photo: ' . $throwable->getMessage(), ['path' => $imagePath]);
+            $this->sendMessage($chatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
+        } finally {
+            // Clean up temporary file
+            if (isset($tempFile) && file_exists($tempFile)) {
+                unlink($tempFile);
+            }
+        }
     }
 
     private function cmd_start(string $chatId): void
