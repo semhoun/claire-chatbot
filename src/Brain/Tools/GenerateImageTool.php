@@ -50,11 +50,18 @@ EOT;
                 return 'Error: Image generation is not enabled. ComfyUI is disabled in the configuration.';
             }
 
-            $localPath = $this->comfyUIService->generateImage($this->session, $prompt);
+            $imgId = $this->comfyUIService->generateImage($this->session, $prompt);
 
-            return 'Image generated successfully path: ' . $localPath;
+            return json_encode([
+                'status' => 'success',
+                'message' => 'Image generated successfully',
+                'id' => $imgId,
+            ], JSON_THROW_ON_ERROR);
         } catch (\Exception $exception) {
-            return 'Error generating image: ' . $exception->getMessage();
+            return json_encode([
+                'status' => 'error',
+                'message' => 'Error generating image: ' . $exception->getMessage(),
+            ]);
         }
     }
 
