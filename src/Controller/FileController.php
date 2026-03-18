@@ -184,7 +184,7 @@ final readonly class FileController
     /**
      * Serve a file from the filesystem (for generated images, etc.).
      */
-    public function serve(Request $request, Response $response): Response
+    public function imageServe(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
 
@@ -193,12 +193,8 @@ final readonly class FileController
             return $response->withStatus(403);
         }
 
-        $path = (string) $request->getAttribute('path');
-
-        // Security: prevent directory traversal
-        if (str_contains($path, '..') || str_starts_with($path, '/')) {
-            return $response->withStatus(403);
-        }
+        $id = (string) $request->getAttribute('id');
+        $path = 'generated/' . str_replace('@', '/', $id);
 
         if (! $this->filesystem->fileExists($path)) {
             return $response->withStatus(404);

@@ -10,6 +10,7 @@ use GuzzleHttp\Exception\GuzzleException;
 use InvalidArgumentException;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
+use Ramsey\Uuid\Uuid;
 use RuntimeException;
 
 final readonly class ComfyUIService
@@ -194,11 +195,12 @@ final readonly class ComfyUIService
     {
         $imageContent = $this->downloadImage($imageData);
         $extension = pathinfo((string) $imageData['filename'], PATHINFO_EXTENSION) ?: 'png';
-        $filename = uniqid('generated_', true) . '.' . $extension;
+        $filename = Uuid::uuid4() . '.' . $extension;
         $localPath = 'generated/' . $session->get(Auth::USERID) . '/' . $filename;
+        $imgId = '@@GENERATED@@' . $session->get(Auth::USERID) . '@' . $filename . '@@';
 
         $this->filesystem->write($localPath, $imageContent);
 
-        return $localPath;
+        return $imgId;
     }
 }

@@ -18,13 +18,25 @@ class GenerateImageTool extends Tool
         private readonly Settings $settings,
         private readonly SessionInterface $session,
     ) {
+        $promptStyle = $this->settings->get('comfyui.prompt_style');
+        $description = $promptStyle === 'flux'
+            ? <<<EOT
+Generates an image from a text description using ComfyUI, generated image will be send to the user.
+IMPORTANT: This tool MUST be used whenever the user needs an image or photo - whether they ask to create, generate, draw, or simply want/need an image.
+Any request that requires providing an image, picture, or photo should use this tool.
+The prompt should be written in natural language (Flux style), describing the scene in detail with complete sentences.
+EOT
+            : <<<EOT
+Generates an image from a text description using ComfyUI, generated image will be send to the user.
+IMPORTANT: This tool MUST be used whenever the user needs an image or photo - whether they ask to create, generate, draw, or simply want/need an image.
+Any request that requires providing an image, picture, or photo should use this tool.
+The prompt should be formatted as comma-separated keywords (SDXL style), for example: "masterpiece, best quality, sunlit forest, vibrant colors, detailed trees, cinematic lighting".
+Avoid natural language sentences; use descriptive tags and keywords for best results.
+EOT;
+
         parent::__construct(
             'generate_image',
-            <<<EOT
-Generates an image from a text description using ComfyUI, generated image will be send to the user.
-Use this tool when the user asks you to create, generate, draw or send photo/image/pictures. 
-Provide a detailed prompt describing the desired image content, style, and composition.
-EOT
+            $description
         );
     }
 
@@ -38,9 +50,6 @@ EOT
                 return 'Error: Image generation is not enabled. ComfyUI is disabled in the configuration.';
             }
 
-            // Note: negative_prompt is currently not used as ComfyUIService
-            // uses the workflow's embedded negative prompt. This parameter
-            // is reserved for future enhancement.
             $localPath = $this->comfyUIService->generateImage($this->session, $prompt);
 
             return 'Image generated successfully path: ' . $localPath;
@@ -52,11 +61,16 @@ EOT
     #[\Override]
     protected function properties(): array
     {
+        $promptStyle = $this->settings->get('comfyui.prompt_style');
+        $propertyDescription = $promptStyle === 'flux'
+            ? 'The text description of the image to generate. Use natural language with complete sentences (Flux style).'
+            : 'The text description of the image to generate. Use comma-separated keywords (SDXL style). Be detailed and descriptive.';
+
         return [
             new ToolProperty(
                 'prompt',
                 PropertyType::STRING,
-                'The text description of the image to generate. Be detailed and descriptive.',
+                $propertyDescription,
                 true
             ),
         ];
