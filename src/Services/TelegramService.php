@@ -248,9 +248,9 @@ final readonly class TelegramService
             $responseText = $agentMessage->getContent();
 
             // Check for generated images in the response
-            $imagePaths = $this->extractImagePaths($responseText);
-            if ($imagePaths !== []) {
-                $this->handleImageResponse($chatId, $responseText, $imagePaths);
+            $imageIds = $this->extractImageIds($responseText);
+            if ($imageIds !== []) {
+                $this->handleImageResponse($chatId, $responseText, $imageIds);
                 return;
             }
 
@@ -320,45 +320,51 @@ final readonly class TelegramService
     }
 
     /**
-     * Extract image paths from text matching pattern generated/generated_*.png.
+     * Extract image ids from text matching pattern
      *
      * @return array<int, string>
      */
-    private function extractImagePaths(string $text): array
+    private function extractImageIds(string $content): array
     {
-        $pattern = '/generated\/generated_\w+\.png/';
-        preg_match_all($pattern, $text, $matches);
+        if (preg_match_all(ComfyUIService::IMAGE_PATTERN, $content, $matches, PREG_SET_ORDER) === false) {
+            return [];
+        }
 
-        return $matches[0] ?? [];
+        return array_map(
+            static fn (array $match): string => $match[1],
+            $matches
+        );
     }
 
     /**
      * Handle response containing images by sending them with captions.
      *
-     * @param array<int, string> $imagePaths
+     * @param array<int, string> $imageIds
      */
-    private function handleImageResponse(string $chatId, string $responseText, array $imagePaths): void
+    private function handleImageResponse(string $chatId, string $responseText, array $imageIds): void
     {
         // Remove image paths from text to create caption
-        $caption = preg_replace('/generated\/generated_\w+\.png/', '', $responseText);
+        $caption = preg_replace(ComfyUIService::IMAGE_PATTERN, '', $responseText);
         $caption = trim((string) $caption);
 
         // Send each image
-        $imageCount = count($imagePaths);
-        foreach ($imagePaths as $index => $imagePath) {
+        $imageCount = count($imageIds);
+        foreach ($imageIds as $index => $imageId) {
             $isLast = $index === $imageCount - 1;
             // Only add caption to the last image, or if there's only one image
             $imageCaption = $isLast || $imageCount === 1 ? $caption : null;
-            $this->sendPhoto($chatId, $imagePath, $imageCaption);
+            $this->sendPhoto($chatId, $imageId, $imageCaption);
         }
     }
 
     /**
      * Send a photo to Telegram chat.
      */
-    private function sendPhoto(string $chatId, string $imagePath, ?string $caption = null): void
+    private function sendPhoto(string $chatId, string $imageId, ?string $caption = null): void
     {
         try {
+            $imagePath = ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $imageId);
+
             // Read file from Flysystem
             if (! $this->filesystem->fileExists($imagePath)) {
                 $this->logger->error('Image file not found', ['path' => $imagePath]);

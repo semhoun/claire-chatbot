@@ -171,10 +171,6 @@ final readonly class BrainController
                 $toolCallId = null;
             }
         }
-/*
-         // Get the final message instance
-        $this->logger->debug('Messages', ['original' => $message, 'streamedText' => $streamedText, 'full' => $agentMessageStr->getContent()]);
-*/
 
         $agentMessageStr = $agentHandler->getMessage()->getContent();
         $html = $this->twig->fetch('partials/md.twig', ['message' => $agentMessageStr]);
