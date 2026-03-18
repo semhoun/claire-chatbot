@@ -10,4 +10,5 @@ class Agent extends \NeuronAI\Agent\Agent
     use AgentTrait\UserChatHistory;
     use AgentTrait\Middleware;
     use AgentTrait\Constructor;
+    use AgentTrait\Nodes;
 }

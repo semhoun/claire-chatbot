@@ -6,14 +6,14 @@ namespace App\Brain;
 
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
-use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Agent;
+use Psr\Container\ContainerInterface;
 
 final readonly class BrainRegistry
 {
     public function __construct(
-        private Connection $connection,
         private Settings $settings,
+        private ContainerInterface $container,
     ) {
     }
 
@@ -77,7 +77,7 @@ final readonly class BrainRegistry
             throw new \InvalidArgumentException('Assistant inconnu: ' . $slug);
         }
 
-        $instance = new $class($this->connection, $this->settings, $session);
+        $instance = new $class($this->container, $session);
         assert($instance instanceof Agent);
         return $instance;
     }

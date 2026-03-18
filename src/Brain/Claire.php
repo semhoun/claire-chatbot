@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace App\Brain;
 
 use NeuronAI\Agent\SystemPrompt;
-use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
-use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 
 class Claire extends Agent implements BrainAvatar
 {
     use ClaireAvatar;
+    use AgentTrait\Tools;
 
     public const string NAME = 'Claire';
 
@@ -63,16 +62,5 @@ class Claire extends Agent implements BrainAvatar
                 'Pose-moi toujours une question à la fin pour m\'aider à avancer.',
             ]
         );
-    }
-
-    #[\Override]
-    protected function tools(): array
-    {
-        // TODO gérer les erreurs
-        return [
-            CalculatorToolkit::make(),
-            CalendarToolkit::make(),
-            Tools\WebToolkit::make($this->settings->get('llm.tools.searchXngUrl')),
-        ];
     }
 }

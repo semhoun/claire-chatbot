@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Entity\File;
 use App\Entity\User;
 use App\Services\Auth;
+use App\Services\ComfyUIService;
 use App\Services\Markdown;
 use App\Services\Session\SessionFromRequestTrait;
 use Doctrine\ORM\EntityManagerInterface;
@@ -179,5 +180,34 @@ final readonly class FileController
 
         // Return refreshed list (so the badge/count updates via OOB)
         return $this->list($request, $response);
+    }
+
+    /**
+     * Serve a file from the filesystem (for generated images, etc.).
+     */
+    public function imageServe(Request $request, Response $response): Response
+    {
+        $session = $this->getSession($request);
+
+        $userId = (string) $session->get(Auth::USERID);
+        if ($userId === '') {
+            return $response->withStatus(403);
+        }
+
+        $id = (string) $request->getAttribute('id');
+        $path = ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $id);
+
+        if (! $this->filesystem->fileExists($path)) {
+            return $response->withStatus(404);
+        }
+
+        $mimeType = $this->filesystem->mimeType($path);
+        $content = $this->filesystem->read($path);
+
+        $response->getBody()->write($content);
+
+        return $response
+            ->withHeader('Content-Type', $mimeType)
+            ->withHeader('Content-Length', (string) strlen($content));
     }
 }

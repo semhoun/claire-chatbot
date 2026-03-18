@@ -1,0 +1,155 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Brain\Tools;
+
+use App\Services\ComfyUIService;
+use App\Services\Session\SessionInterface;
+use App\Services\Settings;
+use JsonException;
+use NeuronAI\Chat\Messages\ContentBlocks\TextContent;
+use NeuronAI\Chat\Messages\Message;
+use NeuronAI\Tools\PropertyType;
+use NeuronAI\Tools\Tool;
+use NeuronAI\Tools\ToolProperty;
+
+class GenerateImageTool extends Tool implements MessagePostProcessorInterface
+{
+    public function __construct(
+        private readonly ComfyUIService $comfyUIService,
+        private readonly Settings $settings,
+        private readonly SessionInterface $session,
+    ) {
+        $promptStyle = $this->settings->get('comfyui.prompt_style');
+        $description = $promptStyle === 'flux'
+            ? <<<EOT
+Generates an image from a text description using ComfyUI, generated image will be send to the user.
+IMPORTANT: This tool MUST be used whenever the user needs an image or photo - whether they ask to create, generate, draw, or simply want/need an image.
+Any request that requires providing an image, picture, or photo should use this tool.
+The prompt should be written in natural language (Flux style), describing the scene in detail with complete sentences.
+EOT
+            : <<<EOT
+Generates an image from a text description using ComfyUI, generated image will be send to the user.
+IMPORTANT: This tool MUST be used whenever the user needs an image or photo - whether they ask to create, generate, draw, or simply want/need an image.
+Any request that requires providing an image, picture, or photo should use this tool.
+The prompt should be formatted as comma-separated keywords (SDXL style), for example: "masterpiece, best quality, sunlit forest, vibrant colors, detailed trees, cinematic lighting".
+Avoid natural language sentences; use descriptive tags and keywords for best results.
+EOT;
+
+        parent::__construct(
+            'generate_image',
+            $description
+        );
+    }
+
+    public function __invoke(
+        string $prompt
+    ): string {
+        try {
+            $enabled = $this->settings->get('comfyui.enabled');
+
+            if (! $enabled) {
+                return 'Error: Image generation is not enabled. ComfyUI is disabled in the configuration.';
+            }
+
+            $imgId = $this->comfyUIService->generateImage($this->session, $prompt);
+
+            return json_encode([
+                'status' => 'success',
+                'message' => 'Image generated successfully',
+                'id' => $imgId,
+            ], JSON_THROW_ON_ERROR);
+        } catch (\Exception $exception) {
+            return json_encode([
+                'status' => 'error',
+                'message' => 'Error generating image: ' . $exception->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Post-process the assistant's message to ensure the image ID is included.
+     *
+     * This method checks if the tool result contains a generated image ID,
+     * and if so, ensures it's present in the assistant's final message.
+     * If the ID is missing, it appends it to the message content.
+     */
+    #[\Override]
+    public function postProcessMessage(Message $message): Message
+    {
+        $result = $this->getResult();
+
+        if ($result === null) {
+            return $message;
+        }
+
+        try {
+            $resultData = json_decode($result, true, 512, JSON_THROW_ON_ERROR);
+
+            // Check if the result contains a successfully generated image
+            if (
+                ! isset($resultData['status'])
+                || $resultData['status'] !== 'success'
+                || ! isset($resultData['id'])
+            ) {
+                return $message;
+            }
+
+            $imageId = $resultData['id'];
+            $messageContent = $message->getContent() ?? '';
+
+            // If the image ID is already in the message, no need to modify
+            if (str_contains($messageContent, (string) $imageId)) {
+                return $message;
+            }
+
+            // Append the image ID to the message content
+            $newContent = $messageContent . "\n" . $imageId;
+
+            // Replace the text content blocks with the updated content
+            $contentBlocks = $message->getContentBlocks();
+            $updatedBlocks = [];
+            $hasTextBlock = false;
+
+            foreach ($contentBlocks as $contentBlock) {
+                if ($contentBlock instanceof TextContent && ! $hasTextBlock) {
+                    $updatedBlocks[] = new TextContent($newContent);
+                    $hasTextBlock = true;
+                } else {
+                    $updatedBlocks[] = $contentBlock;
+                }
+            }
+
+            // If no text block exists, add one
+            if (! $hasTextBlock) {
+                $updatedBlocks[] = new TextContent($imageId);
+            }
+
+            $message->setContents($updatedBlocks);
+
+            return $message;
+        } catch (JsonException) {
+            // If result is not valid JSON, return message unchanged
+            return $message;
+        }
+    }
+
+    #[\Override]
+    protected function properties(): array
+    {
+        $promptStyle = $this->settings->get('comfyui.prompt_style');
+        $propertyDescription = $promptStyle === 'flux'
+            ? 'The text description of the image to generate. Use natural language with complete sentences (Flux style).'
+            : 'The text description of the image to generate. Use comma-separated keywords (SDXL style). Be detailed and descriptive.';
+
+        return [
+            new ToolProperty(
+                'prompt',
+                PropertyType::STRING,
+                $propertyDescription,
+                true
+            ),
+        ];
+    }
+}

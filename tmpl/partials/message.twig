@@ -38,8 +38,9 @@
             </details>
         </div>
         {% endif %}
+
         <span class="message__text" {% if streamId  %}id="{{ streamId }}"{% endif %}>
-            {{ message|markdown_to_html }}
+            {{ message|process_generated_images|markdown_to_html }}
         </span>
     </div>
     <span class="message__meta">{{ time }}{% if sent %} • Vous{% endif %}</span>
