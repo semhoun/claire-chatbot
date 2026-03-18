@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Entity\File;
 use App\Entity\User;
 use App\Services\Auth;
+use App\Services\ComfyUIService;
 use App\Services\Markdown;
 use App\Services\Session\SessionFromRequestTrait;
 use Doctrine\ORM\EntityManagerInterface;
@@ -194,7 +195,7 @@ final readonly class FileController
         }
 
         $id = (string) $request->getAttribute('id');
-        $path = 'generated/' . str_replace('@', '/', $id);
+        $path =  ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $id);
 
         if (! $this->filesystem->fileExists($path)) {
             return $response->withStatus(404);

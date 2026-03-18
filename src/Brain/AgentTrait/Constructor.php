@@ -12,13 +12,13 @@ use Psr\Container\ContainerInterface;
 trait Constructor
 {
     protected readonly Settings $settings;
+
     protected readonly Connection $connection;
 
     public function __construct(
         protected readonly ContainerInterface $container,
         protected readonly SessionInterface $session,
     ) {
-
         $this->settings = $this->container->get(Settings::class);
         $this->connection = $this->container->get(Connection::class);
 

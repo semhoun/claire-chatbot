@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Brain;
 
 use NeuronAI\Agent\SystemPrompt;
-use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
-use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 
 class Claire extends Agent implements BrainAvatar
 {

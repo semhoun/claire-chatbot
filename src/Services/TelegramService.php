@@ -46,7 +46,7 @@ final readonly class TelegramService
     {
         try {
             $message = $update->message;
-            if (!$message instanceof \Phptg\BotApi\Type\Message) {
+            if (! $message instanceof \Phptg\BotApi\Type\Message) {
                 return;
             }
 
@@ -360,7 +360,7 @@ final readonly class TelegramService
     {
         try {
             // Read file from Flysystem
-            if (!$this->filesystem->fileExists($imagePath)) {
+            if (! $this->filesystem->fileExists($imagePath)) {
                 $this->logger->error('Image file not found', ['path' => $imagePath]);
                 $this->sendMessage($chatId, 'Désolé, l\'image générée n\'a pas pu être trouvée.');
 

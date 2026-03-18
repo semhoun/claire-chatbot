@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Twig;
 
-use App\Services\Auth;
+use App\Services\ComfyUIService;
 use Twig\Extension\AbstractExtension;
 use Twig\TwigFilter;
 use Twig\TwigFunction;
@@ -39,14 +39,11 @@ class GeneratedImageExtension extends AbstractExtension
      */
     public function processGeneratedImages(string $content): string
     {
-        // Pattern to match '@@GENERATED@@' . $session->get(Auth::USERID) . '@' . $filename . '@@';" i
-        $pattern = '/@@GENERATED@@([a-zA-Z0-9_\-@]+\.(?:png|jpg|jpeg|gif|webp))@@/i';
-
-        return preg_replace_callback($pattern, static function (array $matches): string {
+        return preg_replace_callback(ComfyUIService::IMAGE_PATTERN, static function (array $matches): string {
             $imgId = $matches[1];
 
             return sprintf(
-                '<img src="/files/img_serve/%s" alt="Generated image" class="generated-image" loading="lazy">',
+                '<img src="/files/img_serve/%s" alt="Generated image" class="generated-image">',
                 htmlspecialchars($imgId, ENT_QUOTES, 'UTF-8')
             );
         }, $content);
@@ -58,9 +55,7 @@ class GeneratedImageExtension extends AbstractExtension
      */
     public function extractGeneratedImages(string $content): array
     {
-        $pattern = '/@@GENERATED@@([a-zA-Z0-9_\-@]+\.(?:png|jpg|jpeg|gif|webp))@@/i';
-        
-        if (preg_match_all($pattern, $content, $matches, PREG_SET_ORDER) === false) {
+        if (preg_match_all(ComfyUIService::IMAGE_PATTERN, $content, $matches, PREG_SET_ORDER) === false) {
             return [];
         }
 

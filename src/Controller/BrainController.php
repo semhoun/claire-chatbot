@@ -106,6 +106,7 @@ final readonly class BrainController
         $stream = $response->getBody();
 
         $agentHandler = $agent->stream($userMessage);
+        $message = '';
 
         // Iterate chunks
         foreach ($agentHandler->events() as $chunk) {
@@ -138,6 +139,7 @@ final readonly class BrainController
                 $streamedText .= $chunk->content;
             } elseif ($chunk instanceof TextChunk) {
                 $streamedText .= $chunk->content;
+                $message .= $chunk->content;
             } elseif ($chunk === null) {
                 $this->logger->error('Empty chunk');
                 continue;
@@ -169,8 +171,17 @@ final readonly class BrainController
                 $toolCallId = null;
             }
         }
+/*
+         // Get the final message instance
+        $this->logger->debug('Messages', ['original' => $message, 'streamedText' => $streamedText, 'full' => $agentMessageStr->getContent()]);
+*/
+
+        $agentMessageStr = $agentHandler->getMessage()->getContent();
+        $html = $this->twig->fetch('partials/md.twig', ['message' => $agentMessageStr]);
+        $stream->write('streamId:' . $streamId . "\n" . $html . self::STREAM_STOP);
 
         $this->manageSummary($session);
+
         return $response;
     }
 

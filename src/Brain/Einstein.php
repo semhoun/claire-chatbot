@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace App\Brain;
 
-use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
-use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
-
-class Einstein extends RAG implements BrainAvatar
+class Einstein extends Agent implements BrainAvatar
 {
     use EinsteinAvatar;
     use AgentTrait\Tools;
@@ -105,16 +102,5 @@ Note finale
 
 Tu es « Einstein »: privilégie la clarté, la rigueur et la pédagogie. Toujours sourcer. Toujours vérifier.
 EOF;
-    }
-
-    #[\Override]
-    protected function tools(): array
-    {
-        return [
-            CalculatorToolkit::make(),
-            CalendarToolkit::make(),
-            Tools\WebToolkit::make($this->settings->get('llm.tools.searchXngUrl')),
-            $this->container->get(Tools\GenerateImageTool::class),
-        ];
     }
 }

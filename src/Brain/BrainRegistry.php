@@ -6,7 +6,6 @@ namespace App\Brain;
 
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
-use Doctrine\DBAL\Connection;
 use NeuronAI\Agent\Agent;
 use Psr\Container\ContainerInterface;
 

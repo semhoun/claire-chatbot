@@ -7,7 +7,6 @@ namespace App\Services;
 use App\Services\Session\SessionInterface;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
-use InvalidArgumentException;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
 use Ramsey\Uuid\Uuid;
@@ -15,6 +14,10 @@ use RuntimeException;
 
 final readonly class ComfyUIService
 {
+    public const string IMAGE_PATTERN = '/@@GENERATED@@([a-zA-Z0-9_\-@]+\.(?:png|jpg|jpeg|gif|webp))@@/i';
+    public const string FOLDER_PREFIX = 'generated';
+    public const string FOLDER_SEPARATOR = '@';
+
     private Client $httpClient;
 
     public function __construct(
@@ -27,9 +30,6 @@ final readonly class ComfyUIService
         ]);
     }
 
-    /**
-     *
-     */
     public function generateImage(SessionInterface $session, string $prompt): string
     {
         try {
@@ -196,8 +196,8 @@ final readonly class ComfyUIService
         $imageContent = $this->downloadImage($imageData);
         $extension = pathinfo((string) $imageData['filename'], PATHINFO_EXTENSION) ?: 'png';
         $filename = Uuid::uuid4() . '.' . $extension;
-        $localPath = 'generated/' . $session->get(Auth::USERID) . '/' . $filename;
-        $imgId = '@@GENERATED@@' . $session->get(Auth::USERID) . '@' . $filename . '@@';
+        $localPath = self::FOLDER_PREFIX . '/' . $session->get(Auth::USERID) . '/' . $filename;
+        $imgId = '@@GENERATED@@' . $session->get(Auth::USERID) . self::FOLDER_SEPARATOR . $filename . '@@';
 
         $this->filesystem->write($localPath, $imageContent);
 

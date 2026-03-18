@@ -10,10 +10,8 @@ use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
-use Doctrine\ORM\EntityManager;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Chat\Messages\UserMessage;
-use Psr\Container\ContainerInterface;
 
 /**
  * Agent responsible for generating concise titles and summaries for chat conversations
