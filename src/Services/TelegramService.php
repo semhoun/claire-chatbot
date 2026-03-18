@@ -320,7 +320,7 @@ final readonly class TelegramService
     }
 
     /**
-     * Extract image ids from text matching pattern
+     * Extract image ids from text matching pattern.
      *
      * @return array<int, string>
      */

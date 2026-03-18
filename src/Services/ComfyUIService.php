@@ -15,7 +15,9 @@ use RuntimeException;
 final readonly class ComfyUIService
 {
     public const string IMAGE_PATTERN = '/@@GENERATED@@([a-zA-Z0-9_\-@]+\.(?:png|jpg|jpeg|gif|webp))@@/i';
+
     public const string FOLDER_PREFIX = 'generated';
+
     public const string FOLDER_SEPARATOR = '@';
 
     private Client $httpClient;

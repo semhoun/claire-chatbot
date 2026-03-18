@@ -195,7 +195,7 @@ final readonly class FileController
         }
 
         $id = (string) $request->getAttribute('id');
-        $path =  ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $id);
+        $path = ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $id);
 
         if (! $this->filesystem->fileExists($path)) {
             return $response->withStatus(404);
