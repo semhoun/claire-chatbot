@@ -15,6 +15,7 @@ class Einstein extends Agent implements BrainAvatar
 
     public const string CSS = 'einstein.css';
 
+    #[\Override]
     public function getOpeningText(): string
     {
         return "Bonjour et bienvenue ! Comment puis-je t'aider aujourd'hui ?";

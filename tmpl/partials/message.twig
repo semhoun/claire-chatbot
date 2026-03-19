@@ -43,5 +43,5 @@
             {{ message|process_generated_images|markdown_to_html }}
         </span>
     </div>
-    <span class="message__meta">{{ time }}{% if sent %} • Vous{% endif %}</span>
+    <span class="message__meta">{% if time is defined and time %}{{ time|format_timestamp }}{% endif %}{% if sent %} • Vous{% endif %}</span>
 </article>

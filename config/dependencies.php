@@ -7,6 +7,7 @@ use App\Services\ComfyUIService;
 use App\Services\OidcClient;
 use App\Services\Settings;
 use App\Services\Twig\GeneratedImageExtension;
+use App\Services\Twig\TimestampExtension;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\Configuration;
@@ -89,6 +90,7 @@ return [
         $twig->addExtension(new MarkdownExtension());
         $twig->addExtension(new FilesizeExtension());
         $twig->addExtension(new GeneratedImageExtension());
+        $twig->addExtension(new TimestampExtension());
         $twig->addRuntimeLoader(new class() implements \Twig\RuntimeLoader\RuntimeLoaderInterface {
             public function load($class): ?MarkdownRuntime
             {

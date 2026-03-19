@@ -69,6 +69,5 @@ if (class_exists(Debugger::class)) {
         ],
     ];
 }
-else {
-    return [];
-}
+
+return [];

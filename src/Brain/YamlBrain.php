@@ -12,6 +12,7 @@ final class YamlBrain extends Agent implements BrainAvatar
     use AgentTrait\Tools;
 
     private array $welcomes;
+
     private string $instruction;
 
     /**

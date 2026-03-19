@@ -403,6 +403,7 @@ services:
       # OpenTelemetry (requis)
       OTEL_PHP_AUTOLOAD_ENABLED: "true"
       OTEL_SERVICE_NAME: claire
+      OTEL_PHP_EXCLUDED_URLS: /health
       OTEL_PROPAGATORS: baggage,tracecontext
       OTEL_TRACES_EXPORTER: otlp
       OTEL_METRICS_EXPORTER: otlp

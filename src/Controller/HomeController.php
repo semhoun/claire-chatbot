@@ -58,9 +58,11 @@ final readonly class HomeController
         );
         $messages = $userChatHistory->getMessages();
         if ($messages === []) {
-            $messages[] = new AssistantMessage(
+            $assistantMessage = new AssistantMessage(
                 $this->brainRegistry->get($currentBrain, $session)->getOpeningText()
             );
+            $assistantMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
+            $messages[] = $assistantMessage;
         }
 
         // Default chat mode

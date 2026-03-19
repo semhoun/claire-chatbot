@@ -244,7 +244,9 @@ final readonly class TelegramService
             $currentBrain = $this->telegramSession->get('brain_avatar');
             $brain = $this->brainRegistry->get($currentBrain, $this->telegramSession);
             $userMessage = new UserMessage($text);
+            $userMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
             $agentMessage = $brain->chat($userMessage)->getMessage();
+            $agentMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
             $responseText = $agentMessage->getContent();
 
             // Check for generated images in the response

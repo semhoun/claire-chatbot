@@ -49,11 +49,12 @@ final readonly class HistoryController
         $session->set('chatId', $threadId);
 
         $currentBrain = $session->get('brain_avatar');
-        $messages = [
-            new AssistantMessage(
-                $this->brainRegistry->get($currentBrain, $session)->getOpeningText()
-            ),
-        ];
+        $assistantMessage = new AssistantMessage(
+            $this->brainRegistry->get($currentBrain, $session)->getOpeningText()
+        );
+        $assistantMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
+
+        $messages = [$assistantMessage];
 
         return $this->twig->render($response, 'partials/messages_list.twig', [
             'messages' => $messages,

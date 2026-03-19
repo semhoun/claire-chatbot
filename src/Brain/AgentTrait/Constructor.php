@@ -25,5 +25,6 @@ trait Constructor
         parent::__construct();
 
         $this->observe(new \App\Brain\Observability\Observer());
+        $this->observe(new \App\Brain\Event\TimestampObserver());
     }
 }

@@ -3,7 +3,7 @@
     {% set sent = (m.role|default('assistant')) == 'user' %}
     {% include 'partials/message.twig' with {
         message: m.content|default(''),
-        time: '',
+        time: m.getMetadata('timestamp')|default(''),
         sent: sent
     } %}
 {% endfor %}

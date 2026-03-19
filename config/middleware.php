@@ -35,6 +35,7 @@ return static function (App $app): void {
         if (class_exists(SlimTracy\Middlewares\TracyMiddleware::class)) {
             $app->add(new SlimTracy\Middlewares\TracyMiddleware($app, $settings->get('tracy')));
         }
+
         $errorMiddleware = $app->addErrorMiddleware(true, true, true);
     } else {
         $errorMiddleware = $app->addErrorMiddleware(false, true, true);

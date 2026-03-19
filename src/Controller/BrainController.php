@@ -71,6 +71,7 @@ final readonly class BrainController
         }
 
         $userMessage = new UserMessage($userStr);
+        $userMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
         $userMessage = $this->addAttachments($request, $userMessage);
 
         // Choisir le cerveau selon la préférence en session
@@ -80,13 +81,14 @@ final readonly class BrainController
         if ($chatMode === 'chat') {
             // Manage chat mode
             $agentMessage = $agent->chat($userMessage)->getMessage();
+            $agentMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
             $agentMessageStr = $agentMessage->getContent();
 
             $this->manageSummary($session);
 
             return $this->twig->render($response, 'partials/message.twig', [
                 'message' => $agentMessageStr,
-                'time' => new \DateTime()->format('H:i'),
+                'time' => $agentMessage->getMetadata('timestamp'),
                 'sent' => false,
             ]);
         }
@@ -96,6 +98,7 @@ final readonly class BrainController
         $toolCallId = null;
         $streamedText = '';
         $toolText = null;
+        $streamTimestamp = new \DateTimeImmutable()->format(\DateTimeInterface::ATOM);
 
         // SSE headers
         $response = $response
@@ -152,7 +155,7 @@ final readonly class BrainController
                 $streamId = uniqid('stream-', true);
                 $html = $this->twig->fetch('partials/message.twig', [
                     'message' => $streamedText,
-                    'time' => new \DateTime()->format('H:i'),
+                    'time' => $streamTimestamp,
                     'sent' => false,
                     'streamId' => $streamId,
                     'toolCallId' => $toolCallId,
@@ -172,7 +175,10 @@ final readonly class BrainController
             }
         }
 
-        $agentMessageStr = $agentHandler->getMessage()->getContent();
+        $agentMessage = $agentHandler->getMessage();
+        $agentMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
+
+        $agentMessageStr = $agentMessage->getContent();
         $html = $this->twig->fetch('partials/md.twig', ['message' => $agentMessageStr]);
         $stream->write('streamId:' . $streamId . "\n" . $html . self::STREAM_STOP);
 
