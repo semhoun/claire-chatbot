@@ -8,12 +8,18 @@ use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use NeuronAI\Agent\Agent;
 use Psr\Container\ContainerInterface;
+use Symfony\Component\Yaml\Yaml;
 
-final readonly class BrainRegistry
+final class BrainRegistry
 {
+    private const string YAML_AGENTS_DIR = __DIR__ . '/../../addons/agents';
+
+    /** @var array<string, array{name:string, description:string, avatar:string, css:string, welcomes:array<string>, instruction:string}>|null */
+    private ?array $yamlBrainsCache = null;
+
     public function __construct(
-        private Settings $settings,
-        private ContainerInterface $container,
+        private readonly Settings $settings,
+        private readonly ContainerInterface $container,
     ) {
     }
 
@@ -52,6 +58,21 @@ final readonly class BrainRegistry
                 'description' => $class::DESCRIPTION,
                 'avatar' => $class::AVATAR,
                 'css' => $class::CSS,
+                'css_inline' => '',
+            ];
+        }
+
+        // Charger les brains YAML
+        $yamlBrains = $this->loadYamlBrains();
+        foreach ($yamlBrains as $slug => $config) {
+            $out[] = [
+                'slug' => $slug,
+                'class' => YamlBrain::class,
+                'name' => $config['name'],
+                'description' => $config['description'],
+                'avatar' => $config['avatar'] ?? '',
+                'css' => $config['css'] ?? '',
+                'css_inline' => $config['css_inline'] ?? '',
             ];
         }
 
@@ -62,7 +83,13 @@ final readonly class BrainRegistry
     {
         $brains = (array) $this->settings->get('llm.brains');
         $class = $brains[$slug] ?? null;
-        return is_string($class) && class_exists($class) && is_subclass_of($class, BrainAvatar::class);
+        if (is_string($class) && class_exists($class) && is_subclass_of($class, BrainAvatar::class)) {
+            return true;
+        }
+
+        // Vérifier si c'est un brain YAML
+        $yamlBrains = $this->loadYamlBrains();
+        return isset($yamlBrains[$slug]);
     }
 
     public function get(?string $slug, SessionInterface $session): Agent
@@ -74,6 +101,14 @@ final readonly class BrainRegistry
         $brains = (array) $this->settings->get('llm.brains');
         $class = (string) ($brains[$slug] ?? '');
         if ($class === '' || ! class_exists($class) || ! is_subclass_of($class, BrainAvatar::class)) {
+            // Vérifier si c'est un brain YAML
+            $yamlBrains = $this->loadYamlBrains();
+            if (isset($yamlBrains[$slug])) {
+                $instance = new YamlBrain($yamlBrains[$slug], $this->container, $session);
+                assert($instance instanceof Agent);
+                return $instance;
+            }
+
             throw new \InvalidArgumentException('Assistant inconnu: ' . $slug);
         }
 
@@ -83,13 +118,27 @@ final readonly class BrainRegistry
     }
 
     /**
-     * @return array{name:string, description:string, avatar:string, class:string}
+     * @return array{name:string, description:string, avatar:string, class:string, css:string, css_inline:string}
      */
     public function getMeta(string $slug): array
     {
         $brains = (array) $this->settings->get('llm.brains');
         $class = (string) ($brains[$slug] ?? '');
         if ($class === '' || ! class_exists($class) || ! is_subclass_of($class, BrainAvatar::class)) {
+            // Vérifier si c'est un brain YAML
+            $yamlBrains = $this->loadYamlBrains();
+            if (isset($yamlBrains[$slug])) {
+                $config = $yamlBrains[$slug];
+                return [
+                    'name' => $config['name'],
+                    'description' => $config['description'],
+                    'avatar' => $config['avatar'] ?? '',
+                    'class' => YamlBrain::class,
+                    'css' => $config['css'] ?? '',
+                    'css_inline' => $config['css_inline'] ?? '',
+                ];
+            }
+
             throw new \InvalidArgumentException('Assistant inconnu: ' . $slug);
         }
 
@@ -100,6 +149,52 @@ final readonly class BrainRegistry
             'avatar' => $class::AVATAR,
             'class' => $class,
             'css' => $class::CSS,
+            'css_inline' => '',
         ];
+    }
+
+    /**
+     * @return array<string, array{name:string, description:string, avatar:string, css:string, css_inline:string, welcomes:array<string>, instruction:string}>
+     */
+    private function loadYamlBrains(): array
+    {
+        if ($this->yamlBrainsCache !== null) {
+            return $this->yamlBrainsCache;
+        }
+
+        $this->yamlBrainsCache = [];
+
+        if (! is_dir(self::YAML_AGENTS_DIR)) {
+            return $this->yamlBrainsCache;
+        }
+
+        $files = glob(self::YAML_AGENTS_DIR . '/*.yaml');
+        if ($files === false) {
+            return $this->yamlBrainsCache;
+        }
+
+        foreach ($files as $file) {
+            try {
+                $data = Yaml::parseFile($file);
+                if (! is_array($data)) {
+                    continue;
+                }
+
+                $slug = basename($file, '.yaml');
+                $this->yamlBrainsCache[$slug] = [
+                    'name' => (string) ($data['name'] ?? $slug),
+                    'description' => (string) ($data['description'] ?? ''),
+                    'avatar' => (string) ($data['avatar'] ?? ''),
+                    'css' => (string) ($data['css'] ?? ''),
+                    'css_inline' => (string) ($data['css_inline'] ?? ''),
+                    'welcomes' => (array) ($data['welcomes'] ?? []),
+                    'instruction' => (string) ($data['instruction'] ?? ''),
+                ];
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return $this->yamlBrainsCache;
     }
 }

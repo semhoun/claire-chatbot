@@ -21,36 +21,19 @@ class Claire extends Agent implements BrainAvatar
 
     public function getOpeningText(): string
     {
-        $customMessages = env('CLAIRE_WELCOME_MESSAGES');
+        $welcomeMessages = [
+            'Je suis Claire, votre assistant virtuel. Je suis là pour répondre à vos questions, vous guider ou résoudre vos problèmes 24h/24.',
+            'Bonjour ! Comment puis-je t\'aider aujourd\'hui ?',
+            'Moi c’est Claire, ton allié pour tout ce qui te tracasse (ou presque). Un souci ? Une question ? Je suis là pour t’aider en 2 clics.',
+             'Bonjour et bienvenue ! Comment puis-je t\'aider aujourd\'hui ?',
+        ];
 
-        if ($customMessages !== null) {
-            $messages = explode(self::WELCOME_SEPARATOR, $customMessages);
-            $messages = array_map(trim(...), $messages);
-            $messages = array_filter($messages);
-
-            if ($messages !== []) {
-                return $messages[array_rand($messages)];
-            }
-        }
-
-        $singleMessage = env('CLAIRE_WELCOME_MESSAGE');
-
-        if ($singleMessage !== null) {
-            return $singleMessage;
-        }
-
-        return "Bonjour et bienvenue ! Comment puis-je t'aider aujourd'hui ?";
+        return $welcomeMessages[array_rand($welcomeMessages)];
     }
 
     #[\Override]
     protected function instructions(): string
     {
-        $customPrompt = env('CLAIRE_PROMPT');
-
-        if ($customPrompt !== null) {
-            return $customPrompt;
-        }
-
         return (string) new SystemPrompt(
             background: [
                 'Tu es Claire mon assistant personnel.',

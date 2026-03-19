@@ -32,7 +32,6 @@ return [
     'brains' => [
         'claire' => App\Brain\Claire::class,
         'einstein' => App\Brain\Einstein::class,
-        'flashy' => App\Brain\Flashy::class,
     ],
     'defaultBrain' => 'claire',
     'rawMimeTypes' => [

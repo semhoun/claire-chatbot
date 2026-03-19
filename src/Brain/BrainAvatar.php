@@ -22,6 +22,4 @@ interface BrainAvatar
     public const string AVATAR = 'undefined';
 
     public const string CSS = '';
-
-    public function getOpeningText(): string;
 }

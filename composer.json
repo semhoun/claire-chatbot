@@ -66,7 +66,8 @@
     "vlucas/phpdotenv": "^5.6",
     "phptg/bot-api": "^0.17",
     "lcobucci/jwt": "^5.5",
-    "ramsey/uuid": "^4.9"
+    "ramsey/uuid": "^4.9",
+    "symfony/yaml": "^7.4"
   },
   "require-dev": {
     "roave/security-advisories": "dev-latest",
