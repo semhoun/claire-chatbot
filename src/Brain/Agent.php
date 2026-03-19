@@ -11,4 +11,12 @@ class Agent extends \NeuronAI\Agent\Agent
     use AgentTrait\Middleware;
     use AgentTrait\Constructor;
     use AgentTrait\Nodes;
+
+    /**
+     *
+     */
+    public function getOpeningText(): string
+    {
+        return '';
+    }
 }

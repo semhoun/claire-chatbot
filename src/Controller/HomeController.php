@@ -72,8 +72,8 @@ final readonly class HomeController
         try {
             $meta = $this->brainRegistry->getMeta($currentBrain);
         } catch (\InvalidArgumentException) {
-            // Fallback sur "athena" si le slug n'est pas valide
-            $currentBrain = 'athena';
+            // Fallback sur le brain par défaut si le slug n'est pas valide
+            $currentBrain = $this->settings->get('llm.defaultBrain');
             $session->set('brain_avatar', $currentBrain);
             $meta = $this->brainRegistry->getMeta($currentBrain);
         }

@@ -58,6 +58,7 @@ final class BrainRegistry
                 'description' => $class::DESCRIPTION,
                 'avatar' => $class::AVATAR,
                 'css' => $class::CSS,
+                'css_inline' => '',
             ];
         }
 
@@ -71,6 +72,7 @@ final class BrainRegistry
                 'description' => $config['description'],
                 'avatar' => $config['avatar'] ?? '',
                 'css' => $config['css'] ?? '',
+                'css_inline' => $config['css_inline'] ?? '',
             ];
         }
 
@@ -116,7 +118,7 @@ final class BrainRegistry
     }
 
     /**
-     * @return array{name:string, description:string, avatar:string, class:string}
+     * @return array{name:string, description:string, avatar:string, class:string, css:string, css_inline:string}
      */
     public function getMeta(string $slug): array
     {
@@ -133,6 +135,7 @@ final class BrainRegistry
                     'avatar' => $config['avatar'] ?? '',
                     'class' => YamlBrain::class,
                     'css' => $config['css'] ?? '',
+                    'css_inline' => $config['css_inline'] ?? '',
                 ];
             }
 
@@ -146,11 +149,12 @@ final class BrainRegistry
             'avatar' => $class::AVATAR,
             'class' => $class,
             'css' => $class::CSS,
+            'css_inline' => '',
         ];
     }
 
     /**
-     * @return array<string, array{name:string, description:string, avatar:string, css:string, welcomes:array<string>, instruction:string}>
+     * @return array<string, array{name:string, description:string, avatar:string, css:string, css_inline:string, welcomes:array<string>, instruction:string}>
      */
     private function loadYamlBrains(): array
     {
@@ -182,6 +186,7 @@ final class BrainRegistry
                     'description' => (string) ($data['description'] ?? ''),
                     'avatar' => (string) ($data['avatar'] ?? ''),
                     'css' => (string) ($data['css'] ?? ''),
+                    'css_inline' => (string) ($data['css_inline'] ?? ''),
                     'welcomes' => (array) ($data['welcomes'] ?? []),
                     'instruction' => (string) ($data['instruction'] ?? ''),
                 ];
