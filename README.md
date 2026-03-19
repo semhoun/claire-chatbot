@@ -100,10 +100,58 @@ L'application permet de sélectionner différents « cerveaux » (avatars) pour 
 - La logique de sélection est gérée par le registre `BrainRegistry`.
 - Si une valeur invalide est fournie, l'application revient automatiquement sur l'avatar par défaut: `claire`.
 - Vous pouvez exposer ce choix dans l'UI (ex.: select) ou via un paramètre de requête selon vos besoins.
-- Cerveaux disponibles:
+- Cerveaux disponibles par défaut:
   - `claire` — Assistante généraliste
   - `einstein` — Expert scientifique
   - `flashy` — Réponses rapides et concises
+
+#### Ajout de cerveaux personnalisés via YAML
+
+Vous pouvez créer vos propres agents sans écrire de code PHP en plaçant des fichiers YAML dans le répertoire `addons/agents/`. Chaque fichier définit un nouveau cerveau avec ses propres caractéristiques.
+
+**Structure d'un fichier YAML:**
+
+```yaml
+name: "Nom de l'Assistant"
+description: "Description courte affichée dans l'interface"
+avatar: ""  # URL de l'avatar (optionnel)
+css: ""     # Fichier CSS personnalisé (optionnel)
+welcomes:
+  - "Premier message d'accueil possible"
+  - "Deuxième message d'accueil possible"
+  - "Troisième message d'accueil possible"
+instruction: |
+  Le prompt système complet de l'assistant.
+  Définissez ici son rôle, son ton, ses compétences.
+  Utilisez plusieurs lignes si nécessaire.
+```
+
+**Exemple de fichier `addons/agents/coach.yaml`:**
+
+```yaml
+name: "Coach Personnel"
+description: "Un coach motivant pour vous aider à atteindre vos objectifs"
+avatar: ""
+css: ""
+welcomes:
+  - "Prêt à relever de nouveaux défis aujourd'hui ?"
+  - "Bonjour champion ! Que veux-tu accomplir ?"
+  - "Salut ! Je suis là pour te motiver et te guider."
+instruction: |
+  Tu es un coach personnel motivant et bienveillant.
+  Ton rôle est d'aider l'utilisateur à définir ses objectifs,
+  à rester motivé et à surmonter les obstacles.
+  Sois encourageant, pose des questions pertinentes et propose
+  des plans d'action concrets.
+```
+
+**Points importants:**
+
+- Le slug du cerveau est déterminé par le nom du fichier (ex: `coach.yaml` → slug `coach`)
+- Les fichiers YAML sont chargés automatiquement au démarrage
+- Un message d'accueil est choisi aléatoirement parmi la liste `welcomes`
+- Les cerveaux YAML apparaissent automatiquement dans l'interface aux côtés des cerveaux PHP
+- Voir le fichier exemple dans `addons/agents/example.yaml`
 
 #### Recherche Web (Web Search)
 
