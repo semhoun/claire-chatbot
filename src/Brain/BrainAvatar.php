@@ -15,11 +15,11 @@ namespace App\Brain;
  */
 interface BrainAvatar
 {
-    public const string NAME = 'undefined';
+    public const string NAME = '';
 
-    public const string DESCRIPTION = 'undefined';
+    public const string DESCRIPTION = '';
 
-    public const string AVATAR = 'undefined';
+    public const string AVATAR = '';
 
     public const string CSS = '';
 }

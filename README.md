@@ -114,7 +114,7 @@ Vous pouvez créer vos propres agents sans écrire de code PHP en plaçant des f
 ```yaml
 name: "Nom de l'Assistant"
 description: "Description courte affichée dans l'interface"
-avatar: ""        # URL ou data URI de l'avatar (optionnel)
+avatar: "data:image/png;base64,iVBORw0K......"        # URL ou data URI de l'avatar
 css: ""           # Nom du fichier CSS dans public/css/ (optionnel)
 css_inline: |     # CSS inline directement dans le fichier (optionnel)
   :root {
