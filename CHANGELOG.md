@@ -11,7 +11,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Support des cerveaux personnalisés via fichiers YAML dans `addons/agents/`
 - Classe `YamlBrain` pour charger dynamiquement les agents depuis des fichiers YAML
 - Intégration automatique des brains YAML dans `BrainRegistry`
-- Fichier exemple `addons/agents/example.yaml` avec documentation complète
+- Fichier exemple `addons/agents/flashy.yaml` (réplique en YAML du cerveau Flashy IoT)
 - Dépendance `symfony/yaml` pour le parsing YAML
 
 ## [1.2.0] - 2026-03-19

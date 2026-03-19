@@ -151,7 +151,7 @@ instruction: |
 - Les fichiers YAML sont chargés automatiquement au démarrage
 - Un message d'accueil est choisi aléatoirement parmi la liste `welcomes`
 - Les cerveaux YAML apparaissent automatiquement dans l'interface aux côtés des cerveaux PHP
-- Voir le fichier exemple dans `addons/agents/example.yaml`
+- Voir le fichier exemple dans `addons/agents/flashy.yaml` (réplique en YAML du cerveau Flashy IoT)
 
 #### Recherche Web (Web Search)
 
