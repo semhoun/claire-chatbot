@@ -16,4 +16,16 @@ class Agent extends \NeuronAI\Agent\Agent
     {
         return '';
     }
+
+    #[\Override]
+    public function resolveInstructions(): string
+    {
+        $instructions = parent::resolveInstructions();
+        $dateLine = sprintf(
+            "\n\n[Contexte système] Date et heure actuelles : %s\n",
+            new \DateTimeImmutable()->format('Y-m-d H:i:s')
+        );
+
+        return $instructions . $dateLine;
+    }
 }

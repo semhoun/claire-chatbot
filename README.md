@@ -43,7 +43,7 @@ docker run -d -p 8080:80 \
 
 ## Fonctionnalités
 
-- Interface web de chat basique (Twig + CSS).
+- Interface web de chat basique (Twig + CSS) avec horodatage des messages.
 - Endpoint API `POST /brain/chat` pour envoyer un message et récupérer la réponse de l'agent.
 - Healthcheck `GET /health` (JSON) pour la supervision.
 - Intégration d'un fournisseur LLM « OpenAI-like » (URL, clé et modèle configurables).

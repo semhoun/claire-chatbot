@@ -8,6 +8,11 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Unreleased]
 
 ### Added
+- Horodatage des messages avec affichage relatif (il y a X min) et tooltip date complète
+- Extension Twig `TimestampExtension` pour le formatage des dates
+- Observer `TimestampObserver` pour l'ajout automatique des timestamps
+- Tests unitaires pour le système d'horodatage des messages
+- Ajout de la date courante dans le prompt système pour une meilleure contextualisation
 - Support des cerveaux personnalisés via fichiers YAML dans `addons/agents/`
 - Classe `YamlBrain` pour charger dynamiquement les agents depuis des fichiers YAML
 - Intégration automatique des brains YAML dans `BrainRegistry`
@@ -138,6 +143,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.1.0...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.2.0...HEAD
+[1.2.0]: https://github.com/semhoun/claire-chatbot/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/semhoun/claire-chatbot/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/semhoun/claire-chatbot/releases/tag/1.0.0
