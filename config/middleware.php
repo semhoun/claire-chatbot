@@ -32,7 +32,9 @@ return static function (App $app): void {
 
     // Add error handling middleware.
     if ($settings->get('debug')) {
-        $app->add(new SlimTracy\Middlewares\TracyMiddleware($app, $settings->get('tracy')));
+        if (class_exists(SlimTracy\Middlewares\TracyMiddleware::class)) {
+            $app->add(new SlimTracy\Middlewares\TracyMiddleware($app, $settings->get('tracy')));
+        }
         $errorMiddleware = $app->addErrorMiddleware(true, true, true);
     } else {
         $errorMiddleware = $app->addErrorMiddleware(false, true, true);

@@ -1,0 +1,6 @@
+.gitignore
+compose.*
+phpinsights.php
+phpunit.xml
+rector.php
+local_data

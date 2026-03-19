@@ -26,7 +26,7 @@ return [
         'type' => 'file', // Could be 'file'
 
         // Used only for file
-        'path' => Settings::getAppRoot() . '/var/',
+        'path' => Settings::getDataPath() . '/rag',
     ],
     // Liste des assistants disponibles (slug => FQCN)
     'brains' => [

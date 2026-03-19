@@ -1,0 +1,2 @@
+!stdout(yes),mail(no)
+%hourly,random(yes) * /usr/lib/php/sessionclean

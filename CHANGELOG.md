@@ -12,11 +12,15 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Classe `YamlBrain` pour charger dynamiquement les agents depuis des fichiers YAML
 - Intégration automatique des brains YAML dans `BrainRegistry`
 - Fichier exemple `addons/agents/flashy.yaml` (réplique en YAML du cerveau Flashy IoT)
+- Fichier exemple `addons/agents/coach.yaml` (exemple de cerveau coach personnel)
 - Dépendance `symfony/yaml` pour le parsing YAML
-
-## [1.2.0] - 2026-03-19
-
-### Added
+- Support Docker avec image complète (Apache, PHP-FPM, Supervisor, fcron)
+- Dockerfile multi-stage pour optimiser la taille de l'image
+- Configuration Apache intégrée avec mod_rewrite et proxy_fcgi
+- Healthcheck Docker sur l'endpoint `/health`
+- Volume `/data` pour la persistance des données
+- Entrypoint Docker pour la configuration dynamique
+- Support OpenTelemetry dans l'image Docker
 - Génération d'images avec ComfyUI (outil `generate_image`)
 - Personnalisation du prompt système de Claire via `CLAIRE_PROMPT`
 - Messages d'accueil personnalisables avec sélection aléatoire (`CLAIRE_WELCOME_MESSAGES` ou `CLAIRE_WELCOME_MESSAGE`)
@@ -27,9 +31,21 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Support de deux styles de prompts pour ComfyUI : SDXL (keywords) et Flux (natural language)
 
 ### Changed
+- Suppression du fichier CSS `claire.css` (migration vers CSS inline ou YAML)
+- Refactoring de `BrainRegistry` pour améliorer la gestion des cerveaux YAML
+- Amélioration de la gestion des nodes et tools dans `AgentTrait`
+- Extension du trait `Tools` pour une meilleure extensibilité
+- Optimisation de `TelegramService` pour la gestion des sessions et images générées
+- Amélioration de `ComfyUIService` pour le post-processing des images
 - Amélioration du service Telegram avec support des images générées
 - Refactoring des traits de l'Agent (ajout de `Nodes` et `Tools`)
 - Extension de l'interface `MessagePostProcessorInterface` pour le traitement des messages
+
+### Fixed
+- Correction de la détection du style de prompt ComfyUI (SDXL vs Flux)
+- Correction du traitement des messages générés avec images
+- Amélioration de la gestion des erreurs dans le service Telegram
+- Correction des permissions de fichiers dans l'image Docker
 
 ## [1.1.0] - 2026-03-16
 
@@ -122,7 +138,6 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.2.0...HEAD
-[1.2.0]: https://github.com/semhoun/claire-chatbot/compare/1.1.0...1.2.0
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.1.0...HEAD
 [1.1.0]: https://github.com/semhoun/claire-chatbot/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/semhoun/claire-chatbot/releases/tag/1.0.0

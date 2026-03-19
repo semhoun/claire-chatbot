@@ -58,6 +58,11 @@ final readonly class Settings
         return dirname(__DIR__, 2);
     }
 
+    public static function getDataPath(): string
+    {
+        return env('DATA_PATH', self::getAppRoot() . '/var/data');
+    }
+
     private function hasSetting(mixed $settings, string $key): bool
     {
         return is_array($settings) && (isset($settings[$key]) || array_key_exists($key, $settings));

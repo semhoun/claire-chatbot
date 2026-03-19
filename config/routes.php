@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Controller\HealthController;
 use App\Services\Settings;
 use Slim\App;
 use Slim\Psr7\Request;
@@ -14,7 +15,7 @@ return static function (App $app): void {
     $app->get('/health', HealthController::class)->setName('health');
 
     $settings = $app->getContainer()->get(Settings::class);
-    if ($settings->get('debug') && $settings->get('tracy.configs.ConsoleEnable')) {
+    if (class_exists(SlimTracy\Middlewares\TracyMiddleware::class) && $settings->get('debug') && $settings->get('tracy.configs.ConsoleEnable')) {
         $app->post('/console', 'SlimTracy\Controllers\SlimTracyConsole:index');
     }
 

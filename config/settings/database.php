@@ -16,7 +16,7 @@ return [
     'password' => env('DATABASE_PASSWORD'),
 
     // Used only for sqlite
-    'path' => Settings::getAppRoot() . '/var/database.sqlite',
+    'path' => Settings::getDataPath() . '/database.sqlite',
 
     'doctrine' => [
         'entity_path' => [Settings::getAppRoot() . '/src/Entity'],

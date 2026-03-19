@@ -2,7 +2,44 @@
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![Twig](https://img.shields.io/badge/Twig-3.x-43A047) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-Claire est une application web minimaliste de chat IA construite avec Slim 4 et Twig. Elle s’appuie sur la bibliothèque neuron-core pour piloter un LLM compatible OpenAI et fournit une petite interface web ainsi qu’un endpoint API pour échanger des messages.
+Claire est une application web minimaliste de chat IA construite avec Slim 4 et Twig. Elle s'appuie sur la bibliothèque neuron-core pour piloter un LLM compatible OpenAI et fournit une petite interface web ainsi qu'un endpoint API pour échanger des messages.
+
+## Démarrage rapide
+
+```bash
+# 1. Cloner et installer les dépendances
+git clone https://github.com/semhoun/claire-chatbot.git
+cd claire-chatbot
+composer install
+
+# 2. Créer un fichier .env avec votre clé API
+cat > .env <<EOF
+OPENAPI_KEY=votre-clé-api
+OPENAPI_URL=https://api.openai.com/v1
+OPENAPI_MODEL=gpt-4o-mini
+SESSION_JWT_SECRET=$(openssl rand -hex 32)
+OTEL_LOGS_EXPORTER=console
+OTEL_LOGS_PROCESSOR=simple
+EOF
+
+# 3. Initialiser la base de données
+./console migrations:migrate
+
+# 4. Lancer le serveur de développement
+composer start
+# Ouvrir http://localhost:8080
+```
+
+**Ou avec Docker:**
+
+```bash
+docker build -t claire:latest -f docker/Dockerfile .
+docker run -d -p 8080:80 \
+  -e OPENAPI_KEY=votre-clé-api \
+  -e SESSION_JWT_SECRET=$(openssl rand -hex 32) \
+  -v claire_data:/data \
+  claire:latest
+```
 
 ## Fonctionnalités
 
@@ -21,10 +58,12 @@ Claire est une application web minimaliste de chat IA construite avec Slim 4 et 
 - [PHP-DI](https://php-di.org/) (container)
 - [Twig](https://twig.symfony.com/) (templates)
 - [Monolog](https://github.com/Seldaek/monolog) (logs)
-- [Doctrine ORM](https://www.doctrine-project.org/) (présent, non requis pour l’usage basique)
+- [Doctrine ORM](https://www.doctrine-project.org/) (persistance des données)
 - [Neuron AI](https://www.neuron-ai.dev/) (agent LLM)
 - [phptg/bot-api](https://github.com/phptg/bot-api) (bot Telegram)
 - [OpenTelemetry](https://opentelemetry.io/docs/languages/php/) (observabilité)
+- [Symfony YAML](https://symfony.com/doc/current/components/yaml.html) (cerveaux personnalisés)
+- Docker (déploiement containerisé avec Apache, PHP-FPM, Supervisor)
 
 ## Prérequis
 
@@ -324,22 +363,39 @@ Migrations Doctrine
    ```
 3. Ouvrez http://localhost:8080
 
-### Via Docker (exemple)
+### Via Docker
 
-L’extrait ci‑dessous présente une configuration Docker Compose de référence. Adaptez les variables d’environnement (OPENAPI_*, OTEL_*) et, le cas échéant, les labels Traefik à votre contexte.
+Claire fournit une image Docker complète avec Apache, PHP 8.4, et toutes les dépendances nécessaires.
+
+#### Build de l'image
+
+```bash
+docker build -t claire:latest -f docker/Dockerfile .
+```
+
+#### Utilisation avec Docker Compose
+
+L'extrait ci‑dessous présente une configuration Docker Compose de référence. Adaptez les variables d'environnement (OPENAPI_*, OTEL_*) et, le cas échéant, les labels Traefik à votre contexte.
 
 ```yaml
 services:
   claire:
-    image: semhoun/webserver:8.4
+    image: claire:latest
+    # Ou utilisez l'image de développement avec volumes montés:
+    # image: semhoun/webserver:8.4
+    # volumes:
+    #   - .:/www
     volumes:
-      - .:/www
+      - claire_data:/data  # Persistance des données (base SQLite, fichiers uploadés, etc.)
+    ports:
+      - "8080:80"
     environment:
       SERVER_ADMIN: webmaster@example.com
-      DEBUG_MODE: "true"
-      DISABLE_TRACY_BAR: "false"
+      SERVER_NAME: claire.example.com
+      DEBUG_MODE: "false"
+      DISABLE_TRACY_BAR: "true"
 
-      FILES_PATH: /filer
+      DATA_PATH: /data
 
       # Session JWT (obligatoire)
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?set_me}
@@ -375,6 +431,10 @@ services:
       # COMFYUI_WORKFLOW: '{"3":{"inputs":{...}},...}' # JSON avec placeholder {{PROMPT}}
       # COMFYUI_PROMPT_STYLE: flux
 
+      # Telegram (optionnel)
+      # TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set_me}
+      # TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?set_me}
+
       # OpenID Connect (SSO)
       OPENID_WELLKNOWN_URL: https://auth.example.com/.well-known/openid-configuration
       OPENID_CLIENT_ID: ${OPENID_CLIENT_ID:?set_me}
@@ -400,6 +460,15 @@ services:
       # DATABASE_NAME: claire
       # DATABASE_USER: claire
       # DATABASE_PASSWORD: change_me
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  claire_data:
 
 networks:
   internal:
@@ -407,7 +476,44 @@ networks:
     name: internal
 ```
 
-Démarrez ensuite votre stack avec votre orchestrateur habituel (ex. `docker compose up -d`).
+#### Points clés de l'image Docker
+
+- **Base**: Debian Trixie Slim avec PHP 8.4
+- **Services**: Apache + PHP-FPM + Supervisor + fcron
+- **Extensions PHP**: SQLite3, MySQL, PostgreSQL, GD, Imagick, Redis, Memcache, etc.
+- **OpenTelemetry**: Extension pré-installée et configurée
+- **Volumes**: 
+  - `/data` — Données persistantes (base SQLite, fichiers uploadés, cache, etc.)
+  - `/www` — Code de l'application (pré-copié dans l'image, ou monté en dev)
+- **Healthcheck**: Vérifie automatiquement l'endpoint `/health`
+- **Port**: Expose le port 80 (HTTP)
+
+#### Démarrage
+
+```bash
+# Démarrer la stack
+docker compose up -d
+
+# Voir les logs
+docker compose logs -f claire
+
+# Exécuter des commandes dans le conteneur
+docker compose exec claire ./console migrations:migrate
+docker compose exec claire ./console cache:clear
+```
+
+#### Développement avec volumes montés
+
+Pour un développement actif avec rechargement automatique, utilisez l'image `semhoun/webserver:8.4` avec un volume monté:
+
+```yaml
+services:
+  claire:
+    image: semhoun/webserver:8.4
+    volumes:
+      - .:/www
+    # ... reste de la configuration
+```
 
 ## API et routes
 
