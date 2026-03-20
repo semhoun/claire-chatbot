@@ -101,8 +101,9 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
   - `DEBUG_MODE` = `true|false` (active un niveau de logs plus verbeux)
   - `DISABLE_TRACY_BAR` = `true|false` (permet de désactiver la barre de debug Tracy, activée par défaut si non spécifié)
 
-- Stockage des fichiers:
-  - `FILES_PATH` — chemin vers le répertoire de stockage des fichiers (par défaut: `var/filer`).
+- Stockage des fichiers et données:
+  - `DATA_PATH` — chemin racine pour les données persistantes (base de données SQLite, fichiers, cache; par défaut: `var/data`)
+  - `FILES_PATH` — chemin vers le répertoire de stockage des fichiers (par défaut: `var/filer`)
 
 - Observabilité (OpenTelemetry — requis):
   - Journalisation OpenTelemetry: les logs de l’application sont émis via l’intégration Monolog/OpenTelemetry.

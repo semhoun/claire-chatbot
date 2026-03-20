@@ -7,6 +7,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-20
+
 ### Added
 - Horodatage des messages avec affichage relatif (il y a X min) et tooltip date complète
 - Extension Twig `TimestampExtension` pour le formatage des dates
@@ -24,11 +26,10 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Configuration Apache intégrée avec mod_rewrite et proxy_fcgi
 - Healthcheck Docker sur l'endpoint `/health`
 - Volume `/data` pour la persistance des données
+- Variable d'environnement `DATA_PATH` pour configurer le chemin des données persistantes
 - Entrypoint Docker pour la configuration dynamique
 - Support OpenTelemetry dans l'image Docker
 - Génération d'images avec ComfyUI (outil `generate_image`)
-- Personnalisation du prompt système de Claire via `CLAIRE_PROMPT`
-- Messages d'accueil personnalisables avec sélection aléatoire (`CLAIRE_WELCOME_MESSAGES` ou `CLAIRE_WELCOME_MESSAGE`)
 - Service `ComfyUIService` pour l'intégration avec ComfyUI
 - Extension Twig `GeneratedImageExtension` pour l'affichage des images générées
 - Post-processing des messages avec `PostProcessChatNode` et `PostProcessStreamingNode`
@@ -144,6 +145,6 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ---
 
 [Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.2.0...HEAD
-[1.2.0]: https://github.com/semhoun/claire-chatbot/compare/1.1.0...1.2.0
+[1.2.0]: https://github.com/semhoun/claire-chatbot/releases/tag/1.2.0
 [1.1.0]: https://github.com/semhoun/claire-chatbot/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/semhoun/claire-chatbot/releases/tag/1.0.0
