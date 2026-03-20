@@ -12,6 +12,7 @@ use App\Services\Settings;
 use Doctrine\DBAL\Connection;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Providers\AIProviderInterface;
 
 /**
  * Agent responsible for generating concise titles and summaries for chat conversations
@@ -19,8 +20,6 @@ use NeuronAI\Chat\Messages\UserMessage;
  */
 class Summary extends \NeuronAI\Agent\Agent
 {
-    use AgentTrait\AIProvider;
-
     public function __construct(
         protected readonly Connection $connection,
         protected readonly Settings $settings,
@@ -143,5 +142,16 @@ Règles:
   3) Le résumé "summary" en français, 1 à 3 phrases, <= 400 caractères, pas de balises Markdown.
   4 ) Si le contenu est vide, mets title="Nouvelle conversation" et summary="".
 EOF;
+    }
+
+    #[\Override]
+    protected function provider(): AIProviderInterface
+    {
+        return new \App\Brain\Provider\OpenAI(
+            baseUri: $this->settings->get('llm.openai.baseUri'),
+            key: $this->settings->get('llm.openai.key'),
+            model: $this->settings->get('llm.openai.modelSummary'),
+            rawMimeTypes: $this->settings->get('llm.rawMimeTypes'),
+        );
     }
 }

@@ -14,7 +14,7 @@ trait AIProvider
         return new \App\Brain\Provider\OpenAI(
             baseUri: $this->settings->get('llm.openai.baseUri'),
             key: $this->settings->get('llm.openai.key'),
-            model: $this->settings->get('llm.openai.modelSummary'),
+            model: $this->settings->get('llm.openai.model'),
             rawMimeTypes: $this->settings->get('llm.rawMimeTypes'),
         );
     }
