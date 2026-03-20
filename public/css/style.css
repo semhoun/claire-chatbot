@@ -1432,14 +1432,56 @@ body.modal-open {
     max-width: 100%;
     max-height: 512px;
     border-radius: 12px;
-    margin: 8px 0;
+    margin: 8px auto;
     display: block;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    cursor: zoom-in;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.generated-images-container {
-    margin: 12px 0;
+.generated-image:hover {
+    transform: scale(1.02);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* Image lightbox modal */
+.image-lightbox {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.92);
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.image-lightbox.is-open {
+    opacity: 1;
+    visibility: visible;
+}
+
+.image-lightbox__content {
+    position: relative;
+    max-width: 95vw;
+    max-height: 95vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.image-lightbox__img {
+    max-width: 100%;
+    max-height: 95vh;
+    border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    cursor: zoom-out;
+}
+
+.image-lightbox__backdrop {
+    position: absolute;
+    inset: 0;
+    cursor: zoom-out;
 }

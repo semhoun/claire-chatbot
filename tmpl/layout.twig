@@ -693,6 +693,74 @@
         });
     })();
 
+    // Image lightbox: zoom on click for generated images
+    (function () {
+        function createLightbox() {
+            let lb = document.getElementById('imageLightbox');
+            if (lb) return lb;
+            lb = document.createElement('div');
+            lb.id = 'imageLightbox';
+            lb.className = 'image-lightbox';
+            lb.setAttribute('role', 'dialog');
+            lb.setAttribute('aria-modal', 'true');
+            lb.setAttribute('aria-hidden', 'true');
+            lb.innerHTML = `
+                <div class="image-lightbox__backdrop" data-lightbox-close></div>
+                <div class="image-lightbox__content">
+                    <img class="image-lightbox__img" src="" alt="Image agrandie" data-lightbox-close>
+                </div>
+            `;
+            document.body.appendChild(lb);
+            return lb;
+        }
+
+        function openLightbox(src) {
+            const lb = createLightbox();
+            const img = lb.querySelector('.image-lightbox__img');
+            img.src = src;
+            lb.classList.add('is-open');
+            lb.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+            document.addEventListener('keydown', onKeyDown);
+        }
+
+        function closeLightbox() {
+            const lb = document.getElementById('imageLightbox');
+            if (!lb) return;
+            lb.classList.remove('is-open');
+            lb.setAttribute('aria-hidden', 'true');
+            document.body.classList.remove('modal-open');
+            document.removeEventListener('keydown', onKeyDown);
+        }
+
+        function onKeyDown(e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeLightbox();
+            }
+        }
+
+        // Delegate clicks on generated images
+        document.addEventListener('click', function (e) {
+            const img = e.target.closest('.generated-image');
+            if (!img) return;
+            e.preventDefault();
+            openLightbox(img.src);
+        });
+
+        // Close lightbox on backdrop/image click
+        document.addEventListener('click', function (e) {
+            if (e.target.closest('[data-lightbox-close]')) {
+                closeLightbox();
+            }
+        });
+
+        // Re-wire after HTMX swaps
+        window.addEventListener('htmx:afterSwap', function () {
+            // Lightbox handles clicks via delegation, no re-wiring needed
+        });
+    })();
+
 </script>
 <script src="{{ base_url }}/js/dialog.js"></script>
 <script type="module">
