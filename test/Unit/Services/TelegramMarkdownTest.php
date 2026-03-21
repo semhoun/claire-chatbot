@@ -274,7 +274,7 @@ final class TelegramMarkdownTest extends TestCase
     {
         $result = $this->converter->convertToMarkdownV2('---');
 
-        $this->assertSame("---\n", $result);
+        $this->assertSame("\-\-\-\n", $result);
     }
 
     public function testTable(): void
@@ -431,7 +431,7 @@ final class TelegramMarkdownTest extends TestCase
         $result = $this->converter->convertToMarkdownV2('****');
 
         // Four asterisks is parsed as thematic break
-        $this->assertSame("---\n", $result);
+        $this->assertSame("\-\-\-\n", $result);
     }
 
     public function testWhitespaceInFormattedText(): void

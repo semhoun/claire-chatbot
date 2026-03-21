@@ -162,7 +162,7 @@ final readonly class TelegramMarkdown
         }
 
         if ($node instanceof ThematicBreak) {
-            return "---\n";
+            return "\-\-\-\n";
         }
 
         if ($node instanceof HtmlBlock) {
