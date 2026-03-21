@@ -10,6 +10,7 @@ use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Session\SessionInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Slim\Views\Twig;
 
 final readonly class AuthController
 {
@@ -18,6 +19,7 @@ final readonly class AuthController
     public function __construct(
         private OidcClient $oidcClient,
         private Auth $auth,
+        private Twig $twig,
     ) {
     }
 
@@ -44,6 +46,17 @@ final readonly class AuthController
         $result = $this->oidcClient->handleCallback($session, $request->getQueryParams());
 
         if (! ($result['logged'] ?? false)) {
+            // If the OAuth provider returned an error, display an error page
+            if (isset($result['error'])) {
+                $errorDescription = $result['error_description'] ?? 'Authorization failed';
+
+                return $this->twig->render($response, 'error/default.twig', [
+                    'code' => 403,
+                    'title' => 'Accès refusé: ' . $result['error'],
+                    'message' => $errorDescription,
+                ])->withStatus(403);
+            }
+
             // Auth uniquement via SSO: en cas d'échec, on renvoie vers l'init SSO
             return $response->withHeader('Location', '/auth/sso')->withStatus(302);
         }

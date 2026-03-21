@@ -100,12 +100,21 @@ final class OidcClient
     }
 
     /**
-     * @return array{logged:bool,id?:string,data?:array<string,mixed>} Normalized outcome
+     * @return array{logged:bool,id?:string,data?:array<string,mixed>,error?:string,error_description?:string} Normalized outcome
      */
     public function handleCallback(SessionInterface $session, array $queryParams): array
     {
         if (! isset($queryParams['state']) || $session->get('oidc_state') !== $queryParams['state']) {
             return ['logged' => false];
+        }
+
+        // Check for OAuth error response from the authorization server
+        if (isset($queryParams['error'])) {
+            return [
+                'logged' => false,
+                'error' => $queryParams['error'],
+                'error_description' => $queryParams['error_description'] ?? null,
+            ];
         }
 
         if (! isset($queryParams['code'])) {
