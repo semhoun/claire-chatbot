@@ -6,12 +6,18 @@ namespace App\Services;
 
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
+use App\Brain\Tools\GenerateImageTool;
 use App\Entity\User;
+use App\Services\Auth;
 use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
 use Monolog\Logger;
+use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
 use NeuronAI\Chat\Messages\UserMessage;
 use Phptg\BotApi\Constant\ParseMode;
 use Phptg\BotApi\FailResult;
@@ -20,7 +26,7 @@ use Phptg\BotApi\Type\InputFile;
 use Phptg\BotApi\Type\Message;
 use Phptg\BotApi\Type\Update\Update;
 
-final readonly class TelegramService
+class TelegramService
 {
     public const array COMMANDS = [
         'start' => 'Démarrer une nouvelle conversation',
@@ -29,51 +35,60 @@ final readonly class TelegramService
         'brain' => 'Voir ou changer de personnalité (choisir reset pour celui par défaut)',
     ];
 
+    private const string ACTION_TEXT = 'typing';
+    private const string ACTION_GENERATE = 'record_video';
+    private const string ACTION_PHOTO = 'upload_photo';
+    private const string ACTION_VIDEO = 'upload_video';
+    private const string ACTION_VOICE = 'upload_voice';
+    private const string ACTION_DOCUMENT = 'upload_document';
+    private const string ACTION_STICKER = 'choose_sticker';
+    private const string ACTION_LOCATION = 'find_location';
+    private const string ACTION_VIDEO_NOTE = 'upload_video_note';
+
     private TelegramSession $telegramSession;
 
+    private ?\DateTime $lastChatActionDate = null;
+
     public function __construct(
-        private BrainRegistry $brainRegistry,
-        private EntityManager $entityManager,
-        private Settings $settings,
-        private Logger $logger,
-        private Filesystem $filesystem,
-        private TelegramBotApi $telegramBotApi,
-        private TelegramMarkdown $telegramMarkdown,
+        private readonly BrainRegistry $brainRegistry,
+        private readonly EntityManager $entityManager,
+        private readonly Settings $settings,
+        private readonly Logger $logger,
+        private readonly Filesystem $filesystem,
+        private readonly TelegramBotApi $telegramBotApi,
+        private readonly TelegramMarkdown $telegramMarkdown,
     ) {
         $this->telegramSession = new TelegramSession($entityManager);
     }
 
     public function processUpdate(Update $update): void
     {
-        $chatId = null;
+        $message = $update->message;
+        if (! $message instanceof \Phptg\BotApi\Type\Message) {
+            return;
+        }
+
+        $telegramChatId = $message->chat->id ?? null;
+        if ($telegramChatId === '') {
+            return;
+        }
+
         try {
-            $message = $update->message;
-            if (! $message instanceof \Phptg\BotApi\Type\Message) {
-                return;
-            }
-
-            $chatId = $message->chat->id ?? null;
-            if ($chatId === '') {
-                return;
-            }
-
-            $this->handleMessage($message, $chatId);
+            $this->handleMessage($telegramChatId, $message);
         } catch (\Throwable $throwable) {
             $this->logger->error('Telegram update processing error: ' . $throwable->getMessage(), [
                 'exception' => $throwable,
                 'update_id' => $update->updateId,
             ]);
-            if ($chatId !== null) {
-                $this->sendMessage($chatId, 'Désolé, j\'ai un soucis.');
-            }
+            $this->sendMessage($telegramChatId, 'Désolé, j\'ai un soucis.');
         }
     }
 
-    public function handleMessage(Message $message, int $chatId): void
+    public function handleMessage(int $telegramChatId, Message $message): void
     {
         $telegramUserId = (string) $message->from->id;
         if (! $this->manageSession($telegramUserId)) {
-            $this->sendMessage($chatId, "Je ne vous reconnais pas, merci d'ajouter votre id " . $telegramUserId . " sur l'interface web");
+            $this->sendMessage($telegramChatId, "Je ne vous reconnais pas, merci d'ajouter votre id " . $telegramUserId . " sur l'interface web");
             return;
         }
 
@@ -81,37 +96,37 @@ final readonly class TelegramService
         $entityRepository->findByTelegramId($telegramUserId);
 
         if ($message->photo !== null && $message->photo !== []) {
-            $this->handlePhoto($chatId, $message);
+            $this->handlePhoto($telegramChatId, $message);
             return;
         }
 
         if ($message->document instanceof \Phptg\BotApi\Type\Document) {
-            $this->handleDocument($chatId, $message);
+            $this->handleDocument($telegramChatId, $message);
             return;
         }
 
         $text = $message->text;
         if ($text === null) {
-            $this->sendMessage($chatId, 'Je ne peux traiter que du texte, des photos et des documents.');
+            $this->sendMessage($telegramChatId, 'Je ne peux traiter que du texte, des photos et des documents.');
             return;
         }
 
         if (str_starts_with($text, '/')) {
-            $handled = $this->handleCommand($chatId, $text);
+            $handled = $this->handleCommand($telegramChatId, $text);
             if (! $handled) {
-                $this->sendMessage($chatId, '⚠ Commande inconnue');
+                $this->sendMessage($telegramChatId, '⚠ Commande inconnue');
             }
 
             $this->telegramSession->flush();
             return;
         }
 
-        $this->processChatMessage($chatId, $text);
+        $this->processChatMessage($telegramChatId, $text);
 
         $this->telegramSession->flush();
     }
 
-    public function handlePhoto(int $chatId, Message $message): void
+    public function handlePhoto(int $telegramChatId, Message $message): void
     {
         $photos = $message->photo;
 
@@ -132,22 +147,22 @@ final readonly class TelegramService
                 throw new \RuntimeException('Failed to download image');
             }
 
-            $localPath = sprintf('telegram/%s/', $this->telegramSession->get('user_id')) . uniqid('photo_', true) . '.jpg';
+            $localPath = sprintf('telegram/%s/', $this->telegramSession->get(Auth::USERID)) . uniqid('photo_', true) . '.jpg';
             $this->filesystem->write($localPath, $imageContent);
 
             $caption = $message->caption ?? 'Décris cette image';
 
             $this->processChatMessage(
-                $chatId,
+                $telegramChatId,
                 "[Image: {$localPath}]\n\n{$caption}"
             );
         } catch (\Throwable $throwable) {
             $this->logger->error('Photo handling error: ' . $throwable->getMessage());
-            $this->sendMessage($chatId, 'Désolé, je n\'ai pas pu traiter cette image.');
+            $this->sendMessage($telegramChatId, 'Désolé, je n\'ai pas pu traiter cette image.');
         }
     }
 
-    public function handleDocument(int $chatId, Message $message): void
+    public function handleDocument(int $telegramChatId, Message $message): void
     {
         $document = $message->document;
 
@@ -170,18 +185,18 @@ final readonly class TelegramService
             }
 
             $extension = pathinfo($fileName, PATHINFO_EXTENSION);
-            $localPath = sprintf('telegram/%s/', $user->getId()) . uniqid('doc_', true) . '.' . $extension;
+            $localPath = sprintf('telegram/%s/', $this->telegramSession->get(Auth::USERID)) . uniqid('doc_', true) . '.' . $extension;
             $this->filesystem->write($localPath, $fileContent);
 
             $caption = $message->caption ?? 'Analyse ce document';
 
             $this->processChatMessage(
-                $chatId,
+                $telegramChatId,
                 "[Document: {$localPath} ({$mimeType})]\n\n{$caption}",
             );
         } catch (\Throwable $throwable) {
             $this->logger->error('Document handling error: ' . $throwable->getMessage());
-            $this->sendMessage($chatId, 'Désolé, je n\'ai pas pu traiter ce document.');
+            $this->sendMessage($telegramChatId, 'Désolé, je n\'ai pas pu traiter ce document.');
         }
     }
 
@@ -224,7 +239,7 @@ final readonly class TelegramService
         return true;
     }
 
-    private function handleCommand(int $chatId, string $text): bool
+    private function handleCommand(int $telegramChatId, string $text): bool
     {
         $parts = explode(' ', $text);
         $command = substr(array_shift($parts), 1);
@@ -234,50 +249,77 @@ final readonly class TelegramService
         }
 
         $fct = 'cmd_' . $command;
-        $this->$fct($chatId, $parts);
+        $this->$fct($telegramChatId, $parts);
 
         return true;
     }
 
-    private function processChatMessage(int $chatId, string $text): void
+    private function sendChatAction(int $telegramChatId, string $action): void
+    {
+        if ($this->lastChatActionDate === null || $this->lastChatActionDate->diff(new \DateTime())->s > 5) {
+            $this->lastChatActionDate = new \DateTime();
+            $res = $this->telegramBotApi->sendChatAction($telegramChatId, $action);
+            if ($res instanceof FailResult) {
+                $this->logger->error('Failed to send chat action', ['chatId' => $telegramChatId, 'error' => $res]);
+            }
+        }
+    }
+
+    private function processChatMessage(int $telegramChatId, string $text): void
     {
         try {
-            $res = $this->telegramBotApi->sendChatAction($chatId, 'typing');
-            if ($res instanceof FailResult) {
-                $this->logger->error('Failed to send typing action', ['chatId' => $chatId, 'error' => $res]);
-            }
-
             $currentBrain = $this->telegramSession->get('brain_avatar');
             $brain = $this->brainRegistry->get($currentBrain, $this->telegramSession);
+
             $userMessage = new UserMessage($text);
             $userMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-            $agentMessage = $brain->chat($userMessage)->getMessage();
+
+            $agentHandler = $brain->stream($userMessage);
+
+            // Iterate chunks
+            foreach ($agentHandler->events() as $chunk) {
+                if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
+                    if ($chunk->tool instanceof GenerateImageTool) {
+                        $this->sendChatAction($telegramChatId, self::ACTION_GENERATE);
+                    }
+                    else {
+                        $this->sendChatAction($telegramChatId, self::ACTION_TEXT);
+                    }
+                } elseif ($chunk instanceof ReasoningChunk) {
+                    $this->sendChatAction($telegramChatId, self::ACTION_TEXT);
+                } elseif ($chunk instanceof TextChunk) {
+                    $this->sendChatAction($telegramChatId, self::ACTION_TEXT);
+                }
+            }
+
+            $agentMessage = $agentHandler->getMessage();
+
             $agentMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
             $responseText = $agentMessage->getContent();
 
             // Check for generated images in the response
             $imageIds = $this->extractImageIds($responseText);
             if ($imageIds !== []) {
-                $this->handleImageResponse($chatId, $responseText, $imageIds);
+                $this->handleImageResponse($telegramChatId, $responseText, $imageIds);
                 return;
             }
 
-            $this->sendMessage($chatId, $responseText);
+            $this->sendMessage($telegramChatId, $responseText);
         } catch (\Throwable $throwable) {
             $this->logger->error('Chat processing error: ' . $throwable->getMessage());
-            $this->sendMessage($chatId, 'Désolé, une erreur est survenue lors du traitement de votre message.');
+            $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors du traitement de votre message.');
         }
     }
 
-    private function sendMessage(int $chatId, string $text): void
+    private function sendMessage(int $telegramChatId, string $text): void
     {
         try {
             $formattedText = $this->formatForTelegram($text);
             $chunks = $this->splitMessage($formattedText);
             foreach ($chunks as $chunk) {
-                $result = $this->telegramBotApi->sendMessage(chatId: $chatId, text: $chunk, parseMode: ParseMode::MARKDOWN_V2);
+                $result = $this->telegramBotApi->sendMessage(chatId: $telegramChatId, text: $chunk, parseMode: ParseMode::MARKDOWN_V2);
                 if ($result instanceof FailResult) {
-                    $this->logger->error('Failed to send message chunk', ['chatId' => $chatId, 'chunk' => $chunk, 'error' => $result]);
+                    $this->logger->error('Failed to send message chunk', ['chatId' => $telegramChatId, 'chunk' => $chunk, 'error' => $result]);
                 }
             }
         } catch (\Throwable $throwable) {
@@ -356,7 +398,7 @@ final readonly class TelegramService
      *
      * @param array<int, string> $imageIds
      */
-    private function handleImageResponse(string $chatId, string $responseText, array $imageIds): void
+    private function handleImageResponse(int $telegramChatId, string $responseText, array $imageIds): void
     {
         // Remove image paths from text to create caption
         $caption = preg_replace(ComfyUIService::IMAGE_PATTERN, '', $responseText);
@@ -368,22 +410,24 @@ final readonly class TelegramService
             $isLast = $index === $imageCount - 1;
             // Only add caption to the last image, or if there's only one image
             $imageCaption = $isLast || $imageCount === 1 ? $caption : null;
-            $this->sendPhoto($chatId, $imageId, $imageCaption);
+            $this->sendPhoto($telegramChatId, $imageId, $imageCaption);
         }
     }
 
     /**
      * Send a photo to Telegram chat.
      */
-    private function sendPhoto(string $chatId, string $imageId, ?string $caption = null): void
+    private function sendPhoto(int $telegramChatId, string $imageId, ?string $caption = null): void
     {
         try {
+            $this->sendChatAction($telegramChatId, self::ACTION_PHOTO);
+
             $imagePath = ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $imageId);
 
             // Read file from Flysystem
             if (! $this->filesystem->fileExists($imagePath)) {
                 $this->logger->error('Image file not found', ['path' => $imagePath]);
-                $this->sendMessage($chatId, 'Désolé, l\'image générée n\'a pas pu être trouvée.');
+                $this->sendMessage($telegramChatId, 'Désolé, l\'image générée n\'a pas pu être trouvée.');
 
                 return;
             }
@@ -411,7 +455,7 @@ final readonly class TelegramService
             // Send photo using InputFile
             $inputFile = InputFile::fromLocalFile($tempFile, basename($imagePath));
             $result = $this->telegramBotApi->sendPhoto(
-                chatId: $chatId,
+                chatId: $telegramChatId,
                 photo: $inputFile,
                 caption: $formattedCaption,
                 parseMode: ParseMode::MARKDOWN_V2
@@ -419,18 +463,18 @@ final readonly class TelegramService
 
             if ($result instanceof FailResult) {
                 $this->logger->error('Failed to send photo', [
-                    'chatId' => $chatId,
+                    'chatId' => $telegramChatId,
                     'path' => $imagePath,
                     'error' => $result,
                 ]);
-                $this->sendMessage($chatId, 'Désolé, je n\'ai pas pu envoyer l\'image.');
+                $this->sendMessage($telegramChatId, 'Désolé, je n\'ai pas pu envoyer l\'image.');
             }
         } catch (FilesystemException $e) {
             $this->logger->error('Filesystem error sending photo: ' . $e->getMessage(), ['path' => $imagePath]);
-            $this->sendMessage($chatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
+            $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
         } catch (\Throwable $throwable) {
             $this->logger->error('Error sending photo: ' . $throwable->getMessage(), ['path' => $imagePath]);
-            $this->sendMessage($chatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
+            $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
         } finally {
             // Clean up temporary file
             if (isset($tempFile) && file_exists($tempFile)) {
@@ -439,26 +483,26 @@ final readonly class TelegramService
         }
     }
 
-    private function cmd_start(int $chatId): void
+    private function cmd_start(int $telegramChatId): void
     {
         $this->manageSession($this->telegramSession->get('telegram_id'), true);
         $this->sendMessage(
-            $chatId,
+            $telegramChatId,
             $this->brainRegistry->get($this->telegramSession->get('brain_avatar'), $this->telegramSession)->getOpeningText()
         );
     }
 
-    private function cmd_help(int $chatId): void
+    private function cmd_help(int $telegramChatId): void
     {
         $message = "Commandes disponibles :\n";
         foreach (self::COMMANDS as $key => $val) {
             $message .= sprintf('/%s - %s', $key, $val) . "\n";
         }
 
-        $this->sendMessage($chatId, $message);
+        $this->sendMessage($telegramChatId, $message);
     }
 
-    private function cmd_list(int $chatId): void
+    private function cmd_list(int $telegramChatId): void
     {
         $message = "Personnalités disponibles :\n";
         $brains = $this->brainRegistry->list();
@@ -466,14 +510,14 @@ final readonly class TelegramService
             $message .= sprintf('- *%s* : %s', $brain['slug'], $brain['description']) . "\n";
         }
 
-        $this->sendMessage($chatId, $message);
+        $this->sendMessage($telegramChatId, $message);
     }
 
-    private function cmd_brain(int $chatId, array $args): void
+    private function cmd_brain(int $telegramChatId, array $args): void
     {
         if ($args === []) {
             $currentBrain = $this->telegramSession->get('brain_avatar');
-            $this->sendMessage($chatId, sprintf('Personnalité actuelle : %s', $this->brainRegistry->getMeta($currentBrain)['name']));
+            $this->sendMessage($telegramChatId, sprintf('Personnalité actuelle : %s', $this->brainRegistry->getMeta($currentBrain)['name']));
             return;
         }
 
@@ -486,9 +530,9 @@ final readonly class TelegramService
            $meta = $this->brainRegistry->getMeta($brain);
 
             $this->telegramSession->set('brain_avatar', $brain);
-            $this->sendMessage($chatId, sprintf('Personnalité changée : %s', $meta['name']));
+            $this->sendMessage($telegramChatId, sprintf('Personnalité changée : %s', $meta['name']));
         } catch (\Exception $exception) {
-            $this->sendMessage($chatId, sprintf('Erreur : %s', $exception->getMessage()));
+            $this->sendMessage($telegramChatId, sprintf('Erreur : %s', $exception->getMessage()));
         }
     }
 }
