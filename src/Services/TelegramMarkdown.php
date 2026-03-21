@@ -274,10 +274,8 @@ final readonly class TelegramMarkdown
         string $delimiter
     ): string {
         // Characters that ALWAYS need escaping in MarkdownV2:
-        // . ! ` > # + - = | { } \
-        // Note: Inside formatted regions, we don't escape other formatting
-        // characters like _ * [ ] ( ) ~ because they don't break the formatting
-        $alwaysEscape = '.!`>#+-=|{}';
+        // @see https://core.telegram.org/bots/api#markdownv2-style
+        $alwaysEscape = '_*[]()~`>#+-=|{}.!';
 
         // Also escape the backslash
         $charsToEscape = $alwaysEscape . '\\';
