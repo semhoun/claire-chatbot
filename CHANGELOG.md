@@ -7,7 +7,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
-## [1.2.0] - 2026-03-20
+## [1.2.0] - 2026-03-21
 
 ### Added
 - Horodatage des messages avec affichage relatif (il y a X min) et tooltip date complète
