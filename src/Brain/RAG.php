@@ -15,6 +15,18 @@ class RAG extends \NeuronAI\RAG\RAG
     use AgentTrait\Middleware;
 
     #[\Override]
+    public function resolveInstructions(): string
+    {
+        $instructions = parent::resolveInstructions();
+        $dateLine = sprintf(
+            "\n\n[Contexte système] Date et heure actuelles : %s\n",
+            new \DateTimeImmutable()->format('Y-m-d H:i:s')
+        );
+
+        return $instructions . $dateLine;
+    }
+
+    #[\Override]
     protected function embeddings(): EmbeddingsProviderInterface
     {
         return new \NeuronAI\RAG\Embeddings\OpenAILikeEmbeddings(
@@ -31,17 +43,5 @@ class RAG extends \NeuronAI\RAG\RAG
             directory: $this->settings->get('llm.rag.path'),
             name: 'neuron-rag',
         );
-    }
-
-    #[\Override]
-    public function resolveInstructions(): string
-    {
-        $instructions = parent::resolveInstructions();
-        $dateLine = sprintf(
-            "\n\n[Contexte système] Date et heure actuelles : %s\n",
-            new \DateTimeImmutable()->format('Y-m-d H:i:s')
-        );
-
-        return $instructions . $dateLine;
     }
 }

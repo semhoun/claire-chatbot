@@ -32,8 +32,10 @@ final class YamlBrain extends Agent implements BrainAvatar
     #[\Override]
     public function getOpeningText(): string
     {
+        error_log(print_r($this->welcomes, true));
         if ($this->welcomes === []) {
-            return 'Bonjour ! Comment puis-je vous aider ?';
+            error_log('No welcomes configured, falling back to default');
+            return parent::getOpeningText();
         }
 
         return $this->welcomes[array_rand($this->welcomes)];

@@ -8,7 +8,6 @@ use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Tools\GenerateImageTool;
 use App\Entity\User;
-use App\Services\Auth;
 use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;
@@ -36,7 +35,9 @@ class TelegramService
     ];
 
     private const string ACTION_TEXT = 'typing';
+
     private const string ACTION_GENERATE = 'record_video';
+
     private const string ACTION_PHOTO = 'upload_photo';
     private const string ACTION_VIDEO = 'upload_video';
     private const string ACTION_VOICE = 'upload_voice';
@@ -45,7 +46,7 @@ class TelegramService
     private const string ACTION_LOCATION = 'find_location';
     private const string ACTION_VIDEO_NOTE = 'upload_video_note';
 
-    private TelegramSession $telegramSession;
+    private readonly TelegramSession $telegramSession;
 
     private ?\DateTime $lastChatActionDate = null;
 
@@ -256,7 +257,7 @@ class TelegramService
 
     private function sendChatAction(int $telegramChatId, string $action): void
     {
-        if ($this->lastChatActionDate === null || $this->lastChatActionDate->diff(new \DateTime())->s > 5) {
+        if (! $this->lastChatActionDate instanceof \DateTime || $this->lastChatActionDate->diff(new \DateTime())->s > 5) {
             $this->lastChatActionDate = new \DateTime();
             $res = $this->telegramBotApi->sendChatAction($telegramChatId, $action);
             if ($res instanceof FailResult) {
@@ -281,8 +282,7 @@ class TelegramService
                 if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
                     if ($chunk->tool instanceof GenerateImageTool) {
                         $this->sendChatAction($telegramChatId, self::ACTION_GENERATE);
-                    }
-                    else {
+                    } else {
                         $this->sendChatAction($telegramChatId, self::ACTION_TEXT);
                     }
                 } elseif ($chunk instanceof ReasoningChunk) {
@@ -313,8 +313,14 @@ class TelegramService
 
     private function sendMessage(int $telegramChatId, string $text): void
     {
+        // Filtrer les balises [OC] et [/OC]
+        $filteredText = $this->filterOCTags($text);
+        if ($filteredText === '') {
+            return;
+        }
+
         try {
-            $formattedText = $this->formatForTelegram($text);
+            $formattedText = $this->formatForTelegram($filteredText);
             $chunks = $this->splitMessage($formattedText);
             foreach ($chunks as $chunk) {
                 $result = $this->telegramBotApi->sendMessage(chatId: $telegramChatId, text: $chunk, parseMode: ParseMode::MARKDOWN_V2);
@@ -338,7 +344,7 @@ class TelegramService
             return $this->telegramMarkdown->convertToMarkdownV2($text);
         } catch (\Throwable $throwable) {
             $this->logger->warning('Markdown conversion failed, falling back to escaped text: ' . $throwable->getMessage());
-	    $specialChars = '_*[]()~`>#+-=|{}!.';
+            $specialChars = '_*[]()~`>#+-=|{}!.';
 
             return addcslashes($text, $specialChars . '\\');
         }
@@ -397,7 +403,8 @@ class TelegramService
     {
         // Remove image paths from text to create caption
         $caption = preg_replace(ComfyUIService::IMAGE_PATTERN, '', $responseText);
-        $caption = trim((string) $caption);
+        // Filter OC tags
+        $caption = $this->filterOCTags((string) $caption);
 
         // Send each image
         $imageCount = count($imageIds);
@@ -437,12 +444,15 @@ class TelegramService
 
             file_put_contents($tempFile, $fileContent);
 
- $formattedCaption = null;
+            $formattedCaption = null;
             if ($caption !== null && $caption !== '') {
-                $formattedCaption = $this->formatForTelegram($caption);
-                // Telegram captions have a 1024 character limit
-                if (strlen($formattedCaption) > 1024) {
-                    $formattedCaption = null;
+                $filteredCaption = $this->filterOCTags($caption);
+                if ($filteredCaption !== '') {
+                    $formattedCaption = $this->formatForTelegram($filteredCaption);
+                    // Telegram captions have a 1024 character limit
+                    if (strlen($formattedCaption) > 1024) {
+                        $formattedCaption = null;
+                    }
                 }
             }
 
@@ -464,10 +474,13 @@ class TelegramService
                 ]);
                 $this->sendMessage($telegramChatId, 'Désolé, je n\'ai pas pu envoyer l\'image.');
             }
-            if ($formattedCaption == null && $caption !== null && $caption !== '') {
-                    $this->sendMessage($telegramChatId, $caption);
-            }
 
+            if ($formattedCaption === null && $caption !== null && $caption !== '') {
+                $filteredCaption = $this->filterOCTags($caption);
+                if ($filteredCaption !== '') {
+                    $this->sendMessage($telegramChatId, $filteredCaption);
+                }
+            }
         } catch (FilesystemException $e) {
             $this->logger->error('Filesystem error sending photo: ' . $e->getMessage(), ['path' => $imagePath]);
             $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
@@ -521,17 +534,33 @@ class TelegramService
         }
 
         $brain = (string) $args[0];
-       try {
-           if ($brain === 'reset') {
-               $brain = $this->settings->get('llm.defaultBrain');
-           }
+        try {
+            if ($brain === 'reset') {
+                $brain = $this->settings->get('llm.defaultBrain');
+            }
 
-           $meta = $this->brainRegistry->getMeta($brain);
+            $meta = $this->brainRegistry->getMeta($brain);
 
             $this->telegramSession->set('brain_avatar', $brain);
             $this->sendMessage($telegramChatId, sprintf('Personnalité changée : %s', $meta['name']));
         } catch (\Exception $exception) {
             $this->sendMessage($telegramChatId, sprintf('Erreur : %s', $exception->getMessage()));
         }
+    }
+
+    /**
+     * Filtre les balises [OC] et [/OC] du contenu.
+     * Retourne une chaîne vide si le contenu ne contient que ces balises ou est vide.
+     */
+    private function filterOCTags(string $content): string
+    {
+        // Retirer les blocs [OC]...[/OC] sur plusieurs lignes
+        $filtered = preg_replace('/\[OC\].*?\[\/OC\]/s', '', $content);
+
+        // Retirer les balises isolées [OC] et [/OC] au cas où
+        $filtered = preg_replace('/\[OC\]|\[\/OC\]/', '', (string) $filtered);
+
+        // Trim et vérifier si vide
+        return trim((string) $filtered);
     }
 }

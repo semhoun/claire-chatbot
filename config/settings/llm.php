@@ -34,7 +34,7 @@ return [
         'einstein' => App\Brain\Einstein::class,
     ],
     'yamlBrains' => [
-        'path' =>  Settings::getAppRoot() . '/addons/agents',
+        'path' => Settings::getAppRoot() . '/addons/agents',
     ],
     'defaultBrain' => 'claire',
     'rawMimeTypes' => [

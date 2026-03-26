@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Brain;
 
+use NeuronAI\Chat\Messages\UserMessage;
+
 class Agent extends \NeuronAI\Agent\Agent
 {
     use AgentTrait\AIProvider;
@@ -14,7 +16,20 @@ class Agent extends \NeuronAI\Agent\Agent
 
     public function getOpeningText(): string
     {
-        return '';
+        // Générer le message de bienvenue via le LLM
+        $userMessage = new UserMessage(
+            "[OC]Génère un message de bienvenue chaleureux et concis pour accueillir l'utilisateur. " .
+            "Présente-toi brièvement et invite l'utilisateur à poser ses questions. " .
+            'Réponds uniquement avec le message de bienvenue, sans guillemets ni formatage.[/OC]'
+        );
+
+        try {
+            $agentMessage = $this->chat($userMessage)->getMessage();
+            return $agentMessage->getContent();
+        } catch (\Throwable) {
+            // En cas d'erreur, retourner un message par défaut
+            return "Bonjour ! Comment puis-je vous aider aujourd'hui ?";
+        }
     }
 
     #[\Override]

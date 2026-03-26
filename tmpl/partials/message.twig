@@ -1,9 +1,11 @@
+{% set filtered_message = message|filter_oc_tags %}
+{% if filtered_message is not empty %}
 <article class="message {{ sent ? 'message--sent' : 'message--received' }}">
     <div class="message__bubble">
         {% if toolCallId  %}
         <div class="message__subbubble message__subbubble--toolcall">
             <details class="toolcall">
-                <summary class="toolcall__summary" aria-label="Appels d’outils" title="Appels d’outils">
+                <summary class="toolcall__summary" aria-label="Appels d'outils" title="Appels d'outils">
                     <!-- Tool icon -->
                     <svg class="toolcall__icon toolcall__icon--tool" width="18" height="18" viewBox="0 0 128 128" role="img" aria-hidden="true">
                         <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -30,7 +32,7 @@
                     <svg class="toolcall__chevron" width="14" height="14" viewBox="0 0 24 24" role="img" aria-hidden="true">
                         <path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
-                    <span class="visually-hidden">Appels d’outils</span>
+                    <span class="visually-hidden">Appels d'outils</span>
                 </summary>
                     <div class="toolcall__text" id="{{ toolCallId }}">
                     {{ toolCall }}
@@ -40,8 +42,9 @@
         {% endif %}
 
         <span class="message__text" {% if streamId  %}id="{{ streamId }}"{% endif %}>
-            {{ message|process_generated_images|markdown_to_html }}
+            {{ filtered_message|process_generated_images|markdown_to_html }}
         </span>
     </div>
     <span class="message__meta">{% if time is defined and time %}{{ time|format_timestamp }}{% endif %}{% if sent %} • Vous{% endif %}</span>
 </article>
+{% endif %}

@@ -7,6 +7,20 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Added
+- Filtre Twig `OCFilterExtension` avec filtre `filter_oc_tags` pour retirer les blocs internes `[OC]...[/OC]` avant rendu
+- Tests unitaires pour le filtrage des balises `[OC]`
+- Option de configuration `OPENAPI_CONTEXT_WINDOW` pour ajuster la fenêtre de contexte LLM
+- Injection automatique de la date et de l'heure courantes dans les instructions système des agents et du RAG
+
+### Changed
+- Le template `tmpl/partials/message.twig` filtre désormais les balises `[OC]` avant conversion Markdown et n'affiche plus les messages vides après nettoyage
+- Le service Telegram filtre aussi les balises `[OC]` avant l'envoi des messages et légendes
+- Le message d'accueil généré par l'agent encapsule désormais son prompt interne dans des balises `[OC]`
+
+### Fixed
+- Empêche l'affichage côté web et Telegram des contenus internes marqués `[OC]`
+
 ## [1.2.0] - 2026-03-21
 
 ### Added

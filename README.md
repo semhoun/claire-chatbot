@@ -43,11 +43,15 @@ docker run -d -p 8080:80 \
 
 ## Fonctionnalités
 
-- Interface web de chat basique (Twig + CSS) avec horodatage des messages.
+- Interface web de chat avec horodatage des messages et masquage automatique des blocs internes `[OC]...[/OC]`.
 - Endpoint API `POST /brain/chat` pour envoyer un message et récupérer la réponse de l'agent.
 - Healthcheck `GET /health` (JSON) pour la supervision.
 - Intégration d'un fournisseur LLM « OpenAI-like » (URL, clé et modèle configurables).
+- Ajout automatique de la date et l'heure courantes dans le contexte système des agents.
+- Recherche web optionnelle via SearXNG et RAG fichier via embeddings OpenAI-like.
 - Génération d'images avec ComfyUI (optionnel).
+- Support d'agents personnalisés via classes PHP et fichiers YAML.
+- Intégration Telegram avec filtrage des balises `[OC]` sur les réponses envoyées.
 - Journalisation via Monolog, exportée par OpenTelemetry.
 - Intégration OpenTelemetry pour traces/metrics/logs.
 
@@ -92,6 +96,7 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
   - `OPENAPI_MODEL` — identifiant du modèle par défaut (ex: gpt-4o-mini, gpt-5.1, etc.)
   - `OPENAPI_MODEL_SUMMARY` — modèle dédié aux tâches de synthèse/résumé (optionnel; si absent, `OPENAPI_MODEL` sera utilisé)
   - `OPENAPI_MODEL_EMBED` — modèle dédié aux embeddings (optionnel; si absent, le RAG est désactivé)
+  - `OPENAPI_CONTEXT_WINDOW` — taille de fenêtre de contexte cible utilisée par l'agent (défaut: `50000`)
   - `SEARXNG_URL` — URL de l'instance SearXNG pour la recherche web (optionnel)
 
 - Telegram (voir `config/settings/telegram.php`):
@@ -227,6 +232,23 @@ instruction: |
 - Un message d'accueil est choisi aléatoirement parmi la liste `welcomes`
 - Les cerveaux YAML apparaissent automatiquement dans l'interface aux côtés des cerveaux PHP
 - Voir le fichier exemple dans `addons/agents/flashy.yaml` (réplique complète en YAML du cerveau Flashy IoT avec CSS inline)
+
+### Blocs internes `[OC]`
+
+Claire utilise des balises internes `[OC]...[/OC]` pour porter des instructions ou contenus de contrôle qui ne doivent pas être affichés à l'utilisateur final.
+
+- Dans l'interface web, le filtre Twig `filter_oc_tags` supprime automatiquement ces blocs avant le rendu Markdown.
+- Dans Telegram, le même filtrage est appliqué avant conversion vers `MarkdownV2`.
+- Si un message ne contient plus rien après filtrage, il n'est pas affiché ni envoyé.
+- Le fichier `tmpl/partials/message.twig` applique ce filtrage avant rendu.
+
+### Contexte temporel automatique
+
+Les agents principaux ajoutent automatiquement la date et l'heure courantes à leurs instructions système.
+
+- Cela améliore la contextualisation des réponses sensibles au temps.
+- Le comportement est implémenté dans `App\Brain\Agent` et `App\Brain\RAG`.
+- Les messages de bienvenue générés par l'agent utilisent également un bloc `[OC]` pour éviter d'exposer l'instruction interne.
 
 #### Recherche Web (Web Search)
 
