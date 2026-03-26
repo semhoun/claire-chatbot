@@ -275,10 +275,7 @@ final readonly class TelegramMarkdown
     ): string {
         // Characters that ALWAYS need escaping in MarkdownV2:
         // @see https://core.telegram.org/bots/api#markdownv2-style
-        $alwaysEscape = '_*[]()~`>#+-=|{}.!';
-
-        // Also escape the backslash
-        $charsToEscape = $alwaysEscape . '\\';
+        $charsToEscape = '_*[]()~`>#+-=|{}!\.\\';
 
         // Handle multi-char delimiters (like || for spoilers)
         // Each char in the delimiter shouldn't be escaped

@@ -328,12 +328,6 @@ class TelegramService
         }
     }
 
-    private function escapeMarkdownV2(string $text): string
-    {
-        // Characters that must be escaped in MarkdownV2: _ * [ ] ( ) ~ ` > # + - = | { } . !
-        return preg_replace('/([_\\*\\[\\]\\(\\)\\~\\`\\>\\#\\+\\-\\=\\|\\{\\}\\.\\!])/', '\\\\$1', $text);
-    }
-
     /**
      * Format text for Telegram MarkdownV2.
      * Converts markdown to MarkdownV2 format, falling back to escaped plain text on failure.
@@ -344,8 +338,9 @@ class TelegramService
             return $this->telegramMarkdown->convertToMarkdownV2($text);
         } catch (\Throwable $throwable) {
             $this->logger->warning('Markdown conversion failed, falling back to escaped text: ' . $throwable->getMessage());
+	    $specialChars = '_*[]()~`>#+-=|{}!.';
 
-            return $this->escapeMarkdownV2($text);
+            return addcslashes($text, $specialChars . '\\');
         }
     }
 
@@ -442,13 +437,12 @@ class TelegramService
 
             file_put_contents($tempFile, $fileContent);
 
-            // Prepare caption
-            $formattedCaption = null;
+ $formattedCaption = null;
             if ($caption !== null && $caption !== '') {
                 $formattedCaption = $this->formatForTelegram($caption);
                 // Telegram captions have a 1024 character limit
                 if (strlen($formattedCaption) > 1024) {
-                    $formattedCaption = substr($formattedCaption, 0, 1021) . '...';
+                    $formattedCaption = null;
                 }
             }
 
@@ -466,9 +460,14 @@ class TelegramService
                     'chatId' => $telegramChatId,
                     'path' => $imagePath,
                     'error' => $result,
+                    'caption' => $formattedCaption,
                 ]);
                 $this->sendMessage($telegramChatId, 'Désolé, je n\'ai pas pu envoyer l\'image.');
             }
+            if ($formattedCaption == null && $caption !== null && $caption !== '') {
+                    $this->sendMessage($telegramChatId, $caption);
+            }
+
         } catch (FilesystemException $e) {
             $this->logger->error('Filesystem error sending photo: ' . $e->getMessage(), ['path' => $imagePath]);
             $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
