@@ -12,8 +12,6 @@ use Symfony\Component\Yaml\Yaml;
 
 final class BrainRegistry
 {
-    private const string YAML_AGENTS_DIR = __DIR__ . '/../../addons/agents';
-
     /** @var array<string, array{name:string, description:string, avatar:string, css:string, welcomes:array<string>, instruction:string}>|null */
     private ?array $yamlBrainsCache = null;
 
@@ -164,11 +162,11 @@ final class BrainRegistry
 
         $this->yamlBrainsCache = [];
 
-        if (! is_dir(self::YAML_AGENTS_DIR)) {
+        if (! is_dir($this->settings->get('llm.yamlBrains.path'))) {
             return $this->yamlBrainsCache;
         }
 
-        $files = glob(self::YAML_AGENTS_DIR . '/*.yaml');
+        $files = glob($this->settings->get('llm.yamlBrains.path'). '/*.yaml');
         if ($files === false) {
             return $this->yamlBrainsCache;
         }

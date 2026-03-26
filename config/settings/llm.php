@@ -33,6 +33,9 @@ return [
         'claire' => App\Brain\Claire::class,
         'einstein' => App\Brain\Einstein::class,
     ],
+    'yamlBrains' => [
+        'path' =>  Settings::getAppRoot() . '/addons/agents',
+    ],
     'defaultBrain' => 'claire',
     'rawMimeTypes' => [
         'application/x-csh',
