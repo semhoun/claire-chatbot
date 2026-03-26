@@ -121,10 +121,10 @@
     (function () {
         window.chatClick = function chatClick(event) {
             const form = event.target;
-            console.log(form);
            // Désactiver tous les éléments du formulaire avec la classe form_disabler
             const disablers = form.querySelectorAll('.form_disabler');
             disablers.forEach(el => { el.setAttribute('disabled', true); });
+            form.classList.add('is-busy');
 
             const input = form.querySelector('[name="message"]');
             if (!input) return;
@@ -156,6 +156,7 @@
 
             const disablers = form.querySelectorAll('.form_disabler');
             disablers.forEach(el => { el.removeAttribute('disabled'); });
+            form.classList.remove('is-busy');
 
             if(!event.detail.successful) {
                 return;

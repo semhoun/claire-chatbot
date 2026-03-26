@@ -8,6 +8,7 @@ use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Tools\GenerateImageTool;
 use App\Entity\User;
+use App\Enums\TelegramAction;
 use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;
@@ -33,18 +34,6 @@ class TelegramService
         'list' => 'Lister les personnalités',
         'brain' => 'Voir ou changer de personnalité (choisir reset pour celui par défaut)',
     ];
-
-    private const string ACTION_TEXT = 'typing';
-
-    private const string ACTION_GENERATE = 'record_video';
-
-    private const string ACTION_PHOTO = 'upload_photo';
-    private const string ACTION_VIDEO = 'upload_video';
-    private const string ACTION_VOICE = 'upload_voice';
-    private const string ACTION_DOCUMENT = 'upload_document';
-    private const string ACTION_STICKER = 'choose_sticker';
-    private const string ACTION_LOCATION = 'find_location';
-    private const string ACTION_VIDEO_NOTE = 'upload_video_note';
 
     private readonly TelegramSession $telegramSession;
 
@@ -255,11 +244,11 @@ class TelegramService
         return true;
     }
 
-    private function sendChatAction(int $telegramChatId, string $action): void
+    private function sendChatAction(int $telegramChatId, TelegramAction $telegramAction): void
     {
         if (! $this->lastChatActionDate instanceof \DateTime || $this->lastChatActionDate->diff(new \DateTime())->s > 5) {
             $this->lastChatActionDate = new \DateTime();
-            $res = $this->telegramBotApi->sendChatAction($telegramChatId, $action);
+            $res = $this->telegramBotApi->sendChatAction($telegramChatId, $telegramAction->value);
             if ($res instanceof FailResult) {
                 $this->logger->error('Failed to send chat action', ['chatId' => $telegramChatId, 'error' => $res]);
             }
@@ -281,14 +270,14 @@ class TelegramService
             foreach ($agentHandler->events() as $chunk) {
                 if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
                     if ($chunk->tool instanceof GenerateImageTool) {
-                        $this->sendChatAction($telegramChatId, self::ACTION_GENERATE);
+                        $this->sendChatAction($telegramChatId, TelegramAction::GENERATE);
                     } else {
-                        $this->sendChatAction($telegramChatId, self::ACTION_TEXT);
+                        $this->sendChatAction($telegramChatId, TelegramAction::TEXT);
                     }
                 } elseif ($chunk instanceof ReasoningChunk) {
-                    $this->sendChatAction($telegramChatId, self::ACTION_TEXT);
+                    $this->sendChatAction($telegramChatId, TelegramAction::TEXT);
                 } elseif ($chunk instanceof TextChunk) {
-                    $this->sendChatAction($telegramChatId, self::ACTION_TEXT);
+                    $this->sendChatAction($telegramChatId, TelegramAction::TEXT);
                 }
             }
 
@@ -422,7 +411,7 @@ class TelegramService
     private function sendPhoto(int $telegramChatId, string $imageId, ?string $caption = null): void
     {
         try {
-            $this->sendChatAction($telegramChatId, self::ACTION_PHOTO);
+            $this->sendChatAction($telegramChatId, TelegramAction::PHOTO);
 
             $imagePath = ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $imageId);
 
@@ -498,6 +487,9 @@ class TelegramService
     private function cmd_start(int $telegramChatId): void
     {
         $this->manageSession($this->telegramSession->get('telegram_id'), true);
+
+        $this->sendChatAction($telegramChatId, TelegramAction::TEXT);
+
         $this->sendMessage(
             $telegramChatId,
             $this->brainRegistry->get($this->telegramSession->get('brain_avatar'), $this->telegramSession)->getOpeningText()

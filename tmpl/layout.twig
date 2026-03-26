@@ -48,6 +48,7 @@
                 hx-post="{{ base_url }}/history/new"
                 hx-target="#messages"
                 hx-swap="innerHTML"
+                hx-indicator="#globalActionIndicator"
                 hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
                 hx-on::after-request="
                     if (event.detail.successful) {
@@ -66,7 +67,7 @@
                         // Rafraîchir le compteur
                         const countUrl = '{{ base_url }}/history/count';
                         if (window.htmx) { htmx.ajax('GET', countUrl, {target: '#historyCountBadge', swap: 'innerHTML'}); }
-                    }}
+                    }
                 "
             >
                 <span class="options-item__label">Nouvelle conversation</span>
@@ -253,6 +254,12 @@
                 <button id="modalCancel" class="btn btn--secondary" type="button">Annuler</button>
                 <button id="modalConfirm" class="btn btn--primary" type="button">Confirmer</button>
             </div>
+        </div>
+    </div>
+    <div id="globalActionIndicator" class="global-action-indicator htmx-indicator" role="status" aria-live="polite" aria-atomic="true">
+        <div class="global-action-indicator__pill">
+            <span class="global-action-indicator__spinner" aria-hidden="true"></span>
+            <span>Action en cours...</span>
         </div>
     </div>
 </div>
@@ -632,7 +639,7 @@
             btn.setAttribute('aria-expanded', 'true');
             // Charger la liste via HTMX
             if (window.htmx) {
-                window.htmx.ajax('GET', '{{ base_url }}/history/list', { target: '#historyList', swap: 'innerHTML' });
+                window.htmx.ajax('GET', '{{ base_url }}/history/list', { target: '#historyList', swap: 'innerHTML', indicator: '#globalActionIndicator' });
             }
         }
 
@@ -674,7 +681,7 @@
         function expand() {
             btn.setAttribute('aria-expanded', 'true');
             if (window.htmx) {
-                window.htmx.ajax('GET', '{{ base_url }}/files/list', { target: '#filesList', swap: 'innerHTML' });
+                window.htmx.ajax('GET', '{{ base_url }}/files/list', { target: '#filesList', swap: 'innerHTML', indicator: '#globalActionIndicator' });
             }
         }
 

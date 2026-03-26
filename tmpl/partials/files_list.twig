@@ -98,6 +98,7 @@
                                 hx-delete="{{ base_url }}/files/delete/{{ file.id }}"
                                 hx-target="closest .files-root"
                                 hx-swap="innerHTML"
+                                hx-indicator="#globalActionIndicator"
                                 data-dialog-confirm="Supprimer ce fichier ? Cette action est irréversible."
                                 data-dialog-title="Confirmer la suppression"
                                 data-dialog-variant="danger"

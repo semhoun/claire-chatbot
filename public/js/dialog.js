@@ -171,6 +171,8 @@
         // Passing values like "closest li" as opts.target causes htmx:targetError,
         // because the programmatic API expects a real element or a plain selector.
         const opts = {source: el};
+        const indicator = el.getAttribute('hx-indicator');
+        if (indicator) opts.indicator = indicator;
         // preserve headers and other HTMX attributes if present
         const headers = el.getAttribute('hx-headers');
         if (headers) opts.headers = JSON.parse(headers);
