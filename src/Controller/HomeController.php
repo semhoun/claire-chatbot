@@ -47,7 +47,14 @@ final readonly class HomeController
             }
         }
 
+        $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
+        $session->set('chatId', $chatId);
+
         $currentBrain = $session->get('brain_avatar');
+        // Default chat mode
+        $mode = $session->get('chat_mode') ?? 'chat';
+        // Default layout width mode
+        $layoutMode = $session->get('layout_mode') ?? 'full';
 
         // Charger les messages existants pour le thread courant si disponibles
         $userChatHistory = new UserChatHistory(
@@ -56,19 +63,14 @@ final readonly class HomeController
             table: UserChatHistory::TABLE,
             contextWindow: $this->settings->get('llm.openai.contextWindow')
         );
-        $messages = $userChatHistory->getMessages();
+        $messages = $userChatHistory->getFormattedMessages($mode);
         if ($messages === []) {
             $assistantMessage = new AssistantMessage(
                 $this->brainRegistry->get($currentBrain, $session)->getOpeningText()
             );
             $assistantMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-            $messages[] = $assistantMessage;
+            $messages = $userChatHistory->getFormattedMessages($mode, [$assistantMessage]);
         }
-
-        // Default chat mode
-        $mode = $session->get('chat_mode') ?? 'chat';
-        // Default layout width mode
-        $layoutMode = $session->get('layout_mode') ?? 'full';
 
         // Métadonnées du brain courant via la registry
         try {

@@ -44,7 +44,15 @@
         <main class="chat-body" style="position: relative; z-index: 1;">
             <div id="messages" class="messages">
                 {% if messages is defined and messages is not null and messages is not empty %}
-                    {% include 'partials/messages_list.twig' with { messages: messages } %}
+                    {% for m in messages %}
+                        {% include 'partials/message.twig' with {
+                            message: m.message,
+                            time: m.time,
+                            sent: m.sent,
+                            toolCallId: m.toolCallId,
+                            toolCall: m.toolText,
+                        } %}
+                    {% endfor %}
                 {% endif %}
             </div>
             <div id="typingIndicator" class="typing-indicator htmx-indicator" aria-hidden="true">

@@ -47,6 +47,13 @@ final readonly class HistoryController
         // Nouveau thread
         $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
         $session->set('chatId', $threadId);
+        $userChatHistory = new UserChatHistory(
+            session: $session,
+            pdo: $this->entityManager->getConnection()->getNativeConnection(),
+            table: UserChatHistory::TABLE,
+            contextWindow: $this->settings->get('llm.openai.contextWindow')
+        );
+        $userChatHistory->setThreadId($threadId);
 
         $currentBrain = $session->get('brain_avatar');
         $assistantMessage = new AssistantMessage(
@@ -54,7 +61,7 @@ final readonly class HistoryController
         );
         $assistantMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
 
-        $messages = [$assistantMessage];
+        $messages = $userChatHistory->getFormattedMessages($session->get('chat_mode'), [$assistantMessage]);
 
         return $this->twig->render($response, 'partials/messages_list.twig', [
             'messages' => $messages,
@@ -135,7 +142,7 @@ final readonly class HistoryController
         );
         $userChatHistory->setThreadId($threadId);
 
-        $messages = $userChatHistory->getMessages();
+        $messages = $userChatHistory->getFormattedMessages($session->get('chat_mode'));
         if ($messages === []) {
             return $response->withStatus(400);
         }

@@ -12,7 +12,6 @@ class Agent extends \NeuronAI\Agent\Agent
     use AgentTrait\UserChatHistory;
     use AgentTrait\Middleware;
     use AgentTrait\Constructor;
-    use AgentTrait\Nodes;
 
     public function getOpeningText(): string
     {
@@ -22,6 +21,7 @@ class Agent extends \NeuronAI\Agent\Agent
             "Présente-toi brièvement et invite l'utilisateur à poser ses questions. " .
             'Réponds uniquement avec le message de bienvenue, sans guillemets ni formatage.[/OC]'
         );
+        $userMessage->addMetadata('message_type', 'out_of_context');
 
         try {
             $agentMessage = $this->chat($userMessage)->getMessage();

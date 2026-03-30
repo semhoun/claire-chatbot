@@ -15,8 +15,6 @@ class Claire extends Agent implements BrainAvatar
 
     public const string DESCRIPTION = 'Claire votre assistante personnelle, prête à vous accompagner dans vos tâches quotidiennes.';
 
-    public const string CSS = 'claire.css';
-
     #[\Override]
     protected function instructions(): string
     {

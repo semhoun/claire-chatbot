@@ -1,5 +1,3 @@
-{% set filtered_message = message|filter_oc_tags %}
-{% if filtered_message is not empty %}
 <article class="message {{ sent ? 'message--sent' : 'message--received' }}">
     <div class="message__bubble">
         {% if toolCallId  %}
@@ -35,16 +33,15 @@
                     <span class="visually-hidden">Appels d'outils</span>
                 </summary>
                     <div class="toolcall__text" id="{{ toolCallId }}">
-                    {{ toolCall }}
+                    {{ toolCall | raw }}
                 </div>
             </details>
         </div>
         {% endif %}
 
         <span class="message__text" {% if streamId  %}id="{{ streamId }}"{% endif %}>
-            {{ filtered_message|process_generated_images|markdown_to_html }}
+            {{ message|process_generated_images|markdown_to_html }}
         </span>
     </div>
     <span class="message__meta">{% if time is defined and time %}{{ time|format_timestamp }}{% endif %}{% if sent %} • Vous{% endif %}</span>
 </article>
-{% endif %}

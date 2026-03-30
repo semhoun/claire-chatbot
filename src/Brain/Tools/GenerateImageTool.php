@@ -27,16 +27,16 @@ class GenerateImageTool extends Tool implements MessagePostProcessorInterface
 Generates an image from a text description using ComfyUI, generated image will be send to the user.
 IMPORTANT: This tool MUST be used whenever the user needs an image or photo - whether they ask to create, generate, draw, or simply want/need an image.
 Any request that requires providing an image, picture, or photo should use this tool.
-The prompt should be written in natural language (Flux style), describing the scene in detail with complete sentences.
-To insert an existing image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@).
+The prompt should be written in natural english language (Flux style), describing the scene in detail with complete sentences.
+To insert an existing image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@), don't insert "<img>" tag.
 EOT
             : <<<EOT
 Generates an image from a text description using ComfyUI, generated image will be send to the user.
 IMPORTANT: This tool MUST be used whenever the user needs an image or photo - whether they ask to create, generate, draw, or simply want/need an image.
 Any request that requires providing an image, picture, or photo should use this tool.
-The prompt should be formatted as comma-separated keywords (SDXL style), for example: "masterpiece, best quality, sunlit forest, vibrant colors, detailed trees, cinematic lighting".
+The prompt should be formatted as comma-separated english keywords (SDXL style), for example: "masterpiece, best quality, sunlit forest, vibrant colors, detailed trees, cinematic lighting".
 Avoid natural language sentences; use descriptive tags and keywords for best results.
-To insert an existing image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@).
+To insert an existing image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@), don't insert "<img>" tag.
 EOT;
 
         parent::__construct(
@@ -142,8 +142,8 @@ EOT;
     {
         $promptStyle = $this->settings->get('comfyui.prompt_style');
         $propertyDescription = $promptStyle === 'flux'
-            ? 'The text description of the image to generate. Use natural language with complete sentences (Flux style).'
-            : 'The text description of the image to generate. Use comma-separated keywords (SDXL style). Be detailed and descriptive.';
+            ? 'The text description of the image to generate. Use natural english language with complete sentences (Flux style).'
+            : 'The text description of the image to generate. Use comma-separated english keywords (SDXL style). Be detailed and descriptive.';
 
         return [
             new ToolProperty(

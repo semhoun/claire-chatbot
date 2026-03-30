@@ -1,9 +1,10 @@
 {# Renders a list of messages into the chat #}
 {% for m in messages %}
-    {% set sent = (m.role|default('assistant')) == 'user' %}
     {% include 'partials/message.twig' with {
-        message: m.content|default(''),
-        time: m.getMetadata('timestamp')|default(''),
-        sent: sent
+        message: m.message,
+        time: m.time,
+        sent: m.sent,
+        toolCallId: m.toolCallId,
+        toolCall: m.toolText,
     } %}
 {% endfor %}

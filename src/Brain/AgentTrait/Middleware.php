@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Brain\AgentTrait;
 
-use App\Brain\Nodes\PostProcessChatNode;
-use App\Brain\Nodes\PostProcessStreamingNode;
+use App\Brain\Middleware\ToolCalls;
 use NeuronAI\Agent\Middleware\Summarization;
+use NeuronAI\Agent\Nodes\ChatNode;
+use NeuronAI\Agent\Nodes\StreamingNode;
 use NeuronAI\Agent\Nodes\StructuredOutputNode;
 
 trait Middleware
@@ -20,10 +21,12 @@ trait Middleware
             messagesToKeep: 10,
         );
 
+        $toolCalls = new ToolCalls();
+
         return [
-            PostProcessChatNode::class => [$summarization],
-            PostProcessStreamingNode::class => [$summarization],
-            StructuredOutputNode::class => [$summarization],
+            ChatNode::class => [$summarization, $toolCalls],
+            StreamingNode::class => [$summarization, $toolCalls],
+            StructuredOutputNode::class => [$summarization, $toolCalls],
         ];
     }
 }

@@ -7,6 +7,14 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-03-31
+
+### Added
+- Documentation de la version 1.2.3 dans le README et le changelog
+
+### Changed
+- Mise à jour du README pour refléter la version courante 1.2.3 dans les exemples et l'introduction
+
 ### Added
 - Filtre Twig `OCFilterExtension` avec filtre `filter_oc_tags` pour retirer les blocs internes `[OC]...[/OC]` avant rendu
 - Tests unitaires pour le filtrage des balises `[OC]`
@@ -158,7 +166,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.2.0...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.2.3...HEAD
+[1.2.3]: https://github.com/semhoun/claire-chatbot/compare/1.2.0...1.2.3
 [1.2.0]: https://github.com/semhoun/claire-chatbot/releases/tag/1.2.0
 [1.1.0]: https://github.com/semhoun/claire-chatbot/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/semhoun/claire-chatbot/releases/tag/1.0.0

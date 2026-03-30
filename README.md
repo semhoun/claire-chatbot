@@ -1,8 +1,8 @@
-# Claire — Agent de Chat IA (PHP, Slim 4)
+# Claire 1.2.3 — Agent de Chat IA (PHP, Slim 4)
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![Twig](https://img.shields.io/badge/Twig-3.x-43A047) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-Claire est une application web minimaliste de chat IA construite avec Slim 4 et Twig. Elle s'appuie sur la bibliothèque neuron-core pour piloter un LLM compatible OpenAI et fournit une petite interface web ainsi qu'un endpoint API pour échanger des messages.
+Claire 1.2.3 est une application web minimaliste de chat IA construite avec Slim 4 et Twig. Elle s'appuie sur la bibliothèque neuron-core pour piloter un LLM compatible OpenAI et fournit une petite interface web ainsi qu'un endpoint API pour échanger des messages.
 
 ## Démarrage rapide
 
@@ -117,7 +117,7 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
     - Générales
       - `OTEL_PHP_AUTOLOAD_ENABLED` — active l’auto‑instrumentation PHP (true/false).
       - `OTEL_SERVICE_NAME` — nom du service (utilisé par les 3 signaux).
-      - `OTEL_RESOURCE_ATTRIBUTES` — attributs ressource supplémentaires (ex: `deployment.environment=dev,service.version=1.0.0`).
+      - `OTEL_RESOURCE_ATTRIBUTES` — attributs ressource supplémentaires (ex: `deployment.environment=dev,service.version=1.2.3`).
       - `OTEL_PROPAGATORS` — propagateurs de contexte (ex: `baggage,tracecontext`).
     - Traces
       - `OTEL_TRACES_EXPORTER` — exporteur des traces (`otlp`, `none`).
@@ -547,7 +547,7 @@ services:
   - Réponse 200 (exemple):
     ```json
     {
-      "version": "1.0.0",
+      "version": "1.2.3",
       "date": "2025-01-01T12:34:56+00:00"
     }
     ```
