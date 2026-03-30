@@ -21,13 +21,9 @@ trait Middleware
         );
 
         return [
-
             PostProcessChatNode::class => [$summarization],
-
             PostProcessStreamingNode::class => [$summarization],
-
             StructuredOutputNode::class => [$summarization],
-
         ];
     }
 }
