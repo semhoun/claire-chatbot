@@ -2,18 +2,11 @@
 
 set -e
 
-if [ ! -f "/etc/apache2/conf-docker/20-htdocs.conf" ]; then
-	cat > /etc/apache2/conf-docker/15-location.conf << EOF
-ServerName ${SERVER_NAME}
-ServerAdmin ${SERVER_ADMIN}
-EOF
-
-	if [ "${DEBUG_MODE}" == "true" ]; then
-		cat >  /etc/php/8.4/fpm/conf.d/99-debug.ini << 'EOF'
+if [ "${DEBUG_MODE}" == "true" ]; then
+	cat > /usr/local/etc/php/conf.d/99-debug.ini << 'EOF'
 display_errors = On
 display_startup_errors = On
 EOF
-	fi
 fi
 
 # Check and create $VAR_PATH and subfolders
@@ -29,10 +22,48 @@ if [ ! -d "/www/var/cache/proxy" ]; then
   su www-data -c "./console app:generate-proxies"
 fi
 
-rm -rf /var/spool/fcron/root
-/usr/bin/fcrontab -n /etc/fcron/fcrontab-root root
+mkdir -p /etc/caddy
 
-rm -f /var/run/apache2.pid 
-rm -f /var/run/php-fpm.sock
+CADDY_GLOBAL_OPTIONS='	frankenphp'
+
+ACCESS_LOG_BLOCK=''
+if [ "${ENABLE_ACCESS_LOGS}" = "true" ]; then
+	ACCESS_LOG_BLOCK='	log {
+		output stdout
+		format console
+	}'
+	CADDY_GLOBAL_OPTIONS="${CADDY_GLOBAL_OPTIONS}
+${ACCESS_LOG_BLOCK}"
+fi
+
+SITE_ADDRESS=':80'
+if [ "${ENABLE_LETSENCRYPT}" = "true" ]; then
+	SITE_ADDRESS="${SERVER_NAME}"
+	if [ -n "${ACME_EMAIL}" ]; then
+		CADDY_GLOBAL_OPTIONS="	email ${ACME_EMAIL}
+${CADDY_GLOBAL_OPTIONS}"
+	fi
+else
+	CADDY_GLOBAL_OPTIONS="	auto_https off
+${CADDY_GLOBAL_OPTIONS}"
+fi
+cat > /etc/caddy/Caddyfile << EOF
+{
+${CADDY_GLOBAL_OPTIONS}
+}
+
+${SITE_ADDRESS} {
+	root * /www/public
+	encode zstd gzip
+${ACCESS_LOG_BLOCK}
+	php_server {
+		index index.php
+	}
+	file_server
+
+	@health path /health
+	header @health Cache-Control "no-store"
+}
+EOF
 
 exec "$@"

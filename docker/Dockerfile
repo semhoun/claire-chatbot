@@ -1,39 +1,21 @@
-FROM debian:trixie-slim AS base
+FROM dunglas/frankenphp:1-php8.4-trixie AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TERM=linux
+ENV FRANKENPHP_CONFIG="worker /www/public/index.php"
 
 RUN apt-get update -y \
-  && apt-get install -y --no-install-recommends curl ca-certificates vim bash dos2unix wget curl git unzip gpg \
-  && apt-get install -y apt-transport-https lsb-release ca-certificates \
-  && wget -O /etc/apt/trusted.gpg.d/php.gpg https://packages.sury.org/php/apt.gpg \
-  && sh -c 'echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list' \
-  && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
-  && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
-  && apt-get update \
-  \
-  && apt-get install -y supervisor \
-  \
-  && apt-get install -y nodejs \
-  \
-  && apt-get install -y \
-    apache2 apache2-utils \
-    imagemagick graphicsmagick exiftran \
+  && apt-get install -y --no-install-recommends curl wget ca-certificates bash dos2unix git unzip gpg \
+    iputils-ping iproute2 less vim \
     locales aspell-fr \
-    php8.4-fpm php8.4 php8.4-cli php8.4-common php8.4-curl php8.4-gd php8.4-imagick \
-    php8.4-mysql php8.4-sqlite3 php8.4-pgsql \
-    php8.4-xsl php8.4-intl php8.4-mbstring php8.4-zip php8.4-bcmath php8.4-xml php8.4-redis php8.4-memcache \
-    php8.4-dev php8.4-apcu php8.4-gmp php8.4-bz2 \
+    imagemagick graphicsmagick  exiftran \
+    supervisor \
   \
-  && apt-get install -y \
-    autoconf build-essential docbook docbook-xsl docbook-xml docbook-utils manpages-dev \
-  \
-  # Fix for added by debfault
-  && apt-get purge -y php7* php8.0* php8.1* php8.2* php8.3*\
-  && ln -s /usr/sbin/php-fpm8.4 /usr/sbin/php-fpm \
+# Dev packages \
+  && apt-get install -y libmemcached-dev zlib1g-dev libmagickwand-dev \
   \
   \
-# Configure locales
+# Configure locales \
   && sed \
     -e 's/# fr_FR.UTF-8 UTF-8/fr_FR.UTF-8 UTF-8/' \
     -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' \
@@ -41,49 +23,26 @@ RUN apt-get update -y \
   && /usr/sbin/locale-gen en_US.UTF-8 \
   \
   \
-# Install OpenTelemetry
+# Install php addons \
+  && install-php-extensions bcmath bz2 curl exif gd gmp intl mbstring opcache pcntl pdo_mysql pdo_pgsql pdo_sqlite redis sodium xsl zip \
   && pecl install opentelemetry \
-  && echo "extension=opentelemetry.so" > /etc/php/8.4/cli/conf.d/20-opentelemetry.ini \
-  && echo "extension=opentelemetry.so" > /etc/php/8.4/fpm/conf.d/20-opentelemetry.ini \
+  && docker-php-ext-enable opentelemetry \
+  && pecl install imagick memcache \
+  && docker-php-ext-enable imagick memcache \
   \
   \
-# Install composer
+# Install composer \
   && cd /tmp \
   && php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
   && php composer-setup.php \
   && install composer.phar /usr/bin/composer \
   \
   \
-# Configure Apache
-  && a2enmod proxy_fcgi rewrite deflate alias actions headers \
-  && a2disconf other-vhosts-access-log.conf \
-  \
-  \
-# Install fcron
-  && curl -L -o /tmp/fcron.tar.gz https://github.com/yo8192/fcron/archive/refs/tags/ver3_4_0.tar.gz \
-  && mkdir -p /tmp/fcron \
-  && cd /tmp/fcron \
-  && tar xzf /tmp/fcron.tar.gz --strip 1 \
-  && autoconf \
-  && ./configure \
-    --prefix=/usr \
-    --sysconfdir=/etc \
-    --localstatedir=/var \
-    --with-sysfcrontab=no \
-    --with-answer-all \
-    --without-sendmail \
-    --with-boot-install=no \
-    --with-systemdsystemunitdir=no \
-  && make \
-  && make install \
-  \
-  \
-# Clean
-  && apt-get -y purge php8.4-dev \
-    autoconf build-essential docbook docbook-xsl docbook-xml docbook-utils manpages-dev \
+# Clean \
+  && apt-get -y purge libmemcached-dev zlib1g-dev libmagickwand-dev \
   && apt-get -y autoremove \
   && apt-get clean \
-  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/* /var/log/apache2
+  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
 
 RUN mkdir -p /var/www \
   && chown -R www-data:www-data /var/www \
@@ -97,7 +56,7 @@ RUN mv /rootfs/www/docker/rootfs/* /rootfs/ \
     && rm -rf /rootfs/www/docker
 
 RUN cd /rootfs/www \
-    && composer \
+    && COMPOSER_ALLOW_SUPERUSER=1 php /usr/bin/composer \
         --no-cache \
         --optimize-autoloader \
         --apcu-autoloader \
@@ -117,9 +76,10 @@ ENV LANGUAGE=en_US:en
 ENV LC_ALL=en_US.UTF-8
 
 # Default env values
-ENV SERVER_NAME="www.docker.test"
-ENV SERVER_ADMIN="webmaster@docker.test"
 ENV DEBUG_MODE="false"
+ENV ENABLE_ACCESS_LOGS="true"
+ENV ENABLE_LETSENCRYPT="false"
+ENV ACME_EMAIL=""
 
 # DATA dir
 ENV DATA_PATH=/data
@@ -127,7 +87,7 @@ VOLUME ["/data"]
 WORKDIR "/www"
 
 #Expose port
-EXPOSE 80
+EXPOSE 80 443
 
 # Docker starting params
 CMD ["/usr/bin/supervisord","-c","/etc/supervisord.conf"]
