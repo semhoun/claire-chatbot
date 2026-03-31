@@ -77,6 +77,7 @@ ENV LC_ALL=en_US.UTF-8
 
 # Default env values
 ENV DEBUG_MODE="false"
+ENV ENABLE_ACCESS_LOGS="true"
 ENV ENABLE_LETSENCRYPT="false"
 ENV ACME_EMAIL=""
 

@@ -24,11 +24,18 @@ fi
 
 mkdir -p /etc/caddy
 
-CADDY_GLOBAL_OPTIONS='	frankenphp
-	log {
+CADDY_GLOBAL_OPTIONS='	frankenphp'
+
+ACCESS_LOG_BLOCK=''
+if [ "${ENABLE_ACCESS_LOGS}" = "true" ]; then
+	ACCESS_LOG_BLOCK='	log {
 		output stdout
 		format console
 	}'
+	CADDY_GLOBAL_OPTIONS="${CADDY_GLOBAL_OPTIONS}
+${ACCESS_LOG_BLOCK}"
+fi
+
 SITE_ADDRESS=':80'
 if [ "${ENABLE_LETSENCRYPT}" = "true" ]; then
 	SITE_ADDRESS="${SERVER_NAME}"
@@ -48,10 +55,7 @@ ${CADDY_GLOBAL_OPTIONS}
 ${SITE_ADDRESS} {
 	root * /www/public
 	encode zstd gzip
-	log {
-		output stdout
-		format console
-	}
+${ACCESS_LOG_BLOCK}
 	php_server {
 		index index.php
 	}

@@ -1,2 +1,0 @@
-- Gérer la suppression des invites avec juste un OC
-- Supprimer envoi en cours lors de l'envoi du chat
