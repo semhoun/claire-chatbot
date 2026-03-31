@@ -23,15 +23,35 @@ if [ ! -d "/www/var/cache/proxy" ]; then
 fi
 
 mkdir -p /etc/caddy
+
+CADDY_GLOBAL_OPTIONS='	frankenphp
+	log {
+		output stdout
+		format console
+	}'
+SITE_ADDRESS=':80'
+if [ "${ENABLE_LETSENCRYPT}" = "true" ]; then
+	SITE_ADDRESS="${SERVER_NAME}"
+	if [ -n "${ACME_EMAIL}" ]; then
+		CADDY_GLOBAL_OPTIONS="	email ${ACME_EMAIL}
+${CADDY_GLOBAL_OPTIONS}"
+	fi
+else
+	CADDY_GLOBAL_OPTIONS="	auto_https off
+${CADDY_GLOBAL_OPTIONS}"
+fi
 cat > /etc/caddy/Caddyfile << EOF
 {
-	auto_https off
-	frankenphp
+${CADDY_GLOBAL_OPTIONS}
 }
 
-:80 {
+${SITE_ADDRESS} {
 	root * /www/public
 	encode zstd gzip
+	log {
+		output stdout
+		format console
+	}
 	php_server {
 		index index.php
 	}

@@ -7,6 +7,11 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Changed
+- Mise à jour de la documentation pour le runtime Docker basé sur FrankenPHP/Caddy
+- Documentation des variables `ENABLE_LETSENCRYPT` et `ACME_EMAIL` pour activer HTTPS automatique via Let's Encrypt
+- Documentation des access logs HTTP sur la sortie standard du conteneur Docker
+
 ## [1.2.3] - 2026-03-31
 
 ### Added

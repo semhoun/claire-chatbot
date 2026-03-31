@@ -1,6 +1,5 @@
 name: "Coach Personnel"
 description: "Un coach motivant pour vous aider à atteindre vos objectifs"
-css: ""
 css_inline: |
   :root {
     --accent: #FF6B35;
