@@ -1,4 +1,4 @@
-FROM dunglas/frankenphp:1-php8.4-trixie AS base
+FROM dunglas/frankenphp:php8.4-trixie AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TERM=linux
