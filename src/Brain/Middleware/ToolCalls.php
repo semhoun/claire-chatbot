@@ -26,7 +26,6 @@ class ToolCalls implements WorkflowMiddleware
     {
         if ($result instanceof ToolCallEvent) {
             $result->toolCallMessage->addMetadata('message_type', 'tool_call');
-
             $this->lastToolCallMessage = $result->toolCallMessage;
         }
 
@@ -34,16 +33,15 @@ class ToolCalls implements WorkflowMiddleware
             $chatHistory = $state->getChatHistory();
 
             if (! $chatHistory instanceof UserChatHistory) {
+                $this->lastToolCallMessage = null;
                 return;
             }
-
             $messages = $chatHistory->getMessages();
-
             $lastMessage = array_pop($messages);
-
             $messages[] = $this->applyPostProcessing($lastMessage);
-
             $chatHistory->replaceMessages($messages);
+
+            $this->lastToolCallMessage = null;
         }
     }
 
@@ -52,7 +50,6 @@ class ToolCalls implements WorkflowMiddleware
      *
      * MessagePostProcessorInterface.
      */
-
     private function applyPostProcessing(
         \NeuronAI\Chat\Messages\Message $message
     ): \NeuronAI\Chat\Messages\Message {

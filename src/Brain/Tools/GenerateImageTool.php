@@ -90,11 +90,7 @@ EOT;
             $resultData = json_decode($result, true, 512, JSON_THROW_ON_ERROR);
 
             // Check if the result contains a successfully generated image
-            if (
-                ! isset($resultData['status'])
-                || $resultData['status'] !== 'success'
-                || ! isset($resultData['id'])
-            ) {
+            if (!isset($resultData['status'], $resultData['id']) || $resultData['status'] !== 'success') {
                 return $message;
             }
 

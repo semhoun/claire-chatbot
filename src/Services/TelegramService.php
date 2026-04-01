@@ -438,22 +438,26 @@ class TelegramService
                 $filteredCaption = $this->filterOCTags($caption);
                 if ($filteredCaption !== '') {
                     $formattedCaption = $this->formatForTelegram($filteredCaption);
-                    // Telegram captions have a 1024 character limit
-                    if (strlen($formattedCaption) > 1024) {
-                        $formattedCaption = null;
-                    }
                 }
             }
 
             // Send photo using InputFile
             $inputFile = InputFile::fromLocalFile($tempFile, basename($imagePath));
-            $result = $this->telegramBotApi->sendPhoto(
-                chatId: $telegramChatId,
-                photo: $inputFile,
-                caption: $formattedCaption,
-                parseMode: ParseMode::MARKDOWN_V2
-            );
-
+            if (($formattedCaption !== null) && (strlen($formattedCaption) <= 1024)) {
+                $result = $this->telegramBotApi->sendPhoto(
+                    chatId: $telegramChatId,
+                    photo: $inputFile,
+                    caption: $formattedCaption,
+                    parseMode: ParseMode::MARKDOWN_V2
+                );
+                $formattedCaption = null;
+            }
+            else {
+                $result = $this->telegramBotApi->sendPhoto(
+                    chatId: $telegramChatId,
+                    photo: $inputFile
+                );
+            }
             if ($result instanceof FailResult) {
                 $this->logger->error('Failed to send photo', [
                     'chatId' => $telegramChatId,
@@ -464,11 +468,8 @@ class TelegramService
                 $this->sendMessage($telegramChatId, 'Désolé, je n\'ai pas pu envoyer l\'image.');
             }
 
-            if ($formattedCaption === null && $caption !== null && $caption !== '') {
-                $filteredCaption = $this->filterOCTags($caption);
-                if ($filteredCaption !== '') {
-                    $this->sendMessage($telegramChatId, $filteredCaption);
-                }
+            if ($formattedCaption !== null) {
+                $this->sendMessage($telegramChatId, $formattedCaption);
             }
         } catch (FilesystemException $e) {
             $this->logger->error('Filesystem error sending photo: ' . $e->getMessage(), ['path' => $imagePath]);
