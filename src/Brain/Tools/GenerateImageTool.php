@@ -28,7 +28,7 @@ Generates an image from a text description using ComfyUI, generated image will b
 IMPORTANT: This tool MUST be used whenever the user needs an image or photo - whether they ask to create, generate, draw, or simply want/need an image.
 Any request that requires providing an image, picture, or photo should use this tool.
 The prompt should be written in natural english language (Flux style), describing the scene in detail with complete sentences.
-To insert an existing image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@), don't insert "<img>" tag.
+To insert a generated image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@), don't insert "<img>" tag.
 EOT
             : <<<EOT
 Generates an image from a text description using ComfyUI, generated image will be send to the user.
@@ -36,7 +36,7 @@ IMPORTANT: This tool MUST be used whenever the user needs an image or photo - wh
 Any request that requires providing an image, picture, or photo should use this tool.
 The prompt should be formatted as comma-separated english keywords (SDXL style), for example: "masterpiece, best quality, sunlit forest, vibrant colors, detailed trees, cinematic lighting".
 Avoid natural language sentences; use descriptive tags and keywords for best results.
-To insert an existing image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@), don't insert "<img>" tag.
+To insert a generated image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@), don't insert "<img>" tag.
 EOT;
 
         parent::__construct(
