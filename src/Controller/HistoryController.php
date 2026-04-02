@@ -50,7 +50,6 @@ final readonly class HistoryController
         $userChatHistory = new UserChatHistory(
             session: $session,
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
-            table: UserChatHistory::TABLE,
             contextWindow: $this->settings->get('llm.openai.contextWindow')
         );
         $userChatHistory->setThreadId($threadId);
@@ -137,7 +136,6 @@ final readonly class HistoryController
         $userChatHistory = new UserChatHistory(
             session: $session,
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
-            table: UserChatHistory::TABLE,
             contextWindow: $this->settings->get('llm.openai.contextWindow')
         );
         $userChatHistory->setThreadId($threadId);

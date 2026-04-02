@@ -60,7 +60,6 @@ final readonly class HomeController
         $userChatHistory = new UserChatHistory(
             session: $session,
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
-            table: UserChatHistory::TABLE,
             contextWindow: $this->settings->get('llm.openai.contextWindow')
         );
         $messages = $userChatHistory->getFormattedMessages($mode);

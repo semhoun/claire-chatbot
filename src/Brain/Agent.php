@@ -37,7 +37,7 @@ class Agent extends \NeuronAI\Agent\Agent
     {
         $instructions = parent::resolveInstructions();
         $dateLine = sprintf(
-            "\n\n[Contexte système] Date et heure actuelles : %s\n",
+            "\n\n[OC] Date et heure actuelles : %s[/OC]\n",
             new \DateTimeImmutable()->format('Y-m-d H:i:s')
         );
 

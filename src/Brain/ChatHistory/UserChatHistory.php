@@ -7,12 +7,14 @@ namespace App\Brain\ChatHistory;
 use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\History\AbstractChatHistory;
-use NeuronAI\Chat\History\SQLChatHistory;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use PDO;
 
-class UserChatHistory extends SQLChatHistory
+/**
+ * Based on NeuronAI\Chat\History\SQLChatHistory
+ */
+class UserChatHistory extends AbstractChatHistory
 {
     public const string TABLE = 'chat_history';
 
@@ -22,22 +24,21 @@ class UserChatHistory extends SQLChatHistory
 
     protected string $user_id;
 
+    protected string $thread_id;
+
     public function __construct(
         SessionInterface $session,
         protected PDO $pdo,
-        protected string $table = self::TABLE,
         protected int $contextWindow = 50000
     ) {
         $this->user_id = $session->get(Auth::USERID);
 
-        $thread_id = $session->get('chatId');
-        if ($thread_id === null) {
-            AbstractChatHistory::__construct($contextWindow);
-            $this->table = $this->sanitizeTableName($table);
-            return;
+        $this->thread_id = $session->get('chatId', null);
+        if ($this->thread_id !== null) {
+            $this->load();
         }
 
-        parent::__construct($session->get('chatId'), $pdo, $table, $contextWindow);
+        parent::__construct($contextWindow);
     }
 
     public function setThreadId(string $thread_id): void
@@ -100,18 +101,29 @@ class UserChatHistory extends SQLChatHistory
         return $data;
     }
 
-    #[\Override]
     protected function load(): void
     {
-        $stmt = $this->pdo->prepare(sprintf('SELECT * FROM %s WHERE thread_id = :thread_id', $this->table));
+        $stmt = $this->pdo->prepare(sprintf('SELECT * FROM %s WHERE thread_id = :thread_id', self::TABLE));
         $stmt->execute(['thread_id' => $this->thread_id]);
 
         $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if (empty($history)) {
-            $stmt = $this->pdo->prepare(sprintf('INSERT INTO %s (user_id, thread_id, messages) VALUES (:user_id, :thread_id, :messages)', $this->table));
+            $stmt = $this->pdo->prepare(sprintf('INSERT INTO %s (user_id, thread_id, messages) VALUES (:user_id, :thread_id, :messages)', self::TABLE));
             $stmt->execute(['user_id' => $this->user_id,'thread_id' => $this->thread_id, 'messages' => '[]']);
         } else {
             $this->history = $this->deserializeMessages(\json_decode((string) $history[0]['messages'], true));
         }
+    }
+
+    protected function setMessages(array $messages): void
+    {
+        $stmt = $this->pdo->prepare("UPDATE " .self::TABLE . " SET messages = :messages WHERE thread_id = :thread_id");
+        $stmt->execute(['thread_id' => $this->thread_id, 'messages' => json_encode($this->jsonSerialize())]);
+    }
+
+    protected function clear(): void
+    {
+        $stmt = $this->pdo->prepare("DELETE FROM " . self::TABLE . " WHERE thread_id = :thread_id");
+        $stmt->execute(['thread_id' => $this->thread_id]);
     }
 }
