@@ -15,7 +15,7 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\ORMSetup;
 use League\Flysystem\Filesystem;
-use Monolog\Logger;
+use Psr\Log\LoggerInterface as Logger;
 use OneToMany\Twig\FilesizeExtension;
 use Phptg\BotApi\TelegramBotApi;
 use Slim\Views\Twig;
@@ -70,7 +70,7 @@ return [
     // Settings.
     Settings::class => DI\factory([Settings::class, 'load']),
     Logger::class => static function (Settings $settings): Logger {
-        $logger = new Logger($settings->get('logger.name'));
+        $logger = new \Monolog\Logger($settings->get('logger.name'));
         $handlerOLTP = new \OpenTelemetry\Contrib\Logs\Monolog\Handler(
             \OpenTelemetry\API\Globals::loggerProvider(),
             $settings->get('logger.level'),

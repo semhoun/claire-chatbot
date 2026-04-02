@@ -7,7 +7,7 @@ namespace App\Controller;
 use App\Services\Settings;
 use App\Services\TelegramService;
 use InvalidArgumentException;
-use Monolog\Logger;
+use Psr\Log\LoggerInterface as Logger;
 use Phptg\BotApi\Type\Update\Update;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;

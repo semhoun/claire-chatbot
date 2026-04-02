@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Console;
 
 use App\Services\TelegramService;
-use Monolog\Logger;
+use Psr\Log\LoggerInterface as Logger;
 use Phptg\BotApi\TelegramBotApi;
 use Phptg\BotApi\Type\BotCommand;
 use Symfony\Component\Console\Attribute\AsCommand;

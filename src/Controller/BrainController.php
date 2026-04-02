@@ -15,7 +15,6 @@ use Doctrine\ORM\OptimisticLockException;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\UnableToReadFile;
-use Monolog\Logger;
 use NeuronAI\Chat\Enums\SourceType;
 use NeuronAI\Chat\Messages\ContentBlocks\FileContent;
 use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
@@ -27,6 +26,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Psr7\NonBufferedBody;
 use Slim\Views\Twig;
+use Psr\Log\LoggerInterface as Logger;
 
 final readonly class BrainController
 {
@@ -143,11 +143,10 @@ final readonly class BrainController
             } elseif ($chunk instanceof TextChunk) {
                 $streamedText .= $chunk->content;
                 $message .= $chunk->content;
-            } elseif ($chunk === null) {
-                $this->logger->error('Empty chunk');
+            }  elseif (is_object($chunk)) {
+                $this->logger->error('Unknown chunk type: ' . $chunk::class);
                 continue;
             } else {
-                $this->logger->error('Unknown chunk type: ' . $chunk::class);
                 continue;
             }
 

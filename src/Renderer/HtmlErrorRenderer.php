@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Renderer;
 
 use App\Services\Settings;
-use Monolog\Logger;
+use Psr\Log\LoggerInterface as Logger;
 use Slim\Interfaces\ErrorRendererInterface;
 use Slim\Views\Twig;
 use Throwable;

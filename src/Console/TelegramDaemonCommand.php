@@ -6,7 +6,7 @@ namespace App\Console;
 
 use App\Services\TelegramService;
 use Monolog\Handler\StreamHandler;
-use Monolog\Logger;
+use Psr\Log\LoggerInterface as Logger;
 use Phptg\BotApi\TelegramBotApi;
 use Phptg\BotApi\Type\Update;
 use Symfony\Component\Console\Attribute\AsCommand;
