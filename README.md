@@ -105,7 +105,6 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 - Mode et logs:
   - `DEBUG_MODE` = `true|false` (active un niveau de logs plus verbeux)
   - `DISABLE_TRACY_BAR` = `true|false` (permet de désactiver la barre de debug Tracy, activée par défaut si non spécifié)
-  - `ENABLE_ACCESS_LOGS` = `true|false` (active les access logs HTTP de Caddy/FrankenPHP sur la sortie standard du conteneur)
   - `ENABLE_LETSENCRYPT` = `true|false` (active HTTPS automatique via Let's Encrypt dans le conteneur FrankenPHP/Caddy)
   - `ACME_EMAIL` — email utilisé pour l'enregistrement ACME/Let's Encrypt (optionnel)
 
@@ -420,7 +419,6 @@ services:
       SERVER_NAME: claire.example.com
       DEBUG_MODE: "false"
       DISABLE_TRACY_BAR: "true"
-      ENABLE_ACCESS_LOGS: "true"
       ENABLE_LETSENCRYPT: "false"
       # ACME_EMAIL: admin@example.com
 
@@ -447,7 +445,6 @@ services:
 Notes Docker/FrankenPHP:
 
 - L'image Docker utilise FrankenPHP avec Caddy comme serveur HTTP intégré.
-- Si `ENABLE_ACCESS_LOGS=true`, les access logs HTTP sont envoyés sur la sortie standard du conteneur et visibles via `docker compose logs`.
 - Si `ENABLE_LETSENCRYPT=true`, le conteneur sert directement votre domaine `SERVER_NAME` en HTTPS avec certificats Let's Encrypt automatiques.
 - Si `ENABLE_LETSENCRYPT=false`, le conteneur reste en HTTP sur le port 80, ce qui est recommandé derrière un reverse proxy TLS (Traefik, Caddy, Nginx, etc.).
 - Pour Let's Encrypt, le domaine doit être publiquement résolvable vers le conteneur et les ports 80/443 doivent être accessibles.

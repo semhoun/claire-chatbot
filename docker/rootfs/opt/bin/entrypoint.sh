@@ -2,11 +2,15 @@
 
 set -e
 
+cp /opt/conf/php/*  ${PHP_INI_DIR}/conf.d/
 if [ "${DEBUG_MODE}" == "true" ]; then
-  cat > /usr/local/etc/php/conf.d/99-debug.ini << 'EOF'
+  cp  ${PHP_INI_DIR}/php.ini-development  ${PHP_INI_DIR}/php.ini
+  cat > ${PHP_INI_DIR}/conf.d/99-debug.ini << 'EOF'
 display_errors = On
 display_startup_errors = On
 EOF
+else
+  cp ${PHP_INI_DIR}/php.ini-production ${PHP_INI_DIR}/php.ini
 fi
 
 # Check and create $VAR_PATH and subfolders
@@ -23,13 +27,6 @@ if [ ! -d "/www/var/cache/proxy" ]; then
 fi
 
 mkdir -p /etc/caddy
-ACCESS_LOG_BLOCK=''
-if [ "${ENABLE_ACCESS_LOGS}" = "true" ]; then
-  ACCESS_LOG_BLOCK='  log {
-    output stdout
-    format console
-  }'
-fi
 TRACING_BLOCK=''
 if [ -n "${OTEL_EXPORTER_OTLP_ENDPOINT}" ]; then
 TRACING_BLOCK='  tracing {
@@ -54,6 +51,9 @@ cat > /etc/caddy/Caddyfile << EOF
 {
   frankenphp
   ${CADDY_GLOBAL_OPTIONS}
+  log {
+    output stderr
+  }
 }
 
 ${SITE_ADDRESS} {
@@ -65,7 +65,14 @@ ${SITE_ADDRESS} {
   }
   file_server
 
-${ACCESS_LOG_BLOCK}
+log {
+		output file /var/log/access.log {
+			roll_at 00:00
+			roll_size 100MiB
+			roll_keep 5
+			roll_keep_for 720h
+		}
+	}
   handle /health {
   }
   handle /* {
