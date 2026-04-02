@@ -36,6 +36,7 @@ class ToolCalls implements WorkflowMiddleware
                 $this->lastToolCallMessage = null;
                 return;
             }
+
             $messages = $chatHistory->getMessages();
             $lastMessage = array_pop($messages);
             $messages[] = $this->applyPostProcessing($lastMessage);

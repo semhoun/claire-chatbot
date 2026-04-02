@@ -457,6 +457,7 @@ class TelegramService
                     photo: $inputFile
                 );
             }
+
             if ($result instanceof FailResult) {
                 $this->logger->error('Failed to send photo', [
                     'chatId' => $telegramChatId,

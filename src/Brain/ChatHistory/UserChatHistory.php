@@ -6,9 +6,12 @@ namespace App\Brain\ChatHistory;
 
 use App\Services\Auth;
 use App\Services\Session\SessionInterface;
+use NeuronAI\Chat\Enums\MessageRole;
 use NeuronAI\Chat\History\AbstractChatHistory;
+use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
+use NeuronAI\Chat\Messages\UserMessage;
 use PDO;
 
 /**
@@ -33,7 +36,7 @@ class UserChatHistory extends AbstractChatHistory
     ) {
         $this->user_id = $session->get(Auth::USERID);
 
-        $this->thread_id = $session->get('chatId', null);
+        $this->thread_id = $session->get('chatId');
         if ($this->thread_id !== null) {
             $this->load();
         }
@@ -90,8 +93,8 @@ class UserChatHistory extends AbstractChatHistory
                 $timestamp = $message->getMetadata('timestamp');
 
                 $data[] = [
-                    'message' => $content === null ? '' : $content,
-                    'time' => $timestamp === null ? '' : $timestamp,
+                    'message' => $content ?? '',
+                    'time' => $timestamp ?? '',
                     'sent' => $message->getRole() === 'user',
                     'toolCallId' => $toolCallId,
                     'toolText' => $toolText,
@@ -114,10 +117,18 @@ class UserChatHistory extends AbstractChatHistory
             $stmt = $this->pdo->prepare(sprintf('INSERT INTO %s (user_id, thread_id, messages) VALUES (:user_id, :thread_id, :messages)', self::TABLE));
             $stmt->execute(['user_id' => $this->user_id,'thread_id' => $this->thread_id, 'messages' => '[]']);
         } else {
-            $this->history = $this->deserializeMessages(\json_decode((string) $history[0]['messages'], true));
+            $rawMessages = $this->deserializeMessages(\json_decode((string) $history[0]['messages'], true));
+            $fixedMessages = $this->fixMessageSequence($rawMessages);
+            $this->history = $fixedMessages;
+
+            // Save corrected sequence if it was modified
+            if (count($rawMessages) !== count($fixedMessages)) {
+                $this->setMessages($fixedMessages);
+            }
         }
     }
 
+    #[\Override]
     protected function setMessages(array $messages): void
     {
         $this->history = $messages;
@@ -131,11 +142,88 @@ class UserChatHistory extends AbstractChatHistory
         ]);
     }
 
+    #[\Override]
     protected function clear(): void
     {
         $stmt = $this->pdo->prepare(
             'DELETE FROM ' . self::TABLE . ' WHERE thread_id = :thread_id'
         );
         $stmt->execute(['thread_id' => $this->thread_id]);
+    }
+
+    /**
+     * Fix message sequence by removing invalid messages.
+     *
+     * Ensures proper user/assistant alternation and tool call/tool result pairing.
+     * Last message must be an assistant message.
+     *
+     * @param Message[] $messages
+     * @return Message[]
+     */
+    protected function fixMessageSequence(array $messages): array
+    {
+        if ($messages === []) {
+            return [];
+        }
+
+        $fixed = [];
+        $expectingUser = true;
+        $lastToolCallIndex = null;
+
+        foreach ($messages as $index => $message) {
+            // Handle ToolResultMessage - must follow ToolCallMessage
+            if ($message instanceof ToolResultMessage) {
+                if ($lastToolCallIndex === null) {
+                    // ToolResult without ToolCall - skip
+                    continue;
+                }
+
+                $fixed[] = $message;
+                $lastToolCallIndex = null;
+                $expectingUser = false;
+
+                continue;
+            }
+
+            // Handle ToolCallMessage - assistant message that expects tool result
+            if ($message instanceof ToolCallMessage) {
+                if (! $expectingUser) {
+                    $fixed[] = $message;
+                    $lastToolCallIndex = array_key_last($fixed);
+                    $expectingUser = true;
+                }
+
+                continue;
+            }
+
+            // Regular messages - check alternation
+            $role = $message->getRole();
+            if ($role === MessageRole::USER->value && $expectingUser) {
+                $fixed[] = $message;
+                $expectingUser = false;
+            } elseif ($role === MessageRole::ASSISTANT->value && ! $expectingUser) {
+                $fixed[] = $message;
+                $expectingUser = true;
+                $lastToolCallIndex = null;
+            }
+        }
+
+        // Remove orphaned ToolCallMessage (without corresponding ToolResultMessage)
+        if ($lastToolCallIndex !== null) {
+            array_splice($fixed, $lastToolCallIndex, 1);
+            // After removing ToolCall, we need to check if last message is user
+            // and remove it since last message must be assistant
+            while ($fixed !== [] && $fixed[array_key_last($fixed)] instanceof UserMessage) {
+                array_pop($fixed);
+            }
+        }
+
+        // Last message must be an assistant message
+        // Remove trailing user messages (including ToolResultMessage which extends UserMessage)
+        while ($fixed !== [] && $fixed[array_key_last($fixed)] instanceof UserMessage) {
+            array_pop($fixed);
+        }
+
+        return $fixed;
     }
 }

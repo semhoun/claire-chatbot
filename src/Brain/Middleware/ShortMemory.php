@@ -11,6 +11,7 @@ use NeuronAI\Agent\Middleware\Summarization;
 use NeuronAI\Chat\Enums\MessageRole;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Chat\Messages\ToolCallMessage;
+use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\Workflow\Events\Event;
@@ -33,10 +34,12 @@ class ShortMemory extends Summarization
         parent::__construct($provider, $maxTokens, $messagesToKeep, $summaryPrompt);
     }
 
+    #[\Override]
     public function before(NodeInterface $node, Event $event, WorkflowState $state): void
     {
     }
 
+    #[\Override]
     public function after(NodeInterface $node, Event $result, WorkflowState $state): void
     {
         // Only apply to ChatNode, StreamingNode, and StructuredOutputNode
@@ -71,6 +74,7 @@ class ShortMemory extends Summarization
      *
      * @param Message[] $messages
      */
+    #[\Override]
     protected function summarizeHistory(AgentState $state, array $messages): void
     {
         // Find a safe cutoff point
@@ -97,11 +101,13 @@ class ShortMemory extends Summarization
         $chatHistory = $state->getChatHistory();
         if (!$chatHistory instanceof UserChatHistory) {
             $chatHistory->flushAll();
-            foreach ($newMessages as $message) {
-                $state->getChatHistory()->addMessage($message);
+            foreach ($newMessages as $newMessage) {
+                $state->getChatHistory()->addMessage($newMessage);
             }
+            
             return;
         }
+        
         $chatHistory->replaceMessages($newMessages);
     }
 
@@ -115,6 +121,7 @@ class ShortMemory extends Summarization
      * @param Message[] $messages
      * @return int|null Index to cut at (exclusive), or null if no safe cutoff found
      */
+    #[\Override]
     protected function findSafeCutoffIndex(array $messages): ?int
     {
         $totalMessages = count($messages);
@@ -142,28 +149,34 @@ class ShortMemory extends Summarization
      * A cutoff is safe if:
      * 1. The message at "index" is not a ToolCallMessage (would leave tool call without result)
      * 2. The previous message is not a ToolCallMessage (would separate tool call from result)
-     * 3. The message at index is not a UserMessage
+     * 3. The message at index is an AssistantMessage
+     * 4. The message at index is not a ToolResultMessage (must follow ToolCallMessage)
      *
      * @param Message[] $messages
      */
+    #[\Override]
     protected function isSafeCutoffPoint(array $messages, int $index): bool
     {
         if (!isset($messages[$index])) {
             return false;
         }
+        
         // Check if a message at cutoff index is a ToolCallMessage
         if ($messages[$index] instanceof ToolCallMessage) {
             return false;
         }
-        // Check if a previous message is a ToolCallMessage (would be separated from its result)
-        if ($index > 0 && isset($messages[$index - 1]) && $messages[$index - 1] instanceof ToolCallMessage) {
+        
+        // Check if a message at cutoff index is a ToolResultMessage
+        // (ToolResultMessage must follow ToolCallMessage, cannot be first in recentMessages)
+        if ($messages[$index] instanceof ToolResultMessage) {
+            return false;
+        }
+        
+        // Check if a previous message is a ToolResultMessage (would be separated from its result)
+        if ($index > 0 && isset($messages[$index - 1]) && $messages[$index - 1] instanceof ToolResultMessage) {
             return false;
         }
         // Check if a message at cutoff index is an AssistantMessage
-        if ($messages[$index]->getRole() !== MessageRole::ASSISTANT->value) {
-            return false;
-        }
-
-        return true;
+        return $messages[$index]->getRole() === MessageRole::ASSISTANT->value;
     }
 }

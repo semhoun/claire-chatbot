@@ -109,7 +109,6 @@ final readonly class BrainController
         $stream = $response->getBody();
 
         $agentHandler = $agent->stream($userMessage);
-        $message = '';
 
         // Iterate chunks
         foreach ($agentHandler->events() as $chunk) {

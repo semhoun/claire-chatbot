@@ -13,7 +13,9 @@ use Psr\Log\LoggerInterface as Logger;
 trait Constructor
 {
     protected readonly Settings $settings;
+
     protected readonly Connection $connection;
+
     protected readonly Logger $logger;
 
     public function __construct(

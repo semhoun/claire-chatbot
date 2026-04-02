@@ -63,7 +63,7 @@ final readonly class ComfyUIService
     private function getWorkflow(string $prompt): array
     {
         $workflow = $this->settings->get('comfyui.workflow');
-        $workflow = str_replace('{{PROMPT}}', addslashes($prompt), $workflow);
+        $workflow = str_replace('{{PROMPT}}', addcslashes($prompt, '"'), $workflow);
 
         return json_decode($workflow, true, 512, JSON_THROW_ON_ERROR);
     }
