@@ -65,14 +65,10 @@ ${SITE_ADDRESS} {
   }
   file_server
 
-log {
-		output file /var/log/access.log {
-			roll_at 00:00
-			roll_size 100MiB
-			roll_keep 5
-			roll_keep_for 720h
-		}
-	}
+  log {
+    output stdout
+    format formatted "{common_log}"
+  }
   handle /health {
   }
   handle /* {
