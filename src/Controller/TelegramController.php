@@ -7,10 +7,10 @@ namespace App\Controller;
 use App\Services\Settings;
 use App\Services\TelegramService;
 use InvalidArgumentException;
-use Psr\Log\LoggerInterface as Logger;
 use Phptg\BotApi\Type\Update\Update;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Psr\Log\LoggerInterface as Logger;
 
 final readonly class TelegramController
 {

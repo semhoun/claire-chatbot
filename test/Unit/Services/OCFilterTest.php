@@ -2,45 +2,60 @@
 
 declare(strict_types=1);
 
-namespace Test\Unit\Services;
+namespace App\Test\Unit\Services;
 
-use App\Services\Twig\OCFilterExtension;
+use App\Services\TelegramService;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 
+#[AllowMockObjectsWithoutExpectations]
 final class OCFilterTest extends TestCase
 {
-    private OCFilterExtension $extension;
+    private TelegramService $service;
+
+    private ReflectionMethod $filterMethod;
 
     protected function setUp(): void
     {
-        $this->extension = new OCFilterExtension();
+        $this->service = $this->createMock(TelegramService::class);
+        $this->filterMethod = new ReflectionMethod(TelegramService::class, 'filterOCTags');
+        $this->filterMethod->setAccessible(true);
     }
 
     public function testFilterOCTagsSingleLine(): void
     {
         $content = "Visible text [OC]Hidden content[/OC] still visible";
-        $expected = "Visible text  still visible";
-        $this->assertSame($expected, $this->extension->filterOCTags($content));
+
+        $this->assertSame(
+            'Visible text  still visible',
+            $this->filterOCTags($content)
+        );
     }
 
     public function testFilterOCTagsMultiLine(): void
     {
         $content = "Part 1\n[OC]\nHidden line 1\nHidden line 2\n[/OC]\nPart 2";
-        $expected = "Part 1\n\nPart 2";
-        $this->assertSame($expected, $this->extension->filterOCTags($content));
+
+        $this->assertSame("Part 1\n\nPart 2", $this->filterOCTags($content));
     }
 
     public function testFilterOCTagsMultipleBlocks(): void
     {
-        $content = "[OC]B1[/OC]Text[OC]B2[/OC]";
-        $expected = "Text";
-        $this->assertSame($expected, $this->extension->filterOCTags($content));
+        $content = '[OC]B1[/OC]Text[OC]B2[/OC]';
+
+        $this->assertSame('Text', $this->filterOCTags($content));
     }
 
     public function testFilterOCTagsUnclosed(): void
     {
-        $content = "Visible [OC]Hidden tag";
-        $expected = "Visible Hidden tag";
-        $this->assertSame($expected, $this->extension->filterOCTags($content));
+        $content = 'Visible [OC]Hidden tag';
+
+        $this->assertSame('Visible Hidden tag', $this->filterOCTags($content));
+    }
+
+    private function filterOCTags(string $content): string
+    {
+        return (string) $this->filterMethod->invoke($this->service, $content);
     }
 }

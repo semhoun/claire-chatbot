@@ -24,9 +24,9 @@ use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
 use NeuronAI\Chat\Messages\UserMessage;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Psr\Log\LoggerInterface as Logger;
 use Slim\Psr7\NonBufferedBody;
 use Slim\Views\Twig;
-use Psr\Log\LoggerInterface as Logger;
 
 final readonly class BrainController
 {
@@ -142,8 +142,7 @@ final readonly class BrainController
                 $streamedText .= $chunk->content;
             } elseif ($chunk instanceof TextChunk) {
                 $streamedText .= $chunk->content;
-                $message .= $chunk->content;
-            }  elseif (is_object($chunk)) {
+            } elseif (is_object($chunk)) {
                 $this->logger->error('Unknown chunk type: ' . $chunk::class);
                 continue;
             } else {

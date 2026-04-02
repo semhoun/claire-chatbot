@@ -20,7 +20,7 @@ trait Middleware
             provider: $this->provider(),
             maxTokens: $this->settings->get('llm.openai.contextWindow') / 2,
             messagesToKeep: 2,
-       );
+        );
 
         $toolCalls = new ToolCalls();
 

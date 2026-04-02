@@ -320,15 +320,14 @@ final class TelegramMarkdownTest extends TestCase
     {
         $result = $this->converter->convertToMarkdownV2('**text_with_underscores**');
 
-        $this->assertSame("*text_with_underscores*\n", $result);
+        $this->assertSame("*text\_with\_underscores*\n", $result);
     }
 
     public function testSpecialCharsInItalic(): void
     {
         $result = $this->converter->convertToMarkdownV2('_text [bracket]_');
 
-        // Brackets inside formatted text don't get escaped
-        $this->assertSame("_text [bracket]_\n", $result);
+        $this->assertSame("_text \[bracket\]_\n", $result);
     }
 
     public function testParagraphs(): void

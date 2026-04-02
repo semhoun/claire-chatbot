@@ -68,7 +68,10 @@ class Summary extends \NeuronAI\Agent\Agent
                 $summary = $s;
             }
         } catch (\JsonException) {
-            // keep defaults
+            return [
+                'title' => $title,
+                'summary' => $summary,
+            ];
         }
 
         return [

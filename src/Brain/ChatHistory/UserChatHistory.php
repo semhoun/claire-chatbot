@@ -12,7 +12,7 @@ use NeuronAI\Chat\Messages\ToolResultMessage;
 use PDO;
 
 /**
- * Based on NeuronAI\Chat\History\SQLChatHistory
+ * Based on NeuronAI\Chat\History\SQLChatHistory.
  */
 class UserChatHistory extends AbstractChatHistory
 {
@@ -86,9 +86,12 @@ class UserChatHistory extends AbstractChatHistory
                     }
                 }
             } else {
+                $content = $message->getContent();
+                $timestamp = $message->getMetadata('timestamp');
+
                 $data[] = [
-                    'message' => $message->getContent() ?: '',
-                    'time' => $message->getMetadata('timestamp') ?: '',
+                    'message' => $content === null ? '' : $content,
+                    'time' => $timestamp === null ? '' : $timestamp,
                     'sent' => $message->getRole() === 'user',
                     'toolCallId' => $toolCallId,
                     'toolText' => $toolText,
@@ -117,13 +120,22 @@ class UserChatHistory extends AbstractChatHistory
 
     protected function setMessages(array $messages): void
     {
-        $stmt = $this->pdo->prepare("UPDATE " .self::TABLE . " SET messages = :messages WHERE thread_id = :thread_id");
-        $stmt->execute(['thread_id' => $this->thread_id, 'messages' => json_encode($this->jsonSerialize())]);
+        $this->history = $messages;
+
+        $stmt = $this->pdo->prepare(
+            'UPDATE ' . self::TABLE . ' SET messages = :messages WHERE thread_id = :thread_id'
+        );
+        $stmt->execute([
+            'thread_id' => $this->thread_id,
+            'messages' => json_encode($this->jsonSerialize(), JSON_THROW_ON_ERROR),
+        ]);
     }
 
     protected function clear(): void
     {
-        $stmt = $this->pdo->prepare("DELETE FROM " . self::TABLE . " WHERE thread_id = :thread_id");
+        $stmt = $this->pdo->prepare(
+            'DELETE FROM ' . self::TABLE . ' WHERE thread_id = :thread_id'
+        );
         $stmt->execute(['thread_id' => $this->thread_id]);
     }
 }

@@ -13,7 +13,6 @@ use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
-use Psr\Log\LoggerInterface as Logger;
 use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
@@ -25,6 +24,7 @@ use Phptg\BotApi\TelegramBotApi;
 use Phptg\BotApi\Type\InputFile;
 use Phptg\BotApi\Type\Message;
 use Phptg\BotApi\Type\Update\Update;
+use Psr\Log\LoggerInterface as Logger;
 
 class TelegramService
 {
@@ -451,8 +451,7 @@ class TelegramService
                     parseMode: ParseMode::MARKDOWN_V2
                 );
                 $formattedCaption = null;
-            }
-            else {
+            } else {
                 $result = $this->telegramBotApi->sendPhoto(
                     chatId: $telegramChatId,
                     photo: $inputFile
