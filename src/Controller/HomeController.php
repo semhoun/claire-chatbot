@@ -51,10 +51,8 @@ final readonly class HomeController
         $session->set('chatId', $chatId);
 
         $currentBrain = $session->get('brain_avatar');
-        // Default chat mode
-        $mode = $session->get('chat_mode') ?? 'chat';
-        // Default layout width mode
-        $layoutMode = $session->get('layout_mode') ?? 'full';
+        $mode = $session->get('chat_mode');
+        $layoutMode = $session->get('layout_mode');
 
         // Charger les messages existants pour le thread courant si disponibles
         $userChatHistory = new UserChatHistory(

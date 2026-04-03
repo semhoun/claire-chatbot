@@ -17,4 +17,10 @@ return [
     'domain' => null,
     'secure' => false,
     'httponly' => false,
+
+    'defaultParams' => [
+        'brain_avatar' => 'claire',
+        'chat_mode' => 'chat',
+        'layout_mode' => 'full'
+    ],
 ];

@@ -71,10 +71,10 @@ class Auth
                 $session->set($key, $value);
             }
 
-            // Déterminer l'avatar/assistant courant (session, sinon préférence utilisateur, sinon défaut)
-            $currentBrain = (string) ($session->get('brain_avatar') ?? '');
-            if ($currentBrain === '') {
-                $session->set('brain_avatar', $this->settings->get('llm.defaultBrain'));
+            foreach ($this->settings->get('session.defaultParams') as $key => $value) {
+                if (! $session->has($key)) {
+                    $session->set($key, $value);
+                }
             }
         } catch (\Exception $exception) {
             throw new Exception('User [' . $userId . "] not found in database and can't add it: " . $exception->getMessage(), $exception->getCode(), $exception);
