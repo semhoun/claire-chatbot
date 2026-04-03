@@ -23,6 +23,10 @@ return [
         'messageToKeep' => 3,
         'maxTokens' => (int) env('OPENAPI_CONTEXT_WINDOW', 50000) / 2,
     ],
+    'summary' => [
+        'minMessages' => 2,
+        'maxMessages' => 8,
+    ],
     'workflow' => [
         'timeout' => 600,
     ],

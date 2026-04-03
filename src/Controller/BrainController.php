@@ -197,8 +197,11 @@ final readonly class BrainController
     private function manageSummary(SessionInterface $session): void
     {
         $summary = new Summary($this->entityManager->getConnection(), $this->settings, $session);
-        $messages = $summary->getChatHistory()->getMessages();
-        if ($messages === [] || count($messages) < 5) {
+        $messages = $summary->getChatHistory()->getDisplayMessages();
+        if ($messages === []
+            || count($messages) < $this->settings->get('llm.summary.minMessages')
+            || count($messages) > $this->settings->get('llm.summary.maxMessages')
+        ) {
             return;
         }
 
