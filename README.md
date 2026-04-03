@@ -32,6 +32,8 @@ composer start
 
 **Ou avec Docker:**
 
+Image Docker prete a l'emploi: [semhoun/claire-chatbot](https://hub.docker.com/r/semhoun/claire-chatbot)
+
 ```bash
 docker build -t claire:latest -f docker/Dockerfile .
 docker run -d -p 8080:80 \
