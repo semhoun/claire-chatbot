@@ -1,8 +1,8 @@
-# Claire 1.2.3 — Agent de Chat IA (PHP, Slim 4)
+# Claire 1.3.0 — Agent de Chat IA (PHP, Slim 4)
 
-![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![Twig](https://img.shields.io/badge/Twig-3.x-43A047) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
+![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-Claire 1.2.3 est une application web minimaliste de chat IA construite avec Slim 4 et Twig. Elle s'appuie sur la bibliothèque neuron-core pour piloter un LLM compatible OpenAI et fournit une petite interface web ainsi qu'un endpoint API pour échanger des messages.
+Claire 1.3.0 est une application web de chat IA construite avec Slim 4, Twig et Neuron AI. Elle fournit une interface web, un endpoint API, une integration Telegram et un runtime Docker base sur FrankenPHP/Caddy pour piloter des LLM compatibles OpenAI.
 
 ## Démarrage rapide
 
@@ -43,17 +43,18 @@ docker run -d -p 8080:80 \
 
 ## Fonctionnalités
 
-- Interface web de chat avec horodatage des messages et masquage automatique des blocs internes `[OC]...[/OC]`.
+- Interface web de chat avec horodatage, annulation du dernier echange, affichage instantane du message utilisateur et raccourci pour revenir en bas de conversation.
 - Endpoint API `POST /brain/chat` pour envoyer un message et récupérer la réponse de l'agent.
 - Healthcheck `GET /health` (JSON) pour la supervision.
 - Intégration d'un fournisseur LLM « OpenAI-like » (URL, clé et modèle configurables).
 - Ajout automatique de la date et l'heure courantes dans le contexte système des agents.
+- Memoire courte avec resume automatique pour contenir l'historique dans la fenetre de contexte.
 - Recherche web optionnelle via SearXNG et RAG fichier via embeddings OpenAI-like.
 - Génération d'images avec ComfyUI (optionnel).
 - Support d'agents personnalisés via classes PHP et fichiers YAML.
 - Intégration Telegram avec filtrage des balises `[OC]` sur les réponses envoyées.
-- Journalisation via Monolog, exportée par OpenTelemetry.
-- Intégration OpenTelemetry pour traces/metrics/logs.
+- Observabilite via OpenTelemetry pour traces, metriques et logs, y compris l'instrumentation interne des agents.
+- Historique de conversation avec separation entre messages LLM et messages affiches a l'utilisateur.
 
 ## Pile technique
 
@@ -67,7 +68,8 @@ docker run -d -p 8080:80 \
 - [phptg/bot-api](https://github.com/phptg/bot-api) (bot Telegram)
 - [OpenTelemetry](https://opentelemetry.io/docs/languages/php/) (observabilité)
 - [Symfony YAML](https://symfony.com/doc/current/components/yaml.html) (cerveaux personnalisés)
-- Docker (déploiement containerisé avec Apache, PHP-FPM, Supervisor)
+- FrankenPHP + Caddy (runtime HTTP principal en conteneur)
+- Docker (déploiement containerisé avec Supervisor)
 
 ## Prérequis
 
@@ -97,6 +99,10 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
   - `OPENAPI_MODEL_SUMMARY` — modèle dédié aux tâches de synthèse/résumé (optionnel; si absent, `OPENAPI_MODEL` sera utilisé)
   - `OPENAPI_MODEL_EMBED` — modèle dédié aux embeddings (optionnel; si absent, le RAG est désactivé)
   - `OPENAPI_CONTEXT_WINDOW` — taille de fenêtre de contexte cible utilisée par l'agent (défaut: `50000`)
+  - `llm.shortMemory.messageToKeep` — nombre de messages recents conserves lors d'un resume automatique
+  - `llm.shortMemory.maxTokens` — seuil de tokens a partir duquel la memoire courte compacte l'historique
+  - `llm.summary.minMessages` / `llm.summary.maxMessages` — bornes utilisees pour declencher la generation du titre ou resume de conversation
+  - `llm.workflow.timeout` — duree maximale d'execution d'un workflow d'agent
   - `SEARXNG_URL` — URL de l'instance SearXNG pour la recherche web (optionnel)
 
 - Telegram (voir `config/settings/telegram.php`):
@@ -104,8 +110,8 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 
 - Mode et logs:
   - `DEBUG_MODE` = `true|false` (active un niveau de logs plus verbeux)
-  - `DISABLE_TRACY_BAR` = `true|false` (permet de désactiver la barre de debug Tracy, activée par défaut si non spécifié)
   - `ENABLE_LETSENCRYPT` = `true|false` (active HTTPS automatique via Let's Encrypt dans le conteneur FrankenPHP/Caddy)
+  - `ENABLE_ACCESS_LOGS` = `true|false` (active les access logs HTTP sur la sortie standard du conteneur)
   - `ACME_EMAIL` — email utilisé pour l'enregistrement ACME/Let's Encrypt (optionnel)
 
 - Stockage des fichiers et données:
@@ -119,7 +125,7 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
     - Générales
       - `OTEL_PHP_AUTOLOAD_ENABLED` — active l’auto‑instrumentation PHP (true/false).
       - `OTEL_SERVICE_NAME` — nom du service (utilisé par les 3 signaux).
-      - `OTEL_RESOURCE_ATTRIBUTES` — attributs ressource supplémentaires (ex: `deployment.environment=dev,service.version=1.2.3`).
+      - `OTEL_RESOURCE_ATTRIBUTES` — attributs ressource supplémentaires (ex: `deployment.environment=dev,service.version=1.3.0`).
       - `OTEL_PROPAGATORS` — propagateurs de contexte (ex: `baggage,tracecontext`).
     - Traces
       - `OTEL_TRACES_EXPORTER` — exporteur des traces (`otlp`, `none`).
@@ -390,7 +396,7 @@ Migrations Doctrine
 
 ### Via Docker
 
-Claire fournit une image Docker complète avec Apache, PHP 8.4, et toutes les dépendances nécessaires.
+Claire fournit une image Docker complete basee sur FrankenPHP, Caddy et PHP 8.4.
 
 #### Build de l'image
 
@@ -418,7 +424,7 @@ services:
       SERVER_ADMIN: webmaster@example.com
       SERVER_NAME: claire.example.com
       DEBUG_MODE: "false"
-      DISABLE_TRACY_BAR: "true"
+      ENABLE_ACCESS_LOGS: "true"
       ENABLE_LETSENCRYPT: "false"
       # ACME_EMAIL: admin@example.com
 
@@ -439,17 +445,8 @@ services:
       OTEL_LOGS_PROCESSOR: simple
       # Optionnel: configuration OTLP commune (si vous envoyez vers un collecteur)
       # OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-
-```
-
-Notes Docker/FrankenPHP:
-
-- L'image Docker utilise FrankenPHP avec Caddy comme serveur HTTP intégré.
-- Si `ENABLE_LETSENCRYPT=true`, le conteneur sert directement votre domaine `SERVER_NAME` en HTTPS avec certificats Let's Encrypt automatiques.
-- Si `ENABLE_LETSENCRYPT=false`, le conteneur reste en HTTP sur le port 80, ce qui est recommandé derrière un reverse proxy TLS (Traefik, Caddy, Nginx, etc.).
-- Pour Let's Encrypt, le domaine doit être publiquement résolvable vers le conteneur et les ports 80/443 doivent être accessibles.
-      # OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318  # optionnel
-      # OTEL_EXPORTER_OTLP_HEADERS: authorization=Bearer <token> # optionnel
+      # OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      # OTEL_EXPORTER_OTLP_HEADERS: authorization=Bearer <token>
 
       # LLM (remplacez par vos valeurs / variables d'env)
       OPENAPI_KEY: ${OPENAPI_KEY:?set_me}
@@ -513,17 +510,26 @@ networks:
     name: internal
 ```
 
+Notes Docker/FrankenPHP:
+
+- L'image Docker utilise FrankenPHP avec Caddy comme serveur HTTP integre.
+- Si `ENABLE_LETSENCRYPT=true`, le conteneur sert directement votre domaine `SERVER_NAME` en HTTPS avec certificats Let's Encrypt automatiques.
+- Si `ENABLE_LETSENCRYPT=false`, le conteneur reste en HTTP sur le port 80, ce qui est recommande derriere un reverse proxy TLS.
+- `ENABLE_ACCESS_LOGS` permet d'activer ou couper les logs d'acces HTTP sans rebuilder l'image.
+- Pour Let's Encrypt, le domaine doit etre publiquement resolvable vers le conteneur et les ports 80/443 doivent etre accessibles.
+
 #### Points clés de l'image Docker
 
 - **Base**: Debian Trixie Slim avec PHP 8.4
-- **Services**: Apache + PHP-FPM + Supervisor + fcron
+- **Services**: FrankenPHP + Caddy + Supervisor
 - **Extensions PHP**: SQLite3, MySQL, PostgreSQL, GD, Imagick, Redis, Memcache, etc.
 - **OpenTelemetry**: Extension pré-installée et configurée
+- **Modules Caddy**: `transform-encoder`, Mercure, Vulcain
 - **Volumes**: 
   - `/data` — Données persistantes (base SQLite, fichiers uploadés, cache, etc.)
   - `/www` — Code de l'application (pré-copié dans l'image, ou monté en dev)
 - **Healthcheck**: Vérifie automatiquement l'endpoint `/health`
-- **Port**: Expose le port 80 (HTTP)
+- **Ports**: Expose `80` et `443`
 
 #### Démarrage
 
@@ -560,7 +566,7 @@ services:
   - Réponse 200 (exemple):
     ```json
     {
-      "version": "1.2.3",
+      "version": "1.3.0",
       "date": "2025-01-01T12:34:56+00:00"
     }
     ```
@@ -582,6 +588,7 @@ services:
 - `GET /history/list` — Liste des conversations
 - `GET /history/open/{threadId}` — Ouvrir une conversation existante
 - `POST /history/new` — Créer une nouvelle conversation
+- `DELETE /history/exchange/last` — Annuler le dernier échange de la conversation courante
 - `DELETE /history/delete/{threadId}` — Supprimer une conversation
 
 ### Configuration (/config)

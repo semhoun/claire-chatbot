@@ -7,10 +7,32 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-03
+
+### Added
+- Middleware de memoire courte pour resumer automatiquement l'historique quand la fenetre de contexte devient trop grande
+- Instrumentation OpenTelemetry simplifiee pour les spans et logs internes des agents
+- Bouton d'annulation du dernier echange dans l'interface web
+- Bouton flottant pour revenir rapidement en bas de conversation
+- Colonnes `display_messages` et `display_messages_count` dans `chat_history` pour separer l'historique LLM de l'historique d'affichage
+- Migration de base de donnees pour convertir les historiques existants vers le nouveau format
+- Timeout configurable sur les appels LLM et le workflow d'agent
+- Parametres `llm.shortMemory` et `llm.summary` pour piloter la memoire courte et la generation de resumes
+
 ### Changed
 - Mise à jour de la documentation pour le runtime Docker basé sur FrankenPHP/Caddy
 - Documentation des variables `ENABLE_LETSENCRYPT` et `ACME_EMAIL` pour activer HTTPS automatique via Let's Encrypt
 - Ajout de la variable `ENABLE_ACCESS_LOGS` pour activer ou désactiver les access logs HTTP sur la sortie standard du conteneur Docker
+- Migration du runtime Docker principal vers FrankenPHP avec Caddy et activation des modules `transform-encoder`, Mercure et Vulcain
+- Suppression de Tracy au profit d'OpenTelemetry pour l'observabilite et le diagnostic
+- Amelioration de la persistance des conversations avec separation entre messages internes LLM et messages affichables
+- Optimisation de la generation des resumes et de la sequence des messages historiques
+- Amelioration de l'interface de chat avec affichage immediat du message utilisateur, meilleur etat de chargement et navigation plus fluide dans les longues conversations
+- Mise a jour du README pour refleter la version courante 1.3.0, le runtime FrankenPHP/Caddy, la disparition de Tracy et les nouvelles capacites de l'historique de conversation
+
+### Fixed
+- Correction et nettoyage des historiques de conversation invalides ou incomplets
+- Suppression de l'indicateur textuel `Envoi en cours...` au profit d'un comportement de chargement plus discret
 
 ## [1.2.3] - 2026-03-31
 
@@ -171,7 +193,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.2.3...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.3.0...HEAD
+[1.3.0]: https://github.com/semhoun/claire-chatbot/compare/1.2.3...1.3.0
 [1.2.3]: https://github.com/semhoun/claire-chatbot/compare/1.2.0...1.2.3
 [1.2.0]: https://github.com/semhoun/claire-chatbot/releases/tag/1.2.0
 [1.1.0]: https://github.com/semhoun/claire-chatbot/compare/1.0.0...1.1.0
