@@ -12,6 +12,7 @@ return static function (App $app): void {
         $group->get('/list', [HistoryController::class, 'list'])->setName('history.list');
         $group->get('/open/{threadId}', [HistoryController::class, 'open'])->setName('history.open');
         $group->post('/new', [HistoryController::class, 'create'])->setName('history.new');
+        $group->delete('/exchange/last', [HistoryController::class, 'deleteLastExchange'])->setName('history.exchange.last.delete');
         $group->delete('/delete/{threadId}', [HistoryController::class, 'delete'])->setName('history.delete');
     });
 };

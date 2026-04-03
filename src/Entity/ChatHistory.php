@@ -32,6 +32,12 @@ class ChatHistory
     #[ORM\Column(name: 'messages', type: 'text', nullable: false)]
     private string $messages;
 
+    #[ORM\Column(name: 'display_messages', type: 'text', nullable: false)]
+    private string $displayMessages;
+
+    #[ORM\Column(name: 'display_messages_count', type: 'integer', nullable: false)]
+    private int $displayMessagesCount = 0;
+
     // SQLite migration allows NULL; MySQL version marked NOT NULL. Use nullable to keep portability.
     #[ORM\Column(name: 'title', type: 'text', nullable: true)]
     private ?string $title = null;
@@ -92,6 +98,26 @@ class ChatHistory
     public function setMessages(string $messages): void
     {
         $this->messages = $messages;
+    }
+
+    public function getDisplayMessages(): string
+    {
+        return $this->displayMessages;
+    }
+
+    public function setDisplayMessages(string $displayMessages): void
+    {
+        $this->displayMessages = $displayMessages;
+    }
+
+    public function getDisplayMessagesCount(): int
+    {
+        return $this->displayMessagesCount;
+    }
+
+    public function setDisplayMessagesCount(int $displayMessagesCount): void
+    {
+        $this->displayMessagesCount = $displayMessagesCount;
     }
 
     public function getTitle(): ?string

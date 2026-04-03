@@ -21,13 +21,24 @@ class UserChatHistory extends AbstractChatHistory
 {
     public const string TABLE = 'chat_history';
 
-    public const string CHAT_WEB = 'ordinary';
+    public const string LLM_MESSAGES_COLUMN = 'messages';
+
+    public const string DISPLAY_MESSAGES_COLUMN = 'display_messages';
+
+    public const string DISPLAY_MESSAGES_COUNT_COLUMN = 'display_messages_count';
+
+    public const string CHAT_WEB = 'web';
 
     public const string CHAT_TELEGRAM = 'telegram';
 
     protected string $user_id;
 
     protected string $thread_id;
+
+    /**
+     * @var array<Message>
+     */
+    protected array $displayHistory = [];
 
     public function __construct(
         SessionInterface $session,
@@ -59,20 +70,43 @@ class UserChatHistory extends AbstractChatHistory
         $this->setMessages($messages);
     }
 
+    /**
+     * @param array<Message> $messages
+     */
+    public function replaceDisplayMessages(array $messages): void
+    {
+        $this->setDisplayMessages($messages);
+    }
+
+    public function getDisplayMessages(): array
+    {
+        return $this->displayHistory;
+    }
+
+    public function removeLastExchange(): ?string
+    {
+        $lastUserMessage = $this->removeLastExchangeFromMessages($this->history);
+        if ($lastUserMessage === null) {
+            return null;
+        }
+
+        $this->removeLastExchangeFromMessages($this->displayHistory);
+
+        $this->persistHistories();
+
+        return $lastUserMessage->getContent();
+    }
+
     public function getFormattedMessages(string $mode, ?array $messages = null): array
     {
         if ($messages === null) {
-            $messages = $this->history;
+            $messages = $this->displayHistory;
         }
 
         $data = [];
         $toolCallId = null;
         $toolText = null;
         foreach ($messages as $message) {
-            if ($message->getMetadata('message_type') === 'out_of_context') {
-                continue;
-            }
-
             if ($message instanceof ToolCallMessage && $mode === 'stream') {
                 $toolCallId = uniqid('tool-', true);
             } elseif ($message instanceof ToolResultMessage) {
@@ -113,23 +147,74 @@ class UserChatHistory extends AbstractChatHistory
 
     protected function load(): void
     {
-        $stmt = $this->pdo->prepare(sprintf('SELECT * FROM %s WHERE thread_id = :thread_id', self::TABLE));
+        $stmt = $this->pdo->prepare(
+            sprintf(
+                'SELECT %s, %s FROM %s WHERE thread_id = :thread_id',
+                self::LLM_MESSAGES_COLUMN,
+                self::DISPLAY_MESSAGES_COLUMN,
+                self::TABLE
+            )
+        );
         $stmt->execute(['thread_id' => $this->thread_id]);
 
         $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if (empty($history)) {
-            $stmt = $this->pdo->prepare(sprintf('INSERT INTO %s (user_id, thread_id, messages) VALUES (:user_id, :thread_id, :messages)', self::TABLE));
-            $stmt->execute(['user_id' => $this->user_id,'thread_id' => $this->thread_id, 'messages' => '[]']);
-        } else {
-            $rawMessages = $this->deserializeMessages(\json_decode((string) $history[0]['messages'], true));
-            $fixedMessages = $this->fixMessageSequence($rawMessages);
-            $this->history = $fixedMessages;
+            $stmt = $this->pdo->prepare(
+                sprintf(
+                    'INSERT INTO %s (user_id, thread_id, %s, %s, %s) VALUES (:user_id, :thread_id, :messages, :display_messages, :display_messages_count)',
+                    self::TABLE,
+                    self::LLM_MESSAGES_COLUMN,
+                    self::DISPLAY_MESSAGES_COLUMN,
+                    self::DISPLAY_MESSAGES_COUNT_COLUMN
+                )
+            );
+            $stmt->execute([
+                'user_id' => $this->user_id,
+                'thread_id' => $this->thread_id,
+                self::LLM_MESSAGES_COLUMN => '[]',
+                self::DISPLAY_MESSAGES_COLUMN => '[]',
+                self::DISPLAY_MESSAGES_COUNT_COLUMN => 0,
 
-            // Save corrected sequence if it was modified
-            if (count($rawMessages) !== count($fixedMessages)) {
-                $this->setMessages($fixedMessages);
-            }
+            ]);
+            $this->history = [];
+            $this->displayHistory = [];
+
+            return;
         }
+
+
+        $history = $history[0];
+
+        $llmPayload = json_decode(
+            (string) $history[self::LLM_MESSAGES_COLUMN],
+            true,
+            flags: JSON_THROW_ON_ERROR
+        );
+        $displayPayload = json_decode(
+            (string) $history[self::DISPLAY_MESSAGES_COLUMN],
+            true,
+            flags: JSON_THROW_ON_ERROR
+        );
+
+        $llmMessages = $this->deserializeMessages($llmPayload);
+        $displayMessages = $this->deserializeMessages($displayPayload);
+
+        $this->history = $this->fixMessageSequence($llmMessages);
+        $this->displayHistory = $displayMessages;
+
+        if ($this->shouldPersistHistories($llmPayload, $displayPayload)) {
+            $this->persistHistories();
+        }
+    }
+
+    #[\Override]
+    protected function onNewMessage(Message $message): void
+    {
+        if ($message->getMetadata('message_type') === 'out_of_context') {
+            return;
+        }
+
+        $this->displayHistory[] = $message;
     }
 
     #[\Override]
@@ -137,13 +222,26 @@ class UserChatHistory extends AbstractChatHistory
     {
         $this->history = $messages;
 
-        $stmt = $this->pdo->prepare(
-            'UPDATE ' . self::TABLE . ' SET messages = :messages WHERE thread_id = :thread_id'
-        );
-        $stmt->execute([
-            'thread_id' => $this->thread_id,
-            'messages' => json_encode($this->jsonSerialize(), JSON_THROW_ON_ERROR),
-        ]);
+        if ($this->displayHistory === []) {
+            $this->displayHistory = [];
+            foreach ($messages as $message) {
+                if ($message->getMetadata('message_type') === 'out_of_context') {
+                    return;
+                }
+                $this->displayHistory[] = $message;
+            }
+        }
+
+        $this->persistHistories();
+    }
+
+    /**
+     * @param array<Message> $messages
+     */
+    protected function setDisplayMessages(array $messages): void
+    {
+        $this->displayHistory = $messages;
+        $this->persistHistories();
     }
 
     #[\Override]
@@ -153,6 +251,67 @@ class UserChatHistory extends AbstractChatHistory
             'DELETE FROM ' . self::TABLE . ' WHERE thread_id = :thread_id'
         );
         $stmt->execute(['thread_id' => $this->thread_id]);
+
+        $this->history = [];
+        $this->displayHistory = [];
+    }
+
+    /**
+     * @param array<Message> $messages
+     */
+    private function removeLastExchangeFromMessages(array &$messages): ?UserMessage
+    {
+        while ($messages !== []) {
+            $message = array_pop($messages);
+
+            if ($message instanceof UserMessage) {
+                return $message;
+            }
+        }
+
+        return null;
+    }
+
+    private function persistHistories(): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE ' . self::TABLE . ' SET '
+            . self::LLM_MESSAGES_COLUMN . ' = :llm_messages, '
+            . self::DISPLAY_MESSAGES_COLUMN . ' = :display_messages, '
+            . self::DISPLAY_MESSAGES_COUNT_COLUMN . ' = :display_messages_count '
+            . 'WHERE thread_id = :thread_id'
+        );
+        $stmt->execute([
+            'thread_id' => $this->thread_id,
+            'llm_messages' => json_encode(
+                $this->serializeMessages($this->history),
+                JSON_THROW_ON_ERROR
+            ),
+            'display_messages' => json_encode(
+                $this->serializeMessages($this->displayHistory),
+                JSON_THROW_ON_ERROR
+            ),
+            'display_messages_count' => count($this->displayHistory),
+        ]);
+    }
+
+    /**
+     * @param array<Message> $messages
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function serializeMessages(array $messages): array
+    {
+        return array_map(
+            static fn (Message $message): array => $message->jsonSerialize(),
+            $messages,
+        );
+    }
+
+    private function shouldPersistHistories(array $llmPayload, array $displayPayload): bool
+    {
+        return count($llmPayload) !== count($this->history)
+            || count($displayPayload) !== count($this->displayHistory);
     }
 
     /**
@@ -216,15 +375,11 @@ class UserChatHistory extends AbstractChatHistory
         // Remove orphaned ToolCallMessage (without corresponding ToolResultMessage)
         if ($lastToolCallIndex !== null) {
             array_splice($fixed, $lastToolCallIndex, 1);
-            // After removing ToolCall, we need to check if last message is user
-            // and remove it since last message must be assistant
             while ($fixed !== [] && $fixed[array_key_last($fixed)] instanceof UserMessage) {
                 array_pop($fixed);
             }
         }
 
-        // Last message must be an assistant message
-        // Remove trailing user messages (including ToolResultMessage which extends UserMessage)
         while ($fixed !== [] && $fixed[array_key_last($fixed)] instanceof UserMessage) {
             array_pop($fixed);
         }

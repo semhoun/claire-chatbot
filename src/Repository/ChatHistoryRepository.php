@@ -13,7 +13,7 @@ use Doctrine\ORM\EntityRepository;
  */
 class ChatHistoryRepository extends EntityRepository
 {
-    private const int MIN_MESSAGES_LENGTH = 4;
+    private const int MIN_MESSAGES = 1;
 
     /**
      * Compte le nombre d'entrées d'historique pour un utilisateur donné.
@@ -28,7 +28,7 @@ class ChatHistoryRepository extends EntityRepository
         $queryBuilder = $this->createQueryBuilder('h')
             ->select('COUNT(h.id)')
             ->where('h.user = :user')
-            ->andWhere('LENGTH(h.messages) > ' . self::MIN_MESSAGES_LENGTH)
+            ->andWhere('h.displayMessagesCount > ' . self::MIN_MESSAGES)
             ->setParameter('user', $user);
 
         return (int) $queryBuilder->getQuery()->getSingleScalarResult();
@@ -48,7 +48,7 @@ class ChatHistoryRepository extends EntityRepository
 
         return $this->createQueryBuilder('h')
             ->where('h.user = :user')
-            ->andWhere('LENGTH(h.messages) > ' . self::MIN_MESSAGES_LENGTH)
+            ->andWhere('h.displayMessagesCount > ' . self::MIN_MESSAGES)
             ->setParameter('user', $user)
             ->orderBy('h.updatedAt', 'DESC')
             ->getQuery()
@@ -68,7 +68,7 @@ class ChatHistoryRepository extends EntityRepository
         return (int) $this->createQueryBuilder('h')
             ->delete()
             ->where('h.user = :user')
-            ->andWhere('LENGTH(h.messages) < ' . self::MIN_MESSAGES_LENGTH . ' OR h.messages IS NULL')
+            ->andWhere('h.displayMessagesCount <= ' . self::MIN_MESSAGES . ' OR h.displayMessages IS NULL')
             ->setParameter('user', $user)
             ->getQuery()
             ->execute();

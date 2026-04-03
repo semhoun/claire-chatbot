@@ -35,9 +35,9 @@ final readonly class BrainController
     private const string STREAM_STOP = "\n§STREAM-STOP§\n";
 
     public function __construct(
+        private Logger $logger,
         private Twig $twig,
         private BrainRegistry $brainRegistry,
-        private Logger $logger,
         private EntityManager $entityManager,
         private Filesystem $filesystem,
         private Settings $settings,

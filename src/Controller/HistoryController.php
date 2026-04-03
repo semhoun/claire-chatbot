@@ -14,6 +14,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Psr\Log\LoggerInterface as Logger;
 use Slim\Views\Twig;
 
 final readonly class HistoryController
@@ -21,10 +22,12 @@ final readonly class HistoryController
     use SessionFromRequestTrait;
 
     public function __construct(
+        private Logger $logger,
         private Twig $twig,
         private EntityManagerInterface $entityManager,
         private BrainRegistry $brainRegistry,
         private Settings $settings,
+
     ) {
     }
 
@@ -176,5 +179,42 @@ final readonly class HistoryController
         // hx-swap="outerHTML" on the <li> effectively removes the element.
         $response->getBody()->write('');
         return $response->withStatus(200);
+    }
+
+    /**
+     * Supprime le dernier échange de la conversation courante et retourne le message utilisateur supprimé.
+     */
+    public function deleteLastExchange(Request $request, Response $response): Response
+    {
+        $session = $this->getSession($request);
+
+        $userId = (string) $session->get(Auth::USERID);
+        if ($userId === '') {
+            return $response->withStatus(403);
+        }
+
+        $threadId = (string) $session->get('chatId');
+        if ($threadId === '') {
+            return $response->withStatus(400);
+        }
+
+        $userChatHistory = new UserChatHistory(
+            session: $session,
+            pdo: $this->entityManager->getConnection()->getNativeConnection(),
+            contextWindow: $this->settings->get('llm.openai.contextWindow')
+        );
+        $userChatHistory->setThreadId($threadId);
+
+        $removedMessage = $userChatHistory->removeLastExchange();
+        if ($removedMessage === null) {
+            return $response->withStatus(400);
+        }
+
+        $messages = $userChatHistory->getFormattedMessages((string) $session->get('chat_mode'));
+
+        return $this->twig->render($response, 'partials/messages_list.twig', [
+            'messages' => $messages,
+            'removedMessage' => $removedMessage,
+        ]);
     }
 }

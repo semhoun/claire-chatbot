@@ -628,6 +628,20 @@ body.compact .chat-input {
     box-shadow: 0 16px 30px rgba(26, 0, 41, 0.4);
 }
 
+.chat-icon-btn--ghost {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-strong);
+    box-shadow: none;
+}
+
+.chat-icon-btn--ghost:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.13);
+    border-color: var(--accent-border);
+    box-shadow: 0 8px 18px rgba(18, 0, 35, 0.24);
+}
+
 .chat-input__file {
     position: absolute;
     width: 1px;

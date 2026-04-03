@@ -99,6 +99,21 @@
                 <span id="chatAttachedFilesChatHidden" hidden></span>
                 <input class="chat-input__field form_disabler" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required />
                 <div class="chat-input__actions">
+                    <button
+                            class="chat-icon-btn chat-icon-btn--ghost form_disabler"
+                            type="button"
+                            aria-label="Annuler le dernier échange"
+                            title="Annuler le dernier échange"
+                            hx-delete="{{ base_url }}/history/exchange/last"
+                            hx-target="#messages"
+                            hx-swap="innerHTML"
+                            hx-indicator="#globalActionIndicator"
+                            hx-on::after-request="handleLastExchangeResponse(event)"
+                    >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M9 7H5v4M5.5 10.5A7 7 0 1 1 7 17.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
                     <button class="chat-icon-btn form_disabler" type="submit" aria-label="Envoyer">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M3.4 20.6L4.8 14.2 16.2 12 4.8 9.8 3.4 3.4 22 12 3.4 20.6Z"/>
@@ -172,6 +187,24 @@
             event.target.reset();
             let elements = document.querySelectorAll('.chat-chip__remove');
             elements.forEach(element => {removeChatChip(element);})
+        }
+
+        window.handleLastExchangeResponse = function handleLastExchangeResponse(event) {
+            const detail = event.detail || {};
+            const chatBody = document.querySelector('.chat-body');
+            const scrollBtn = document.getElementById('scrollDownBtn');
+
+            if (!detail.successful) {
+                return;
+            }
+
+            if (chatBody) {
+                chatBody.scrollTop = chatBody.scrollHeight;
+            }
+
+            if (scrollBtn) {
+                scrollBtn.style.display = 'none';
+            }
         }
 
         function $(sel, root=document) { return root.querySelector(sel); }
