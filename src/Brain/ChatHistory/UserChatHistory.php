@@ -8,6 +8,7 @@ use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\Enums\MessageRole;
 use NeuronAI\Chat\History\AbstractChatHistory;
+use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
@@ -46,6 +47,9 @@ class UserChatHistory extends AbstractChatHistory
 
     public function setThreadId(string $thread_id): void
     {
+        if ($this->thread_id === $thread_id) {
+            return;
+        }
         $this->thread_id = $thread_id;
         $this->load();
     }

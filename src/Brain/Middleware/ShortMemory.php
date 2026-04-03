@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Brain\Middleware;
 
 use App\Brain\ChatHistory\UserChatHistory;
+use App\Brain\Observability\HasInstrumentation;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\Events\AIInferenceEvent;
 use NeuronAI\Agent\Middleware\Summarization;
 use NeuronAI\Chat\Enums\MessageRole;
+use NeuronAI\Chat\History\TokenCounter;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
@@ -24,6 +26,10 @@ use function array_slice;
 
 class ShortMemory extends Summarization
 {
+    use HasInstrumentation;
+
+    protected TokenCounter $tokenCounter;
+
     public function __construct(
         protected Logger $logger,
         protected AIProviderInterface $provider,
@@ -31,19 +37,23 @@ class ShortMemory extends Summarization
         protected int $messagesToKeep = 5,
         protected ?string $summaryPrompt = null,
     ) {
+        $this->tokenCounter = new TokenCounter();
         parent::__construct($provider, $maxTokens, $messagesToKeep, $summaryPrompt);
     }
 
-    #[\Override]
-    public function before(NodeInterface $node, Event $event, WorkflowState $state): void
+    protected function estimateTokens(array $messages): int
     {
+        return array_reduce(
+            $messages,
+            fn (int $carry, Message $message): int => $carry + $this->tokenCounter->count($message),
+            0
+        );
     }
 
-    #[\Override]
-    public function after(NodeInterface $node, Event $result, WorkflowState $state): void
+    public function before(NodeInterface $node, Event $event, WorkflowState $state): void
     {
         // Only apply to ChatNode, StreamingNode, and StructuredOutputNode
-        if (!$result instanceof StopEvent || !$state instanceof AgentState) {
+        if (!$event instanceof AIInferenceEvent || !$state instanceof AgentState) {
             return;
         }
 
@@ -55,13 +65,10 @@ class ShortMemory extends Summarization
         $chatHistory = $state->getChatHistory();
         $messages = $chatHistory->getMessages();
 
-        // Not enough messages to warrant summarization
-        if (count($messages) <= $this->messagesToKeep) {
-            return;
-        }
+        $usage = $this->estimateTokens($messages);
 
         // Threshold isn't exceeded
-        if ($chatHistory->calculateTotalUsage() <= $this->maxTokens) {
+        if ($usage <= $this->maxTokens) {
             return;
         }
 
@@ -92,9 +99,12 @@ class ShortMemory extends Summarization
         // Generate summary of old messages
         $summary = $this->generateSummary($oldMessages);
 
+        $userMessage = new UserMessage("[OC]Previous conversation summary:\n\n{$summary}\n[\OC]");
+        $userMessage->addMetadata('message_type', 'out_of_context');
+
         // Create the new message list: summary + recent messages
         $newMessages = [
-            new UserMessage("[OC]Previous conversation summary:\n\n{$summary}\n[\OC]"),
+            $userMessage,
             ...$recentMessages,
         ];
 
@@ -104,13 +114,12 @@ class ShortMemory extends Summarization
             foreach ($newMessages as $newMessage) {
                 $state->getChatHistory()->addMessage($newMessage);
             }
-            
+
             return;
         }
-        
+
         $chatHistory->replaceMessages($newMessages);
     }
-
 
     /**
      * Find a safe cutoff index that doesn't break tool call sequences.

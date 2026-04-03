@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Brain\AgentTrait;
 
+use NeuronAI\HttpClient\GuzzleHttpClient;
 use NeuronAI\Providers\AIProviderInterface;
 
 trait AIProvider
@@ -16,6 +17,7 @@ trait AIProvider
             key: $this->settings->get('llm.openai.key'),
             model: $this->settings->get('llm.openai.model'),
             rawMimeTypes: $this->settings->get('llm.rawMimeTypes'),
+            httpClient: new GuzzleHttpClient(customHeaders: [], timeout: $this->settings->get('llm.httpClient.timeout'), connectTimeout: $this->settings->get('llm.httpClient.connectTimeout'))
         );
     }
 }

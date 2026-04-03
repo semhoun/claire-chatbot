@@ -17,11 +17,11 @@ return [
         'model' => env('OPENAPI_MODEL'),
         'modelSummary' => env('OPENAPI_MODEL_SUMMARY') ?? env('OPENAPI_MODEL'),
         'modelEmbed' => env('OPENAPI_MODEL_EMBED'),
-        'contextWindow' => 10000,// (int) env('OPENAPI_CONTEXT_WINDOW', 50000),
+        'contextWindow' => (int) env('OPENAPI_CONTEXT_WINDOW', 50000),
     ],
     'shortMemory' => [
-        'messageToKeep' => 5,
-        'maxTokens' => 3000,
+        'messageToKeep' => 3,
+        'maxTokens' => ((int) env('OPENAPI_CONTEXT_WINDOW', 50000)) / 2,
     ],
     'workflow' => [
         'timeout' => 600,

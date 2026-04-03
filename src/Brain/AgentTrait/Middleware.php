@@ -9,25 +9,33 @@ use App\Brain\Middleware\ToolCalls;
 use NeuronAI\Agent\Nodes\ChatNode;
 use NeuronAI\Agent\Nodes\StreamingNode;
 use NeuronAI\Agent\Nodes\StructuredOutputNode;
+use NeuronAI\HttpClient\GuzzleHttpClient;
 
 trait Middleware
 {
     #[\Override]
     protected function middleware(): array
     {
+        $provider = new \App\Brain\Provider\OpenAI(
+            baseUri: $this->settings->get('llm.openai.baseUri'),
+            key: $this->settings->get('llm.openai.key'),
+            model: $this->settings->get('llm.openai.modelSummary'),
+            rawMimeTypes: $this->settings->get('llm.rawMimeTypes'),
+            httpClient: new GuzzleHttpClient(customHeaders: [], timeout: $this->settings->get('llm.httpClient.timeout'), connectTimeout: $this->settings->get('llm.httpClient.connectTimeout'))
+        );
         $shortMemory = new ShortMemory(
             logger: $this->logger,
-            provider: $this->provider(),
-            maxTokens: $this->settings->get('llm.openai.contextWindow') / 2,
-            messagesToKeep: 2,
+            provider: $provider,
+            maxTokens: $this->settings->get('llm.shortMemory.maxTokens'),
+            messagesToKeep: $this->settings->get('llm.shortMemory.messageToKeep'),
         );
 
         $toolCalls = new ToolCalls();
 
         return [
-            ChatNode::class => [$shortMemory, $toolCalls],
-            StreamingNode::class => [$shortMemory, $toolCalls],
-            StructuredOutputNode::class => [$shortMemory, $toolCalls],
+            ChatNode::class => [$toolCalls, $shortMemory],
+            StreamingNode::class => [$toolCalls, $shortMemory],
+            StructuredOutputNode::class => [$toolCalls, $shortMemory],
         ];
     }
 }
