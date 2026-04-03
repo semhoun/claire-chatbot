@@ -20,7 +20,7 @@ return [
 
     'defaultParams' => [
         'brain_avatar' => 'claire',
-        'chat_mode' => 'chat',
+        'chat_mode' => 'stream',
         'layout_mode' => 'full'
     ],
 ];
