@@ -34,7 +34,7 @@ class UserChatHistory extends AbstractChatHistory
 
     protected string $user_id;
 
-    protected string $thread_id;
+    protected ?string $thread_id = null;
 
     /**
      * @var array<Message>
