@@ -17,7 +17,14 @@ return [
         'model' => env('OPENAPI_MODEL'),
         'modelSummary' => env('OPENAPI_MODEL_SUMMARY') ?? env('OPENAPI_MODEL'),
         'modelEmbed' => env('OPENAPI_MODEL_EMBED'),
-        'contextWindow' => (int) env('OPENAPI_CONTEXT_WINDOW', 50000),
+        'contextWindow' => 10000,// (int) env('OPENAPI_CONTEXT_WINDOW', 50000),
+    ],
+    'shortMemory' => [
+        'messageToKeep' => 5,
+        'maxTokens' => 3000,
+    ],
+    'workflow' => [
+        'timeout' => 600,
     ],
     'tools' => [
         'searchXngUrl' => env('SEARXNG_URL'),

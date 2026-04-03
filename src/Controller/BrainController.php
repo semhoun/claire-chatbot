@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Brain\BrainRegistry;
 use App\Brain\Summary;
+use App\Exception;
 use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
@@ -54,6 +55,8 @@ final readonly class BrainController
      */
     public function chat(Request $request, Response $response): Response
     {
+        set_time_limit((int) $this->settings->get('llm.workflow.timeout'));
+
         $session = $this->getSession($request);
 
         if ($request->getMethod() === 'POST') {
