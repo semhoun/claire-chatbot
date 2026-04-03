@@ -34,22 +34,6 @@ final readonly class HomeController
 
         $time = new \DateTime()->format('H:i');
 
-        // Conserver le chatId courant s'il existe, sinon en générer un nouveau
-        $chatId = $session->get('chatId');
-        if (! $chatId) {
-            $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
-            $session->set('chatId', $chatId);
-
-            // Nettoyage des conversations vides de l'utilisateur
-            $userId = (string) $session->get(Auth::USERID);
-            if ($userId !== '') {
-                $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
-            }
-        }
-
-        $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
-        $session->set('chatId', $chatId);
-
         $currentBrain = $session->get('brain_avatar');
         $mode = $session->get('chat_mode');
         $layoutMode = $session->get('layout_mode');
@@ -60,13 +44,27 @@ final readonly class HomeController
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
             contextWindow: $this->settings->get('llm.openai.contextWindow')
         );
-        $messages = $userChatHistory->getFormattedMessages($mode);
-        if ($messages === []) {
-            $assistantMessage = new AssistantMessage(
-                $this->brainRegistry->get($currentBrain, $session)->getOpeningText()
-            );
-            $assistantMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-            $messages = $userChatHistory->getFormattedMessages($mode, [$assistantMessage]);
+
+        // Conserver le chatId courant s'il existe, sinon en générer un nouveau
+        $chatId = $session->get('chatId');
+        if ($chatId === null) {
+            $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
+            $session->set('chatId', $chatId);
+
+            // Nettoyage des conversations vides de l'utilisateur
+            $userId = (string) $session->get(Auth::USERID);
+            if ($userId !== '') {
+                $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
+            }
+            $openingMessage = $this->brainRegistry->get($currentBrain, $session)->getOpeningText();
+            $assistantMessage = new AssistantMessage($openingMessage)
+                ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
+            $userChatHistory->replaceDisplayMessages([$assistantMessage]);
+            $userChatHistory->replaceMessages([]);
+            $messages = $userChatHistory->getFormattedMessages($mode);
+        }
+        else {
+            $messages = $userChatHistory->getFormattedMessages($mode);
         }
 
         // Métadonnées du brain courant via la registry

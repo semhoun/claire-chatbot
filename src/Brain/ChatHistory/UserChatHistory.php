@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Brain\ChatHistory;
 
+use App\Brain\Observability\HasInstrumentation;
 use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\Enums\MessageRole;
@@ -97,16 +98,16 @@ class UserChatHistory extends AbstractChatHistory
         return $lastUserMessage->getContent();
     }
 
-    public function getFormattedMessages(string $mode, ?array $messages = null): array
+    public function getFormattedMessages(string $mode): array
     {
-        if ($messages === null) {
-            $messages = $this->displayHistory;
+        if (empty($this->displayHistory)) {
+            return [];
         }
 
         $data = [];
         $toolCallId = null;
         $toolText = null;
-        foreach ($messages as $message) {
+        foreach ($this->displayHistory as $message) {
             if ($message instanceof ToolCallMessage && $mode === 'stream') {
                 $toolCallId = uniqid('tool-', true);
             } elseif ($message instanceof ToolResultMessage) {
@@ -264,7 +265,7 @@ class UserChatHistory extends AbstractChatHistory
         while ($messages !== []) {
             $message = array_pop($messages);
 
-            if ($message instanceof UserMessage) {
+            if ($message instanceof UserMessage && !$message instanceof ToolResultMessage) {
                 return $message;
             }
         }

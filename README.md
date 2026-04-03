@@ -43,7 +43,7 @@ docker run -d -p 8080:80 \
 
 ## Fonctionnalités
 
-- Interface web de chat avec horodatage, annulation du dernier echange, affichage instantane du message utilisateur et raccourci pour revenir en bas de conversation.
+- Interface web de chat avec horodatage, annulation du dernier echange, affichage instantane du message utilisateur, mode streaming par defaut et raccourci pour revenir en bas de conversation.
 - Endpoint API `POST /brain/chat` pour envoyer un message et récupérer la réponse de l'agent.
 - Healthcheck `GET /health` (JSON) pour la supervision.
 - Intégration d'un fournisseur LLM « OpenAI-like » (URL, clé et modèle configurables).
@@ -54,7 +54,7 @@ docker run -d -p 8080:80 \
 - Support d'agents personnalisés via classes PHP et fichiers YAML.
 - Intégration Telegram avec filtrage des balises `[OC]` sur les réponses envoyées.
 - Observabilite via OpenTelemetry pour traces, metriques et logs, y compris l'instrumentation interne des agents.
-- Historique de conversation avec separation entre messages LLM et messages affiches a l'utilisateur.
+- Historique de conversation avec separation entre messages LLM et messages affiches a l'utilisateur, y compris conservation du message d'ouverture dans l'affichage.
 
 ## Pile technique
 
@@ -148,7 +148,7 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 
 ### Avatars / Cerveaux (BrainRegistry)
 
-L'application permet de sélectionner différents « cerveaux » (avatars) pour l'agent (ex.: Claire, Einstein, Flashy). La sélection est mémorisée en session sous la clé `brain_avatar`.
+L'application permet de sélectionner différents « cerveaux » (avatars) pour l'agent (ex.: Claire, Einstein, Calliope). La sélection est mémorisée en session sous la clé `brain_avatar`.
 
 - La logique de sélection est gérée par le registre `BrainRegistry`.
 - Si une valeur invalide est fournie, l'application revient automatiquement sur l'avatar par défaut: `claire`.
@@ -156,7 +156,7 @@ L'application permet de sélectionner différents « cerveaux » (avatars) pour 
 - Cerveaux disponibles par défaut:
   - `claire` — Assistante généraliste
   - `einstein` — Expert scientifique
-  - `flashy` — Réponses rapides et concises
+  - `calliope` — Calliope la conteuse
 
 #### Ajout de cerveaux personnalisés via YAML
 
@@ -231,7 +231,7 @@ instruction: |
 - **Alternative**: Utilisez `css` pour référencer un fichier externe (ex: `css: "monbrain.css"`)
 - Vous pouvez utiliser les deux simultanément si nécessaire
 - Le CSS inline est injecté via une balise `<style>` dans le `<head>`
-- Voir `addons/agents/flashy.yaml` pour un exemple complet avec CSS inline
+- Voir `addons/agents/calliope.yaml` pour un exemple complet avec CSS inline
 
 **Points importants:**
 
@@ -239,7 +239,7 @@ instruction: |
 - Les fichiers YAML sont chargés automatiquement au démarrage
 - Un message d'accueil est choisi aléatoirement parmi la liste `welcomes`
 - Les cerveaux YAML apparaissent automatiquement dans l'interface aux côtés des cerveaux PHP
-- Voir le fichier exemple dans `addons/agents/flashy.yaml` (réplique complète en YAML du cerveau Flashy IoT avec CSS inline)
+- Voir le fichier exemple dans `addons/agents/calliope.yaml` (exemple complet d'un cerveau YAML avec CSS inline)
 
 ### Blocs internes `[OC]`
 

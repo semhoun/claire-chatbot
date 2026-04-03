@@ -47,6 +47,9 @@ final readonly class HistoryController
             $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
         }
 
+        $currentBrain = $session->get('brain_avatar');
+        $mode = $session->get('chat_mode');
+
         // Nouveau thread
         $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
         $session->set('chatId', $threadId);
@@ -57,13 +60,12 @@ final readonly class HistoryController
         );
         $userChatHistory->setThreadId($threadId);
 
-        $currentBrain = $session->get('brain_avatar');
-        $assistantMessage = new AssistantMessage(
-            $this->brainRegistry->get($currentBrain, $session)->getOpeningText()
-        );
-        $assistantMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-
-        $messages = $userChatHistory->getFormattedMessages($session->get('chat_mode'), [$assistantMessage]);
+        $openingMessage = $this->brainRegistry->get($currentBrain, $session)->getOpeningText();
+        $assistantMessage = new AssistantMessage($openingMessage)
+            ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
+        $userChatHistory->replaceDisplayMessages([$assistantMessage]);
+        $userChatHistory->replaceMessages([]);
+        $messages = $userChatHistory->getFormattedMessages($mode);
 
         return $this->twig->render($response, 'partials/messages_list.twig', [
             'messages' => $messages,

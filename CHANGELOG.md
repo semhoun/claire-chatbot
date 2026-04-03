@@ -18,6 +18,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Migration de base de donnees pour convertir les historiques existants vers le nouveau format
 - Timeout configurable sur les appels LLM et le workflow d'agent
 - Parametres `llm.shortMemory` et `llm.summary` pour piloter la memoire courte et la generation de resumes
+- Sauvegarde du message d'ouverture dans l'historique affiche a l'utilisateur
 
 ### Changed
 - Mise à jour de la documentation pour le runtime Docker basé sur FrankenPHP/Caddy
@@ -28,6 +29,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Amelioration de la persistance des conversations avec separation entre messages internes LLM et messages affichables
 - Optimisation de la generation des resumes et de la sequence des messages historiques
 - Amelioration de l'interface de chat avec affichage immediat du message utilisateur, meilleur etat de chargement et navigation plus fluide dans les longues conversations
+- Le mode de chat par defaut passe a `stream`
+- La liste des cerveaux par defaut remplace `flashy` par `calliope`
 - Mise a jour du README pour refleter la version courante 1.3.0, le runtime FrankenPHP/Caddy, la disparition de Tracy et les nouvelles capacites de l'historique de conversation
 
 ### Fixed
