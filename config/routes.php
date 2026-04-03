@@ -15,9 +15,6 @@ return static function (App $app): void {
     $app->get('/health', HealthController::class)->setName('health');
 
     $settings = $app->getContainer()->get(Settings::class);
-    if (class_exists(SlimTracy\Middlewares\TracyMiddleware::class) && $settings->get('debug') && $settings->get('tracy.configs.ConsoleEnable')) {
-        $app->post('/console', 'SlimTracy\Controllers\SlimTracyConsole:index');
-    }
 
     // Activating all routes
     foreach (glob(Settings::getAppRoot() . '/config/routes/*.php') as $file) {

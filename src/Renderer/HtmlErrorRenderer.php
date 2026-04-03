@@ -14,7 +14,6 @@ final readonly class HtmlErrorRenderer implements ErrorRendererInterface
 {
     public function __construct(
         private Twig $twig,
-        private Settings $settings,
         private Logger $logger,
     ) {
     }
@@ -47,12 +46,7 @@ final readonly class HtmlErrorRenderer implements ErrorRendererInterface
             'trace' => $exception->getTraceAsString(),
         ];
 
-        $this->logger->error('[' . $exception->getCode() . '] ' . $exception->getMessage(), $details);
-
-        if ($this->settings->get('debug')) {
-            // We are in debug mode, and is not app exception so we let tracy manage the exception
-            throw $exception;
-        }
+        $this->logger->error('[' . $exception->getCode() . '] ' . $exception->getMessage(), ['exception' => $exception]);
 
         return $this->twig->fetch('error/default.twig', $displayErrorDetails ? array_merge($data, $details) : $data);
     }

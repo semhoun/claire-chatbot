@@ -38,7 +38,7 @@ final readonly class JsonErrorRenderer implements ErrorRendererInterface
             return json_encode($data) ?? [];
         }
 
-        $this->logger->error('[' . $exception->getCode() . '] ' . $exception->getMessage(), $details);
+        $this->logger->error('[' . $exception->getCode() . '] ' . $exception->getMessage(), ['exception' => $exception]);
 
         return json_encode($displayErrorDetails ? array_merge($data, $details) : $data) ?? [];
     }
