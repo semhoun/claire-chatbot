@@ -23,6 +23,7 @@ trait HasInstrumentation
     protected function otelLog(string $message, mixed $data = null): void
     {
         $logRecord = new LogRecord($message);
+
         if ($data !== null) {
             $logRecord->setAttributes($data);
         }
@@ -33,6 +34,7 @@ trait HasInstrumentation
     protected function otelStartSpan(string $name): Span
     {
         $this->activeSpan = $this->getInstrumentation()->tracer()->spanBuilder($name)
+
             ->startSpan();
 
         return $this->activeSpan;
@@ -48,8 +50,7 @@ trait HasInstrumentation
             if (is_array($value)) {
                 $value = json_encode($value, JSON_THROW_ON_ERROR);
             }
-        }
-        catch (JsonException $e) {
+        } catch (JsonException) {
             return;
         }
 
@@ -63,6 +64,7 @@ trait HasInstrumentation
         }
 
         $this->activeSpan->end();
+
         $this->activeSpan = null;
     }
 }

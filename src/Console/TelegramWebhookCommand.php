@@ -6,8 +6,8 @@ namespace App\Console;
 
 use App\Services\Settings;
 use InvalidArgumentException;
-use Psr\Log\LoggerInterface as Logger;
 use Phptg\BotApi\TelegramBotApi;
+use Psr\Log\LoggerInterface as Logger;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;

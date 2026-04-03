@@ -16,7 +16,7 @@ trait Middleware
     #[\Override]
     protected function middleware(): array
     {
-        $provider = new \App\Brain\Provider\OpenAI(
+        $openAI = new \App\Brain\Provider\OpenAI(
             baseUri: $this->settings->get('llm.openai.baseUri'),
             key: $this->settings->get('llm.openai.key'),
             model: $this->settings->get('llm.openai.modelSummary'),
@@ -25,7 +25,7 @@ trait Middleware
         );
         $shortMemory = new ShortMemory(
             logger: $this->logger,
-            provider: $provider,
+            provider: $openAI,
             maxTokens: $this->settings->get('llm.shortMemory.maxTokens'),
             messagesToKeep: $this->settings->get('llm.shortMemory.messageToKeep'),
         );

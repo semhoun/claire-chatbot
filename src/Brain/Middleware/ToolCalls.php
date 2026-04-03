@@ -47,7 +47,7 @@ class ToolCalls implements WorkflowMiddleware
     }
 
     /**
-     * Apply post-processing from tools that implement
+     * Apply post-processing from tools that implement.
      *
      * MessagePostProcessorInterface.
      */

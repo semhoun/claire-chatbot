@@ -8,7 +8,6 @@ use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\Enums\MessageRole;
 use NeuronAI\Chat\History\AbstractChatHistory;
-use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
@@ -50,6 +49,7 @@ class UserChatHistory extends AbstractChatHistory
         if ($this->thread_id === $thread_id) {
             return;
         }
+
         $this->thread_id = $thread_id;
         $this->load();
     }
@@ -161,8 +161,9 @@ class UserChatHistory extends AbstractChatHistory
      * Ensures proper user/assistant alternation and tool call/tool result pairing.
      * Last message must be an assistant message.
      *
-     * @param Message[] $messages
-     * @return Message[]
+     * @param array<Message> $messages
+     *
+     * @return array<Message>
      */
     protected function fixMessageSequence(array $messages): array
     {
@@ -174,7 +175,7 @@ class UserChatHistory extends AbstractChatHistory
         $expectingUser = true;
         $lastToolCallIndex = null;
 
-        foreach ($messages as $index => $message) {
+        foreach ($messages as $message) {
             // Handle ToolResultMessage - must follow ToolCallMessage
             if ($message instanceof ToolResultMessage) {
                 if ($lastToolCallIndex === null) {

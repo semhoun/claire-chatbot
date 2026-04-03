@@ -6,7 +6,6 @@ namespace App\Controller;
 
 use App\Brain\BrainRegistry;
 use App\Brain\Summary;
-use App\Exception;
 use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
