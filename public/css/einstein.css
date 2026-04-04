@@ -30,6 +30,16 @@
     --accent-border: rgba(57, 255, 20, 0.38);
     --accent-border-strong: rgba(57, 255, 20, 0.48);
     --accent-shadow: rgba(0, 247, 255, 0.35);
+    --accent-shadow-soft: rgba(0, 247, 255, 0.25);
+    --elevation-panel: rgba(0, 247, 255, 0.25);
+    --elevation-panel-avatar: rgba(0, 247, 255, 0.35);
+    --elevation-panel-strong: rgba(57, 255, 20, 0.35);
+    --elevation-panel-deep: rgba(93, 0, 255, 0.35);
+    --elevation-panel-dark: rgba(93, 0, 255, 0.28);
+    --elevation-focus-ring: rgba(0, 247, 255, 0.24);
+    --surface-stroke-soft: rgba(0, 247, 255, 0.08);
+    --tooltip-shadow: rgba(0, 0, 0, 0.45);
+    --modal-shadow: rgba(93, 0, 255, 0.35);
     --tooltip-bg: rgba(10, 0, 28, 0.98);
     --success: #39ff14;
     /* Dégradé héro très flashy (teinte feu plus rouge) */
@@ -75,19 +85,19 @@ html, body {
 /* Entête avec liseré néon */
 .chat-header {
     background: linear-gradient(135deg, rgba(14, 0, 38, 0.95), rgba(24, 0, 68, 0.95));
-    box-shadow: 0 18px 38px rgba(0, 247, 255, 0.25);
+    box-shadow: 0 18px 38px var(--elevation-panel);
 }
 
 .chat-header__avatar {
     border: 2px solid rgba(0, 247, 255, 0.35);
-    box-shadow: 0 8px 28px rgba(0, 247, 255, 0.35);
+    box-shadow: 0 8px 28px var(--elevation-panel-avatar);
 }
 
 /* Bouton d’options rond néon */
 .options-toggle {
     background: linear-gradient(135deg, var(--accent), var(--accent-light));
     color: #0a0014;
-    box-shadow: 0 20px 40px rgba(57, 255, 20, 0.35);
+    box-shadow: 0 20px 40px var(--elevation-panel-strong);
 }
 
 /* Messages */
@@ -95,7 +105,7 @@ html, body {
     background: linear-gradient(135deg, rgba(57, 255, 20, 0.98), rgba(0, 247, 255, 0.95));
     color: #071a0a;
     border-bottom-right-radius: 12px;
-    box-shadow: 0 26px 40px rgba(0, 247, 255, 0.35), 0 0 0 1px rgba(57, 255, 20, 0.28) inset;
+    box-shadow: 0 26px 40px var(--accent-shadow), 0 0 0 1px rgba(57, 255, 20, 0.28) inset;
 }
 
 .message--received .message__bubble {
@@ -103,7 +113,7 @@ html, body {
     color: var(--text-primary);
     border: 1px solid var(--border);
     border-bottom-left-radius: 12px;
-    box-shadow: 0 18px 34px rgba(93, 0, 255, 0.35);
+    box-shadow: 0 18px 34px var(--elevation-panel-deep);
 }
 
 /* Résultat d’outils: bulle contrastée */
@@ -117,19 +127,19 @@ html, body {
 /* Indicateur de saisie en pulsation néon */
 .typing-indicator {
     background: rgba(57, 255, 20, 0.18);
-    box-shadow: 0 12px 28px rgba(57, 255, 20, 0.35);
+    box-shadow: 0 12px 28px var(--elevation-panel-strong);
 }
 
 /* Barre d’entrée */
 .chat-input {
-    box-shadow: 0 -18px 38px rgba(93, 0, 255, 0.28);
+    box-shadow: 0 -18px 38px var(--elevation-panel-dark);
 }
 
 /* (rien à surcharger ici) */
 
 .chat-input__form:focus-within {
     border-color: var(--focus-ring);
-    box-shadow: 0 0 0 5px var(--focus-glow), 0 0 24px rgba(0, 247, 255, 0.25);
+    box-shadow: 0 0 0 5px var(--focus-glow), 0 0 24px var(--accent-shadow-soft);
 }
 
 /* Boutons icônes */
@@ -141,12 +151,12 @@ html, body {
 .chat-icon-btn--upload {
     background: linear-gradient(135deg, rgba(0, 247, 255, 0.9), rgba(57, 255, 20, 0.9));
     color: #0a0014;
-    box-shadow: 0 16px 30px rgba(57, 255, 20, 0.35);
+    box-shadow: 0 16px 30px var(--elevation-panel-strong);
 }
 
 /* Panneau d’options */
 .options-panel {
-    box-shadow: inset 0 0 0 1px rgba(0, 247, 255, 0.08);
+    box-shadow: inset 0 0 0 1px var(--surface-stroke-soft);
 }
 
 .options-panel__title { color: var(--text-secondary); }
@@ -169,13 +179,13 @@ html, body {
 /* Bannière tooltip */
 #historyTooltipBanner {
     border: 1px solid rgba(0, 247, 255, 0.28);
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 0 24px rgba(0, 247, 255, 0.18) inset;
+    box-shadow: 0 8px 28px var(--tooltip-shadow), 0 0 24px rgba(0, 247, 255, 0.18) inset;
 }
 
 /* Modale */
 .modal__container {
     border: 1px solid var(--border);
-    box-shadow: 0 26px 60px rgba(93, 0, 255, 0.35), inset 0 0 0 1px rgba(0, 247, 255, 0.08);
+    box-shadow: 0 26px 60px var(--modal-shadow), inset 0 0 0 1px var(--surface-stroke-soft);
 }
 
 .modal__close {

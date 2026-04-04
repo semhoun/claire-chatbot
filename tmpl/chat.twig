@@ -86,7 +86,7 @@
                   hx-on::before-request="chatClick(event)"
                   data-mode="{{ chat_mode|default('chat') }}"
             >
-                <label class="chat-icon-btn chat-icon-btn--upload form_disabler" for="chat-upload" aria-label="Joindre un fichier">
+                <label class="chat-icon-btn chat-icon-btn--upload form_disabler chat-input__toggleable" for="chat-upload" aria-label="Joindre un fichier">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
                     </svg>
@@ -100,7 +100,7 @@
                 <input class="chat-input__field form_disabler" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required />
                 <div class="chat-input__actions">
                     <button
-                            class="chat-icon-btn chat-icon-btn--ghost form_disabler"
+                            class="chat-icon-btn form_disabler chat-input__toggleable"
                             type="button"
                             aria-label="Annuler le dernier échange"
                             title="Annuler le dernier échange"
@@ -174,6 +174,19 @@
             // Do not clear input here; it will be cleared on successful response via hx-on::after-request
         }
 
+        function updateComposerToggleState(input) {
+            if (!input) {
+                return;
+            }
+
+            const form = input.closest('form');
+            if (!form) {
+                return;
+            }
+
+            form.classList.toggle('chat-input__form--typing', input.value.trim() !== '');
+        }
+
         window.clearInput = function clearInput(event) {
             const form = event.target;
 
@@ -187,6 +200,9 @@
             event.target.reset();
             let elements = document.querySelectorAll('.chat-chip__remove');
             elements.forEach(element => {removeChatChip(element);})
+
+            const input = form.querySelector('[name="message"]');
+            updateComposerToggleState(input);
         }
 
         window.handleLastExchangeResponse = function handleLastExchangeResponse(event) {
@@ -320,6 +336,14 @@
                     if (chips.querySelector('.chat-chip[data-type="local"][data-tmp-key="' + CSS.escape(tmpKey) + '"]')) continue;
                     chips.appendChild(createLocalChip(tmpKey, file));
                 }
+            });
+        }
+
+        const messageInput = document.querySelector('.chat-input__field');
+        if (messageInput) {
+            updateComposerToggleState(messageInput);
+            messageInput.addEventListener('input', function () {
+                updateComposerToggleState(messageInput);
             });
         }
 
