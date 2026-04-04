@@ -1,8 +1,8 @@
-# Claire 1.3.0 — Agent de Chat IA (PHP, Slim 4)
+# Claire 1.3.1 — Agent de Chat IA (PHP, Slim 4)
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-Claire 1.3.0 est une application web de chat IA construite avec Slim 4, Twig et Neuron AI. Elle fournit une interface web, un endpoint API, une integration Telegram et un runtime Docker base sur FrankenPHP/Caddy pour piloter des LLM compatibles OpenAI.
+Claire 1.3.1 est une application web de chat IA construite avec Slim 4, Twig et Neuron AI. Elle fournit une interface web, un endpoint API, une integration Telegram et un runtime Docker base sur FrankenPHP/Caddy pour piloter des LLM compatibles OpenAI.
 
 ## Démarrage rapide
 
@@ -45,7 +45,7 @@ docker run -d -p 8080:80 \
 
 ## Fonctionnalités
 
-- Interface web de chat avec horodatage, annulation du dernier echange, affichage instantane du message utilisateur, mode streaming par defaut et raccourci pour revenir en bas de conversation.
+- Interface web de chat avec horodatage, annulation du dernier echange, affichage instantane du message utilisateur, mode streaming par defaut, raccourci pour revenir en bas de conversation et ajustements visuels sur les themes et la mise en page.
 - Endpoint API `POST /brain/chat` pour envoyer un message et récupérer la réponse de l'agent.
 - Healthcheck `GET /health` (JSON) pour la supervision.
 - Intégration d'un fournisseur LLM « OpenAI-like » (URL, clé et modèle configurables).
@@ -54,7 +54,7 @@ docker run -d -p 8080:80 \
 - Recherche web optionnelle via SearXNG et RAG fichier via embeddings OpenAI-like.
 - Génération d'images avec ComfyUI (optionnel).
 - Support d'agents personnalisés via classes PHP et fichiers YAML.
-- Intégration Telegram avec filtrage des balises `[OC]` sur les réponses envoyées.
+- Intégration Telegram avec filtrage des balises `[OC]` sur les réponses envoyées, prise en charge des photos dans le premier message, meilleur rendu MarkdownV2 des listes et application du timeout de workflow pendant le traitement des updates.
 - Observabilite via OpenTelemetry pour traces, metriques et logs, y compris l'instrumentation interne des agents.
 - Historique de conversation avec separation entre messages LLM et messages affiches a l'utilisateur, y compris conservation du message d'ouverture dans l'affichage.
 
@@ -127,7 +127,7 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
     - Générales
       - `OTEL_PHP_AUTOLOAD_ENABLED` — active l’auto‑instrumentation PHP (true/false).
       - `OTEL_SERVICE_NAME` — nom du service (utilisé par les 3 signaux).
-      - `OTEL_RESOURCE_ATTRIBUTES` — attributs ressource supplémentaires (ex: `deployment.environment=dev,service.version=1.3.0`).
+      - `OTEL_RESOURCE_ATTRIBUTES` — attributs ressource supplémentaires (ex: `deployment.environment=dev,service.version=1.3.1`).
       - `OTEL_PROPAGATORS` — propagateurs de contexte (ex: `baggage,tracecontext`).
     - Traces
       - `OTEL_TRACES_EXPORTER` — exporteur des traces (`otlp`, `none`).
@@ -568,7 +568,7 @@ services:
   - Réponse 200 (exemple):
     ```json
     {
-      "version": "1.3.0",
+      "version": "1.3.1",
       "date": "2025-01-01T12:34:56+00:00"
     }
     ```

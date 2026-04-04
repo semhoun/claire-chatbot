@@ -26,6 +26,9 @@ final readonly class TelegramController
         try {
             $this->validateSecretToken($request);
             $update = Update::fromJson($request->getBody()->getContents());
+
+            set_time_limit((int) $this->settings->get('llm.workflow.timeout'));
+
             $this->telegramService->processUpdate($update);
         } catch (InvalidArgumentException) {
             return $response->withStatus(401);

@@ -383,7 +383,7 @@ final readonly class TelegramMarkdown
 
         foreach ($listBlock->children() as $child) {
             if ($child instanceof ListItem) {
-                $prefix = $isOrdered ? $number . '. ' : '• ';
+                $prefix = $isOrdered ? $number . '\. ' : '• ';
                 $itemContent = trim($this->convertListItemContent($child));
 
                 if ($itemContent !== '') {

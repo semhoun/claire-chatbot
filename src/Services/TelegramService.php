@@ -40,10 +40,10 @@ class TelegramService
     private ?\DateTime $lastChatActionDate = null;
 
     public function __construct(
+        private readonly Logger $logger,
         private readonly BrainRegistry $brainRegistry,
         private readonly EntityManager $entityManager,
         private readonly Settings $settings,
-        private readonly Logger $logger,
         private readonly Filesystem $filesystem,
         private readonly TelegramBotApi $telegramBotApi,
         private readonly TelegramMarkdown $telegramMarkdown,
@@ -209,14 +209,19 @@ class TelegramService
                 'email' => $user->getEmail(),
                 'displayName' => trim($user->getFirstName() . ' ' . $user->getLastName()),
             ]);
+
             foreach ($user->getParams() ?? [] as $key => $value) {
-                $this->telegramSession->set($key, $value);
+                // Si le paramète a déjà été sété pour la session on ne le surcharge pas
+                if ($this->telegramSession->get($key) === null) {
+                    $this->telegramSession->set($key, $value);
+                }
             }
 
-            // Déterminer l'avatar/assistant courant (session, sinon préférence utilisateur, sinon défaut)
-            $currentBrain = (string) ($this->telegramSession->get('brain_avatar') ?? '');
-            if ($currentBrain === '') {
-                $this->telegramSession->set('brain_avatar', $this->settings->get('llm.defaultBrain'));
+            // Récupération des paramètres par défaut, même si certains ne sont utiles que pour l'ihm
+            foreach ($this->settings->get('session.defaultParams') as $key => $value) {
+                if (! $this->telegramSession->has($key)) {
+                    $this->telegramSession->set($key, $value);
+                }
             }
 
             $chatId = $this->telegramSession->get('chatId');
@@ -491,10 +496,16 @@ class TelegramService
 
         $this->sendChatAction($telegramChatId, TelegramAction::TEXT);
 
-        $this->sendMessage(
-            $telegramChatId,
-            $this->brainRegistry->get($this->telegramSession->get('brain_avatar'), $this->telegramSession)->getOpeningText()
-        );
+        $currentBrain = $this->telegramSession->get('brain_avatar');
+        $brain = $this->brainRegistry->get($currentBrain, $this->telegramSession);
+        $openingText = $brain->getOpeningText();
+        $imageIds = $this->extractImageIds($openingText);
+        if ($imageIds !== []) {
+            $this->handleImageResponse($telegramChatId, $openingText, $imageIds);
+            return;
+        }
+
+        $this->sendMessage($telegramChatId, $openingText);
     }
 
     private function cmd_help(int $telegramChatId): void

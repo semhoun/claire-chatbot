@@ -7,6 +7,20 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-04-04
+
+### Added
+- Prise en charge des photos dans le message d'ouverture Telegram quand l'avatar retourne une reponse contenant des images
+
+### Changed
+- Amelioration visuelle des themes de chat, de la feuille de style principale et du template `tmpl/chat.twig`
+- Harmonisation des valeurs de session Telegram avec les parametres utilisateur et les valeurs par defaut de `session.defaultParams`
+
+### Fixed
+- Application du timeout de workflow aux updates Telegram pour eviter un traitement sans limite de temps
+- Correction du rendu MarkdownV2 des listes ordonnees envoye par Telegram
+- Suppression du fichier de theme `public/css/flashy.css` devenu obsolete
+
 ## [1.3.0] - 2026-04-03
 
 ### Added
@@ -196,7 +210,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.3.0...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.3.1...HEAD
+[1.3.1]: https://github.com/semhoun/claire-chatbot/compare/1.3.0...1.3.1
 [1.3.0]: https://github.com/semhoun/claire-chatbot/compare/1.2.3...1.3.0
 [1.2.3]: https://github.com/semhoun/claire-chatbot/compare/1.2.0...1.2.3
 [1.2.0]: https://github.com/semhoun/claire-chatbot/releases/tag/1.2.0
