@@ -97,7 +97,13 @@
                 <span id="chatAttachedFilesChat" class="chat-attached"></span>
                 {# Hidden inputs for selected file IDs (from Files list) #}
                 <span id="chatAttachedFilesChatHidden" hidden></span>
-                <input class="chat-input__field form_disabler" type="text" name="message" placeholder="Écrivez votre message..." autocomplete="off" required />
+                <textarea
+                        class="chat-input__field chat-input__field--multiline form_disabler"
+                        name="message"
+                        placeholder="Écrivez votre message..."
+                        rows="1"
+                        required
+                ></textarea>
                 <div class="chat-input__actions">
                     <button
                             class="chat-icon-btn form_disabler chat-input__toggleable"
@@ -174,6 +180,15 @@
             // Do not clear input here; it will be cleared on successful response via hx-on::after-request
         }
 
+        function autoResizeComposer(input) {
+            if (!input) {
+                return;
+            }
+
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+        }
+
         function updateComposerToggleState(input) {
             if (!input) {
                 return;
@@ -202,6 +217,7 @@
             elements.forEach(element => {removeChatChip(element);})
 
             const input = form.querySelector('[name="message"]');
+            autoResizeComposer(input);
             updateComposerToggleState(input);
         }
 
@@ -341,9 +357,31 @@
 
         const messageInput = document.querySelector('.chat-input__field');
         if (messageInput) {
+            autoResizeComposer(messageInput);
             updateComposerToggleState(messageInput);
             messageInput.addEventListener('input', function () {
+                autoResizeComposer(messageInput);
                 updateComposerToggleState(messageInput);
+            });
+            messageInput.addEventListener('keydown', function (event) {
+                if (event.key !== 'Enter' || event.shiftKey) {
+                    return;
+                }
+
+                event.preventDefault();
+
+                const form = messageInput.closest('form');
+                if (!form || !messageInput.value.trim()) {
+                    return;
+                }
+
+                if (typeof form.requestSubmit === 'function') {
+                    form.requestSubmit();
+
+                    return;
+                }
+
+                form.submit();
             });
         }
 
@@ -418,18 +456,16 @@
             chatBody.scrollTo({top: chatBody.scrollHeight, behavior: 'smooth'});
         });
 
-        // Met à jour à l'initialisation et force un scroll en bas au chargement
+        // Met à jour à l'initialisation sans forcer de scroll
         window.addEventListener('DOMContentLoaded', function () {
-            chatBody.scrollTop = chatBody.scrollHeight;
             updateButtonVisibility();
         });
 
-        // Après chaque swap HTMX, on redescend et on met à jour le bouton
+        // Après chaque swap HTMX, on met uniquement à jour le bouton
         document.body.addEventListener('htmx:afterSwap', function (evt) {
             const detail = evt.detail || {};
             const target = detail.target;
             if (target && (target.id === 'messages' || (target.closest && target.closest('#messages')))) {
-                chatBody.scrollTop = chatBody.scrollHeight;
                 updateButtonVisibility();
             }
         });

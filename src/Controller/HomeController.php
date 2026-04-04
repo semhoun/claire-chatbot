@@ -48,6 +48,8 @@ final readonly class HomeController
         // Conserver le chatId courant s'il existe, sinon en générer un nouveau
         $chatId = $session->get('chatId');
         if ($chatId === null) {
+            set_time_limit((int) $this->settings->get('llm.workflow.timeout'));
+
             $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
             $session->set('chatId', $chatId);
 
@@ -65,6 +67,7 @@ final readonly class HomeController
         }
         else {
             $messages = $userChatHistory->getFormattedMessages($mode);
+            $userChatHistory->validateMessageSequences();
         }
 
         // Métadonnées du brain courant via la registry

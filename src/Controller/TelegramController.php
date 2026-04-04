@@ -11,6 +11,7 @@ use Phptg\BotApi\Type\Update\Update;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Log\LoggerInterface as Logger;
+use Slim\Psr7\NonBufferedBody;
 
 final readonly class TelegramController
 {
@@ -26,12 +27,18 @@ final readonly class TelegramController
         try {
             $this->validateSecretToken($request);
             $update = Update::fromJson($request->getBody()->getContents());
+        } catch (InvalidArgumentException) {
+            return $response->withStatus(401);
+        }
 
+        $response = $response
+            ->withBody(new NonBufferedBody())
+            ->withHeader('cache-control', 'no-cache');
+
+        try {
             set_time_limit((int) $this->settings->get('llm.workflow.timeout'));
 
             $this->telegramService->processUpdate($update);
-        } catch (InvalidArgumentException) {
-            return $response->withStatus(401);
         } catch (\Throwable $throwable) {
             $this->logger->error('Telegram Webhook Error: ' . $throwable->getMessage(), [
                 'exception' => $throwable,
@@ -39,7 +46,7 @@ final readonly class TelegramController
             // Return 200 to Telegram to avoid infinite retries for application bugs
         }
 
-        return $response->withStatus(200);
+        return $response;
     }
 
     private function validateSecretToken(Request $request): void

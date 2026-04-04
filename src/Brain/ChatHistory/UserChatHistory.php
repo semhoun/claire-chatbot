@@ -146,6 +146,18 @@ class UserChatHistory extends AbstractChatHistory
         return $data;
     }
 
+    public function validateMessageSequences(): void
+    {
+        $llmMessages = $this->fixMessageSequence($this->history);
+
+        if (count($llmMessages) === count($this->history)) {
+            return;
+        }
+
+        $this->history = $llmMessages;
+        $this->persistHistories();
+    }
+
     protected function load(): void
     {
         $stmt = $this->pdo->prepare(
@@ -197,15 +209,8 @@ class UserChatHistory extends AbstractChatHistory
             flags: JSON_THROW_ON_ERROR
         );
 
-        $llmMessages = $this->deserializeMessages($llmPayload);
-        $displayMessages = $this->deserializeMessages($displayPayload);
-
-        $this->history = $this->fixMessageSequence($llmMessages);
-        $this->displayHistory = $displayMessages;
-
-        if ($this->shouldPersistHistories($llmPayload, $displayPayload)) {
-            $this->persistHistories();
-        }
+        $this->history = $this->deserializeMessages($llmPayload);
+        $this->displayHistory = $this->deserializeMessages($displayPayload);
     }
 
     #[\Override]
@@ -307,12 +312,6 @@ class UserChatHistory extends AbstractChatHistory
             static fn (Message $message): array => $message->jsonSerialize(),
             $messages,
         );
-    }
-
-    private function shouldPersistHistories(array $llmPayload, array $displayPayload): bool
-    {
-        return count($llmPayload) !== count($this->history)
-            || count($displayPayload) !== count($this->displayHistory);
     }
 
     /**

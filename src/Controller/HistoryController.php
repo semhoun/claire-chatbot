@@ -144,6 +144,7 @@ final readonly class HistoryController
             contextWindow: $this->settings->get('llm.openai.contextWindow')
         );
         $userChatHistory->setThreadId($threadId);
+        $userChatHistory->validateMessageSequences();
 
         $messages = $userChatHistory->getFormattedMessages($session->get('chat_mode'));
         if ($messages === []) {

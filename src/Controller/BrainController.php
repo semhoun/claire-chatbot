@@ -150,10 +150,13 @@ final readonly class BrainController
                 continue;
             }
 
+            // On supprime les images car sinon ça fait un résultat bizarre
+            $text = preg_replace(ComfyUIService::IMAGE_PATTERN,'', $streamedText);
+
             if ($streamId === null) {
                 $streamId = uniqid('stream-', true);
                 $html = $this->twig->fetch('partials/message.twig', [
-                    'message' => $streamedText,
+                    'message' => $text,
                     'time' => $streamTimestamp,
                     'sent' => false,
                     'streamId' => $streamId,
@@ -166,7 +169,7 @@ final readonly class BrainController
                 continue;
             }
 
-            $html = $this->twig->fetch('partials/md.twig', ['message' => $streamedText]);
+            $html = $this->twig->fetch('partials/md.twig', ['message' => $text]);
             $stream->write('streamId:' . $streamId . "\n" . $html . self::STREAM_STOP);
             if ($toolCallId !== null && $toolText !== null) {
                 $stream->write('streamId:' . $toolCallId . "\n" . $toolText . self::STREAM_STOP);
