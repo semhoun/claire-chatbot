@@ -36,6 +36,10 @@ class UserChatHistory extends AbstractChatHistory
 
     protected ?string $thread_id = null;
 
+    protected ?string $title = null;
+
+    protected ?string $summary = null;
+
     /**
      * @var array<Message>
      */
@@ -82,6 +86,16 @@ class UserChatHistory extends AbstractChatHistory
     public function getDisplayMessages(): array
     {
         return $this->displayHistory;
+    }
+
+    public function getTitle(): ?string
+    {
+        return $this->title;
+    }
+
+    public function getSummary(): ?string
+    {
+        return $this->summary;
     }
 
     public function removeLastExchange(): ?string
@@ -162,7 +176,7 @@ class UserChatHistory extends AbstractChatHistory
     {
         $stmt = $this->pdo->prepare(
             sprintf(
-                'SELECT %s, %s FROM %s WHERE thread_id = :thread_id',
+                'SELECT %s, %s, title, summary FROM %s WHERE thread_id = :thread_id',
                 self::LLM_MESSAGES_COLUMN,
                 self::DISPLAY_MESSAGES_COLUMN,
                 self::TABLE
@@ -191,12 +205,17 @@ class UserChatHistory extends AbstractChatHistory
             ]);
             $this->history = [];
             $this->displayHistory = [];
+            $this->title = null;
+            $this->summary = null;
 
             return;
         }
 
 
         $history = $history[0];
+
+        $this->title = isset($history['title']) ? (string) $history['title'] : null;
+        $this->summary = isset($history['summary']) ? (string) $history['summary'] : null;
 
         $llmPayload = json_decode(
             (string) $history[self::LLM_MESSAGES_COLUMN],
@@ -260,6 +279,8 @@ class UserChatHistory extends AbstractChatHistory
 
         $this->history = [];
         $this->displayHistory = [];
+        $this->title = null;
+        $this->summary = null;
     }
 
     /**

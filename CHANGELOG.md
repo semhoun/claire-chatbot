@@ -11,6 +11,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Added
 - Prise en charge des photos dans le message d'ouverture Telegram quand l'avatar retourne une reponse contenant des images
+- Generation automatique du titre et du resume de conversation si absents (pour les sessions Telegram)
 
 ### Changed
 - Amelioration visuelle des themes de chat, de la feuille de style principale et du template `tmpl/chat.twig`

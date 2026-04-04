@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Brain\BrainRegistry;
 use App\Brain\Summary;
+use App\Services\ComfyUIService;
 use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
@@ -201,10 +202,10 @@ final readonly class BrainController
     {
         $summary = new Summary($this->entityManager->getConnection(), $this->settings, $session);
         $messages = $summary->getChatHistory()->getDisplayMessages();
-        if ($messages === []
-            || count($messages) < $this->settings->get('llm.summary.minMessages')
-            || count($messages) > $this->settings->get('llm.summary.maxMessages')
-        ) {
+        if ($messages === [] || count($messages) < $this->settings->get('llm.summary.minMessages')) {
+            return;
+        }
+        if (count($messages) > $this->settings->get('llm.summary.maxMessages') && $summary->getChatHistory()->getTitle() !== null) {
             return;
         }
 
