@@ -8,6 +8,7 @@ use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Services\Auth;
+use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
@@ -24,6 +25,7 @@ final readonly class HomeController
         private Twig $twig,
         private BrainRegistry $brainRegistry,
         private EntityManagerInterface $entityManager,
+        private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
         private Settings $settings,
     ) {
     }
@@ -37,6 +39,9 @@ final readonly class HomeController
         $currentBrain = $session->get('brain_avatar');
         $mode = $session->get('chat_mode');
         $layoutMode = $session->get('layout_mode');
+        $comfyuiEnabled = $this->settings->get('comfyui.enabled') === true;
+        $comfyuiWorkflows = $comfyuiEnabled ? $this->comfyUIWorkflowRegistry->list() : [];
+        $currentComfyuiWorkflow = (string) $session->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
 
         // Charger les messages existants pour le thread courant si disponibles
         $userChatHistory = new UserChatHistory(
@@ -64,6 +69,12 @@ final readonly class HomeController
             $userChatHistory->replaceDisplayMessages([$assistantMessage]);
             $userChatHistory->replaceMessages([]);
             $messages = $userChatHistory->getFormattedMessages($mode);
+
+            // On configure le Workflow par défaut au premier chat
+            if ($this->settings->get('comfyui.enabled') === true && $currentComfyuiWorkflow === '') {
+                $currentComfyuiWorkflow = (string) ($this->comfyUIWorkflowRegistry->getDefaultSlug() ?? '');
+                $session->set(ComfyUIWorkflowRegistry::SESSION_KEY, $currentComfyuiWorkflow);
+            }
         }
         else {
             $messages = $userChatHistory->getFormattedMessages($mode);
@@ -89,6 +100,9 @@ final readonly class HomeController
             'brain_info' => $meta,
             'current_brain' => $currentBrain,
             'brains' => $this->brainRegistry->list(),
+            'comfyui_enabled' => $comfyuiEnabled,
+            'comfyui_workflows' => $comfyuiWorkflows,
+            'current_comfyui_workflow' => $currentComfyuiWorkflow,
         ]);
     }
 }

@@ -9,6 +9,7 @@ use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Tools\GenerateImageTool;
 use App\Entity\User;
 use App\Enums\TelegramAction;
+use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;
@@ -33,6 +34,7 @@ class TelegramService
         'help' => "Afficher l'aide",
         'list' => 'Lister les personnalités',
         'brain' => 'Voir ou changer de personnalité (choisir reset pour celui par défaut)',
+        'comfyui' => 'Voir ou changer le workflow ComfyUI',
     ];
 
     private readonly TelegramSession $telegramSession;
@@ -44,6 +46,7 @@ class TelegramService
         private readonly BrainRegistry $brainRegistry,
         private readonly EntityManager $entityManager,
         private readonly Settings $settings,
+        private readonly ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
         private readonly Filesystem $filesystem,
         private readonly TelegramBotApi $telegramBotApi,
         private readonly TelegramMarkdown $telegramMarkdown,
@@ -221,6 +224,16 @@ class TelegramService
             foreach ($this->settings->get('session.defaultParams') as $key => $value) {
                 if (! $this->telegramSession->has($key)) {
                     $this->telegramSession->set($key, $value);
+                }
+            }
+
+            if ($this->settings->get('comfyui.enabled') === true) {
+                $workflow = (string) $this->telegramSession->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
+                if ($workflow === '' || ! $this->comfyUIWorkflowRegistry->has($workflow)) {
+                    $defaultWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug();
+                    if ($defaultWorkflow !== null) {
+                        $this->telegramSession->set(ComfyUIWorkflowRegistry::SESSION_KEY, $defaultWorkflow);
+                    }
                 }
             }
 
@@ -550,6 +563,58 @@ class TelegramService
         } catch (\Exception $exception) {
             $this->sendMessage($telegramChatId, sprintf('Erreur : %s', $exception->getMessage()));
         }
+    }
+
+    private function cmd_comfyui(int $telegramChatId, array $args): void
+    {
+        if ($this->settings->get('comfyui.enabled') !== true) {
+            $this->sendMessage($telegramChatId, 'ComfyUI est désactivé.');
+            return;
+        }
+
+        $workflows = $this->comfyUIWorkflowRegistry->list();
+        if ($workflows === []) {
+            $this->sendMessage($telegramChatId, 'Aucun workflow ComfyUI disponible.');
+            return;
+        }
+
+        if ($args === []) {
+            $currentWorkflow = (string) $this->telegramSession->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
+            $message = 'Workflow ComfyUI actuel : ';
+
+            if ($currentWorkflow !== '' && $this->comfyUIWorkflowRegistry->has($currentWorkflow)) {
+                $message .= $this->comfyUIWorkflowRegistry->getMeta($currentWorkflow)['label'];
+            } else {
+                $message .= 'non défini';
+            }
+
+            $message .= "\n\nWorkflows disponibles :\n";
+            foreach ($workflows as $workflow) {
+                $message .= sprintf('- *%s* : %s (%s)', $workflow['slug'], $workflow['label'], $workflow['type']) . "\n";
+            }
+
+            $this->sendMessage($telegramChatId, $message);
+            return;
+        }
+
+        $workflow = strtolower(trim((string) $args[0]));
+        if (! $this->comfyUIWorkflowRegistry->has($workflow)) {
+            $this->sendMessage($telegramChatId, 'Workflow ComfyUI inconnu.');
+            return;
+        }
+
+        $this->telegramSession->set(ComfyUIWorkflowRegistry::SESSION_KEY, $workflow);
+
+        $user = $this->entityManager->getRepository(User::class)->find($this->telegramSession->get(Auth::USERID));
+        if ($user instanceof User) {
+            $params = $user->getParams() ?? [];
+            $params[ComfyUIWorkflowRegistry::SESSION_KEY] = $workflow;
+            $user->setParams($params);
+            $this->entityManager->flush();
+        }
+
+        $meta = $this->comfyUIWorkflowRegistry->getMeta($workflow);
+        $this->sendMessage($telegramChatId, sprintf('Workflow ComfyUI changé : %s', $meta['label']));
     }
 
     /**

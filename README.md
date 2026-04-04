@@ -277,21 +277,55 @@ L'application peut générer des images via ComfyUI lorsque la configuration app
 |----------|-------------|-------------|
 | `COMFYUI_ENABLED` | Oui | Active la génération d'images (`true` ou `false`) |
 | `COMFYUI_URL` | Non | URL de l'instance ComfyUI (défaut: `http://localhost:8188`) |
-| `COMFYUI_WORKFLOW` | Oui | Workflow ComfyUI au format JSON avec placeholder `{{PROMPT}}` |
 | `COMFYUI_TIMEOUT` | Non | Timeout en secondes (défaut: 300) |
-| `COMFYUI_PROMPT_STYLE` | Non | Style de prompt: `sdxl` (keywords) ou `flux` (natural language) - défaut: `sdxl` |
+| `COMFYUI_DEFAULT_WORKFLOW` | Non | Slug du workflow ComfyUI à sélectionner par défaut s'il existe |
 
-**Exemple de configuration:**
+**Exemple de configuration minimale:**
 
 ```bash
 # Activation de ComfyUI
 export COMFYUI_ENABLED=true
 export COMFYUI_URL=http://comfyui:8188
-export COMFYUI_WORKFLOW='{"3":{"inputs":{"seed":0,"steps":20,"cfg":8,"sampler_name":"euler","scheduler":"normal","denoise":1,"model":["4",0],"positive":["6",0],"negative":["7",0],"latent_image":["5",0]},"class_type":"KSampler"},...}'
-export COMFYUI_PROMPT_STYLE=flux
+export COMFYUI_DEFAULT_WORKFLOW=sdxl
 ```
 
-Note: Le workflow doit contenir un placeholder `{{PROMPT}}` qui sera remplacé par la description de l'image à générer.
+**Workflows multiples via `addons/comfyui/`:**
+
+Vous pouvez définir plusieurs workflows ComfyUI, comme pour les agents YAML, en ajoutant un fichier `.yaml`, `.yml` ou `.json` dans `addons/comfyui/`.
+
+Chaque workflow doit définir:
+
+- `type` : type de prompt attendu (`sdxl`, `flux`, etc.)
+- `label` : libellé affiché dans l'interface web et sur Telegram
+- `workflow` : JSON ComfyUI avec le placeholder `{{PROMPT}}`
+
+Exemple:
+
+```yaml
+type: sdxl
+label: Portrait SDXL
+workflow: |
+  {
+    "6": {
+      "inputs": {
+        "text": "{{PROMPT}}"
+      },
+      "class_type": "CLIPTextEncode"
+    }
+  }
+```
+
+**Notes de fonctionnement:**
+
+- Le slug du workflow est déterminé par le nom du fichier, par exemple `portrait-sdxl.yaml` → `portrait-sdxl`
+- Si `COMFYUI_DEFAULT_WORKFLOW` est défini et correspond à un slug existant, il devient le workflow par défaut
+- Sinon, le premier fichier trouvé dans `addons/comfyui/` devient le workflow par défaut
+- Le workflow sélectionné est mémorisé dans la session utilisateur et dans ses options persistées
+- Le changement est disponible dans le menu web et via la commande Telegram `/comfyui`
+- Ce système n'est actif que si `COMFYUI_ENABLED=true`
+- Si aucun fichier n'est présent dans `addons/comfyui/`, la génération d'image n'est pas disponible
+
+Note: le workflow doit contenir un placeholder `{{PROMPT}}` qui sera remplacé par la description de l'image à générer.
 
 **Styles de prompts:**
 - `sdxl`: Prompts optimisés pour SDXL (mots-clés séparés par des virgules)
@@ -464,8 +498,6 @@ services:
       # ComfyUI (génération d'images, optionnel)
       # COMFYUI_ENABLED: true
       # COMFYUI_URL: http://comfyui:8188
-      # COMFYUI_WORKFLOW: '{"3":{"inputs":{...}},...}' # JSON avec placeholder {{PROMPT}}
-      # COMFYUI_PROMPT_STYLE: flux
 
       # Telegram (optionnel)
       # TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set_me}
@@ -823,6 +855,7 @@ Le bot Telegram supporte:
   - `/help` — Afficher l'aide
   - `/list` — Lister les personnalités
   - `/brain` — Voir ou changer de personnalité
+  - `/comfyui` — Voir ou changer le workflow ComfyUI
 
 #### Configuration de la base de données
 
@@ -928,7 +961,7 @@ vendor/bin/phpunit --filter testMethodName    # Méthode spécifique
 - 404 partout: vérifiez que le serveur pointe bien sur `public/index.php` et que vos règles de réécriture sont actives.
 - Pas de logs: les logs sont gérés par OpenTelemetry. Pour les voir dans la console, définissez `OTEL_LOGS_EXPORTER=console` (et `OTEL_LOGS_PROCESSOR=simple` pour un affichage immédiat). En alternance, configurez un export OTLP (`OTEL_LOGS_EXPORTER=otlp`) vers un collecteur comme l’OTel Collector.
 - RAG inactif: assurez-vous que `OPENAPI_MODEL_EMBED` est défini. S’il est absent, le RAG est désactivé par conception.
-- Génération d'images non disponible: vérifiez que `COMFYUI_ENABLED=true` et que `COMFYUI_WORKFLOW` contient un workflow JSON valide avec le placeholder `{{PROMPT}}`. Assurez-vous que l'instance ComfyUI est accessible à l'URL définie dans `COMFYUI_URL`.
+- Génération d'images non disponible: vérifiez que `COMFYUI_ENABLED=true`, qu'au moins un workflow valide existe dans `addons/comfyui/`, et que l'instance ComfyUI est accessible à l'URL définie dans `COMFYUI_URL`.
 
 ## Licence
 

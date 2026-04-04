@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Brain\BrainRegistry;
 use App\Entity\User;
 use App\Services\Auth;
+use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Session\SessionFromRequestTrait;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -21,6 +22,7 @@ readonly class ConfigController
         private Twig $twig,
         private EntityManagerInterface $entityManager,
         private BrainRegistry $brainRegistry,
+        private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
     ) {
     }
 
@@ -150,5 +152,33 @@ readonly class ConfigController
         return $this->twig->render($response, 'partials/telegram_config.twig', [
             'telegram_id' => $user->getTelegramId(),
         ]);
+    }
+
+    public function comfyuiWorkflow(Request $request, Response $response): Response
+    {
+        if (! $this->comfyUIWorkflowRegistry->list()) {
+            return $response->withStatus(404);
+        }
+
+        $session = $this->getSession($request);
+
+        $data = (array) ($request->getParsedBody() ?? []);
+        $workflow = strtolower(trim((string) ($data['workflow'] ?? '')));
+
+        if ($workflow === '' || ! $this->comfyUIWorkflowRegistry->has($workflow)) {
+            return $response->withStatus(400);
+        }
+
+        $session->set(ComfyUIWorkflowRegistry::SESSION_KEY, $workflow);
+
+        $user = $this->entityManager->getRepository(User::class)->find($session->get(Auth::USERID));
+        if ($user !== null) {
+            $params = $user->getParams() ?? [];
+            $params[ComfyUIWorkflowRegistry::SESSION_KEY] = $workflow;
+            $user->setParams($params);
+            $this->entityManager->flush();
+        }
+
+        return $response->withStatus(204);
     }
 }

@@ -20,6 +20,7 @@ class Auth
     public function __construct(
         private readonly EntityManager $entityManager,
         private readonly Settings $settings,
+
     ) {
     }
 

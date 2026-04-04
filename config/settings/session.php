@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Services\ComfyUIWorkflowRegistry;
+
 env_required([
     'SESSION_JWT_SECRET',
 ]);
@@ -21,6 +23,7 @@ return [
     'defaultParams' => [
         'brain_avatar' => 'claire',
         'chat_mode' => 'stream',
-        'layout_mode' => 'full'
+        'layout_mode' => 'full',
+        ComfyUIWorkflowRegistry::SESSION_KEY => null,
     ],
 ];

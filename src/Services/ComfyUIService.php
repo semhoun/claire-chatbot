@@ -25,6 +25,7 @@ final readonly class ComfyUIService
     public function __construct(
         private Settings $settings,
         private Filesystem $filesystem,
+        private ComfyUIWorkflowRegistry $workflowRegistry,
     ) {
         $this->httpClient = new Client([
             'base_uri' => $this->settings->get('comfyui.url'),
@@ -35,7 +36,7 @@ final readonly class ComfyUIService
     public function generateImage(SessionInterface $session, string $prompt): string
     {
         try {
-            $workflow = $this->getWorkflow($prompt);
+            $workflow = $this->getWorkflow($session, $prompt);
             $promptId = $this->queuePrompt($workflow);
             $imageData = $this->waitForResult($promptId);
 
@@ -60,12 +61,28 @@ final readonly class ComfyUIService
      *
      * @return array<string, mixed> The workflow configuration
      */
-    private function getWorkflow(string $prompt): array
+    private function getWorkflow(SessionInterface $session, string $prompt): array
     {
-        $workflow = $this->settings->get('comfyui.workflow');
+        $workflow = $this->resolveWorkflow($session);
         $workflow = str_replace('{{PROMPT}}', addcslashes($prompt, '"'), $workflow);
 
         return json_decode($workflow, true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    private function resolveWorkflow(SessionInterface $session): string
+    {
+        $workflowSlug = (string) $session->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
+
+        if ($workflowSlug !== '' && $this->workflowRegistry->has($workflowSlug)) {
+            return $this->workflowRegistry->getWorkflow($workflowSlug);
+        }
+
+        $selectedWorkflow = $this->workflowRegistry->getDefaultSlug();
+        if ($selectedWorkflow !== null && $this->workflowRegistry->has($selectedWorkflow)) {
+            return $this->workflowRegistry->getWorkflow($selectedWorkflow);
+        }
+
+        throw new RuntimeException('Aucun workflow ComfyUI disponible');
     }
 
     /**

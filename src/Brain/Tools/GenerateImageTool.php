@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Brain\Tools;
 
 use App\Services\ComfyUIService;
+use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use JsonException;
@@ -20,21 +21,22 @@ class GenerateImageTool extends Tool implements MessagePostProcessorInterface
         private readonly ComfyUIService $comfyUIService,
         private readonly Settings $settings,
         private readonly SessionInterface $session,
+        private readonly ComfyUIWorkflowRegistry $workflowRegistry,
     ) {
-        $promptStyle = $this->settings->get('comfyui.prompt_style');
+        $promptStyle = $this->getPromptStyle();
         $description = $promptStyle === 'flux'
             ? <<<EOT
 Generates an image from a text description using ComfyUI, generated image will be send to the user.
 IMPORTANT: This tool MUST be used whenever the user needs an image or photo - whether they ask to create, generate, draw, or simply want/need an image.
 Any request that requires providing an image, picture, or photo should use this tool.
-The prompt should be written in natural english language (Flux style), describing the scene in detail with complete sentences.
+The prompt should be written in natural english language, describing the scene in detail with complete sentences.
 To insert a generated image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@), don't insert "<img>" tag.
 EOT
             : <<<EOT
 Generates an image from a text description using ComfyUI, generated image will be send to the user.
 IMPORTANT: This tool MUST be used whenever the user needs an image or photo - whether they ask to create, generate, draw, or simply want/need an image.
 Any request that requires providing an image, picture, or photo should use this tool.
-The prompt should be formatted as comma-separated english keywords (SDXL style), for example: "masterpiece, best quality, sunlit forest, vibrant colors, detailed trees, cinematic lighting".
+The prompt should be formatted as comma-separated english keywords, for example: "masterpiece, best quality, sunlit forest, vibrant colors, detailed trees, cinematic lighting".
 Avoid natural language sentences; use descriptive tags and keywords for best results.
 To insert a generated image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@), don't insert "<img>" tag.
 EOT;
@@ -66,7 +68,7 @@ EOT;
             return json_encode([
                 'status' => 'error',
                 'message' => 'Error generating image: ' . $exception->getMessage(),
-            ]);
+            ], JSON_THROW_ON_ERROR);
         }
     }
 
@@ -136,10 +138,10 @@ EOT;
     #[\Override]
     protected function properties(): array
     {
-        $promptStyle = $this->settings->get('comfyui.prompt_style');
+        $promptStyle = $this->getPromptStyle();
         $propertyDescription = $promptStyle === 'flux'
-            ? 'The text description of the image to generate. Use natural english language with complete sentences (Flux style).'
-            : 'The text description of the image to generate. Use comma-separated english keywords (SDXL style). Be detailed and descriptive.';
+            ? 'The text description of the image to generate. Use natural english language with complete sentences.'
+            : 'The text description of the image to generate. Use comma-separated english keywords. Be detailed and descriptive.';
 
         return [
             new ToolProperty(
@@ -149,5 +151,20 @@ EOT;
                 true
             ),
         ];
+    }
+
+    private function getPromptStyle(): string
+    {
+        $workflow = (string) $this->session->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
+        if ($workflow !== '' && $this->workflowRegistry->has($workflow)) {
+            return $this->workflowRegistry->getMeta($workflow)['type'];
+        }
+
+        $defaultWorkflow = $this->workflowRegistry->getDefaultSlug();
+        if ($defaultWorkflow !== null) {
+            return $this->workflowRegistry->getMeta($defaultWorkflow)['type'];
+        }
+
+        return 'sdxl';
     }
 }

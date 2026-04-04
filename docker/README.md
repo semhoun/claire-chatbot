@@ -160,8 +160,11 @@ Si `OTEL_EXPORTER_OTLP_ENDPOINT` est defini, l'entrypoint ajoute un bloc de trac
 | `COMFYUI_ENABLED` | `false` | Active la generation d'images |
 | `COMFYUI_URL` | `http://localhost:8188` | URL de l'instance ComfyUI |
 | `COMFYUI_TIMEOUT` | `300` | Timeout en secondes |
-| `COMFYUI_WORKFLOW` | vide | Workflow JSON avec `{{PROMPT}}` |
-| `COMFYUI_PROMPT_STYLE` | `sdxl` | Style de prompt: `sdxl` ou `flux` |
+| `COMFYUI_DEFAULT_WORKFLOW` | vide | Slug du workflow ComfyUI a utiliser par defaut |
+
+Les workflows ComfyUI doivent etre declares via des fichiers dans `addons/comfyui/`.
+Si `COMFYUI_DEFAULT_WORKFLOW` correspond a un slug existant, il devient le workflow par defaut.
+Sinon, le premier workflow trouve devient le workflow par defaut.
 
 ## Exemples Docker Compose
 

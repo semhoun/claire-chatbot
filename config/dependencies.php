@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Exception;
 use App\Services\ComfyUIService;
+use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\OidcClient;
 use App\Services\Settings;
 use App\Services\Twig\GeneratedImageExtension;
@@ -118,5 +119,6 @@ return [
         throw new Exception('Unknown filesystem type ' . $settings->get('files.fileSystem.type'));
     },
     TelegramBotApi::class => static fn (Settings $settings): TelegramBotApi => new TelegramBotApi($settings->get('telegram.bot_token')),
-    ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem): ComfyUIService => new ComfyUIService($settings, $filesystem),
+    ComfyUIWorkflowRegistry::class => static fn (Settings $settings): ComfyUIWorkflowRegistry => new ComfyUIWorkflowRegistry($settings),
+    ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $workflowRegistry): ComfyUIService => new ComfyUIService($settings, $filesystem, $workflowRegistry),
 ];

@@ -157,6 +157,20 @@
                         </select>
                     </span>
                 </div>
+                {% if comfyui_enabled and comfyui_workflows is not empty %}
+                    <div class="options-item">
+                        <label for="comfyuiWorkflowSelector" class="options-item__label" style="cursor: pointer;">Workflow ComfyUI</label>
+                        <span class="options-item__badge brain-selector">
+                            <select id="comfyuiWorkflowSelector" name="comfyui_workflow">
+                                {% for workflow in comfyui_workflows %}
+                                    <option value="{{ workflow.slug }}" {{ current_comfyui_workflow == workflow.slug ? 'selected' : '' }}>
+                                        {{ workflow.label }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </span>
+                    </div>
+                {% endif %}
                 <div
                         class="options-item"
                         id="toggleLayoutMode"
@@ -328,6 +342,23 @@
             }
             // Recharger pour appliquer l'avatar/nom/description
             window.location.reload();
+        });
+    })();
+
+    (function() {
+        const sel = document.getElementById('comfyuiWorkflowSelector');
+        if (!sel) return;
+        sel.addEventListener('change', async function() {
+            const val = sel.value;
+            try {
+                await fetch('{{ base_url }}/config/comfyui_workflow', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ workflow: val }).toString(),
+                });
+            } catch (e) {
+                console.error(e);
+            }
         });
     })();
 

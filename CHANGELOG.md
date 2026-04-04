@@ -7,6 +7,28 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-04-05
+
+### Added
+- Registre de workflows ComfyUI chargeant automatiquement les fichiers YAML, YML ou JSON depuis `addons/comfyui/`
+- Nouvelle option dans le menu web pour choisir le workflow ComfyUI actif lorsque ComfyUI est active
+- Nouvelle commande Telegram `/comfyui` pour afficher et changer le workflow ComfyUI courant
+- Documentation des workflows ComfyUI multiples dans le `README.md`
+
+### Changed
+- Evolution de l'integration ComfyUI pour supporter plusieurs workflows selectionnables, sur le modele des agents YAML
+- Memorisation du workflow ComfyUI choisi dans la session utilisateur et dans les options persistantes de l'utilisateur
+- Adaptation automatique du type de prompt image selon le workflow ComfyUI selectionne
+- Le workflow ComfyUI par defaut peut etre force via `COMFYUI_DEFAULT_WORKFLOW`, sinon le premier fichier charge est utilise
+- Suppression du README local dans `addons/comfyui/` au profit de la documentation centrale
+
+### Removed
+- Suppression du support de configuration mono-workflow via les variables `COMFYUI_WORKFLOW` et `COMFYUI_PROMPT_STYLE`
+
+### Fixed
+- Desactivation complete des options de workflow ComfyUI lorsque ComfyUI est desactivee
+- Gestion plus explicite de l'absence de workflows ComfyUI valides
+
 ## [1.3.1] - 2026-04-04
 
 ### Added
@@ -211,7 +233,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.3.1...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.3.2...HEAD
+[1.3.2]: https://github.com/semhoun/claire-chatbot/compare/1.3.1...1.3.2
 [1.3.1]: https://github.com/semhoun/claire-chatbot/compare/1.3.0...1.3.1
 [1.3.0]: https://github.com/semhoun/claire-chatbot/compare/1.2.3...1.3.0
 [1.2.3]: https://github.com/semhoun/claire-chatbot/compare/1.2.0...1.2.3
