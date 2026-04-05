@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Queue\QueueDispatcherInterface;
 use App\Services\Settings;
 use App\Services\TelegramService;
 use InvalidArgumentException;
@@ -16,7 +17,7 @@ use Slim\Psr7\NonBufferedBody;
 final readonly class TelegramController
 {
     public function __construct(
-        private TelegramService $telegramService,
+        private QueueDispatcherInterface $queueDispatcher,
         private Logger $logger,
         private Settings $settings,
     ) {
@@ -26,7 +27,8 @@ final readonly class TelegramController
     {
         try {
             $this->validateSecretToken($request);
-            $update = Update::fromJson($request->getBody()->getContents());
+            $rawBody = $request->getBody()->getContents();
+            Update::fromJson($rawBody);
         } catch (InvalidArgumentException) {
             return $response->withStatus(401);
         }
@@ -36,9 +38,10 @@ final readonly class TelegramController
             ->withHeader('cache-control', 'no-cache');
 
         try {
-            set_time_limit((int) $this->settings->get('llm.workflow.timeout'));
-
-            $this->telegramService->processUpdate($update);
+            $this->queueDispatcher->dispatch(
+                TelegramService::class,
+                ['update_json' => $rawBody],
+            );
         } catch (\Throwable $throwable) {
             $this->logger->error('Telegram Webhook Error: ' . $throwable->getMessage(), [
                 'exception' => $throwable,

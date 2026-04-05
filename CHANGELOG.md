@@ -7,6 +7,22 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-04-05
+
+### Added
+- Infrastructure de queue minimaliste avec worker CLI `queue:work` basee sur Redis
+- Integration du traitement Telegram en asynchrone via la queue `telegram`
+
+### Changed
+- Simplification du modele de queue: un job est retire de la queue des sa prise en charge par le worker
+- `TelegramService` implemente maintenant directement le contrat `QueueDoer`
+- Mise a jour du `README.md` pour documenter la queue Redis et le lancement du worker
+
+### Removed
+- Suppression de la gestion des retries, des echecs et des reservations temporaires dans l'infrastructure de queue
+- Suppression du statut logique des jobs dans le code applicatif de la queue
+- Suppression de l'implementation Doctrine de la queue et de la migration associee
+
 ## [1.3.2] - 2026-04-05
 
 ### Added
@@ -233,7 +249,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.3.2...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.3.3...HEAD
+[1.3.3]: https://github.com/semhoun/claire-chatbot/compare/1.3.2...1.3.3
 [1.3.2]: https://github.com/semhoun/claire-chatbot/compare/1.3.1...1.3.2
 [1.3.1]: https://github.com/semhoun/claire-chatbot/compare/1.3.0...1.3.1
 [1.3.0]: https://github.com/semhoun/claire-chatbot/compare/1.2.3...1.3.0

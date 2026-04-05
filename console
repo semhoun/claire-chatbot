@@ -4,6 +4,7 @@
 use App\Console\CacheClearConsoleCommand;
 use App\Console\CacheInitConsoleCommand;
 use App\Console\GenerateProxies;
+use App\Console\QueueWorkCommand;
 use App\Console\TelegramDaemonCommand;
 use App\Console\TelegramSetCommandsCommand;
 use App\Console\TelegramWebhookCommand;
@@ -50,6 +51,7 @@ $cli = new Application();
 $cli->add($container->get(CacheClearConsoleCommand::class));
 $cli->add($container->get(CacheInitConsoleCommand::class));
 $cli->add($container->get(GenerateProxies::class));
+$cli->add($container->get(QueueWorkCommand::class));
 $cli->add($container->get(TelegramDaemonCommand::class));
 $cli->add($container->get(TelegramSetCommandsCommand::class));
 $cli->add($container->get(TelegramWebhookCommand::class));

@@ -33,6 +33,7 @@ RUN apt-get update -y \
     iputils-ping iproute2 less vim \
     locales aspell-fr \
     imagemagick graphicsmagick  exiftran \
+    redis \
     supervisor \
   \
 # Dev packages \

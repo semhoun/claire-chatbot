@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console;
 
+use App\Queue\QueueDispatcherInterface;
 use App\Services\TelegramService;
-use Monolog\Handler\StreamHandler;
 use Phptg\BotApi\TelegramBotApi;
 use Phptg\BotApi\Type\Update;
 use Psr\Log\LoggerInterface as Logger;
@@ -25,7 +25,7 @@ final class TelegramDaemonCommand extends Command
 
     public function __construct(
         private readonly TelegramBotApi $telegramBotApi,
-        private readonly TelegramService $telegramService,
+        private readonly QueueDispatcherInterface $queueDispatcher,
         private readonly Logger $logger,
     ) {
         parent::__construct();
@@ -55,8 +55,6 @@ final class TelegramDaemonCommand extends Command
         OutputInterface $output
     ): int {
         $this->setupSignalHandlers();
-        $streamHandler = new StreamHandler($output->getStream(), Logger::DEBUG);
-        $this->logger->pushHandler($streamHandler);
 
         try {
             $botInfo = $this->telegramBotApi->getMe();
@@ -97,7 +95,11 @@ final class TelegramDaemonCommand extends Command
                         $offset = $updateId + 1;
                     }
 
-                    $this->telegramService->processUpdate($update);
+                    $updatePayload = json_decode(json_encode($update, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+                    $this->queueDispatcher->dispatch(
+                        TelegramService::class,
+                        ['update_json' => json_encode($updatePayload, JSON_THROW_ON_ERROR)],
+                    );
                 }
             } catch (\Throwable $throwable) {
                 $this->logger->error('Telegram polling error: ' . $throwable->getMessage(), [

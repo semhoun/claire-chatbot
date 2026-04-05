@@ -11,3 +11,4 @@ compose.yml
 local_data
 /.phpunit.result.cache
 /addons/agents/my*
+/.kilo/plans

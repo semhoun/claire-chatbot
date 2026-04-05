@@ -9,6 +9,7 @@ use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Tools\GenerateImageTool;
 use App\Entity\User;
 use App\Enums\TelegramAction;
+use App\Queue\QueueDoer;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
@@ -25,9 +26,10 @@ use Phptg\BotApi\TelegramBotApi;
 use Phptg\BotApi\Type\InputFile;
 use Phptg\BotApi\Type\Message;
 use Phptg\BotApi\Type\Update\Update;
+use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
 
-class TelegramService
+class TelegramService implements QueueDoer
 {
     public const array COMMANDS = [
         'start' => 'Démarrer une nouvelle conversation',
@@ -75,6 +77,21 @@ class TelegramService
             ]);
             $this->sendMessage($telegramChatId, 'Désolé, j\'ai un soucis.');
         }
+    }
+
+    public static function make(ContainerInterface $container): self
+    {
+        return $container->get(self::class);
+    }
+
+    public function handle(array $payload): void
+    {
+        $updateJson = (string) ($payload['update_json'] ?? '');
+        if ($updateJson === '') {
+            return;
+        }
+
+        $this->processUpdate(Update::fromJson($updateJson));
     }
 
     public function handleMessage(int $telegramChatId, Message $message): void

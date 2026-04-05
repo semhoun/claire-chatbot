@@ -54,7 +54,7 @@ docker run -d -p 8080:80 \
 - Recherche web optionnelle via SearXNG et RAG fichier via embeddings OpenAI-like.
 - Génération d'images avec ComfyUI (optionnel).
 - Support d'agents personnalisés via classes PHP et fichiers YAML.
-- Intégration Telegram avec filtrage des balises `[OC]` sur les réponses envoyées, prise en charge des photos dans le premier message, meilleur rendu MarkdownV2 des listes et application du timeout de workflow pendant le traitement des updates.
+- Intégration Telegram avec filtrage des balises `[OC]`, prise en charge des photos et documents, meilleur rendu MarkdownV2 des listes, et mise en queue des updates via un worker CLI Redis.
 - Observabilite via OpenTelemetry pour traces, metriques et logs, y compris l'instrumentation interne des agents.
 - Historique de conversation avec separation entre messages LLM et messages affiches a l'utilisateur, y compris conservation du message d'ouverture dans l'affichage.
 
@@ -109,6 +109,14 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 
 - Telegram (voir `config/settings/telegram.php`):
   - `TELEGRAM_BOT_TOKEN` — Token de votre bot Telegram (obtenu via @BotFather).
+
+- Queue (voir `config/settings/queue.php` et `config/settings/redis.php`):
+  - `REDIS_HOST` — hote Redis (defaut: `127.0.0.1`).
+  - `REDIS_PORT` — port Redis (defaut: `6379`).
+  - `REDIS_DATABASE` — base Redis numerique (defaut: `0`).
+  - `REDIS_PASSWORD` — mot de passe Redis (optionnel).
+  - `REDIS_TIMEOUT` — timeout de connexion Redis en secondes.
+  - `REDIS_PREFIX` — prefixe des cles Redis pour la queue.
 
 - Mode et logs:
   - `DEBUG_MODE` = `true|false` (active un niveau de logs plus verbeux)
@@ -414,6 +422,41 @@ Migrations Doctrine
   ```
 
 - Cette commande applique toutes les migrations disponibles (dossier `migrations/`) et maintient la table de version `db_version` conformément à la configuration définie dans `config/settings/database.php`.
+
+### Queue de fond
+
+Claire inclut une queue de fond minimaliste basee sur Redis pour deleguer certains traitements hors du cycle HTTP, en particulier les updates Telegram.
+
+- Un job est retire de la queue des sa prise en charge par le worker.
+- Le contrat des jobs est `App\Queue\QueueDoer` avec `make(ContainerInterface $container)` et `handle(array $payload): void`.
+- Le contrat applicatif actuel suppose que `handle()` absorbe ses erreurs et ne leve pas d'exception.
+
+Lancer le worker:
+
+```bash
+./console queue:work
+```
+
+Traiter une queue specifique:
+
+```bash
+./console queue:work --queue=telegram
+```
+
+Options utiles:
+
+- `--once` — traite un seul job puis quitte
+- `--sleep=1` — attente quand la queue est vide
+- `--max-jobs=100` — quitte apres N jobs
+- `--max-time=3600` — quitte apres N secondes
+
+Exemple:
+
+```bash
+export REDIS_HOST=127.0.0.1
+export REDIS_PORT=6379
+./console queue:work --queue=telegram
+```
 
 ## Démarrage
 
@@ -804,6 +847,7 @@ Le mode webhook permet à Telegram d'envoyer les mises à jour directement à vo
 - Endpoint webhook: `POST /webhook/telegram`
 - Doit être accessible publiquement en HTTPS
 - Vérifie le header `X-Telegram-Bot-Api-Secret-Token` (si `TELEGRAM_WEBHOOK_SECRET` est configuré)
+- Le webhook enfile l'update Telegram dans la queue `telegram`; le traitement effectif est fait par `queue:work`
 
 **Exemple Docker Compose (webhook):**
 ```yaml
@@ -839,6 +883,20 @@ services:
     # ... configuration web ...
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set_me}
+```
+
+#### Traitement asynchrone des updates Telegram
+
+Les updates Telegram recus par webhook ou par daemon ne sont plus traites directement dans le process de reception.
+
+- `TelegramService` implemente le contrat `QueueDoer`.
+- Le webhook et le daemon enfilent `TelegramService::class` dans la queue `telegram` avec un payload JSON.
+- Le worker doit etre lance separement pour traiter les messages.
+
+Exemple minimal:
+
+```bash
+./console queue:work --queue=telegram
 ```
 
 #### Fonctionnalités
@@ -939,6 +997,11 @@ Le fichier `./console` fournit des commandes pour la gestion du cache et des mig
   - `./console telegram:webhook --delete` — Supprime le webhook
   - `./console telegram:daemon` — Lance le daemon (polling)
   - `./console telegram:set-commands` — Configure le menu des commandes du bot Telegram (SetMyCommands)
+
+- **Queue:**
+  - `./console queue:work` — Lance le worker de queue
+  - `./console queue:work --queue=telegram` — Traite la queue Telegram
+  - `./console queue:work --once` — Traite un seul job puis quitte
 
 ### Tests
 

@@ -3,6 +3,14 @@
 declare(strict_types=1);
 
 use App\Exception;
+use App\Queue\QueueBackendInterface;
+use App\Queue\QueueDispatcherInterface;
+use App\Queue\QueueJobFactory;
+use App\Queue\RedisQueueBackend;
+use App\Queue\QueueSerializer;
+use App\Queue\QueueWorker;
+use App\Redis\PhpRedisClient;
+use App\Redis\RedisClientInterface;
 use App\Services\ComfyUIService;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\OidcClient;
@@ -34,6 +42,15 @@ return [
         $connectionParams = [
             'driver' => 'pdo_' . $settings->get('database.driver'),
         ];
+
+        if ($settings->get('database.driver') !== 'sqlite') {
+            $connectionParams['host'] = $settings->get('database.host');
+            $connectionParams['port'] = $settings->get('database.port');
+            $connectionParams['dbname'] = $settings->get('database.dbname');
+            $connectionParams['user'] = $settings->get('database.user');
+            $connectionParams['password'] = $settings->get('database.password');
+        }
+
         if ($settings->get('database.driver') === 'sqlite') {
             $connectionParams['path'] = $settings->get('database.path');
         }
@@ -121,4 +138,27 @@ return [
     TelegramBotApi::class => static fn (Settings $settings): TelegramBotApi => new TelegramBotApi($settings->get('telegram.bot_token')),
     ComfyUIWorkflowRegistry::class => static fn (Settings $settings): ComfyUIWorkflowRegistry => new ComfyUIWorkflowRegistry($settings),
     ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $workflowRegistry): ComfyUIService => new ComfyUIService($settings, $filesystem, $workflowRegistry),
+    RedisClientInterface::class => static function (Settings $settings): RedisClientInterface {
+        $client = new PhpRedisClient();
+        $client->connect(
+            (string) $settings->get('redis.host'),
+            (int) $settings->get('redis.port'),
+            (float) $settings->get('redis.timeout'),
+        );
+
+        $password = $settings->get('redis.password');
+        if (is_string($password) && $password !== '') {
+            $client->auth($password);
+        }
+
+        $client->select((int) $settings->get('redis.database'));
+
+        return $client;
+    },
+    RedisQueueBackend::class => DI\autowire(),
+    QueueBackendInterface::class => DI\get(RedisQueueBackend::class),
+    QueueDispatcherInterface::class => DI\get(QueueBackendInterface::class),
+    QueueJobFactory::class => DI\autowire(),
+    QueueSerializer::class => DI\autowire(),
+    QueueWorker::class => DI\autowire(),
 ];
