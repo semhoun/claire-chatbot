@@ -115,6 +115,6 @@ WORKDIR "/www"
 EXPOSE 80 443
 
 # Docker starting params
-CMD ["/usr/bin/supervisord","-c","/etc/supervisord.conf"]
+CMD ["/usr/bin/supervisord","-c","/etc/supervisor/supervisord.conf"]
 ENTRYPOINT ["/opt/bin/entrypoint.sh"]
 HEALTHCHECK --start-period=60s --interval=15s --timeout=5s --retries=3 CMD curl --fail http://localhost/health || exit 1
