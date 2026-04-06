@@ -16,8 +16,8 @@ final class QueueSerializer
     {
         try {
             return json_encode($payload, JSON_THROW_ON_ERROR);
-        } catch (JsonException $e) {
-            throw new RuntimeException('Unable to encode queue payload', 0, $e);
+        } catch (JsonException $jsonException) {
+            throw new RuntimeException('Unable to encode queue payload', 0, $jsonException);
         }
     }
 
@@ -28,8 +28,8 @@ final class QueueSerializer
     {
         try {
             $decoded = json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException $e) {
-            throw new RuntimeException('Unable to decode queue payload', 0, $e);
+        } catch (JsonException $jsonException) {
+            throw new RuntimeException('Unable to decode queue payload', 0, $jsonException);
         }
 
         if (! is_array($decoded)) {

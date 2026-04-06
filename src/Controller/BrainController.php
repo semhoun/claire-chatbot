@@ -62,10 +62,10 @@ final readonly class BrainController
         if ($request->getMethod() === 'POST') {
             $data = (array) ($request->getParsedBody() ?? []);
             $userStr = trim((string) ($data['message'] ?? ''));
-            $chatMode = (string) ($data['mode'] ?? 'chat');
+            $chatMode = (string) ($data['mode'] ?? 'stream');
         } else {
             $userStr = trim((string) ($request->getQueryParams()['message'] ?? ''));
-            $chatMode = (string) ($request->getQueryParams()['mode'] ?? 'chat');
+            $chatMode = (string) ($request->getQueryParams()['mode'] ?? 'stream');
         }
 
         if ($userStr === '') {
@@ -152,7 +152,7 @@ final readonly class BrainController
             }
 
             // On supprime les images car sinon ça fait un résultat bizarre
-            $text = preg_replace(ComfyUIService::IMAGE_PATTERN,'', $streamedText);
+            $text = preg_replace(ComfyUIService::IMAGE_PATTERN, '', $streamedText);
 
             if ($streamId === null) {
                 $streamId = uniqid('stream-', true);
@@ -205,6 +205,7 @@ final readonly class BrainController
         if ($messages === [] || count($messages) < $this->settings->get('llm.summary.minMessages')) {
             return;
         }
+
         if (count($messages) > $this->settings->get('llm.summary.maxMessages') && $summary->getChatHistory()->getTitle() !== null) {
             return;
         }

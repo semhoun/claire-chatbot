@@ -84,14 +84,13 @@
                   hx-encoding="multipart/form-data"
                   hx-on::after-request="clearInput(event)"
                   hx-on::before-request="chatClick(event)"
-                  data-mode="{{ chat_mode|default('chat') }}"
             >
                 <label class="chat-icon-btn chat-icon-btn--upload form_disabler chat-input__toggleable" for="chat-upload" aria-label="Joindre un fichier">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
                     </svg>
                 </label>
-                <input type="hidden" name="mode" id="chat-input_mode" value="{{ chat_mode|default('chat') }}" />
+                <input type="hidden" name="mode" value="stream" />
                 <input class="chat-input__file" type="file" id="chat-upload" name="upload_files[]" multiple accept="{{ settings.get('files.upload.acceptedExt') }}" />
                 {# Container for attached file chips (chat mode) #}
                 <span id="chatAttachedFilesChat" class="chat-attached"></span>
@@ -134,18 +133,6 @@
 
 {% block script %}
 <script>
-    // Bascule du mode chat/stream selon l'option (événement global)
-    (function () {
-        window.addEventListener('chat-mode-changed', function (e) {
-            const mode = e.detail && e.detail.mode ? e.detail.mode : 'chat';
-            const chatForm = document.getElementById('brain_chat');
-            const inputMode = document.getElementById('chat-input_mode');
-            if (!chatForm && !inputMode) return;
-            chatForm.setAttribute('data-mode', mode);
-            inputMode.setAttribute('value', mode);
-        });
-    })();
-
     // Gestion locale des pièces jointes: chips avec suppression + synchronisation du formulaire
     (function () {
         window.chatClick = function chatClick(event) {

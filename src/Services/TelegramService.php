@@ -10,7 +10,6 @@ use App\Brain\Tools\GenerateImageTool;
 use App\Entity\User;
 use App\Enums\TelegramAction;
 use App\Queue\QueueDoer;
-use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;
@@ -527,8 +526,8 @@ class TelegramService implements QueueDoer
         $this->sendChatAction($telegramChatId, TelegramAction::TEXT);
 
         $currentBrain = $this->telegramSession->get('brain_avatar');
-        $brain = $this->brainRegistry->get($currentBrain, $this->telegramSession);
-        $openingText = $brain->getOpeningText();
+        $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession);
+        $openingText = $agent->getOpeningText();
         $imageIds = $this->extractImageIds($openingText);
         if ($imageIds !== []) {
             $this->handleImageResponse($telegramChatId, $openingText, $imageIds);

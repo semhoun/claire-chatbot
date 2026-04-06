@@ -24,7 +24,7 @@ final class QueueWorker
     }
 
     public function run(
-        QueueWorkerOptions $options,
+        QueueWorkerOptions $queueWorkerOptions,
         string $workerId,
         OutputInterface $output,
     ): int {
@@ -32,20 +32,20 @@ final class QueueWorker
         $processedJobs = 0;
 
         while ($this->running) {
-            if ($this->hasReachedRuntimeLimit($options, $startedAt, $processedJobs)) {
+            if ($this->hasReachedRuntimeLimit($queueWorkerOptions, $startedAt, $processedJobs)) {
                 break;
             }
 
             $job = $this->queueBackend->reserveNextAvailable(
-                $options->queueName,
+                $queueWorkerOptions->queueName,
             );
 
             if (! $job instanceof QueueMessage) {
-                if ($options->once) {
+                if ($queueWorkerOptions->once) {
                     break;
                 }
 
-                sleep($options->sleep);
+                sleep($queueWorkerOptions->sleep);
 
                 continue;
             }
@@ -53,7 +53,7 @@ final class QueueWorker
             $processedJobs++;
             $this->processJob($job, $output);
 
-            if ($options->once) {
+            if ($queueWorkerOptions->once) {
                 break;
             }
         }
@@ -61,29 +61,29 @@ final class QueueWorker
         return $processedJobs;
     }
 
-    private function processJob(QueueMessage $job, OutputInterface $output): void
+    private function processJob(QueueMessage $queueMessage, OutputInterface $output): void
     {
-        $queueDoer = $this->queueJobFactory->createQueueDoer($job);
-        $queueDoer->handle($job->payload);
-        $this->queueBackend->delete($job);
+        $queueDoer = $this->queueJobFactory->createQueueDoer($queueMessage);
+        $queueDoer->handle($queueMessage->payload);
+
+        $this->queueBackend->delete($queueMessage);
 
         $this->logger->info('Queue job processed', [
-            'job_id' => $job->id,
-            'job_class' => $job->jobClass,
+            'job_id' => $queueMessage->id,
+            'job_class' => $queueMessage->jobClass,
         ]);
-        $output->writeln(sprintf('<info>Processed queue job %s</info>', $job->id));
+        $output->writeln(sprintf('<info>Processed queue job %s</info>', $queueMessage->id));
     }
 
     private function hasReachedRuntimeLimit(
-        QueueWorkerOptions $options,
+        QueueWorkerOptions $queueWorkerOptions,
         int $startedAt,
         int $processedJobs,
     ): bool {
-        if ($options->maxJobs > 0 && $processedJobs >= $options->maxJobs) {
+        if ($queueWorkerOptions->maxJobs > 0 && $processedJobs >= $queueWorkerOptions->maxJobs) {
             return true;
         }
 
-        return $options->maxTime > 0 && (time() - $startedAt) >= $options->maxTime;
+        return $queueWorkerOptions->maxTime > 0 && (time() - $startedAt) >= $queueWorkerOptions->maxTime;
     }
-
 }

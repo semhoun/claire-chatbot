@@ -9,11 +9,11 @@ use App\Queue\QueueJobFactory;
 use App\Queue\QueueSerializer;
 use App\Queue\QueueWorker;
 use App\Queue\RedisQueueBackend;
-use App\Services\RedisClientInterface;
 use App\Services\ComfyUIService;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\OidcClient;
 use App\Services\RedisClient;
+use App\Services\RedisClientInterface;
 use App\Services\Settings;
 use App\Services\Twig\GeneratedImageExtension;
 use App\Services\Twig\TimestampExtension;
@@ -137,7 +137,7 @@ return [
     },
     TelegramBotApi::class => static fn (Settings $settings): TelegramBotApi => new TelegramBotApi($settings->get('telegram.bot_token')),
     ComfyUIWorkflowRegistry::class => static fn (Settings $settings): ComfyUIWorkflowRegistry => new ComfyUIWorkflowRegistry($settings),
-    ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $workflowRegistry): ComfyUIService => new ComfyUIService($settings, $filesystem, $workflowRegistry),
+    ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry): ComfyUIService => new ComfyUIService($settings, $filesystem, $comfyUIWorkflowRegistry),
     RedisClientInterface::class => static function (Settings $settings): RedisClientInterface {
         $client = new RedisClient();
         $client->connect(

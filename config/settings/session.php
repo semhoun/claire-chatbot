@@ -22,7 +22,6 @@ return [
 
     'defaultParams' => [
         'brain_avatar' => 'claire',
-        'chat_mode' => 'stream',
         'layout_mode' => 'full',
         ComfyUIWorkflowRegistry::SESSION_KEY => null,
     ],

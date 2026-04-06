@@ -136,15 +136,6 @@
         <div class="options-panel__section">
             <span class="options-panel__title">Préférences</span>
             <div class="options-list">
-                <div class="options-item" id="toggleStreamMode" role="button" tabindex="0"
-                     aria-pressed="false"
-                     data-chat-mode="{{ chat_mode|default('chat') }}"
-                >
-                    <span class="options-item__label">Réponse en continue</span>
-                    <span class="options-item__badge" data-mode-badge>
-                        {{ (chat_mode|default('chat')) == 'stream' ? 'On' : 'Off' }}
-                    </span>
-                </div>
                 <div class="options-item">
                     <label for="brainSelector" class="options-item__label brain-selector" style="cursor: pointer;">Assistant</label>
                     <span class="options-item__badge brain-selector">
@@ -510,51 +501,6 @@
             }
             if (submit) submit.disabled = !fileChosen;
         });
-    })();
-
-    // Toggle "Réponse en continue" option: updates server and notifies pages
-    (function() {
-        const toggle = document.getElementById('toggleStreamMode');
-        if (!toggle) return;
-        const badge = toggle.querySelector('[data-mode-badge]');
-
-        function currentMode() {
-            return (toggle.getAttribute('data-chat-mode') || 'chat');
-        }
-
-        function setMode(mode) {
-            toggle.setAttribute('data-chat-mode', mode);
-            if (badge) badge.textContent = mode === 'stream' ? 'On' : 'Off';
-            toggle.setAttribute('aria-pressed', String(mode === 'stream'));
-            // Notify other parts of the app (e.g., chat.twig)
-            window.dispatchEvent(new CustomEvent('chat-mode-changed', { detail: { mode } }));
-        }
-
-        async function postMode(mode) {
-            try {
-                await fetch('{{ base_url }}/config/chat_mode', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({ mode })
-                });
-            } catch (e) {
-                // ignore network errors for now
-            }
-        }
-
-        function toggleClick() {
-            const next = currentMode() === 'stream' ? 'chat' : 'stream';
-            setMode(next);
-            postMode(next);
-        }
-
-        toggle.addEventListener('click', toggleClick);
-        toggle.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleClick(); }
-        });
-
-        // Initialize ARIA/state on load
-        setMode(currentMode());
     })();
 
     // Toggle "Mode largeur" option: persist like chat mode

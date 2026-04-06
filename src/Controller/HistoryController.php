@@ -27,7 +27,6 @@ final readonly class HistoryController
         private EntityManagerInterface $entityManager,
         private BrainRegistry $brainRegistry,
         private Settings $settings,
-
     ) {
     }
 
@@ -48,8 +47,6 @@ final readonly class HistoryController
         }
 
         $currentBrain = $session->get('brain_avatar');
-        $mode = $session->get('chat_mode');
-
         // Nouveau thread
         $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
         $session->set('chatId', $threadId);
@@ -65,7 +62,8 @@ final readonly class HistoryController
             ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
         $userChatHistory->replaceDisplayMessages([$assistantMessage]);
         $userChatHistory->replaceMessages([]);
-        $messages = $userChatHistory->getFormattedMessages($mode);
+
+        $messages = $userChatHistory->getFormattedMessages('stream');
 
         return $this->twig->render($response, 'partials/messages_list.twig', [
             'messages' => $messages,
@@ -146,7 +144,7 @@ final readonly class HistoryController
         $userChatHistory->setThreadId($threadId);
         $userChatHistory->validateMessageSequences();
 
-        $messages = $userChatHistory->getFormattedMessages($session->get('chat_mode'));
+        $messages = $userChatHistory->getFormattedMessages('stream');
         if ($messages === []) {
             return $response->withStatus(400);
         }
@@ -213,7 +211,7 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
-        $messages = $userChatHistory->getFormattedMessages((string) $session->get('chat_mode'));
+        $messages = $userChatHistory->getFormattedMessages('stream');
 
         return $this->twig->render($response, 'partials/messages_list.twig', [
             'messages' => $messages,

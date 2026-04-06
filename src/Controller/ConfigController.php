@@ -27,34 +27,6 @@ readonly class ConfigController
     }
 
     /**
-     * Set current chat mode in session ("chat" | "stream").
-     */
-    public function chatMode(Request $request, Response $response): Response
-    {
-        $session = $this->getSession($request);
-
-        $data = (array) ($request->getParsedBody() ?? []);
-        $mode = (string) ($data['mode'] ?? '');
-        if (! in_array($mode, ['chat', 'stream'], true)) {
-            return $response->withStatus(400);
-        }
-
-        $session->set('chat_mode', $mode);
-        $user = $this->entityManager->getRepository(User::class)->find($session->get(Auth::USERID));
-        if ($user === null) {
-            return $response->withStatus(404);
-        }
-
-        $params = $user->getParams() ?? [];
-        $params['chat_mode'] = $mode;
-        $user->setParams($params);
-        $this->entityManager->flush();
-
-        // HTMX friendly: no content needed
-        return $response->withStatus(204);
-    }
-
-    /**
      * Set current layout width mode in session ("full" | "compact").
      */
     public function layoutMode(Request $request, Response $response): Response

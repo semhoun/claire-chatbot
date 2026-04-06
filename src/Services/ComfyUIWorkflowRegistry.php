@@ -120,16 +120,20 @@ final class ComfyUIWorkflowRegistry
             $type = trim((string) ($data['type'] ?? ''));
             $label = trim((string) ($data['label'] ?? ''));
             $workflow = $data['workflow'] ?? null;
-
-            if ($type === '' || $label === '') {
+            if ($type === '') {
+                continue;
+            }
+            if ($label === '') {
                 continue;
             }
 
             if (is_array($workflow)) {
                 $workflow = json_encode($workflow, JSON_THROW_ON_ERROR);
             }
-
-            if (! is_string($workflow) || trim($workflow) === '') {
+            if (! is_string($workflow)) {
+                continue;
+            }
+            if (trim((string) $workflow) === '') {
                 continue;
             }
 
@@ -148,7 +152,7 @@ final class ComfyUIWorkflowRegistry
      */
     private function parseFile(string $file): array
     {
-        $extension = strtolower((string) pathinfo($file, PATHINFO_EXTENSION));
+        $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
 
         if ($extension === 'json') {
             $content = file_get_contents($file);

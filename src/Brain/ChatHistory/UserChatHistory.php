@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Brain\ChatHistory;
 
-use App\Brain\Observability\HasInstrumentation;
 use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\Enums\MessageRole;
@@ -101,7 +100,7 @@ class UserChatHistory extends AbstractChatHistory
     public function removeLastExchange(): ?string
     {
         $lastUserMessage = $this->removeLastExchangeFromMessages($this->history);
-        if ($lastUserMessage === null) {
+        if (!$lastUserMessage instanceof \NeuronAI\Chat\Messages\UserMessage) {
             return null;
         }
 
@@ -114,7 +113,7 @@ class UserChatHistory extends AbstractChatHistory
 
     public function getFormattedMessages(string $mode): array
     {
-        if (empty($this->displayHistory)) {
+        if ($this->displayHistory === []) {
             return [];
         }
 
@@ -211,7 +210,6 @@ class UserChatHistory extends AbstractChatHistory
             return;
         }
 
-
         $history = $history[0];
 
         $this->title = isset($history['title']) ? (string) $history['title'] : null;
@@ -253,6 +251,7 @@ class UserChatHistory extends AbstractChatHistory
                 if ($message->getMetadata('message_type') === 'out_of_context') {
                     return;
                 }
+
                 $this->displayHistory[] = $message;
             }
         }
@@ -281,58 +280,6 @@ class UserChatHistory extends AbstractChatHistory
         $this->displayHistory = [];
         $this->title = null;
         $this->summary = null;
-    }
-
-    /**
-     * @param array<Message> $messages
-     */
-    private function removeLastExchangeFromMessages(array &$messages): ?UserMessage
-    {
-        while ($messages !== []) {
-            $message = array_pop($messages);
-
-            if ($message instanceof UserMessage && !$message instanceof ToolResultMessage) {
-                return $message;
-            }
-        }
-
-        return null;
-    }
-
-    private function persistHistories(): void
-    {
-        $stmt = $this->pdo->prepare(
-            'UPDATE ' . self::TABLE . ' SET '
-            . self::LLM_MESSAGES_COLUMN . ' = :llm_messages, '
-            . self::DISPLAY_MESSAGES_COLUMN . ' = :display_messages, '
-            . self::DISPLAY_MESSAGES_COUNT_COLUMN . ' = :display_messages_count '
-            . 'WHERE thread_id = :thread_id'
-        );
-        $stmt->execute([
-            'thread_id' => $this->thread_id,
-            'llm_messages' => json_encode(
-                $this->serializeMessages($this->history),
-                JSON_THROW_ON_ERROR
-            ),
-            'display_messages' => json_encode(
-                $this->serializeMessages($this->displayHistory),
-                JSON_THROW_ON_ERROR
-            ),
-            'display_messages_count' => count($this->displayHistory),
-        ]);
-    }
-
-    /**
-     * @param array<Message> $messages
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    private function serializeMessages(array $messages): array
-    {
-        return array_map(
-            static fn (Message $message): array => $message->jsonSerialize(),
-            $messages,
-        );
     }
 
     /**
@@ -406,5 +353,57 @@ class UserChatHistory extends AbstractChatHistory
         }
 
         return $fixed;
+    }
+
+    /**
+     * @param array<Message> $messages
+     */
+    private function removeLastExchangeFromMessages(array &$messages): ?UserMessage
+    {
+        while ($messages !== []) {
+            $message = array_pop($messages);
+
+            if ($message instanceof UserMessage && ! $message instanceof ToolResultMessage) {
+                return $message;
+            }
+        }
+
+        return null;
+    }
+
+    private function persistHistories(): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE ' . self::TABLE . ' SET '
+            . self::LLM_MESSAGES_COLUMN . ' = :llm_messages, '
+            . self::DISPLAY_MESSAGES_COLUMN . ' = :display_messages, '
+            . self::DISPLAY_MESSAGES_COUNT_COLUMN . ' = :display_messages_count '
+            . 'WHERE thread_id = :thread_id'
+        );
+        $stmt->execute([
+            'thread_id' => $this->thread_id,
+            'llm_messages' => json_encode(
+                $this->serializeMessages($this->history),
+                JSON_THROW_ON_ERROR
+            ),
+            'display_messages' => json_encode(
+                $this->serializeMessages($this->displayHistory),
+                JSON_THROW_ON_ERROR
+            ),
+            'display_messages_count' => count($this->displayHistory),
+        ]);
+    }
+
+    /**
+     * @param array<Message> $messages
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function serializeMessages(array $messages): array
+    {
+        return array_map(
+            static fn (Message $message): array => $message->jsonSerialize(),
+            $messages,
+        );
     }
 }
