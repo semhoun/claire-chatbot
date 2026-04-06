@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Redis;
+namespace App\Services;
 
 interface RedisClientInterface
 {

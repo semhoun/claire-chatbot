@@ -8,6 +8,7 @@ use App\Queue\QueueDispatcherInterface;
 use App\Services\TelegramService;
 use Phptg\BotApi\TelegramBotApi;
 use Phptg\BotApi\Type\Update;
+use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -23,9 +24,11 @@ final class TelegramDaemonCommand extends Command
 {
     private bool $running = true;
 
+    // Not in __Construct because redis could not be available at this time
+
     public function __construct(
+        private readonly ContainerInterface $container,
         private readonly TelegramBotApi $telegramBotApi,
-        private readonly QueueDispatcherInterface $queueDispatcher,
         private readonly Logger $logger,
     ) {
         parent::__construct();
@@ -54,6 +57,8 @@ final class TelegramDaemonCommand extends Command
         InputInterface $input,
         OutputInterface $output
     ): int {
+        $queueDispatcher = $this->container->get(QueueDispatcherInterface::class);
+
         $this->setupSignalHandlers();
 
         try {
@@ -96,7 +101,7 @@ final class TelegramDaemonCommand extends Command
                     }
 
                     $updatePayload = json_decode(json_encode($update, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
-                    $this->queueDispatcher->dispatch(
+                    $queueDispatcher->dispatch(
                         TelegramService::class,
                         ['update_json' => json_encode($updatePayload, JSON_THROW_ON_ERROR)],
                     );

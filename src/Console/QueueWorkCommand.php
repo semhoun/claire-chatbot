@@ -7,6 +7,7 @@ namespace App\Console;
 use App\Queue\QueueWorker;
 use App\Queue\QueueWorkerOptions;
 use App\Services\Settings;
+use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -17,8 +18,11 @@ use Symfony\Component\Console\Output\OutputInterface;
 #[AsCommand(name: 'queue:work', description: 'Run the Redis queue worker')]
 final class QueueWorkCommand extends Command
 {
+    // Not in __Construct because redis could not be available at this time
+    private ?QueueWorker $queueWorker;
+
     public function __construct(
-        private readonly QueueWorker $queueWorker,
+        private readonly ContainerInterface $container,
         private readonly Settings $settings,
         private readonly Logger $logger,
     ) {
@@ -37,6 +41,8 @@ final class QueueWorkCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->queueWorker = $this->container->get(QueueWorker::class);
+
         $this->setupSignalHandlers();
 
         $workerId = sprintf('%s:%d', gethostname() ?: 'localhost', getmypid());

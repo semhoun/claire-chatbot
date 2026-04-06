@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Queue;
 
-use App\Redis\RedisClientInterface;
+use App\Services\RedisClientInterface;
 use App\Services\Settings;
 use Ramsey\Uuid\Uuid;
 use RuntimeException;

@@ -6,14 +6,14 @@ use App\Exception;
 use App\Queue\QueueBackendInterface;
 use App\Queue\QueueDispatcherInterface;
 use App\Queue\QueueJobFactory;
-use App\Queue\RedisQueueBackend;
 use App\Queue\QueueSerializer;
 use App\Queue\QueueWorker;
-use App\Redis\PhpRedisClient;
-use App\Redis\RedisClientInterface;
+use App\Queue\RedisQueueBackend;
+use App\Services\RedisClientInterface;
 use App\Services\ComfyUIService;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\OidcClient;
+use App\Services\RedisClient;
 use App\Services\Settings;
 use App\Services\Twig\GeneratedImageExtension;
 use App\Services\Twig\TimestampExtension;
@@ -139,7 +139,7 @@ return [
     ComfyUIWorkflowRegistry::class => static fn (Settings $settings): ComfyUIWorkflowRegistry => new ComfyUIWorkflowRegistry($settings),
     ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $workflowRegistry): ComfyUIService => new ComfyUIService($settings, $filesystem, $workflowRegistry),
     RedisClientInterface::class => static function (Settings $settings): RedisClientInterface {
-        $client = new PhpRedisClient();
+        $client = new RedisClient();
         $client->connect(
             (string) $settings->get('redis.host'),
             (int) $settings->get('redis.port'),

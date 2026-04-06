@@ -2,15 +2,21 @@
 
 declare(strict_types=1);
 
-namespace App\Redis;
+namespace App\Services;
 
-final class PhpRedisClient implements RedisClientInterface
+use RuntimeException;
+
+final class RedisClient implements RedisClientInterface
 {
     private object $client;
 
     public function __construct()
     {
-        $this->client = RedisRuntime::createClient();
+        if (! extension_loaded('redis')) {
+            throw new RuntimeException('The ext-redis extension is required for the Redis queue backend');
+        }
+
+        $this->client = new \Redis();
     }
 
     public function eval(string $script, array $arguments, int $keyCount): mixed

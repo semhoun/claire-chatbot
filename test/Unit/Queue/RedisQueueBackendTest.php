@@ -7,7 +7,7 @@ namespace App\Test\Unit\Queue;
 use App\Queue\QueueMessage;
 use App\Queue\QueueSerializer;
 use App\Queue\RedisQueueBackend;
-use App\Redis\RedisClientInterface;
+use App\Services\RedisClientInterface;
 use App\Services\Settings;
 use PHPUnit\Framework\TestCase;
 
