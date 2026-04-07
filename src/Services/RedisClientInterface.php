@@ -25,4 +25,12 @@ interface RedisClientInterface
     public function auth(string $password): bool;
 
     public function select(int $database): bool;
+
+    public function ping(): bool;
+
+    public function close(): bool;
+
+    public function setReadTimeout(float $timeout): bool;
+
+    public function reconnect(): bool;
 }

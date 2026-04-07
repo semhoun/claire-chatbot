@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Queue;
 
+use App\Services\RedisClientInterface;
 use Psr\Log\LoggerInterface as Logger;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -14,6 +15,7 @@ final class QueueWorker
     public function __construct(
         private readonly QueueBackendInterface $queueBackend,
         private readonly QueueJobFactory $queueJobFactory,
+        private readonly RedisClientInterface $redisClient,
         private readonly Logger $logger,
     ) {
     }
@@ -34,6 +36,27 @@ final class QueueWorker
         while ($this->running) {
             if ($this->hasReachedRuntimeLimit($queueWorkerOptions, $startedAt, $processedJobs)) {
                 break;
+            }
+
+            if (! $this->redisClient->ping()) {
+                $this->logger->warning('Redis connection lost, attempting to reconnect', [
+                    'worker_id' => $workerId,
+                ]);
+                $output->writeln('<warning>Redis connection lost, attempting to reconnect...</warning>');
+
+                if (! $this->redisClient->reconnect()) {
+                    $this->logger->error('Failed to reconnect to Redis', [
+                        'worker_id' => $workerId,
+                    ]);
+                    $output->writeln('<error>Failed to reconnect to Redis, stopping worker</error>');
+
+                    break;
+                }
+
+                $this->logger->info('Successfully reconnected to Redis', [
+                    'worker_id' => $workerId,
+                ]);
+                $output->writeln('<info>Successfully reconnected to Redis</info>');
             }
 
             $job = $this->queueBackend->reserveNextAvailable(

@@ -47,7 +47,6 @@ final class RedisQueueBackendTest extends TestCase
             new QueueSerializer(),
             new Settings([
                 'queue' => [
-                    'defaultQueue' => 'default',
                     'default' => 'redis',
                 ],
                 'redis' => [
@@ -144,5 +143,25 @@ final class InMemoryRedisClient implements RedisClientInterface
     public function publish(string $channel, string $message): int|false
     {
         return 1;
+    }
+
+    public function ping(): bool
+    {
+        return true;
+    }
+
+    public function close(): bool
+    {
+        return true;
+    }
+
+    public function setReadTimeout(float $timeout): bool
+    {
+        return true;
+    }
+
+    public function reconnect(): bool
+    {
+        return true;
     }
 }

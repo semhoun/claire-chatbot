@@ -115,7 +115,8 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
   - `REDIS_PORT` — port Redis (defaut: `6379`).
   - `REDIS_DATABASE` — base Redis numerique (defaut: `0`).
   - `REDIS_PASSWORD` — mot de passe Redis (optionnel).
-  - `REDIS_TIMEOUT` — timeout de connexion Redis en secondes.
+  - `REDIS_TIMEOUT` — timeout de connexion Redis en secondes (defaut: `2.0`).
+  - `REDIS_READ_TIMEOUT` — timeout de lecture Redis en secondes (defaut: `5.0`). Évite les blocages indéfinis sur les opérations réseau.
   - `REDIS_PREFIX` — prefixe des cles Redis pour la queue.
 
 - Mode et logs:
@@ -430,6 +431,8 @@ Claire inclut une queue de fond minimaliste basee sur Redis pour deleguer certai
 - Un job est retire de la queue des sa prise en charge par le worker.
 - Le contrat des jobs est `App\Queue\QueueDoer` avec `make(ContainerInterface $container)` et `handle(array $payload): void`.
 - Le contrat applicatif actuel suppose que `handle()` absorbe ses erreurs et ne leve pas d'exception.
+- **Reconnexion automatique**: Le worker détecte les déconnexions Redis via `ping()` avant chaque tentative et se reconnecte automatiquement si nécessaire. Si la reconnexion échoue, le worker s'arrête proprement.
+- **Timeout de lecture**: Le `REDIS_READ_TIMEOUT` évite les blocages indéfinis sur les opérations réseau lorsque la connexion est silencieusement fermée.
 
 Lancer le worker:
 
@@ -1057,9 +1060,10 @@ vendor/bin/phpunit --filter testMethodName    # Méthode spécifique
 
 - 500 au `GET /`:  vérifiez les permissions du dossier var/ (cache, logs, tmp).
 - 404 partout: vérifiez que le serveur pointe bien sur `public/index.php` et que vos règles de réécriture sont actives.
-- Pas de logs: les logs sont gérés par OpenTelemetry. Pour les voir dans la console, définissez `OTEL_LOGS_EXPORTER=console` (et `OTEL_LOGS_PROCESSOR=simple` pour un affichage immédiat). En alternance, configurez un export OTLP (`OTEL_LOGS_EXPORTER=otlp`) vers un collecteur comme l’OTel Collector.
-- RAG inactif: assurez-vous que `OPENAPI_MODEL_EMBED` est défini. S’il est absent, le RAG est désactivé par conception.
+- Pas de logs: les logs sont gérés par OpenTelemetry. Pour les voir dans la console, définissez `OTEL_LOGS_EXPORTER=console` (et `OTEL_LOGS_PROCESSOR=simple` pour un affichage immédiat). En alternance, configurez un export OTLP (`OTEL_LOGS_EXPORTER=otlp`) vers un collecteur comme l'OTel Collector.
+- RAG inactif: assurez-vous que `OPENAPI_MODEL_EMBED` est défini. S'il est absent, le RAG est désactivé par conception.
 - Génération d'images non disponible: vérifiez que `COMFYUI_ENABLED=true`, qu'au moins un workflow valide existe dans `addons/comfyui/`, et que l'instance ComfyUI est accessible à l'URL définie dans `COMFYUI_URL`.
+- **Worker de queue bloqué**: Le worker vérifie automatiquement la connexion Redis avant chaque tentative et se reconnecte si nécessaire. Si vous observez des blocages, vérifiez que `REDIS_READ_TIMEOUT` est configuré (défaut: 5.0s) et que Redis est accessible. Les logs indiqueront les tentatives de reconnexion.
 
 ## Licence
 

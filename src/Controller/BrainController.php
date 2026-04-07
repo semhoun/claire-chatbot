@@ -162,7 +162,7 @@ final readonly class BrainController
 
                 // sessionId is carried in payload for per-tab routing
                 $eventSessionId = (string) ($event['payload']['sessionId'] ?? $event['chatId'] ?? '');
-                if (! is_array($event) || $eventSessionId !== $sessionId) {
+                if ($eventSessionId !== $sessionId) {
                     $offset++;
                     continue;
                 }
@@ -308,7 +308,7 @@ final readonly class BrainController
                 $uploadedFiles[] = [
                     'filename' => $uploadedFile->getClientFilename() ?? 'file',
                     'mimeType' => $uploadedFile->getClientMediaType() ?? 'application/octet-stream',
-                    'content' => base64_encode((string) $stream->getContents()),
+                    'content' => base64_encode($stream->getContents()),
                 ];
             } catch (\Throwable $e) {
                 $this->logger->warning('Failed to extract inline upload', ['error' => $e->getMessage()]);
@@ -336,20 +336,5 @@ final readonly class BrainController
             'mimeType' => $fileDB->getMimeType(),
             'content' => base64_encode($this->filesystem->read($fileDB->getFileId())),
         ];
-    }
-
-    private function buildStoredFileContent(string $fileId): ?FileContent
-    {
-        $storedAttachment = $this->getStoredFileAttachment($fileId);
-        if ($storedAttachment === null) {
-            return null;
-        }
-
-        return new FileContent(
-            $storedAttachment['content'],
-            SourceType::BASE64,
-            $storedAttachment['mimeType'],
-            $storedAttachment['filename'],
-        );
     }
 }

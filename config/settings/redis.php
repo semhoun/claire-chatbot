@@ -8,5 +8,6 @@ return [
     'database' => (int) env('REDIS_DATABASE', 0),
     'password' => env('REDIS_PASSWORD'),
     'timeout' => (float) env('REDIS_TIMEOUT', 2.0),
+    'readTimeout' => (float) env('REDIS_READ_TIMEOUT', 5.0),
     'prefix' => (string) env('REDIS_PREFIX', 'claire:'),
 ];

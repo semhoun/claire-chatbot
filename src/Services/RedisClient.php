@@ -6,9 +6,19 @@ namespace App\Services;
 
 use RuntimeException;
 
-final readonly class RedisClient implements RedisClientInterface
+final class RedisClient implements RedisClientInterface
 {
-    private object $client;
+    private readonly \Redis $redis;
+
+    private string $host = '127.0.0.1';
+
+    private int $port = 6379;
+
+    private float $timeout = 2.0;
+
+    private ?string $password = null;
+
+    private int $database = 0;
 
     public function __construct()
     {
@@ -16,17 +26,17 @@ final readonly class RedisClient implements RedisClientInterface
             throw new RuntimeException('The ext-redis extension is required for the Redis queue backend');
         }
 
-        $this->client = new \Redis();
+        $this->redis = new \Redis();
     }
 
     public function eval(string $script, array $arguments, int $keyCount): mixed
     {
-        return $this->client->eval($script, $arguments, $keyCount);
+        return $this->redis->eval($script, $arguments, $keyCount);
     }
 
     public function publish(string $channel, string $message): int|false
     {
-        return $this->client->publish($channel, $message);
+        return $this->redis->publish($channel, $message);
     }
 
     public function zadd(string $key, array $membersAndScores): int|false
@@ -38,43 +48,91 @@ final readonly class RedisClient implements RedisClientInterface
             $arguments[] = $member;
         }
 
-        return $this->client->zAdd(...$arguments);
+        return $this->redis->zAdd(...$arguments);
     }
 
     public function hset(string $key, array $hash): int|false
     {
-        $result = $this->client->hMSet($key, $hash);
+        $result = $this->redis->hMSet($key, $hash);
 
         return $result ? 1 : false;
     }
 
     public function hgetall(string $key): array|false
     {
-        return $this->client->hGetAll($key);
+        return $this->redis->hGetAll($key);
     }
 
     public function del(array|string $keys): int|false
     {
-        return $this->client->del($keys);
+        return $this->redis->del($keys);
     }
 
     public function expire(string $key, int $seconds): bool
     {
-        return $this->client->expire($key, $seconds);
+        return $this->redis->expire($key, $seconds);
     }
 
     public function connect(string $host, int $port, float $timeout): bool
     {
-        return $this->client->connect($host, $port, $timeout);
+        $this->host = $host;
+        $this->port = $port;
+        $this->timeout = $timeout;
+
+        return $this->redis->connect($host, $port, $timeout);
     }
 
     public function auth(string $password): bool
     {
-        return $this->client->auth($password);
+        $this->password = $password;
+
+        return $this->redis->auth($password);
     }
 
     public function select(int $database): bool
     {
-        return $this->client->select($database);
+        $this->database = $database;
+
+        return $this->redis->select($database);
+    }
+
+    public function ping(): bool
+    {
+        try {
+            $result = $this->redis->ping();
+
+            return $result === true || $result === '+PONG';
+        } catch (\RedisException) {
+            return false;
+        }
+    }
+
+    public function close(): bool
+    {
+        return $this->redis->close();
+    }
+
+    public function setReadTimeout(float $timeout): bool
+    {
+        return $this->redis->setOption(\Redis::OPT_READ_TIMEOUT, (string) $timeout);
+    }
+
+    public function reconnect(): bool
+    {
+        $this->close();
+
+        $connected = $this->redis->connect($this->host, $this->port, $this->timeout);
+
+        if (! $connected) {
+            return false;
+        }
+
+        if ($this->password !== null && $this->password !== '') {
+            $this->redis->auth($this->password);
+        }
+
+        $this->redis->select($this->database);
+
+        return true;
     }
 }

@@ -232,6 +232,7 @@ class ShortMemory extends Summarization
         return $messages[$index]->getRole() === MessageRole::ASSISTANT->value;
     }
 
+    #[\Override]
     protected function getDefaultSummaryPrompt(): string
     {
         return <<<'PROMPT'

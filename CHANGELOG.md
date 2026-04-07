@@ -9,10 +9,9 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [1.4.0] - 2026-04-08
 
-### Fixed
-- Correction du formatage MarkdownV2 pour les slugs de workflows et de brains dans Telegram (remplacement du gras par du code monospace pour éviter les erreurs de parsing avec les underscores)
-
 ### Added
+- Nouvelles méthodes dans `RedisClientInterface`: `ping()`, `close()`, `setReadTimeout()`, `reconnect()`
+- Variable d'environnement `REDIS_READ_TIMEOUT` (défaut: 5.0s) pour configurer le timeout de lecture Redis
 - Implementation complete de Server-Sent Events (SSE) pour le streaming des reponses
 - Support des workers de queue multiples dans Docker avec variable `QUEUE_WORKERS`
 - Possibilite de supprimer le dernier message d'une conversation
@@ -30,6 +29,10 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Correction de la suppression du dernier message dans l'historique
 - Correction de l'ajout de fichiers dans les conversations
 - Correction de l'interface Telegram et gestion des sessions
+- Correction du blocage des workers de queue après période d'inactivité causé par la fermeture de la connexion Redis
+- Ajout de la reconnexion automatique Redis dans le worker avec détection via `ping()` avant chaque tentative de job
+- Configuration du `readTimeout` Redis pour éviter les blocages indéfinis sur les opérations réseau
+- Correction du formatage MarkdownV2 pour les slugs de workflows et de brains dans Telegram (remplacement du gras par du code monospace pour éviter les erreurs de parsing avec les underscores)
 
 ## [1.3.3] - 2026-04-05
 

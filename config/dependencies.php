@@ -149,6 +149,8 @@ return [
             (float) $settings->get('redis.timeout'),
         );
 
+        $client->setReadTimeout((float) $settings->get('redis.readTimeout'));
+
         $password = $settings->get('redis.password');
         if (is_string($password) && $password !== '') {
             $client->auth($password);

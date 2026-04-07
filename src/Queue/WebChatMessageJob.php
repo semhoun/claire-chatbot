@@ -70,6 +70,7 @@ final readonly class WebChatMessageJob implements QueueDoer
         if ($messageArticleId === '') {
             $messageArticleId = uniqid('assistant-message-', true);
         }
+
         $timestamp = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
 
         try {
@@ -236,9 +237,6 @@ final readonly class WebChatMessageJob implements QueueDoer
         return $toolText;
     }
 
-    /**
-     * @param mixed $attachments
-     */
     private function addAttachments(UserMessage $userMessage, mixed $attachments): void
     {
         if (! is_array($attachments)) {
