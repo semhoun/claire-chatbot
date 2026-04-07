@@ -155,8 +155,7 @@ final class ChatTemplateSseTest extends TestCase
         ]);
 
         // Should contain HTMX SSE extension for hybrid SSE
-        $this->assertStringContainsString('htmx-ext-sse', $html);
-        $this->assertStringContainsString('sse.js', $html);
+        $this->assertStringContainsString('/js/sse.js', $html);
     }
 
     private function createTwig(): Environment

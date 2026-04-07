@@ -79,10 +79,8 @@ final readonly class BrainController
         if ($request->getMethod() === 'POST') {
             $data = (array) ($request->getParsedBody() ?? []);
             $userStr = trim((string) ($data['message'] ?? ''));
-            $chatMode = (string) ($data['mode'] ?? 'stream');
         } else {
             $userStr = trim((string) ($request->getQueryParams()['message'] ?? ''));
-            $chatMode = (string) ($request->getQueryParams()['mode'] ?? 'stream');
         }
 
         if ($userStr === '') {

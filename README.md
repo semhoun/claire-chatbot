@@ -709,9 +709,9 @@ Notes:
 L’agent supporte deux modes de réponse:
 
 - Mode « chat » (synchrone): la réponse complète est rendue côté serveur et renvoyée en une fois.
-- Mode streaming SSE: la réponse est envoyée progressivement via un flux `text/stream` (utilise une sortie non tamponnée côté application; veillez à désactiver la bufferisation côté proxy, voir plus haut).
+- Mode web asynchrone avec SSE: le message utilisateur est envoyé par `POST /brain/messages`, puis l’interface reçoit les mises à jour via `GET /brain/stream`.
 
-La sélection du mode peut se faire via le champ `mode` dans le corps de la requête (`chat` par défaut, ou `stream`).
+La sélection historique via le champ `mode` sur `POST /brain/chat` reste documentée ici pour compatibilité, mais l’interface web actuelle utilise une architecture hybride SSE dédiée.
 
 #### Requête JSON simple (mode chat)
 
@@ -729,7 +729,7 @@ Réponses possibles:
 - 200: corps HTML fragment (ex.: rendu Twig `partials/message.twig`) ou contenu texte selon l’intégration front.
 - 422: si le champ `message` est vide.
 
-#### Streaming SSE (mode stream)
+#### Streaming SSE historique (mode stream)
 
 ```http
 POST /brain/chat HTTP/1.1
@@ -742,7 +742,32 @@ Content-Type: application/json
 }
 ```
 
-La réponse aura des en-têtes: `content-type: text/stream`, `cache-control: no-cache`. Les chunks contiendront du texte (et potentiellement des informations d’outillage) au fil de l’eau.
+La réponse historique renvoie `content-type: text/stream` et `cache-control: no-cache`. Ce flux correspond à l’ancien mode de streaming direct de `POST /brain/chat`.
+
+#### Architecture SSE actuelle de l’interface web
+
+L’interface web n’utilise plus directement le flux `text/stream` de `POST /brain/chat`. Elle repose maintenant sur deux canaux SSE distincts:
+
+1) Un flux HTMX SSE sur `GET /brain/stream?sessionId=<id>` pour les snapshots HTML nommés `chat.snapshot`.
+2) Un `EventSource` natif sur `GET /brain/stream?sessionId=<id>&mode=incremental` pour les événements JSON incrémentaux (placeholder, delta, tool updates, fin de réponse).
+
+Le `sessionId` est généré côté serveur lors du chargement de `/`, stocké en `sessionStorage` par onglet, puis réutilisé pour:
+
+- la connexion SSE persistante;
+- l’envoi des messages via `POST /brain/messages`;
+- les actions liées à l’historique qui doivent publier un snapshot vers le bon onglet.
+
+Le frontend charge l’extension SSE HTMX localement via `public/js/sse.js`. L’ancien helper `public/js/htmx-stream.js` n’est plus utilisé.
+
+Exemple simplifié de cycle web actuel:
+
+```text
+GET /                    -> rend la page + stream_session_id
+GET /brain/stream        -> ouvre les flux SSE liés au sessionId
+POST /brain/messages     -> met le message en file et déclenche le traitement async
+SSE chat.snapshot        -> remplace la liste HTML si nécessaire
+SSE incremental JSON     -> alimente le message assistant en direct
+```
 
 #### Pièces jointes et fichiers
 
