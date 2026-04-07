@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Queue;
 
 use App\Brain\BrainRegistry;
+use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Summary;
 use App\Services\ChatStreamPublisher;
 use App\Services\Session\SessionInterface;
@@ -284,12 +285,17 @@ final readonly class WebChatMessageJob implements QueueDoer
     private function manageSummary(SessionInterface $session): void
     {
         $summary = new Summary($this->connection, $this->settings, $session);
-        $messages = $summary->getChatHistory()->getDisplayMessages();
+        $chatHistory = $summary->getChatHistory();
+        if (! $chatHistory instanceof UserChatHistory) {
+            return;
+        }
+
+        $messages = $chatHistory->getDisplayMessages();
         if ($messages === [] || count($messages) < $this->settings->get('llm.summary.minMessages')) {
             return;
         }
 
-        if (count($messages) > $this->settings->get('llm.summary.maxMessages') && $summary->getChatHistory()->getTitle() !== null) {
+        if (count($messages) > $this->settings->get('llm.summary.maxMessages') && $chatHistory->getTitle() !== null) {
             return;
         }
 

@@ -46,7 +46,7 @@ docker run -d -p 8080:80 \
 ## Fonctionnalités
 
 - Interface web de chat avec horodatage, annulation du dernier echange, affichage instantane du message utilisateur, mode streaming par defaut, raccourci pour revenir en bas de conversation et ajustements visuels sur les themes et la mise en page.
-- Endpoint API `POST /brain/chat` pour envoyer un message et récupérer la réponse de l'agent.
+- Endpoint API `POST /brain/messages` pour envoyer un message au traitement asynchrone du chat web.
 - Healthcheck `GET /health` (JSON) pour la supervision.
 - Intégration d'un fournisseur LLM « OpenAI-like » (URL, clé et modèle configurables).
 - Ajout automatique de la date et l'heure courantes dans le contexte système des agents.
@@ -704,49 +704,9 @@ Notes:
   ```
 - Si vous utilisez un autre proxy (Nginx, Traefik, etc.), désactivez la bufferisation équivalente (ex. Nginx: `proxy_buffering off;` sur l’emplacement concerné).
 
-### Endpoint de chat: POST /brain/chat
+### Architecture SSE actuelle de l’interface web
 
-L’agent supporte deux modes de réponse:
-
-- Mode « chat » (synchrone): la réponse complète est rendue côté serveur et renvoyée en une fois.
-- Mode web asynchrone avec SSE: le message utilisateur est envoyé par `POST /brain/messages`, puis l’interface reçoit les mises à jour via `GET /brain/stream`.
-
-La sélection historique via le champ `mode` sur `POST /brain/chat` reste documentée ici pour compatibilité, mais l’interface web actuelle utilise une architecture hybride SSE dédiée.
-
-#### Requête JSON simple (mode chat)
-
-```http
-POST /brain/chat HTTP/1.1
-Content-Type: application/json
-
-{
-  "message": "Bonjour Claire !",
-  "mode": "chat"
-}
-```
-
-Réponses possibles:
-- 200: corps HTML fragment (ex.: rendu Twig `partials/message.twig`) ou contenu texte selon l’intégration front.
-- 422: si le champ `message` est vide.
-
-#### Streaming SSE historique (mode stream)
-
-```http
-POST /brain/chat HTTP/1.1
-Accept: text/event-stream
-Content-Type: application/json
-
-{
-  "message": "Explique-moi la relativité en 3 points",
-  "mode": "stream"
-}
-```
-
-La réponse historique renvoie `content-type: text/stream` et `cache-control: no-cache`. Ce flux correspond à l’ancien mode de streaming direct de `POST /brain/chat`.
-
-#### Architecture SSE actuelle de l’interface web
-
-L’interface web n’utilise plus directement le flux `text/stream` de `POST /brain/chat`. Elle repose maintenant sur deux canaux SSE distincts:
+L’interface web repose sur deux canaux SSE distincts:
 
 1) Un flux HTMX SSE sur `GET /brain/stream?sessionId=<id>` pour les snapshots HTML nommés `chat.snapshot`.
 2) Un `EventSource` natif sur `GET /brain/stream?sessionId=<id>&mode=incremental` pour les événements JSON incrémentaux (placeholder, delta, tool updates, fin de réponse).
@@ -769,6 +729,37 @@ SSE chat.snapshot        -> remplace la liste HTML si nécessaire
 SSE incremental JSON     -> alimente le message assistant en direct
 ```
 
+#### Envoi d'un message au chat web
+
+```http
+POST /brain/messages HTTP/1.1
+Content-Type: multipart/form-data; boundary=----BOUND
+
+------BOUND
+Content-Disposition: form-data; name="message"
+
+Analyse ces documents, s'il te plaît.
+------BOUND
+Content-Disposition: form-data; name="chatId"
+
+chat-123
+------BOUND
+Content-Disposition: form-data; name="sessionId"
+
+sess-abc123
+------BOUND
+Content-Disposition: form-data; name="upload_files[]"; filename="notes.txt"
+Content-Type: text/plain
+
+(contenu du fichier)
+------BOUND--
+```
+
+Réponses possibles:
+- 202: message accepté et mis en file, avec `chatId` et `messageArticleId` en JSON.
+- 400: si `chatId` ou `sessionId` est absent.
+- 422: si le champ `message` est vide.
+
 #### Pièces jointes et fichiers
 
 Deux mécanismes sont pris en charge côté serveur pour enrichir le contexte utilisateur:
@@ -779,7 +770,7 @@ Deux mécanismes sont pris en charge côté serveur pour enrichir le contexte ut
 Exemple multipart (upload direct):
 
 ```http
-POST /brain/chat HTTP/1.1
+POST /brain/messages HTTP/1.1
 Content-Type: multipart/form-data; boundary=----BOUND
 
 ------BOUND
@@ -787,9 +778,13 @@ Content-Disposition: form-data; name="message"
 
 Analyse ces documents, s'il te plaît.
 ------BOUND
-Content-Disposition: form-data; name="mode"
+Content-Disposition: form-data; name="chatId"
 
-chat
+chat-123
+------BOUND
+Content-Disposition: form-data; name="sessionId"
+
+sess-abc123
 ------BOUND
 Content-Disposition: form-data; name="upload_files[]"; filename="notes.txt"
 Content-Type: text/plain
@@ -798,17 +793,33 @@ Content-Type: text/plain
 ------BOUND--
 ```
 
-Exemple JSON (fichiers déjà stockés):
+Exemple multipart avec fichiers déjà stockés:
 
 ```http
-POST /brain/chat HTTP/1.1
-Content-Type: application/json
+POST /brain/messages HTTP/1.1
+Content-Type: multipart/form-data; boundary=----BOUND
 
-{
-  "message": "Utilise mes fichiers pour répondre.",
-  "mode": "chat",
-  "file_ids": ["e7a4f2d8-...", "6b0e9c1a-..."]
-}
+------BOUND
+Content-Disposition: form-data; name="message"
+
+Utilise mes fichiers pour répondre.
+------BOUND
+Content-Disposition: form-data; name="chatId"
+
+chat-123
+------BOUND
+Content-Disposition: form-data; name="sessionId"
+
+sess-abc123
+------BOUND
+Content-Disposition: form-data; name="file_ids[]"
+
+e7a4f2d8-...
+------BOUND
+Content-Disposition: form-data; name="file_ids[]"
+
+6b0e9c1a-...
+------BOUND--
 ```
 
 Comportement serveur:
