@@ -231,4 +231,25 @@ class ShortMemory extends Summarization
 
         return $messages[$index]->getRole() === MessageRole::ASSISTANT->value;
     }
+
+    protected function getDefaultSummaryPrompt(): string
+    {
+        return <<<'PROMPT'
+Please provide a comprehensive summary of the following conversation.
+Extract the highest quality and most relevant pieces of information, including:
+
+- Key topics discussed
+- Important decisions made
+- Main directive
+- User directives that must be preserved and followed in future interactions
+- Critical information exchanged
+- Action items or next steps
+- Any unresolved questions or issues
+
+Your summary should be concise yet informative, capturing the essential context
+that would be needed to continue the conversation meaningfully.
+
+Make sure to clearly retain and highlight any instructions, preferences, or directives given by the user so they can be consistently respected afterward.
+PROMPT;
+    }
 }
