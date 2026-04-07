@@ -42,25 +42,32 @@
         </header>
 
         <main class="chat-body" style="position: relative; z-index: 1;">
-            <div id="messages" class="messages">
-                {% if messages is defined and messages is not null and messages is not empty %}
-                    {% for m in messages %}
-                        {% include 'partials/message.twig' with {
-                            message: m.message,
-                            time: m.time,
-                            sent: m.sent,
-                            toolCallId: m.toolCallId,
-                            toolCall: m.toolText,
-                        } %}
-                    {% endfor %}
-                {% endif %}
+            {# HTMX SSE container for chat snapshots - handles full message list updates #}
+            <div
+                id="chatStream"
+                hx-ext="sse"
+                sse-connect="{{ base_url }}/brain/stream?sessionId={{ stream_session_id }}"
+                sse-swap="chat.snapshot"
+                hx-target="#messages"
+                hx-swap="innerHTML"
+                data-chat-id="{{ current_chat_id }}"
+                data-stream-session-id="{{ stream_session_id }}"
+                style="display: contents;"
+            >
+                <div id="messages" class="messages" data-chat-messages data-chat-id="{{ current_chat_id }}">
+                    {% if messages is defined and messages is not null and messages is not empty %}
+                        {% for m in messages %}
+                            {% include 'partials/message.twig' with {
+                                message: m.message,
+                                time: m.time,
+                                sent: m.sent,
+                                toolCallId: m.toolCallId,
+                                toolCall: m.toolText,
+                            } %}
+                        {% endfor %}
+                    {% endif %}
+                </div>
             </div>
-            <div id="typingIndicator" class="typing-indicator htmx-indicator" aria-hidden="true">
-                <span class="typing-indicator__dot"></span>
-                <span class="typing-indicator__dot"></span>
-                <span class="typing-indicator__dot"></span>
-            </div>
-            <!-- Ascenseur: bouton pour descendre en bas du chat -->
             <button
                     id="scrollDownBtn"
                     class="scroll-down-button"
@@ -76,26 +83,21 @@
 
         <footer class="chat-input">
             <form class="chat-input__form" id="brain_chat"
-                  hx-post="{{ base_url }}/brain/chat"
-                  hx-ext="stream"
-                  hx-target="#messages"
-                  hx-swap="beforeend"
-                  hx-indicator="#typingIndicator"
+                  hx-post="{{ base_url }}/brain/messages"
+                  hx-swap="none"
                   hx-encoding="multipart/form-data"
                   hx-on::after-request="clearInput(event)"
                   hx-on::before-request="chatClick(event)"
-                  data-mode="{{ chat_mode|default('chat') }}"
             >
                 <label class="chat-icon-btn chat-icon-btn--upload form_disabler chat-input__toggleable" for="chat-upload" aria-label="Joindre un fichier">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
                     </svg>
                 </label>
-                <input type="hidden" name="mode" id="chat-input_mode" value="{{ chat_mode|default('chat') }}" />
+                <input type="hidden" name="chatId" value="{{ current_chat_id }}" data-current-chat-id-input />
+                <input type="hidden" name="sessionId" value="{{ stream_session_id }}" data-stream-session-id-input />
                 <input class="chat-input__file" type="file" id="chat-upload" name="upload_files[]" multiple accept="{{ settings.get('files.upload.acceptedExt') }}" />
-                {# Container for attached file chips (chat mode) #}
                 <span id="chatAttachedFilesChat" class="chat-attached"></span>
-                {# Hidden inputs for selected file IDs (from Files list) #}
                 <span id="chatAttachedFilesChatHidden" hidden></span>
                 <textarea
                         class="chat-input__field chat-input__field--multiline form_disabler"
@@ -111,9 +113,9 @@
                             aria-label="Annuler le dernier échange"
                             title="Annuler le dernier échange"
                             hx-delete="{{ base_url }}/history/exchange/last"
-                            hx-target="#messages"
-                            hx-swap="innerHTML"
+                            hx-swap="none"
                             hx-indicator="#globalActionIndicator"
+                            hx-vals="js:{sessionId: window.claireStreamSessionId || ''}"
                             hx-on::after-request="handleLastExchangeResponse(event)"
                     >
                         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -134,110 +136,361 @@
 
 {% block script %}
 <script>
-    // Bascule du mode chat/stream selon l'option (événement global)
-    (function () {
-        window.addEventListener('chat-mode-changed', function (e) {
-            const mode = e.detail && e.detail.mode ? e.detail.mode : 'chat';
-            const chatForm = document.getElementById('brain_chat');
-            const inputMode = document.getElementById('chat-input_mode');
-            if (!chatForm && !inputMode) return;
-            chatForm.setAttribute('data-mode', mode);
-            inputMode.setAttribute('value', mode);
-        });
-    })();
-
     // Gestion locale des pièces jointes: chips avec suppression + synchronisation du formulaire
+    // Hybrid SSE: HTMX SSE handles chat.snapshot, native EventSource handles incremental updates
     (function () {
+
+        // Native EventSource for incremental updates only (placeholder, delta, tool.update)
+        // HTMX SSE handles chat.snapshot via sse-swap
+        // Per-tab session ID for SSE binding (stored in sessionStorage to survive navigation)
+        (function() {
+            const STORAGE_KEY = 'claireStreamSessionId';
+            const chatStreamContainer = document.getElementById('chatStream');
+            const serverSessionId = chatStreamContainer
+                ? chatStreamContainer.getAttribute('data-stream-session-id')
+                : null;
+
+            // Always prefer the server-provided session ID for the current tab load,
+            // then persist it in sessionStorage for subsequent in-tab requests.
+            let sessionId = serverSessionId || window.sessionStorage.getItem(STORAGE_KEY);
+            if (sessionId) {
+                window.sessionStorage.setItem(STORAGE_KEY, sessionId);
+            }
+
+            // Make it globally available for SSE URL construction
+            window.claireStreamSessionId = sessionId;
+        })();
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const sessionId = window.claireStreamSessionId;
+            if (!sessionId) {
+                return;
+            }
+
+            initIncrementalEventSource(sessionId);
+        });
+
+        function setComposerBusyState(isBusy) {
+            const form = document.getElementById('brain_chat');
+            if (!form) {
+                return;
+            }
+
+            const disablers = form.querySelectorAll('.form_disabler');
+            disablers.forEach((element) => {
+                if (isBusy) {
+                    element.setAttribute('disabled', true);
+                    return;
+                }
+
+                element.removeAttribute('disabled');
+            });
+
+            form.classList.toggle('is-busy', isBusy);
+        }
+
+        function finalizeAssistantResponse() {
+            const messages = document.getElementById('messages');
+            if (messages) {
+                const loader = messages.querySelector('[data-role="assistant-loader"]');
+                if (loader) {
+                    loader.remove();
+                }
+            }
+
+            setComposerBusyState(false);
+        }
+
+        function removeAssistantLoader() {
+            const messages = document.getElementById('messages');
+            if (!messages) {
+                return;
+            }
+
+            const loader = messages.querySelector('[data-role="assistant-loader"]');
+            if (loader) {
+                loader.remove();
+            }
+        }
+
+        function handleIncrementalUpdate(update) {
+            if (update.html) {
+                Object.entries(update.html).forEach(([elementId, htmlContent]) => {
+                    const mode = update.mode || 'replace';
+                    let element = document.getElementById(elementId);
+
+                    if (mode === 'append' && elementId === 'messages') {
+                        element = document.getElementById('messages');
+                        if (element) {
+                            const incomingWrapper = document.createElement('div');
+                            incomingWrapper.innerHTML = htmlContent.trim();
+                            const incomingArticle = incomingWrapper.firstElementChild;
+                            const incomingMessageId = update.messageId || incomingArticle?.querySelector('[id]')?.id || null;
+
+                            if (incomingArticle && incomingMessageId) {
+                                const existingTarget = document.getElementById(incomingMessageId);
+                                const existingArticle = existingTarget
+                                    ? existingTarget.closest('.message')
+                                    : (update.messageArticleId
+                                        ? document.getElementById(update.messageArticleId)
+                                        : null);
+                                if (existingArticle) {
+                                    existingArticle.outerHTML = htmlContent;
+                                } else {
+                                    const loader = element.querySelector('[data-role="assistant-loader"]');
+                                    if (loader) {
+                                        loader.outerHTML = htmlContent;
+                                    } else {
+                                        element.insertAdjacentHTML('beforeend', htmlContent);
+                                    }
+                                }
+                            } else {
+                                const loader = element.querySelector('[data-role="assistant-loader"]');
+                                if (loader) {
+                                    loader.outerHTML = htmlContent;
+                                } else {
+                                    element.insertAdjacentHTML('beforeend', htmlContent);
+                                }
+                            }
+                        }
+                    } else if (update.event === 'tool.update' && update.toolCallId) {
+                        const articleTarget = update.messageId ? document.getElementById(update.messageId) : null;
+                        if (articleTarget) {
+                            let toolNode = document.getElementById(update.toolCallId);
+                            if (!toolNode) {
+                                toolNode = ensureToolNode(articleTarget, update.toolCallId);
+                            }
+                            if (toolNode) {
+                                toolNode.innerHTML = htmlContent;
+                            }
+                        }
+                    } else if (element) {
+                        element.innerHTML = htmlContent;
+
+                        const chatBody = document.querySelector('.chat-body');
+                        if (chatBody) {
+                            chatBody.scrollTop = chatBody.scrollHeight;
+                        }
+                    } else {
+                    }
+                });
+            }
+
+            if (update.js) {
+                Object.entries(update.js).forEach(([key, value]) => {
+                    if (key === 'exec') {
+                        eval(value);
+                    } else {
+                        window[key] = value;
+                    }
+                });
+            }
+
+            if (update.event === 'message.assistant.start') {
+                removeAssistantLoader();
+            }
+
+            if (update.event === 'message.assistant.done') {
+                finalizeAssistantResponse();
+            }
+
+            if (update.error) {
+                finalizeAssistantResponse();
+                const messages = document.getElementById('messages');
+                if (messages) {
+                    messages.insertAdjacentHTML('beforeend', '<article class="message message--received"><div class="message__bubble"><span class="message__text">' + update.error + '</span></div></article>');
+                }
+            }
+        }
+
+        function initIncrementalEventSource(sessionId) {
+            // Close existing connection if any
+            if (window.chatIncrementalEventSource) {
+                window.chatIncrementalEventSource.close();
+            }
+
+            // Create new EventSource connection for incremental updates
+            // Uses sessionId (per-tab) instead of chatId to maintain stable SSE binding across chat switches
+            const sseUrl = '{{ base_url }}/brain/stream?sessionId=' + encodeURIComponent(sessionId) + '&mode=incremental';
+            window.chatIncrementalEventSource = new EventSource(sseUrl);
+
+            window.chatIncrementalEventSource.onmessage = function(event) {
+                try {
+                    const update = JSON.parse(event.data);
+
+                    handleIncrementalUpdate(update);
+                } catch (error) {}
+            };
+
+            window.chatIncrementalEventSource.onerror = function(error) {
+                window.chatIncrementalEventSource.close();
+
+                // Attempt reconnection after 5 seconds
+                setTimeout(function() {
+                    initIncrementalEventSource(sessionId);
+                }, 5000);
+            };
+        }
+
         window.chatClick = function chatClick(event) {
             const form = event.target;
-           // Désactiver tous les éléments du formulaire avec la classe form_disabler
-            const disablers = form.querySelectorAll('.form_disabler');
-            disablers.forEach(el => { el.setAttribute('disabled', true); });
-            form.classList.add('is-busy');
+            setComposerBusyState(true);
 
             const input = form.querySelector('[name="message"]');
             if (!input) return;
             const text = (input.value || '').trim();
-            if (!text) return; // nothing to append
+            if (!text) return;
+
             const messages = document.getElementById('messages');
             const chatBody = document.querySelector('.chat-body');
             const scrollBtn = document.getElementById('scrollDownBtn');
             if (!messages || !chatBody) return;
-            // Build the message bubble
+
             const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
             const wrapper = document.createElement('div');
-            wrapper.innerHTML = '<article class="message message--sent">\
-            <div class="message__bubble"></div>\
-            <span class="message__meta"></span>\
-        </article>';
+            wrapper.innerHTML = '<article class="message message--sent"><div class="message__bubble"></div><span class="message__meta"></span></article>';
             const article = wrapper.firstElementChild;
             article.querySelector('.message__bubble').textContent = text;
             article.querySelector('.message__meta').textContent = time + ' • Vous';
             messages.appendChild(article);
-            // Ensure we scroll to the bottom to keep the newest message in view
+
+            const loader = document.createElement('article');
+            loader.className = 'message';
+            loader.id = 'assistant-loader';
+            loader.setAttribute('data-role', 'assistant-loader');
+            loader.innerHTML = '<div class="message__bubble"><span class="typing-indicator" aria-hidden="true"><span class="typing-indicator__dot"></span><span class="typing-indicator__dot"></span><span class="typing-indicator__dot"></span></span></div>';
+            messages.appendChild(loader);
+
             chatBody.scrollTop = chatBody.scrollHeight;
             if (scrollBtn) scrollBtn.style.display = 'none';
-            // Do not clear input here; it will be cleared on successful response via hx-on::after-request
-        }
+        };
 
         function autoResizeComposer(input) {
-            if (!input) {
-                return;
-            }
-
+            if (!input) return;
             input.style.height = 'auto';
             input.style.height = Math.min(input.scrollHeight, 160) + 'px';
         }
 
         function updateComposerToggleState(input) {
-            if (!input) {
-                return;
-            }
-
+            if (!input) return;
             const form = input.closest('form');
-            if (!form) {
-                return;
-            }
-
+            if (!form) return;
             form.classList.toggle('chat-input__form--typing', input.value.trim() !== '');
         }
 
         window.clearInput = function clearInput(event) {
-            const form = event.target;
+            const detail = event.detail || {};
+            if (!detail.successful) return;
 
-            const disablers = form.querySelectorAll('.form_disabler');
-            disablers.forEach(el => { el.removeAttribute('disabled'); });
-            form.classList.remove('is-busy');
-
-            if(!event.detail.successful) {
+            const form = detail.elt instanceof HTMLFormElement
+                ? detail.elt
+                : (event.target instanceof HTMLFormElement ? event.target : null);
+            if (!form) {
                 return;
             }
-            event.target.reset();
-            let elements = document.querySelectorAll('.chat-chip__remove');
-            elements.forEach(element => {removeChatChip(element);})
+
+            form.reset();
+            document.querySelectorAll('.chat-chip__remove').forEach(el => removeChatChip(el));
 
             const input = form.querySelector('[name="message"]');
             autoResizeComposer(input);
             updateComposerToggleState(input);
+        };
+
+        window.updatePersistentChatStream = function updatePersistentChatStream(chatId) {
+            const chatStreamContainer = document.getElementById('chatStream');
+            const messagesContainer = document.getElementById('messages');
+            const chatIdInput = document.querySelector('[data-current-chat-id-input]');
+            const sessionId = window.claireStreamSessionId;
+
+            if (!chatStreamContainer || !chatId || !sessionId) {
+                return;
+            }
+
+            // Update data attributes (chatId changes, sessionId stays stable per tab)
+            chatStreamContainer.setAttribute('data-chat-id', chatId);
+            if (messagesContainer) messagesContainer.setAttribute('data-chat-id', chatId);
+            if (chatIdInput) chatIdInput.value = chatId;
+
+            // HTMX SSE connection uses stable sessionId (not chatId)
+            const newSseUrl = '{{ base_url }}/brain/stream?sessionId=' + encodeURIComponent(sessionId);
+            chatStreamContainer.setAttribute('sse-connect', newSseUrl);
+
+            // Reprocess HTMX SSE extension to pick up new URL
+            if (window.htmx) {
+                window.htmx.process(chatStreamContainer);
+            }
+
+            // Close and reopen incremental EventSource with stable sessionId
+            if (window.chatIncrementalEventSource) {
+                window.chatIncrementalEventSource.close();
+            }
+
+            const incrementalUrl = newSseUrl + '&mode=incremental';
+            window.chatIncrementalEventSource = new EventSource(incrementalUrl);
+
+            window.chatIncrementalEventSource.onmessage = function(event) {
+                try {
+                    const update = JSON.parse(event.data);
+                    handleIncrementalUpdate(update);
+                } catch (error) {}
+            };
+
+            window.chatIncrementalEventSource.onerror = function(error) {
+                window.chatIncrementalEventSource.close();
+                setTimeout(function() {
+                    initIncrementalEventSource(sessionId);
+                }, 5000);
+            };
+        };
+
+        function ensureToolNode(articleTarget, toolCallId) {
+            const existing = document.getElementById(toolCallId);
+            if (existing) {
+                return existing;
+            }
+
+            const bubble = articleTarget.closest('.message')?.querySelector('.message__bubble') || articleTarget.parentElement;
+            if (!bubble) {
+                return null;
+            }
+
+            const placeholderHtml = '<div class="message__subbubble message__subbubble--toolcall">'
+                + '<details class="toolcall">'
+                + '<summary class="toolcall__summary" aria-label="Appels d\'outils" title="Appels d\'outils">'
+                + '<svg class="toolcall__icon toolcall__icon--tool" width="18" height="18" viewBox="0 0 128 128" role="img" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M114 15.25H14A9.761 9.761 0 0 0 4.25 25v77A10.762 10.762 0 0 0 15 112.75h98A10.762 10.762 0 0 0 123.75 102V25a9.761 9.761 0 0 0-9.75-9.75zm6.25 9.75v11.683H52.888L61.37 18.75H114a6.257 6.257 0 0 1 6.25 6.25zM14 18.75h43.5l-8.484 17.933H7.75V25A6.257 6.257 0 0 1 14 18.75zm76.1 90.5-22.287-22.3a1.75 1.75 0 0 0-2.476 2.475l19.809 19.825h-8.871L58.627 91.593a1.762 1.762 0 0 0-1.908-.571 18.762 18.762 0 0 1-23.447-22.754l12.991 12.989a1.753 1.753 0 0 0 1.18.512c.368.021 3.7-.014 8.193-4.51s4.516-7.825 4.5-8.192a1.747 1.747 0 0 0-.512-1.174L46.637 54.9a18.751 18.751 0 0 1 22.745 23.49 1.743 1.743 0 0 0 .563 1.838l29.02 29.02zm22.905 0h-9.085l-30.9-30.9a22.248 22.248 0 0 0-30.281-25.8 1.749 1.749 0 0 0-.554 2.848l14.339 14.341a12.036 12.036 0 0 1-3.362 5.043 12.231 12.231 0 0 1-5.051 3.374L33.767 63.813a1.75 1.75 0 0 0-2.849.554 22.258 22.258 0 0 0 25.811 30.278l14.6 14.605H15A7.258 7.258 0 0 1 7.75 102V40.183h112.5V102a7.258 7.258 0 0 1-7.25 7.25z"/><path d="M21.57 33.466a5.75 5.75 0 1 0-5.75-5.75 5.756 5.756 0 0 0 5.75 5.75zm0-8a2.25 2.25 0 1 1-2.25 2.25 2.253 2.253 0 0 1 2.25-2.25zM37.626 33.466a5.75 5.75 0 1 0-5.75-5.75 5.756 5.756 0 0 0 5.75 5.75zm0-8a2.25 2.25 0 1 1-2.25 2.25 2.253 2.253 0 0 1 2.25-2.25zM67.522 29.466h44.745a1.75 1.75 0 0 0 0-3.5H67.522a1.75 1.75 0 0 0 0 3.5z"/></g></svg>'
+                + '<svg class="toolcall__icon toolcall__icon--spinner" width="18" height="18" viewBox="0 0 24 24" role="img" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" opacity="0.25" /><path d="M21 12a9 9 0 0 0-9-9" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" /></path></g></svg>'
+                + '<svg class="toolcall__icon toolcall__icon--done" width="18" height="18" viewBox="0 0 24 24" role="img" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" opacity="0.25" /><path d="M8 12l2.5 2.5L16 9" /></g></svg>'
+                + '<svg class="toolcall__chevron" width="14" height="14" viewBox="0 0 24 24" role="img" aria-hidden="true"><path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+                + '<span class="visually-hidden">Appels d\'outils</span>'
+                + '</summary>'
+                + '<div class="toolcall__text" id="' + toolCallId + '"></div>'
+                + '</details>'
+                + '</div>';
+
+            bubble.insertAdjacentHTML('afterbegin', placeholderHtml);
+
+            return document.getElementById(toolCallId);
         }
 
         window.handleLastExchangeResponse = function handleLastExchangeResponse(event) {
             const detail = event.detail || {};
-            const chatBody = document.querySelector('.chat-body');
-            const scrollBtn = document.getElementById('scrollDownBtn');
-
             if (!detail.successful) {
+                setComposerBusyState(false);
                 return;
             }
 
-            if (chatBody) {
-                chatBody.scrollTop = chatBody.scrollHeight;
-            }
+            try {
+                const payload = JSON.parse(detail.xhr.responseText || '{}');
+                if (payload.chatId && window.updatePersistentChatStream) {
+                    window.updatePersistentChatStream(payload.chatId);
+                }
+            } catch (e) {}
 
-            if (scrollBtn) {
-                scrollBtn.style.display = 'none';
-            }
-        }
+            const chatBody = document.querySelector('.chat-body');
+            if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
+            setComposerBusyState(false);
+        };
 
         function $(sel, root=document) { return root.querySelector(sel); }
         function chipSelectorById(id) { return '.chat-chip[data-file-id="' + CSS.escape(String(id)) + '"]'; }
@@ -256,17 +509,10 @@
         };
 
         function svgFileIcon() {
-            return '<svg viewBox="0 0 24 24" aria-hidden="true">\
-                <path d="M6 2h7l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>\
-                <path d="M13 2v6h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>\
-            </svg>';
+            return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h7l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13 2v6h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
         }
         function removeBtn() {
-            return '<button type="button" class="chat-chip__remove" aria-label="Retirer" title="Retirer">\
-                <svg viewBox="0 0 24 24" aria-hidden="true">\
-                    <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>\
-                </svg>\
-            </button>';
+            return '<button type="button" class="chat-chip__remove" aria-label="Retirer" title="Retirer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>';
         }
 
         function createIdChip(fileId, fileName) {
@@ -323,7 +569,6 @@
             return [file.name, file.size, file.type, file.lastModified].join('|');
         }
 
-        // Click on "Ajouter à la conversation" from Files list → add ID chips and hidden inputs
         document.addEventListener('click', function (e) {
             const btn = e.target && e.target.closest ? e.target.closest('[data-add-file-id]') : null;
             if (!btn) return;
@@ -340,7 +585,6 @@
             }
         });
 
-        // Local file selection via <input type=file multiple>
         for (const mode of Object.keys(containers)) {
             const { chips, fileInput } = containers[mode];
             if (!fileInput || !chips) continue;
@@ -364,24 +608,15 @@
                 updateComposerToggleState(messageInput);
             });
             messageInput.addEventListener('keydown', function (event) {
-                if (event.key !== 'Enter' || event.shiftKey) {
-                    return;
-                }
-
+                if (event.key !== 'Enter' || event.shiftKey) return;
                 event.preventDefault();
-
                 const form = messageInput.closest('form');
-                if (!form || !messageInput.value.trim()) {
-                    return;
-                }
-
+                if (!form || !messageInput.value.trim()) return;
                 if (typeof form.requestSubmit === 'function') {
                     form.requestSubmit();
-
-                    return;
+                } else {
+                    form.submit();
                 }
-
-                form.submit();
             });
         }
 
@@ -396,7 +631,6 @@
                 const fid = chip.getAttribute('data-file-id');
                 removeHiddenId(containers.chat.hidden, fid);
                 removeHiddenId(containers.stream.hidden, fid);
-                // Remove from both chip containers if duplicated
                 for (const mode of Object.keys(containers)) {
                     const list = containers[mode].chips;
                     if (!list) continue;
@@ -410,33 +644,30 @@
                 for (const mode of Object.keys(containers)) {
                     const list = containers[mode].chips;
                     if (!list) continue;
-                    list.querySelectorAll('.chat-chip[data-type="local"][data-tmp-key="' + CSS.escape(tmpKey) + '"]')
-                        .forEach(node => node.remove());
+                    list.querySelectorAll('.chat-chip[data-type="local"][data-tmp-key="' + CSS.escape(tmpKey) + '"]').forEach(node => node.remove());
                 }
             }
         }
 
-        // Remove chip (either id-based or local upload)
         document.addEventListener('click', function (e) {
             removeChatChip(e.target);
         });
     })();
 
-    // Gestion de l'ascenseur (bouton descendre en bas)
+    // Gestion de l'ascenseur
     (function () {
         const chatBody = document.querySelector('.chat-body');
         const messages = document.getElementById('messages');
         const scrollBtn = document.getElementById('scrollDownBtn');
         if (!chatBody || !scrollBtn) return;
 
-        const threshold = 24; // px avant le bas pour cacher le bouton
+        const threshold = 24;
 
         function atBottomOf(el) {
             return el.scrollTop + el.clientHeight >= el.scrollHeight - threshold;
         }
 
         function updateButtonVisibility() {
-            // Si pas de débordement, cacher
             if (chatBody.scrollHeight <= chatBody.clientHeight + 1) {
                 scrollBtn.style.display = 'none';
                 return;
@@ -456,12 +687,10 @@
             chatBody.scrollTo({top: chatBody.scrollHeight, behavior: 'smooth'});
         });
 
-        // Met à jour à l'initialisation sans forcer de scroll
         window.addEventListener('DOMContentLoaded', function () {
             updateButtonVisibility();
         });
 
-        // Après chaque swap HTMX, on met uniquement à jour le bouton
         document.body.addEventListener('htmx:afterSwap', function (evt) {
             const detail = evt.detail || {};
             const target = detail.target;
@@ -470,7 +699,6 @@
             }
         });
 
-        // Observe les mutations du contenu des messages (fallback si pas d'HTMX)
         if (window.MutationObserver && messages) {
             const mo = new MutationObserver(function () {
                 updateButtonVisibility();
@@ -478,7 +706,6 @@
             mo.observe(messages, {childList: true, subtree: false});
         }
 
-        // Premier calcul
         updateButtonVisibility();
     })();
 </script>

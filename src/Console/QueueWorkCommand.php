@@ -19,7 +19,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class QueueWorkCommand extends Command
 {
     // Not in __Construct because redis could not be available at this time
-    private ?QueueWorker $queueWorker;
+    private ?QueueWorker $queueWorker = null;
 
     public function __construct(
         private readonly ContainerInterface $container,
@@ -46,7 +46,7 @@ final class QueueWorkCommand extends Command
         $this->setupSignalHandlers();
 
         $workerId = sprintf('%s:%d', gethostname() ?: 'localhost', getmypid());
-        $options = new QueueWorkerOptions(
+        $queueWorkerOptions = new QueueWorkerOptions(
             queueName: (string) ($input->getOption('queue') ?: $this->settings->get('queue.defaultQueue')),
             sleep: max(1, (int) ($input->getOption('sleep') ?: $this->settings->get('queue.sleep'))),
             once: (bool) $input->getOption('once'),
@@ -54,9 +54,9 @@ final class QueueWorkCommand extends Command
             maxTime: max(0, (int) $input->getOption('max-time')),
         );
 
-        $output->writeln(sprintf('<info>Starting queue worker %s on queue %s</info>', $workerId, $options->queueName));
+        $output->writeln(sprintf('<info>Starting queue worker %s on queue %s</info>', $workerId, $queueWorkerOptions->queueName));
 
-        $processedJobs = $this->queueWorker->run($options, $workerId, $output);
+        $processedJobs = $this->queueWorker->run($queueWorkerOptions, $workerId, $output);
 
         $output->writeln(sprintf('<info>Queue worker stopped after %d job(s)</info>', $processedJobs));
 

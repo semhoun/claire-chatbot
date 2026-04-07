@@ -82,12 +82,13 @@
     function close() {
         backdrop.classList.remove('is-visible');
         modal.classList.remove('is-open');
-        modal.setAttribute('aria-hidden', 'true');
         doc.body.classList.remove('modal-open');
         doc.removeEventListener('keydown', trapFocus, true);
+        // Move focus before hiding from assistive tech to avoid aria-hidden warning
         if (lastActive && typeof lastActive.focus === 'function') {
-            setTimeout(() => lastActive.focus(), 0);
+            lastActive.focus();
         }
+        modal.setAttribute('aria-hidden', 'true');
         modal.dispatchEvent(new CustomEvent('dialog:close', {bubbles: true}));
     }
 

@@ -354,6 +354,7 @@ body.compact .chat-body {
     transition: padding 0.2s ease, margin 0.2s ease, box-shadow 0.2s ease;
 }
 
+
 /* Expanded state: take full width and comfortable spacing */
 .message__subbubble--toolcall:has(.toolcall[open]) {
     display: block;
@@ -469,19 +470,9 @@ body.compact .chat-body {
 }
 
 .typing-indicator {
-    display: none; /* hidden by default, shown during request */
+    display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 12px 14px;
-    background: var(--accent-soft);
-    border-radius: 999px;
-    align-self: flex-start;
-    box-shadow: 0 7px 16px var(--accent-shadow);
-}
-
-/* Show the typing indicator while an HTMX request is in progress on it */
-.typing-indicator.htmx-request {
-    display: flex;
 }
 
 .typing-indicator__dot {

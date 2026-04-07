@@ -1,8 +1,8 @@
-# Claire 1.3.1 — Agent de Chat IA (PHP, Slim 4)
+# Claire — Agent de Chat IA (PHP, Slim 4)
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-Claire 1.3.1 est une application web de chat IA construite avec Slim 4, Twig et Neuron AI. Elle fournit une interface web, un endpoint API, une integration Telegram et un runtime Docker base sur FrankenPHP/Caddy pour piloter des LLM compatibles OpenAI.
+Claire est une application web de chat IA construite avec Slim 4, Twig et Neuron AI. Elle fournit une interface web, un endpoint API, une integration Telegram et un runtime Docker base sur FrankenPHP/Caddy pour piloter des LLM compatibles OpenAI.
 
 ## Démarrage rapide
 
@@ -45,8 +45,8 @@ docker run -d -p 8080:80 \
 
 ## Fonctionnalités
 
-- Interface web de chat avec horodatage, annulation du dernier echange, affichage instantane du message utilisateur, mode streaming par defaut, raccourci pour revenir en bas de conversation et ajustements visuels sur les themes et la mise en page.
-- Endpoint API `POST /brain/chat` pour envoyer un message et récupérer la réponse de l'agent.
+- Interface web de chat avec streaming SSE, horodatage, suppression du dernier message, affichage instantane du message utilisateur, raccourci pour revenir en bas de conversation et ajustements visuels sur les themes et la mise en page.
+- Endpoint API `POST /brain/messages` pour envoyer un message au traitement asynchrone du chat web.
 - Healthcheck `GET /health` (JSON) pour la supervision.
 - Intégration d'un fournisseur LLM « OpenAI-like » (URL, clé et modèle configurables).
 - Ajout automatique de la date et l'heure courantes dans le contexte système des agents.
@@ -509,6 +509,9 @@ services:
 
       DATA_PATH: /data
 
+      # Queue workers (optionnel, défaut: 1)
+      # QUEUE_WORKERS: 2
+
       # Session JWT (obligatoire)
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?set_me}
 
@@ -595,6 +598,10 @@ Notes Docker/FrankenPHP:
 - `ENABLE_ACCESS_LOGS` permet d'activer ou couper les logs d'acces HTTP sans rebuilder l'image.
 - Pour Let's Encrypt, le domaine doit etre publiquement resolvable vers le conteneur et les ports 80/443 doivent etre accessibles.
 
+#### Variables d'environnement Docker
+
+- `QUEUE_WORKERS` — Nombre de workers de queue Redis à lancer (défaut: 1). Augmentez cette valeur si vous avez besoin de traiter plus de jobs en parallèle (ex: `QUEUE_WORKERS=4`). Chaque worker tourne dans son propre processus supervisé.
+
 #### Points clés de l'image Docker
 
 - **Base**: Debian Trixie Slim avec PHP 8.4
@@ -643,8 +650,8 @@ services:
   - Réponse 200 (exemple):
     ```json
     {
-      "version": "1.3.1",
-      "date": "2025-01-01T12:34:56+00:00"
+      "version": "1.4.0",
+      "date": "2026-04-08T12:34:56+00:00"
     }
     ```
   - Utilisation typique: sonde de conteneur/orchestrateur (Docker, Traefik, Kubernetes, etc.).
@@ -670,7 +677,7 @@ services:
 
 ### Configuration (/config)
 
-- `POST /config/chat_mode` — Changer le mode de chat (sync/stream)
+- `POST /config/chat_mode` — Changer le mode de chat (déprécié, streaming uniquement depuis v1.4.0)
 - `POST /config/layout_mode` — Changer le mode d'affichage
 - `POST /config/brain_avatar` — Changer l'avatar/cerveau actif
 - `POST /config/telegram` — Configurer Telegram
@@ -704,45 +711,61 @@ Notes:
   ```
 - Si vous utilisez un autre proxy (Nginx, Traefik, etc.), désactivez la bufferisation équivalente (ex. Nginx: `proxy_buffering off;` sur l’emplacement concerné).
 
-### Endpoint de chat: POST /brain/chat
+### Architecture SSE (Server-Sent Events)
 
-L’agent supporte deux modes de réponse:
+**Note importante**: Depuis la version 1.4.0, l'interface web fonctionne **exclusivement en mode streaming** via SSE. Le mode chat classique (synchrone) a été supprimé.
 
-- Mode « chat » (synchrone): la réponse complète est rendue côté serveur et renvoyée en une fois.
-- Mode streaming SSE: la réponse est envoyée progressivement via un flux `text/stream` (utilise une sortie non tamponnée côté application; veillez à désactiver la bufferisation côté proxy, voir plus haut).
+L’interface web
 
-La sélection du mode peut se faire via le champ `mode` dans le corps de la requête (`chat` par défaut, ou `stream`).
+L’interface web repose sur deux canaux SSE distincts:
 
-#### Requête JSON simple (mode chat)
+1) Un flux HTMX SSE sur `GET /brain/stream?sessionId=<id>` pour les snapshots HTML nommés `chat.snapshot`.
+2) Un `EventSource` natif sur `GET /brain/stream?sessionId=<id>&mode=incremental` pour les événements JSON incrémentaux (placeholder, delta, tool updates, fin de réponse).
+
+Le `sessionId` est généré côté serveur lors du chargement de `/`, stocké en `sessionStorage` par onglet, puis réutilisé pour:
+
+- la connexion SSE persistante;
+- l’envoi des messages via `POST /brain/messages`;
+- les actions liées à l’historique qui doivent publier un snapshot vers le bon onglet.
+
+Le frontend charge l’extension SSE HTMX localement via `public/js/sse.js`. L’ancien helper `public/js/htmx-stream.js` n’est plus utilisé.
+
+Exemple simplifié de cycle web actuel:
+
+```text
+GET /                    -> rend la page + stream_session_id
+GET /brain/stream        -> ouvre les flux SSE liés au sessionId
+POST /brain/messages     -> met le message en file et déclenche le traitement async
+SSE chat.snapshot        -> remplace la liste HTML si nécessaire
+SSE incremental JSON     -> alimente le message assistant en direct
+```
+
+#### Envoi d'un message au chat web
 
 ```http
-POST /brain/chat HTTP/1.1
-Content-Type: application/json
+POST /brain/messages HTTP/1.1
+Content-Type: multipart/form-data; boundary=----BOUND
 
-{
-  "message": "Bonjour Claire !",
-  "mode": "chat"
-}
+------BOUND
+Content-Disposition: form-data; name="message"
+
+Analyse ces documents, s'il te plaît.
+------BOUND
+Content-Disposition: form-data; name="sessionId"
+
+sess-abc123
+------BOUND
+Content-Disposition: form-data; name="upload_files[]"; filename="notes.txt"
+Content-Type: text/plain
+
+(contenu du fichier)
+------BOUND--
 ```
 
 Réponses possibles:
-- 200: corps HTML fragment (ex.: rendu Twig `partials/message.twig`) ou contenu texte selon l’intégration front.
+- 202: message accepté et mis en file, avec `messageArticleId` en JSON.
+- 400: si `sessionId` est absent.
 - 422: si le champ `message` est vide.
-
-#### Streaming SSE (mode stream)
-
-```http
-POST /brain/chat HTTP/1.1
-Accept: text/event-stream
-Content-Type: application/json
-
-{
-  "message": "Explique-moi la relativité en 3 points",
-  "mode": "stream"
-}
-```
-
-La réponse aura des en-têtes: `content-type: text/stream`, `cache-control: no-cache`. Les chunks contiendront du texte (et potentiellement des informations d’outillage) au fil de l’eau.
 
 #### Pièces jointes et fichiers
 
@@ -754,7 +777,7 @@ Deux mécanismes sont pris en charge côté serveur pour enrichir le contexte ut
 Exemple multipart (upload direct):
 
 ```http
-POST /brain/chat HTTP/1.1
+POST /brain/messages HTTP/1.1
 Content-Type: multipart/form-data; boundary=----BOUND
 
 ------BOUND
@@ -762,9 +785,9 @@ Content-Disposition: form-data; name="message"
 
 Analyse ces documents, s'il te plaît.
 ------BOUND
-Content-Disposition: form-data; name="mode"
+Content-Disposition: form-data; name="sessionId"
 
-chat
+sess-abc123
 ------BOUND
 Content-Disposition: form-data; name="upload_files[]"; filename="notes.txt"
 Content-Type: text/plain
@@ -773,17 +796,29 @@ Content-Type: text/plain
 ------BOUND--
 ```
 
-Exemple JSON (fichiers déjà stockés):
+Exemple multipart avec fichiers déjà stockés:
 
 ```http
-POST /brain/chat HTTP/1.1
-Content-Type: application/json
+POST /brain/messages HTTP/1.1
+Content-Type: multipart/form-data; boundary=----BOUND
 
-{
-  "message": "Utilise mes fichiers pour répondre.",
-  "mode": "chat",
-  "file_ids": ["e7a4f2d8-...", "6b0e9c1a-..."]
-}
+------BOUND
+Content-Disposition: form-data; name="message"
+
+Utilise mes fichiers pour répondre.
+------BOUND
+Content-Disposition: form-data; name="sessionId"
+
+sess-abc123
+------BOUND
+Content-Disposition: form-data; name="file_ids[]"
+
+e7a4f2d8-...
+------BOUND
+Content-Disposition: form-data; name="file_ids[]"
+
+6b0e9c1a-...
+------BOUND--
 ```
 
 Comportement serveur:

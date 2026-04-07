@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
+use App\Services\ChatStreamPublisher;
 use App\Services\Auth;
 use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Settings;
@@ -27,7 +28,7 @@ final readonly class HistoryController
         private EntityManagerInterface $entityManager,
         private BrainRegistry $brainRegistry,
         private Settings $settings,
-
+        private ChatStreamPublisher $chatStreamPublisher,
     ) {
     }
 
@@ -48,8 +49,6 @@ final readonly class HistoryController
         }
 
         $currentBrain = $session->get('brain_avatar');
-        $mode = $session->get('chat_mode');
-
         // Nouveau thread
         $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
         $session->set('chatId', $threadId);
@@ -65,11 +64,16 @@ final readonly class HistoryController
             ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
         $userChatHistory->replaceDisplayMessages([$assistantMessage]);
         $userChatHistory->replaceMessages([]);
-        $messages = $userChatHistory->getFormattedMessages($mode);
 
-        return $this->twig->render($response, 'partials/messages_list.twig', [
-            'messages' => $messages,
-        ]);
+        // sessionId from request (per-tab SSE binding key)
+        $sessionId = trim((string) ($request->getParsedBody()['sessionId'] ?? $request->getQueryParams()['sessionId'] ?? ''));
+        $this->publishSnapshot($threadId, $userChatHistory, $sessionId);
+
+        $response->getBody()->write(json_encode([
+            'chatId' => $threadId,
+        ], JSON_THROW_ON_ERROR));
+
+        return $response->withHeader('Content-Type', 'application/json');
     }
 
     /**
@@ -146,14 +150,20 @@ final readonly class HistoryController
         $userChatHistory->setThreadId($threadId);
         $userChatHistory->validateMessageSequences();
 
-        $messages = $userChatHistory->getFormattedMessages($session->get('chat_mode'));
+        $messages = $userChatHistory->getFormattedMessages('stream');
         if ($messages === []) {
             return $response->withStatus(400);
         }
 
-        return $this->twig->render($response, 'partials/messages_list.twig', [
-            'messages' => $messages,
-        ]);
+        // sessionId from request (per-tab SSE binding key)
+        $sessionId = trim((string) ($request->getParsedBody()['sessionId'] ?? $request->getQueryParams()['sessionId'] ?? ''));
+        $this->publishSnapshot($threadId, $userChatHistory, $sessionId);
+
+        $response->getBody()->write(json_encode([
+            'chatId' => $threadId,
+        ], JSON_THROW_ON_ERROR));
+
+        return $response->withHeader('Content-Type', 'application/json');
     }
 
     /**
@@ -213,11 +223,30 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
-        $messages = $userChatHistory->getFormattedMessages((string) $session->get('chat_mode'));
+        // sessionId from request (per-tab SSE binding key)
+        $sessionId = trim((string) ($request->getParsedBody()['sessionId'] ?? $request->getQueryParams()['sessionId'] ?? ''));
+        $this->publishSnapshot($threadId, $userChatHistory, $sessionId);
 
-        return $this->twig->render($response, 'partials/messages_list.twig', [
-            'messages' => $messages,
+        $response->getBody()->write(json_encode([
+            'chatId' => $threadId,
             'removedMessage' => $removedMessage,
+        ], JSON_THROW_ON_ERROR));
+
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    private function publishSnapshot(string $threadId, UserChatHistory $userChatHistory, string $sessionId = ''): void
+    {
+        $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
+            'messages' => $userChatHistory->getFormattedMessages('stream'),
+        ]);
+
+        // Publish to sessionId if provided (per-tab SSE), otherwise fallback to threadId
+        $streamKey = $sessionId !== '' ? $sessionId : $threadId;
+        $this->chatStreamPublisher->publish($streamKey, 'chat.snapshot', [
+            'chatId' => $threadId,
+            'sessionId' => $sessionId,
+            'messagesHtml' => $messagesHtml,
         ]);
     }
 }

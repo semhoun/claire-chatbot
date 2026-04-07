@@ -7,6 +7,26 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-04-08
+
+### Added
+- Implementation complete de Server-Sent Events (SSE) pour le streaming des reponses
+- Support des workers de queue multiples dans Docker avec variable `QUEUE_WORKERS`
+- Possibilite de supprimer le dernier message d'une conversation
+- Identifiant SSE unique pour chaque connexion streaming
+
+### Changed
+- **BREAKING**: L'interface web passe en mode streaming uniquement (suppression du mode chat classique)
+- Remplacement de `chatid` par `session_id` dans les endpoints pour plus de coherence
+- Le `QueueWorkCommand` utilise l'abstraction cache au lieu de Redis directement
+- Amelioration de l'interface utilisateur et corrections visuelles diverses
+- Optimisation du systeme de files d'attente avec meilleure gestion des workers
+
+### Fixed
+- Correction de la suppression du dernier message dans l'historique
+- Correction de l'ajout de fichiers dans les conversations
+- Correction de l'interface Telegram et gestion des sessions
+
 ## [1.3.3] - 2026-04-05
 
 ### Added
@@ -249,7 +269,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.3.3...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.0...HEAD
+[1.4.0]: https://github.com/semhoun/claire-chatbot/compare/1.3.3...1.4.0
 [1.3.3]: https://github.com/semhoun/claire-chatbot/compare/1.3.2...1.3.3
 [1.3.2]: https://github.com/semhoun/claire-chatbot/compare/1.3.1...1.3.2
 [1.3.1]: https://github.com/semhoun/claire-chatbot/compare/1.3.0...1.3.1

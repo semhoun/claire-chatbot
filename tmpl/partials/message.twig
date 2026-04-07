@@ -1,4 +1,4 @@
-<article class="message {{ sent ? 'message--sent' : 'message--received' }}">
+<article class="message {{ sent ? 'message--sent' : 'message--received' }}"{% if messageArticleId is defined and messageArticleId %} id="{{ messageArticleId }}"{% endif %}>
     <div class="message__bubble">
         {% if toolCallId  %}
         <div class="message__subbubble message__subbubble--toolcall">

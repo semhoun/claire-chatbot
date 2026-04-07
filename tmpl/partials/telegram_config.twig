@@ -17,8 +17,14 @@
                 }
 
                 setTimeout(function() {
-                    document.getElementById('modalRoot')?.classList.remove('is-open');
-                    document.getElementById('modalBackdrop')?.classList.remove('is-visible');
+                    const modalRoot = document.getElementById('modalRoot');
+                    const modalBackdrop = document.getElementById('modalBackdrop');
+                    if (document.activeElement && modalRoot?.contains(document.activeElement)) {
+                        document.activeElement.blur();
+                    }
+                    modalRoot?.classList.remove('is-open');
+                    modalRoot?.setAttribute('aria-hidden', 'true');
+                    modalBackdrop?.classList.remove('is-visible');
                     document.body?.classList.remove('modal-open');
                 }, 1500);
             })();

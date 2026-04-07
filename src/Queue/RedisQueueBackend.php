@@ -12,8 +12,8 @@ use RuntimeException;
 final readonly class RedisQueueBackend implements QueueBackendInterface
 {
     public function __construct(
-        private RedisClientInterface $redis,
-        private QueueSerializer $serializer,
+        private RedisClientInterface $redisClient,
+        private QueueSerializer $queueSerializer,
         private Settings $settings,
     ) {
     }
@@ -28,7 +28,7 @@ final readonly class RedisQueueBackend implements QueueBackendInterface
         $queueName = $this->normalizeQueueName($queue);
         $jobId = Uuid::uuid7()->toString();
         $availableTimestamp = ($availableAt ?? new \DateTimeImmutable('now'))->getTimestamp();
-        $encodedPayload = $this->serializer->encode($payload);
+        $encodedPayload = $this->queueSerializer->encode($payload);
 
         $jobData = [
             'id' => $jobId,
@@ -39,11 +39,11 @@ final readonly class RedisQueueBackend implements QueueBackendInterface
         ];
 
         $this->assertRedisResult(
-            $this->redis->hset($this->jobKey($jobId), $jobData),
+            $this->redisClient->hset($this->jobKey($jobId), $jobData),
             'Unable to persist Redis queue job payload'
         );
         $this->assertRedisResult(
-            $this->redis->zadd($this->pendingKey($queueName), [$jobId => $availableTimestamp]),
+            $this->redisClient->zadd($this->pendingKey($queueName), [$jobId => $availableTimestamp]),
             'Unable to enqueue Redis queue job'
         );
 
@@ -64,7 +64,7 @@ final readonly class RedisQueueBackend implements QueueBackendInterface
         return $this->hydrateQueueMessage($jobId);
     }
 
-    public function delete(QueueMessage $message): void
+    public function delete(QueueMessage $queueMessage): void
     {
     }
 
@@ -86,7 +86,7 @@ redis.call('ZREM', pendingKey, jobId)
 return jobId
 LUA;
 
-        $result = $this->redis->eval($script, [
+        $result = $this->redisClient->eval($script, [
             $this->pendingKey($queueName),
             (string) $now,
         ], 1);
@@ -101,7 +101,7 @@ LUA;
         return new QueueMessage(
             id: $jobId,
             jobClass: (string) ($jobData['job_class'] ?? ''),
-            payload: $this->serializer->decode((string) ($jobData['payload'] ?? '[]')),
+            payload: $this->queueSerializer->decode((string) ($jobData['payload'] ?? '[]')),
             queueName: (string) ($jobData['queue_name'] ?? $this->settings->get('queue.defaultQueue')),
             metadata: $jobData,
         );
@@ -112,7 +112,7 @@ LUA;
      */
     private function getJobData(string $jobId): array
     {
-        $jobData = $this->redis->hgetall($this->jobKey($jobId));
+        $jobData = $this->redisClient->hgetall($this->jobKey($jobId));
         if (! is_array($jobData) || $jobData === []) {
             throw new RuntimeException(sprintf('Redis queue job "%s" not found', $jobId));
         }

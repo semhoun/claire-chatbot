@@ -14,9 +14,9 @@ final readonly class QueueJobFactory
     ) {
     }
 
-    public function createQueueDoer(QueueMessage $job): QueueDoer
+    public function createQueueDoer(QueueMessage $queueMessage): QueueDoer
     {
-        $jobClass = $job->jobClass;
+        $jobClass = $queueMessage->jobClass;
 
         if (! class_exists($jobClass)) {
             throw new RuntimeException(sprintf('Queue job class "%s" does not exist', $jobClass));
@@ -38,5 +38,4 @@ final readonly class QueueJobFactory
 
         return $queueDoer;
     }
-
 }

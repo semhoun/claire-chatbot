@@ -90,6 +90,7 @@ Au demarrage, l'entrypoint:
 | `ENABLE_ACCESS_LOGS` | `true` | Conserve la compatibilite avec la config applicative |
 | `DEBUG_MODE` | `false` | Active le mode debug PHP |
 | `DATA_PATH` | `/data` | Repertoire racine des donnees persistantes |
+| `QUEUE_WORKERS` | `1` | Nombre de workers de queue Redis a lancer |
 
 ### LLM
 

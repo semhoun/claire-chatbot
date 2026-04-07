@@ -21,7 +21,7 @@ class GenerateImageTool extends Tool implements MessagePostProcessorInterface
         private readonly ComfyUIService $comfyUIService,
         private readonly Settings $settings,
         private readonly SessionInterface $session,
-        private readonly ComfyUIWorkflowRegistry $workflowRegistry,
+        private readonly ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
     ) {
         $promptStyle = $this->getPromptStyle();
         $description = $promptStyle === 'flux'
@@ -156,13 +156,13 @@ EOT;
     private function getPromptStyle(): string
     {
         $workflow = (string) $this->session->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
-        if ($workflow !== '' && $this->workflowRegistry->has($workflow)) {
-            return $this->workflowRegistry->getMeta($workflow)['type'];
+        if ($workflow !== '' && $this->comfyUIWorkflowRegistry->has($workflow)) {
+            return $this->comfyUIWorkflowRegistry->getMeta($workflow)['type'];
         }
 
-        $defaultWorkflow = $this->workflowRegistry->getDefaultSlug();
+        $defaultWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug();
         if ($defaultWorkflow !== null) {
-            return $this->workflowRegistry->getMeta($defaultWorkflow)['type'];
+            return $this->comfyUIWorkflowRegistry->getMeta($defaultWorkflow)['type'];
         }
 
         return 'sdxl';

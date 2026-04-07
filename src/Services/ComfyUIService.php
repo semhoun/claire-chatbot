@@ -25,7 +25,7 @@ final readonly class ComfyUIService
     public function __construct(
         private Settings $settings,
         private Filesystem $filesystem,
-        private ComfyUIWorkflowRegistry $workflowRegistry,
+        private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
     ) {
         $this->httpClient = new Client([
             'base_uri' => $this->settings->get('comfyui.url'),
@@ -73,13 +73,13 @@ final readonly class ComfyUIService
     {
         $workflowSlug = (string) $session->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
 
-        if ($workflowSlug !== '' && $this->workflowRegistry->has($workflowSlug)) {
-            return $this->workflowRegistry->getWorkflow($workflowSlug);
+        if ($workflowSlug !== '' && $this->comfyUIWorkflowRegistry->has($workflowSlug)) {
+            return $this->comfyUIWorkflowRegistry->getWorkflow($workflowSlug);
         }
 
-        $selectedWorkflow = $this->workflowRegistry->getDefaultSlug();
-        if ($selectedWorkflow !== null && $this->workflowRegistry->has($selectedWorkflow)) {
-            return $this->workflowRegistry->getWorkflow($selectedWorkflow);
+        $selectedWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug();
+        if ($selectedWorkflow !== null && $this->comfyUIWorkflowRegistry->has($selectedWorkflow)) {
+            return $this->comfyUIWorkflowRegistry->getWorkflow($selectedWorkflow);
         }
 
         throw new RuntimeException('Aucun workflow ComfyUI disponible');

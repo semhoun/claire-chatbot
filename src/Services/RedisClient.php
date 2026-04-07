@@ -6,7 +6,7 @@ namespace App\Services;
 
 use RuntimeException;
 
-final class RedisClient implements RedisClientInterface
+final readonly class RedisClient implements RedisClientInterface
 {
     private object $client;
 
@@ -24,6 +24,11 @@ final class RedisClient implements RedisClientInterface
         return $this->client->eval($script, $arguments, $keyCount);
     }
 
+    public function publish(string $channel, string $message): int|false
+    {
+        return $this->client->publish($channel, $message);
+    }
+
     public function zadd(string $key, array $membersAndScores): int|false
     {
         $arguments = [$key];
@@ -33,10 +38,7 @@ final class RedisClient implements RedisClientInterface
             $arguments[] = $member;
         }
 
-        /** @var int|false $result */
-        $result = $this->client->zAdd(...$arguments);
-
-        return $result;
+        return $this->client->zAdd(...$arguments);
     }
 
     public function hset(string $key, array $hash): int|false

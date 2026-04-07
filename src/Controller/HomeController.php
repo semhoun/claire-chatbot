@@ -37,7 +37,6 @@ final readonly class HomeController
         $time = new \DateTime()->format('H:i');
 
         $currentBrain = $session->get('brain_avatar');
-        $mode = $session->get('chat_mode');
         $layoutMode = $session->get('layout_mode');
         $comfyuiEnabled = $this->settings->get('comfyui.enabled') === true;
         $comfyuiWorkflows = $comfyuiEnabled ? $this->comfyUIWorkflowRegistry->list() : [];
@@ -63,21 +62,21 @@ final readonly class HomeController
             if ($userId !== '') {
                 $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
             }
+
             $openingMessage = $this->brainRegistry->get($currentBrain, $session)->getOpeningText();
             $assistantMessage = new AssistantMessage($openingMessage)
                 ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
             $userChatHistory->replaceDisplayMessages([$assistantMessage]);
             $userChatHistory->replaceMessages([]);
-            $messages = $userChatHistory->getFormattedMessages($mode);
+            $messages = $userChatHistory->getFormattedMessages('stream');
 
             // On configure le Workflow par défaut au premier chat
             if ($this->settings->get('comfyui.enabled') === true && $currentComfyuiWorkflow === '') {
-                $currentComfyuiWorkflow = (string) ($this->comfyUIWorkflowRegistry->getDefaultSlug() ?? '');
+                $currentComfyuiWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug() ?? '';
                 $session->set(ComfyUIWorkflowRegistry::SESSION_KEY, $currentComfyuiWorkflow);
             }
-        }
-        else {
-            $messages = $userChatHistory->getFormattedMessages($mode);
+        } else {
+            $messages = $userChatHistory->getFormattedMessages('stream');
             $userChatHistory->validateMessageSequences();
         }
 
@@ -91,11 +90,15 @@ final readonly class HomeController
             $meta = $this->brainRegistry->getMeta($currentBrain);
         }
 
+        // Generate a per-tab stream session ID for SSE binding
+        $streamSessionId = uniqid('sess-', true);
+
         return $this->twig->render($response, 'chat.twig', [
             'time' => $time,
             'messages' => $messages,
+            'current_chat_id' => $chatId,
+            'stream_session_id' => $streamSessionId,
             'uinfo' => $session->get(Auth::USERINFO),
-            'chat_mode' => $mode,
             'layout_mode' => $layoutMode,
             'brain_info' => $meta,
             'current_brain' => $currentBrain,

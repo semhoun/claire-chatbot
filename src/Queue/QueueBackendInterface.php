@@ -10,5 +10,5 @@ interface QueueBackendInterface extends QueueDispatcherInterface
         string $queueName,
     ): ?QueueMessage;
 
-    public function delete(QueueMessage $message): void;
+    public function delete(QueueMessage $queueMessage): void;
 }

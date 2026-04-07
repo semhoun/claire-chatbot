@@ -140,4 +140,9 @@ final class InMemoryRedisClient implements RedisClientInterface
     {
         return true;
     }
+
+    public function publish(string $channel, string $message): int|false
+    {
+        return 1;
+    }
 }
