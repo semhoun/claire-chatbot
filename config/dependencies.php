@@ -11,9 +11,12 @@ use App\Queue\QueueWorker;
 use App\Queue\RedisQueueBackend;
 use App\Services\ComfyUIService;
 use App\Services\ComfyUIWorkflowRegistry;
+use App\Services\ChatStreamPublisher;
+use App\Services\ChatStreamBuffer;
 use App\Services\OidcClient;
 use App\Services\RedisClient;
 use App\Services\RedisClientInterface;
+use App\Services\SseEventFormatter;
 use App\Services\Settings;
 use App\Services\Twig\GeneratedImageExtension;
 use App\Services\Twig\TimestampExtension;
@@ -155,6 +158,9 @@ return [
 
         return $client;
     },
+    ChatStreamBuffer::class => DI\autowire(),
+    ChatStreamPublisher::class => DI\autowire(),
+    SseEventFormatter::class => DI\autowire(),
     RedisQueueBackend::class => DI\autowire(),
     QueueBackendInterface::class => DI\get(RedisQueueBackend::class),
     QueueDispatcherInterface::class => DI\get(QueueBackendInterface::class),

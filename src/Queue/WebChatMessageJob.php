@@ -1,0 +1,201 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Queue;
+
+use App\Brain\BrainRegistry;
+use App\Services\ChatStreamPublisher;
+use App\Services\Session\SessionInterface;
+use DateTimeImmutable;
+use DateTimeInterface;
+use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
+use NeuronAI\Chat\Messages\UserMessage;
+use Psr\Container\ContainerInterface;
+use Psr\Log\LoggerInterface as Logger;
+use Slim\Views\Twig;
+
+final class WebChatMessageJob implements QueueDoer
+{
+    public function __construct(
+        private readonly Logger $logger,
+        private readonly Twig $twig,
+        private readonly BrainRegistry $brainRegistry,
+        private readonly ChatStreamPublisher $publisher,
+    ) {
+    }
+
+    public static function make(ContainerInterface $container): self
+    {
+        return $container->get(self::class);
+    }
+
+    public function handle(array $payload): void
+    {
+        $messageText = trim((string) ($payload['message'] ?? ''));
+        $chatId = (string) ($payload['chatId'] ?? '');
+        $brainAvatar = (string) ($payload['brainAvatar'] ?? '');
+        $sessionValues = $payload['session'] ?? [];
+
+        if ($messageText === '' || $chatId === '' || ! is_array($sessionValues)) {
+            return;
+        }
+
+        $session = new InMemorySession($sessionValues);
+        $session->set('chatId', $chatId);
+
+        $brain = $this->brainRegistry->get($brainAvatar, $session);
+        $userMessage = new UserMessage($messageText);
+        $userMessage->addMetadata('timestamp', new DateTimeImmutable()->format(DateTimeInterface::ATOM));
+
+        $streamedText = '';
+        $toolCallId = null;
+        $toolText = null;
+        $messageId = uniqid('assistant-', true);
+        $timestamp = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
+
+        try {
+            $agentHandler = $brain->stream($userMessage);
+
+            $placeholderHtml = $this->twig->fetch('partials/message.twig', [
+                'message' => '',
+                'time' => $timestamp,
+                'sent' => false,
+                'streamId' => $messageId,
+                'toolCallId' => null,
+                'toolCall' => null,
+            ]);
+            $this->publisher->publish($chatId, 'message.assistant.placeholder', [
+                'chatId' => $chatId,
+                'messageId' => $messageId,
+                'html' => $placeholderHtml,
+            ]);
+
+            foreach ($agentHandler->events() as $chunk) {
+                if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
+                    $toolCallId ??= uniqid('tool-', true);
+                    $toolText = $this->formatToolChunk($chunk);
+
+                    $this->publisher->publish($chatId, 'tool.update', [
+                        'chatId' => $chatId,
+                        'messageId' => $messageId,
+                        'toolCallId' => $toolCallId,
+                        'html' => $toolText,
+                    ]);
+
+                    continue;
+                }
+
+                if (! $chunk instanceof ReasoningChunk && ! $chunk instanceof TextChunk) {
+                    continue;
+                }
+
+                $streamedText .= $chunk->content;
+                $html = $this->twig->fetch('partials/md.twig', ['message' => $streamedText]);
+
+                $this->publisher->publish($chatId, 'message.assistant.delta', [
+                    'chatId' => $chatId,
+                    'messageId' => $messageId,
+                    'html' => $html,
+                ]);
+            }
+
+            $agentMessage = $agentHandler->getMessage();
+            $finalHtml = $this->twig->fetch('partials/md.twig', [
+                'message' => $agentMessage->getContent(),
+            ]);
+
+            $this->publisher->publish($chatId, 'message.assistant.delta', [
+                'chatId' => $chatId,
+                'messageId' => $messageId,
+                'html' => $finalHtml,
+            ]);
+            $this->publisher->publish($chatId, 'message.assistant.done', [
+                'chatId' => $chatId,
+                'messageId' => $messageId,
+            ]);
+        } catch (\Throwable $throwable) {
+            $this->logger->error('Web chat job failed', ['exception' => $throwable, 'chatId' => $chatId]);
+            $this->publisher->publish($chatId, 'chat.error', [
+                'chatId' => $chatId,
+                'message' => 'Désolé, une erreur est survenue lors du traitement de votre message.',
+            ]);
+        }
+    }
+
+    private function formatToolChunk(ToolCallChunk|ToolResultChunk $chunk): string
+    {
+        $tool = $chunk->tool;
+        $toolText = $chunk instanceof ToolResultChunk
+            ? '<span class="tools-done-flag" style="display:none"></span>' . "\n"
+            : '';
+        $toolText .= "Utilisation de l'outil : " . $tool->getName() . "<br>\n";
+        $toolText .= "Paramètres : <br>\n<ul>\n";
+
+        foreach ($tool->getInputs() as $name => $value) {
+            $toolText .= '<li>' . $name . ' : ' . $value . "</li>\n";
+        }
+
+        $toolText .= "</ul>\n";
+
+        if ($chunk instanceof ToolResultChunk) {
+            $toolText .= "Réponse : <br>\n";
+            if ($tool->getResult() !== '' && $tool->getResult() !== '0') {
+                $toolText .= '<pre class="toolcall__result">' . $tool->getResult() . "</pre>\n";
+            }
+        }
+
+        return $toolText;
+    }
+}
+
+final class InMemorySession implements SessionInterface
+{
+    /** @param array<string, mixed> $values */
+    public function __construct(private array $values)
+    {
+    }
+
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $this->values[$key] ?? $default;
+    }
+
+    public function all(): array
+    {
+        return $this->values;
+    }
+
+    public function set(string $key, mixed $value): void
+    {
+        $this->values[$key] = $value;
+    }
+
+    public function setValues(array $values): void
+    {
+        $this->values = [...$this->values, ...$values];
+    }
+
+    public function has(string $key): bool
+    {
+        return array_key_exists($key, $this->values);
+    }
+
+    public function delete(string $key): void
+    {
+        unset($this->values[$key]);
+    }
+
+    public function clear(): void
+    {
+        $this->values = [];
+    }
+
+    public function getFlash(): \App\Services\Session\FlashInterface
+    {
+        throw new \RuntimeException('Flash not available in queue session');
+    }
+}

@@ -42,6 +42,17 @@
         </header>
 
         <main class="chat-body" style="position: relative; z-index: 1;">
+            <div
+                id="chatStream"
+                class="chat-stream"
+                hx-ext="sse"
+                sse-connect="{{ base_url }}/brain/stream?chatId={{ current_chat_id|url_encode }}"
+                sse-swap="chat.snapshot"
+                hx-target="#messages"
+                hx-swap="innerHTML"
+                data-chat-stream
+                data-chat-id="{{ current_chat_id }}"
+            >
             <div id="messages" class="messages">
                 {% if messages is defined and messages is not null and messages is not empty %}
                     {% for m in messages %}
@@ -54,6 +65,7 @@
                         } %}
                     {% endfor %}
                 {% endif %}
+            </div>
             </div>
             <div id="typingIndicator" class="typing-indicator htmx-indicator" aria-hidden="true">
                 <span class="typing-indicator__dot"></span>
@@ -76,10 +88,8 @@
 
         <footer class="chat-input">
             <form class="chat-input__form" id="brain_chat"
-                  hx-post="{{ base_url }}/brain/chat"
-                  hx-ext="stream"
-                  hx-target="#messages"
-                  hx-swap="beforeend"
+                  hx-post="{{ base_url }}/brain/messages"
+                  hx-swap="none"
                   hx-indicator="#typingIndicator"
                   hx-encoding="multipart/form-data"
                   hx-on::after-request="clearInput(event)"
@@ -91,6 +101,7 @@
                     </svg>
                 </label>
                 <input type="hidden" name="mode" value="stream" />
+                <input type="hidden" name="chatId" value="{{ current_chat_id }}" data-current-chat-id-input />
                 <input class="chat-input__file" type="file" id="chat-upload" name="upload_files[]" multiple accept="{{ settings.get('files.upload.acceptedExt') }}" />
                 {# Container for attached file chips (chat mode) #}
                 <span id="chatAttachedFilesChat" class="chat-attached"></span>
@@ -110,8 +121,7 @@
                             aria-label="Annuler le dernier échange"
                             title="Annuler le dernier échange"
                             hx-delete="{{ base_url }}/history/exchange/last"
-                            hx-target="#messages"
-                            hx-swap="innerHTML"
+                            hx-swap="none"
                             hx-indicator="#globalActionIndicator"
                             hx-on::after-request="handleLastExchangeResponse(event)"
                     >
@@ -161,6 +171,11 @@
             article.querySelector('.message__bubble').textContent = text;
             article.querySelector('.message__meta').textContent = time + ' • Vous';
             messages.appendChild(article);
+            const loader = document.createElement('article');
+            loader.className = 'message';
+            loader.setAttribute('data-role', 'assistant-loader');
+            loader.innerHTML = '<div class="message__bubble">Claire réfléchit...</div>';
+            messages.appendChild(loader);
             // Ensure we scroll to the bottom to keep the newest message in view
             chatBody.scrollTop = chatBody.scrollHeight;
             if (scrollBtn) scrollBtn.style.display = 'none';
@@ -208,6 +223,24 @@
             updateComposerToggleState(input);
         }
 
+        window.updatePersistentChatStream = function updatePersistentChatStream(chatId) {
+            const stream = document.querySelector('[data-chat-stream]');
+            const chatIdInput = document.querySelector('[data-current-chat-id-input]');
+            if (!stream || !chatId) {
+                return;
+            }
+
+            stream.setAttribute('data-chat-id', chatId);
+            stream.setAttribute('sse-connect', '{{ base_url }}/brain/stream?chatId=' + encodeURIComponent(chatId));
+            if (chatIdInput) {
+                chatIdInput.value = chatId;
+            }
+
+            if (window.htmx && window.htmx.process) {
+                window.htmx.process(stream);
+            }
+        }
+
         window.handleLastExchangeResponse = function handleLastExchangeResponse(event) {
             const detail = event.detail || {};
             const chatBody = document.querySelector('.chat-body');
@@ -217,6 +250,13 @@
                 return;
             }
 
+             try {
+                 const payload = JSON.parse(detail.xhr.responseText || '{}');
+                 if (payload.chatId && window.updatePersistentChatStream) {
+                     window.updatePersistentChatStream(payload.chatId);
+                 }
+             } catch (e) {}
+
             if (chatBody) {
                 chatBody.scrollTop = chatBody.scrollHeight;
             }
@@ -225,6 +265,86 @@
                 scrollBtn.style.display = 'none';
             }
         }
+
+        document.body.addEventListener('htmx:sseError', function () {
+            const stream = document.querySelector('[data-chat-stream]');
+            if (!stream) {
+                return;
+            }
+
+            window.setTimeout(function () {
+                if (window.htmx && window.htmx.process) {
+                    window.htmx.process(stream);
+                }
+            }, 1000);
+        });
+
+        document.body.addEventListener('htmx:sseBeforeMessage', function (event) {
+            const detail = event.detail || {};
+            const eventName = detail.type;
+            const data = detail.data || '';
+            const chatBody = document.querySelector('.chat-body');
+            const messages = document.getElementById('messages');
+            const scrollBtn = document.getElementById('scrollDownBtn');
+
+            if (!messages) {
+                return;
+            }
+
+            if (eventName === 'chat.snapshot.payload') {
+                const payload = JSON.parse(data);
+                messages.innerHTML = payload.messagesHtml || '';
+            }
+
+            if (eventName === 'message.assistant.placeholder') {
+                const payload = JSON.parse(data);
+                const tempLoader = messages.querySelector('[data-role="assistant-loader"]');
+                if (tempLoader) {
+                    tempLoader.outerHTML = payload.html;
+                } else {
+                    messages.insertAdjacentHTML('beforeend', payload.html);
+                }
+            }
+
+            if (eventName === 'message.assistant.delta') {
+                const payload = JSON.parse(data);
+                const target = document.getElementById(payload.messageId);
+                if (target) {
+                    target.innerHTML = payload.html;
+                }
+            }
+
+            if (eventName === 'tool.update') {
+                const payload = JSON.parse(data);
+                const article = document.getElementById(payload.messageId);
+                if (article) {
+                    let toolNode = document.getElementById(payload.toolCallId);
+                    if (!toolNode) {
+                        article.insertAdjacentHTML('afterend', '<div id="' + payload.toolCallId + '"></div>');
+                        toolNode = document.getElementById(payload.toolCallId);
+                    }
+                    if (toolNode) {
+                        toolNode.innerHTML = payload.html;
+                    }
+                }
+            }
+
+            if (eventName === 'chat.error') {
+                const payload = JSON.parse(data);
+                const loader = messages.querySelector('[data-role="assistant-loader"]');
+                if (loader) {
+                    loader.remove();
+                }
+                messages.insertAdjacentHTML('beforeend', '<article class="message"><div class="message__bubble">' + payload.message + '</div></article>');
+            }
+
+            if (chatBody) {
+                chatBody.scrollTop = chatBody.scrollHeight;
+            }
+            if (scrollBtn) {
+                scrollBtn.style.display = 'none';
+            }
+        });
 
         function $(sel, root=document) { return root.querySelector(sel); }
         function chipSelectorById(id) { return '.chat-chip[data-file-id="' + CSS.escape(String(id)) + '"]'; }

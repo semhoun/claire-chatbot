@@ -5,10 +5,16 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Brain\BrainRegistry;
+use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Summary;
+use App\Queue\QueueDispatcherInterface;
+use App\Queue\WebChatMessageJob;
+use App\Services\ChatStreamBuffer;
+use App\Services\ChatStreamPublisher;
 use App\Services\ComfyUIService;
 use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Session\SessionInterface;
+use App\Services\SseEventFormatter;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Exception\ORMException;
@@ -35,6 +41,8 @@ final readonly class BrainController
 
     private const string STREAM_STOP = "\n§STREAM-STOP§\n";
 
+    private const int SSE_KEEPALIVE_INTERVAL = 15;
+
     public function __construct(
         private Logger $logger,
         private Twig $twig,
@@ -42,6 +50,10 @@ final readonly class BrainController
         private EntityManager $entityManager,
         private Filesystem $filesystem,
         private Settings $settings,
+        private QueueDispatcherInterface $queueDispatcher,
+        private ChatStreamBuffer $chatStreamBuffer,
+        private ChatStreamPublisher $chatStreamPublisher,
+        private SseEventFormatter $sseEventFormatter,
     ) {
     }
 
@@ -55,6 +67,10 @@ final readonly class BrainController
      */
     public function chat(Request $request, Response $response): Response
     {
+        if ($request->getMethod() === 'POST') {
+            return $this->submitMessage($request, $response);
+        }
+
         set_time_limit((int) $this->settings->get('llm.workflow.timeout'));
 
         $session = $this->getSession($request);
@@ -186,6 +202,120 @@ final readonly class BrainController
         $stream->write('streamId:' . $streamId . "\n" . $html . self::STREAM_STOP);
 
         $this->manageSummary($session);
+
+        return $response;
+    }
+
+    public function submitMessage(Request $request, Response $response): Response
+    {
+        $session = $this->getSession($request);
+        $data = (array) ($request->getParsedBody() ?? []);
+        $userStr = trim((string) ($data['message'] ?? ''));
+        if ($userStr === '') {
+            return $response->withStatus(422);
+        }
+
+        $chatId = trim((string) ($data['chatId'] ?? $session->get('chatId') ?? ''));
+        if ($chatId === '') {
+            return $response->withStatus(400);
+        }
+
+        $session->set('chatId', $chatId);
+        $this->queueDispatcher->dispatch(WebChatMessageJob::class, [
+            'chatId' => $chatId,
+            'brainAvatar' => (string) $session->get('brain_avatar'),
+            'message' => $userStr,
+            'session' => $session->all(),
+        ]);
+
+        $response->getBody()->write((string) json_encode([
+            'chatId' => $chatId,
+            'accepted' => true,
+        ], JSON_THROW_ON_ERROR));
+
+        return $response
+            ->withStatus(202)
+            ->withHeader('Content-Type', 'application/json');
+    }
+
+    public function stream(Request $request, Response $response): Response
+    {
+        set_time_limit(0);
+        ignore_user_abort(true);
+
+        $session = $this->getSession($request);
+        $chatId = trim((string) ($request->getQueryParams()['chatId'] ?? $session->get('chatId') ?? ''));
+        if ($chatId === '') {
+            return $response->withStatus(400);
+        }
+
+        $session->set('chatId', $chatId);
+        $userChatHistory = new UserChatHistory(
+            session: $session,
+            pdo: $this->entityManager->getConnection()->getNativeConnection(),
+            contextWindow: $this->settings->get('llm.openai.contextWindow')
+        );
+        $userChatHistory->setThreadId($chatId);
+        $userChatHistory->validateMessageSequences();
+
+        $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
+            'messages' => $userChatHistory->getFormattedMessages('stream'),
+        ]);
+
+        $response = $response
+            ->withBody(new NonBufferedBody())
+            ->withHeader('Content-Type', 'text/event-stream')
+            ->withHeader('Cache-Control', 'no-cache')
+            ->withHeader('Connection', 'keep-alive')
+            ->withHeader('X-Accel-Buffering', 'no');
+
+        $stream = $response->getBody();
+        $stream->write($this->sseEventFormatter->format('chat.snapshot', $messagesHtml));
+        $stream->write($this->sseEventFormatter->format('chat.snapshot.payload', (string) json_encode([
+            'chatId' => $chatId,
+            'messagesHtml' => $messagesHtml,
+        ], JSON_THROW_ON_ERROR)));
+        $stream->write("retry: 1000\n\n");
+
+        $deadline = time() + self::SSE_KEEPALIVE_INTERVAL;
+        $offset = $this->chatStreamBuffer->length($chatId);
+
+        while (! connection_aborted()) {
+            $messages = $this->chatStreamBuffer->readSince($chatId, $offset);
+            foreach ($messages as $message) {
+                $event = json_decode($message, true, flags: JSON_THROW_ON_ERROR);
+                if (! is_array($event) || ($event['chatId'] ?? null) !== $chatId) {
+                    $offset++;
+                    continue;
+                }
+
+                $eventName = (string) ($event['event'] ?? '');
+                $payload = $event['payload'] ?? [];
+                if ($eventName === '' || ! is_array($payload)) {
+                    $offset++;
+                    continue;
+                }
+
+                $payloadData = $eventName === 'chat.snapshot'
+                    ? (string) ($payload['messagesHtml'] ?? '')
+                    : (string) json_encode($payload, JSON_THROW_ON_ERROR);
+
+                $stream->write($this->sseEventFormatter->format($eventName, $payloadData));
+                if ($eventName === 'chat.snapshot') {
+                    $stream->write($this->sseEventFormatter->format('chat.snapshot.payload', (string) json_encode($payload, JSON_THROW_ON_ERROR)));
+                }
+
+                $offset++;
+                $deadline = time() + self::SSE_KEEPALIVE_INTERVAL;
+            }
+
+            if (time() >= $deadline) {
+                $stream->write($this->sseEventFormatter->keepalive());
+                $deadline = time() + self::SSE_KEEPALIVE_INTERVAL;
+            }
+
+            usleep(250000);
+        }
 
         return $response;
     }

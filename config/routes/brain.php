@@ -11,5 +11,7 @@ return static function (
 ): void {
     $app->group('/brain', static function (Group $group): void {
         $group->map(['POST', 'GET'], '/chat', [BrainController::class, 'chat'])->setName('brain.chat');
+        $group->post('/messages', [BrainController::class, 'submitMessage'])->setName('brain.messages');
+        $group->get('/stream', [BrainController::class, 'stream'])->setName('brain.stream');
     });
 };

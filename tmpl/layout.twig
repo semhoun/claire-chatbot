@@ -46,14 +46,19 @@
                 role="button"
                 tabindex="0"
                 hx-post="{{ base_url }}/history/new"
-                hx-target="#messages"
-                hx-swap="innerHTML"
+                hx-swap="none"
                 hx-indicator="#globalActionIndicator"
                 hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
                 hx-on::after-request="
-                    if (event.detail.successful) {
-                        // Ferme le panneau d'options
-                        const panel = document.getElementById('optionsPanel');
+                     if (event.detail.successful) {
+                         try {
+                             const payload = JSON.parse(event.detail.xhr.responseText || '{}');
+                             if (payload.chatId && window.updatePersistentChatStream) {
+                                 window.updatePersistentChatStream(payload.chatId);
+                             }
+                         } catch (e) {}
+                         // Ferme le panneau d'options
+                         const panel = document.getElementById('optionsPanel');
                         const bd = document.getElementById('optionsBackdrop');
                         const toggle = document.querySelector('.options-toggle');
                         if (panel) panel.classList.remove('is-open');
@@ -270,6 +275,7 @@
 </div>
 
 <script src="{{ base_url }}/js/htmx.min.js"></script>
+<script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
 <script src="{{ base_url }}/js/htmx-stream.js"></script>
 {% block script %}{% endblock %}
 <!-- Global fixed tooltip banner (bottom of the page) -->

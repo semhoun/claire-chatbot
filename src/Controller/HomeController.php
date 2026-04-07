@@ -93,6 +93,7 @@ final readonly class HomeController
         return $this->twig->render($response, 'chat.twig', [
             'time' => $time,
             'messages' => $messages,
+            'current_chat_id' => $chatId,
             'uinfo' => $session->get(Auth::USERINFO),
             'layout_mode' => $layoutMode,
             'brain_info' => $meta,

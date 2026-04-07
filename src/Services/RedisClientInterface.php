@@ -8,6 +8,8 @@ interface RedisClientInterface
 {
     public function eval(string $script, array $arguments, int $keyCount): mixed;
 
+    public function publish(string $channel, string $message): int|false;
+
     public function zadd(string $key, array $membersAndScores): int|false;
 
     public function hset(string $key, array $hash): int|false;

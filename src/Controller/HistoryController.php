@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
+use App\Services\ChatStreamPublisher;
 use App\Services\Auth;
 use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Settings;
@@ -27,6 +28,7 @@ final readonly class HistoryController
         private EntityManagerInterface $entityManager,
         private BrainRegistry $brainRegistry,
         private Settings $settings,
+        private ChatStreamPublisher $chatStreamPublisher,
     ) {
     }
 
@@ -63,11 +65,13 @@ final readonly class HistoryController
         $userChatHistory->replaceDisplayMessages([$assistantMessage]);
         $userChatHistory->replaceMessages([]);
 
-        $messages = $userChatHistory->getFormattedMessages('stream');
+        $this->publishSnapshot($threadId, $userChatHistory);
 
-        return $this->twig->render($response, 'partials/messages_list.twig', [
-            'messages' => $messages,
-        ]);
+        $response->getBody()->write((string) json_encode([
+            'chatId' => $threadId,
+        ], JSON_THROW_ON_ERROR));
+
+        return $response->withHeader('Content-Type', 'application/json');
     }
 
     /**
@@ -149,9 +153,13 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
-        return $this->twig->render($response, 'partials/messages_list.twig', [
-            'messages' => $messages,
-        ]);
+        $this->publishSnapshot($threadId, $userChatHistory);
+
+        $response->getBody()->write((string) json_encode([
+            'chatId' => $threadId,
+        ], JSON_THROW_ON_ERROR));
+
+        return $response->withHeader('Content-Type', 'application/json');
     }
 
     /**
@@ -211,11 +219,25 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
-        $messages = $userChatHistory->getFormattedMessages('stream');
+        $this->publishSnapshot($threadId, $userChatHistory);
 
-        return $this->twig->render($response, 'partials/messages_list.twig', [
-            'messages' => $messages,
+        $response->getBody()->write((string) json_encode([
+            'chatId' => $threadId,
             'removedMessage' => $removedMessage,
+        ], JSON_THROW_ON_ERROR));
+
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    private function publishSnapshot(string $threadId, UserChatHistory $userChatHistory): void
+    {
+        $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
+            'messages' => $userChatHistory->getFormattedMessages('stream'),
+        ]);
+
+        $this->chatStreamPublisher->publish($threadId, 'chat.snapshot', [
+            'chatId' => $threadId,
+            'messagesHtml' => $messagesHtml,
         ]);
     }
 }
