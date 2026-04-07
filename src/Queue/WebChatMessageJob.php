@@ -57,6 +57,7 @@ final readonly class WebChatMessageJob implements QueueDoer
         $agent = $this->brainRegistry->get($brainAvatar, $inMemorySession);
         $userMessage = new UserMessage($messageText);
         $userMessage->addMetadata('timestamp', new DateTimeImmutable()->format(DateTimeInterface::ATOM));
+        $this->addAttachments($userMessage, $payload['attachments'] ?? null);
 
         $streamedText = '';
         $toolCallId = null;
@@ -232,6 +233,52 @@ final readonly class WebChatMessageJob implements QueueDoer
         }
 
         return $toolText;
+    }
+
+    /**
+     * @param mixed $attachments
+     */
+    private function addAttachments(UserMessage $userMessage, mixed $attachments): void
+    {
+        if (! is_array($attachments)) {
+            return;
+        }
+
+        foreach ((array) ($attachments['uploadedFiles'] ?? []) as $uploadedFile) {
+            if (! is_array($uploadedFile)) {
+                continue;
+            }
+
+            $content = (string) ($uploadedFile['content'] ?? '');
+            if ($content === '') {
+                continue;
+            }
+
+            $userMessage->addContent(new \NeuronAI\Chat\Messages\ContentBlocks\FileContent(
+                $content,
+                \NeuronAI\Chat\Enums\SourceType::BASE64,
+                (string) ($uploadedFile['mimeType'] ?? 'application/octet-stream'),
+                (string) ($uploadedFile['filename'] ?? 'file'),
+            ));
+        }
+
+        foreach ((array) ($attachments['fileIds'] ?? []) as $fileAttachment) {
+            if (! is_array($fileAttachment)) {
+                continue;
+            }
+
+            $content = (string) ($fileAttachment['content'] ?? '');
+            if ($content === '') {
+                continue;
+            }
+
+            $userMessage->addContent(new \NeuronAI\Chat\Messages\ContentBlocks\FileContent(
+                $content,
+                \NeuronAI\Chat\Enums\SourceType::BASE64,
+                (string) ($fileAttachment['mimeType'] ?? 'application/octet-stream'),
+                (string) ($fileAttachment['filename'] ?? 'file'),
+            ));
+        }
     }
 
     private function manageSummary(SessionInterface $session): void

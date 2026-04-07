@@ -31,6 +31,7 @@ use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
 use NeuronAI\Chat\Messages\UserMessage;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Psr\Http\Message\UploadedFileInterface;
 use Psr\Log\LoggerInterface as Logger;
 use Slim\Psr7\NonBufferedBody;
 use Slim\Views\Twig;
@@ -227,12 +228,14 @@ final readonly class BrainController
         }
 
         $messageArticleId = uniqid('assistant-message-', true);
+        $attachments = $this->extractAttachments($request, includeStoredFiles: true);
 
         $session->set('chatId', $chatId);
         $this->queueDispatcher->dispatch(WebChatMessageJob::class, [
             'chatId' => $chatId,
             'sessionId' => $sessionId,
             'messageArticleId' => $messageArticleId,
+            'attachments' => $attachments,
             'brainAvatar' => (string) $session->get('brain_avatar'),
             'message' => $userStr,
             'session' => $session->all(),
@@ -452,32 +455,18 @@ final readonly class BrainController
      */
     private function addAttachments(Request $request, UserMessage $userMessage): UserMessage
     {
-        $body = (array) ($request->getParsedBody() ?? []);
-        $fileIds = array_map(strval(...), (array) ($body['file_ids'] ?? []));
-        $uploadedFiles = (array) ($request->getUploadedFiles()['upload_files'] ?? []);
-
-        if ($fileIds === [] && $uploadedFiles === []) {
+        $attachments = $this->extractAttachments($request, includeStoredFiles: false);
+        if ($attachments['fileIds'] === [] && $attachments['uploadedFiles'] === []) {
             return $userMessage;
         }
 
-        foreach ($uploadedFiles as $uploadedFile) {
+        foreach ($attachments['uploadedFiles'] as $uploadedFile) {
             try {
-                if (! method_exists($uploadedFile, 'getError')) {
-                    continue;
-                }
-
-                if ($uploadedFile->getError() !== UPLOAD_ERR_OK) {
-                    continue;
-                }
-
-                $stream = $uploadedFile->getStream();
-                $stream->rewind();
-
                 $content = new FileContent(
-                    base64_encode((string) $stream->getContents()),
+                    $uploadedFile['content'],
                     SourceType::BASE64,
-                    $uploadedFile->getClientMediaType() ?? 'application/octet-stream',
-                    $uploadedFile->getClientFilename() ?? 'file'
+                    $uploadedFile['mimeType'],
+                    $uploadedFile['filename']
                 );
                 $userMessage->addContent($content);
             } catch (\Throwable $e) {
@@ -486,7 +475,7 @@ final readonly class BrainController
             }
         }
 
-        foreach ($fileIds as $fileId) {
+        foreach ($attachments['fileIds'] as $fileId) {
             try {
                 // choose action by mimetype
                 $fileDB = $this->entityManager->find(\App\Entity\File::class, $fileId);
@@ -494,12 +483,11 @@ final readonly class BrainController
                     continue;
                 }
 
-                $content = new FileContent(
-                    base64_encode($this->filesystem->read($fileDB->getFileId())),
-                    SourceType::BASE64,
-                    $fileDB->getMimeType(),
-                    $fileDB->getFilename(),
-                );
+                $content = $this->buildStoredFileContent($fileId);
+                if ($content === null) {
+                    continue;
+                }
+
                 $userMessage->addContent($content);
             } catch (OptimisticLockException | ORMException | FilesystemException | UnableToReadFile $exception) {
                 $this->logger->error('Failed to add addAttachments', ['fileId' => $fileId, 'exception' => $exception]);
@@ -507,5 +495,93 @@ final readonly class BrainController
         }
 
         return $userMessage;
+    }
+
+    /**
+     * @return array{fileIds: list<string>, uploadedFiles: list<array{filename: string, mimeType: string, content: string}>}
+     */
+    private function extractAttachments(Request $request, bool $includeStoredFiles): array
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $fileIds = array_values(array_filter(
+            array_map(strval(...), (array) ($body['file_ids'] ?? [])),
+            static fn (string $fileId): bool => $fileId !== ''
+        ));
+
+        $serializedFileIds = [];
+        if ($includeStoredFiles) {
+            foreach ($fileIds as $fileId) {
+                try {
+                    $storedAttachment = $this->getStoredFileAttachment($fileId);
+                    if ($storedAttachment === null) {
+                        continue;
+                    }
+
+                    $serializedFileIds[] = $storedAttachment;
+                } catch (OptimisticLockException | ORMException | FilesystemException | UnableToReadFile $exception) {
+                    $this->logger->error('Failed to extract stored attachment', ['fileId' => $fileId, 'exception' => $exception]);
+                }
+            }
+        }
+
+        $uploadedFiles = [];
+        foreach ((array) ($request->getUploadedFiles()['upload_files'] ?? []) as $uploadedFile) {
+            if (! $uploadedFile instanceof UploadedFileInterface) {
+                continue;
+            }
+
+            if ($uploadedFile->getError() !== UPLOAD_ERR_OK) {
+                continue;
+            }
+
+            try {
+                $stream = $uploadedFile->getStream();
+                $stream->rewind();
+                $uploadedFiles[] = [
+                    'filename' => $uploadedFile->getClientFilename() ?? 'file',
+                    'mimeType' => $uploadedFile->getClientMediaType() ?? 'application/octet-stream',
+                    'content' => base64_encode((string) $stream->getContents()),
+                ];
+            } catch (\Throwable $e) {
+                $this->logger->warning('Failed to extract inline upload', ['error' => $e->getMessage()]);
+            }
+        }
+
+        return [
+            'fileIds' => $includeStoredFiles ? $serializedFileIds : $fileIds,
+            'uploadedFiles' => $uploadedFiles,
+        ];
+    }
+
+    /**
+     * @return array{filename: string, mimeType: string, content: string}|null
+     */
+    private function getStoredFileAttachment(string $fileId): ?array
+    {
+        $fileDB = $this->entityManager->find(\App\Entity\File::class, $fileId);
+        if ($fileDB === null) {
+            return null;
+        }
+
+        return [
+            'filename' => $fileDB->getFilename(),
+            'mimeType' => $fileDB->getMimeType(),
+            'content' => base64_encode($this->filesystem->read($fileDB->getFileId())),
+        ];
+    }
+
+    private function buildStoredFileContent(string $fileId): ?FileContent
+    {
+        $storedAttachment = $this->getStoredFileAttachment($fileId);
+        if ($storedAttachment === null) {
+            return null;
+        }
+
+        return new FileContent(
+            $storedAttachment['content'],
+            SourceType::BASE64,
+            $storedAttachment['mimeType'],
+            $storedAttachment['filename'],
+        );
     }
 }
