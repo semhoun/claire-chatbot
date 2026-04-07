@@ -40,6 +40,7 @@ final class ChatTemplateSseTest extends TestCase
                 }
             },
             'current_chat_id' => 'thread-42',
+            'stream_session_id' => 'sess-abc123',
             'layout_mode' => 'full',
             'brains' => [],
             'current_brain' => 'claire',
@@ -49,15 +50,16 @@ final class ChatTemplateSseTest extends TestCase
             'uinfo' => ['id' => 'default'],
         ]);
 
-        // HTMX SSE for snapshots
+        // HTMX SSE for snapshots uses sessionId (per-tab binding)
         $this->assertStringContainsString('hx-ext="sse"', $html);
-        $this->assertStringContainsString('sse-connect="/brain/stream?chatId=thread-42"', $html);
+        $this->assertStringContainsString('sse-connect="/brain/stream?sessionId=sess-abc123"', $html);
         $this->assertStringContainsString('sse-swap="chat.snapshot"', $html);
         $this->assertStringContainsString('data-chat-id="thread-42"', $html);
+        $this->assertStringContainsString('data-stream-session-id="sess-abc123"', $html);
 
-        // Native EventSource for incremental updates
+        // Native EventSource for incremental updates uses sessionId
         $this->assertStringContainsString('new EventSource', $html);
-        $this->assertStringContainsString('/brain/stream?chatId=', $html);
+        $this->assertStringContainsString('/brain/stream?sessionId=', $html);
         $this->assertStringContainsString('mode=incremental', $html);
         $this->assertStringContainsString('window.chatIncrementalEventSource', $html);
         $this->assertStringContainsString("update.event === 'message.assistant.start'", $html);
@@ -70,9 +72,16 @@ final class ChatTemplateSseTest extends TestCase
         $this->assertStringContainsString('update.html', $html);
         $this->assertStringContainsString('element.innerHTML = htmlContent', $html);
 
-        // Form submission
+        // Form submission includes both chatId and sessionId
         $this->assertStringContainsString('hx-post="/brain/messages"', $html);
         $this->assertStringContainsString('name="chatId" value="thread-42"', $html);
+        $this->assertStringContainsString('name="sessionId" value="sess-abc123"', $html);
+
+        // Per-tab session ID stored in sessionStorage
+        $this->assertStringContainsString('sessionStorage', $html);
+        $this->assertStringContainsString('claireStreamSessionId', $html);
+        $this->assertStringContainsString('serverSessionId || window.sessionStorage.getItem(STORAGE_KEY)', $html);
+        $this->assertStringContainsString('window.claireStreamSessionId', $html);
 
         // Reconnection handling
         $this->assertStringContainsString('setTimeout', $html);
@@ -102,6 +111,7 @@ final class ChatTemplateSseTest extends TestCase
                 }
             },
             'current_chat_id' => 'thread-42',
+            'stream_session_id' => 'sess-abc123',
             'layout_mode' => 'full',
             'brains' => [],
             'current_brain' => 'claire',

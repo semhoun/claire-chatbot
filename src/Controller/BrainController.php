@@ -220,11 +220,18 @@ final readonly class BrainController
             return $response->withStatus(400);
         }
 
+        // sessionId is the per-tab SSE binding key (stored in sessionStorage)
+        $sessionId = trim((string) ($data['sessionId'] ?? ''));
+        if ($sessionId === '') {
+            return $response->withStatus(400);
+        }
+
         $messageArticleId = uniqid('assistant-message-', true);
 
         $session->set('chatId', $chatId);
         $this->queueDispatcher->dispatch(WebChatMessageJob::class, [
             'chatId' => $chatId,
+            'sessionId' => $sessionId,
             'messageArticleId' => $messageArticleId,
             'brainAvatar' => (string) $session->get('brain_avatar'),
             'message' => $userStr,
@@ -248,26 +255,34 @@ final readonly class BrainController
         ignore_user_abort(true);
 
         $session = $this->getSession($request);
-        $chatId = trim((string) ($request->getQueryParams()['chatId'] ?? $session->get('chatId') ?? ''));
-        if ($chatId === '') {
+        $queryParams = $request->getQueryParams();
+
+        // sessionId is the per-tab SSE binding key (stable across chat switches within the same tab)
+        $sessionId = trim((string) ($queryParams['sessionId'] ?? ''));
+        if ($sessionId === '') {
             return $response->withStatus(400);
         }
 
         // Mode: 'full' (default) for HTMX SSE, 'incremental' for native EventSource
-        $mode = (string) ($request->getQueryParams()['mode'] ?? 'full');
+        $mode = (string) ($queryParams['mode'] ?? 'full');
 
-        $session->set('chatId', $chatId);
-        $userChatHistory = new UserChatHistory(
-            session: $session,
-            pdo: $this->entityManager->getConnection()->getNativeConnection(),
-            contextWindow: $this->settings->get('llm.openai.contextWindow')
-        );
-        $userChatHistory->setThreadId($chatId);
-        $userChatHistory->validateMessageSequences();
+        $chatId = trim((string) ($queryParams['chatId'] ?? $session->get('chatId') ?? ''));
+        $messagesHtml = '';
+        if ($chatId !== '') {
+            $session->set('chatId', $chatId);
 
-        $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-            'messages' => $userChatHistory->getFormattedMessages('stream'),
-        ]);
+            $userChatHistory = new UserChatHistory(
+                session: $session,
+                pdo: $this->entityManager->getConnection()->getNativeConnection(),
+                contextWindow: $this->settings->get('llm.openai.contextWindow')
+            );
+            $userChatHistory->setThreadId($chatId);
+            $userChatHistory->validateMessageSequences();
+
+            $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
+                'messages' => $userChatHistory->getFormattedMessages('stream'),
+            ]);
+        }
 
         $response = $response
             ->withBody(new NonBufferedBody())
@@ -278,24 +293,29 @@ final readonly class BrainController
 
         $stream = $response->getBody();
 
-        // Send initial snapshot
-        // HTMX SSE expects named event with raw HTML; incremental mode expects JSON
+        // Send initial snapshot for current chat
         if ($mode === 'incremental') {
-            // Native EventSource format for incremental updates
             $stream->write($this->sseEventFormatter->formatHtmlUpdate('messages', $messagesHtml));
         } else {
-            // HTMX SSE format: named event with raw HTML
             $stream->write($this->sseEventFormatter->formatNamedEvent('chat.snapshot', $messagesHtml));
         }
 
         $deadline = time() + self::SSE_KEEPALIVE_INTERVAL;
-        $offset = $this->chatStreamBuffer->length($chatId);
+        // Use sessionId as the stream key (per-tab) instead of chatId
+        $offset = $this->chatStreamBuffer->length($sessionId);
 
         while (! connection_aborted()) {
-            $messages = $this->chatStreamBuffer->readSince($chatId, $offset);
+            $messages = $this->chatStreamBuffer->readSince($sessionId, $offset);
             foreach ($messages as $message) {
                 $event = json_decode($message, true, flags: JSON_THROW_ON_ERROR);
-                if (! is_array($event) || ($event['chatId'] ?? null) !== $chatId) {
+                if (! is_array($event)) {
+                    $offset++;
+                    continue;
+                }
+
+                // sessionId is carried in payload for per-tab routing
+                $eventSessionId = (string) ($event['payload']['sessionId'] ?? $event['chatId'] ?? '');
+                if (! is_array($event) || $eventSessionId !== $sessionId) {
                     $offset++;
                     continue;
                 }

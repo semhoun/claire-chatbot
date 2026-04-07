@@ -65,7 +65,9 @@ final readonly class HistoryController
         $userChatHistory->replaceDisplayMessages([$assistantMessage]);
         $userChatHistory->replaceMessages([]);
 
-        $this->publishSnapshot($threadId, $userChatHistory);
+        // sessionId from request (per-tab SSE binding key)
+        $sessionId = trim((string) ($request->getParsedBody()['sessionId'] ?? $request->getQueryParams()['sessionId'] ?? ''));
+        $this->publishSnapshot($threadId, $userChatHistory, $sessionId);
 
         $response->getBody()->write(json_encode([
             'chatId' => $threadId,
@@ -153,7 +155,9 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
-        $this->publishSnapshot($threadId, $userChatHistory);
+        // sessionId from request (per-tab SSE binding key)
+        $sessionId = trim((string) ($request->getParsedBody()['sessionId'] ?? $request->getQueryParams()['sessionId'] ?? ''));
+        $this->publishSnapshot($threadId, $userChatHistory, $sessionId);
 
         $response->getBody()->write(json_encode([
             'chatId' => $threadId,
@@ -219,7 +223,9 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
-        $this->publishSnapshot($threadId, $userChatHistory);
+        // sessionId from request (per-tab SSE binding key)
+        $sessionId = trim((string) ($request->getParsedBody()['sessionId'] ?? $request->getQueryParams()['sessionId'] ?? ''));
+        $this->publishSnapshot($threadId, $userChatHistory, $sessionId);
 
         $response->getBody()->write(json_encode([
             'chatId' => $threadId,
@@ -229,14 +235,17 @@ final readonly class HistoryController
         return $response->withHeader('Content-Type', 'application/json');
     }
 
-    private function publishSnapshot(string $threadId, UserChatHistory $userChatHistory): void
+    private function publishSnapshot(string $threadId, UserChatHistory $userChatHistory, string $sessionId = ''): void
     {
         $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
             'messages' => $userChatHistory->getFormattedMessages('stream'),
         ]);
 
-        $this->chatStreamPublisher->publish($threadId, 'chat.snapshot', [
+        // Publish to sessionId if provided (per-tab SSE), otherwise fallback to threadId
+        $streamKey = $sessionId !== '' ? $sessionId : $threadId;
+        $this->chatStreamPublisher->publish($streamKey, 'chat.snapshot', [
             'chatId' => $threadId,
+            'sessionId' => $sessionId,
             'messagesHtml' => $messagesHtml,
         ]);
     }

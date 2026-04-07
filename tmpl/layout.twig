@@ -49,6 +49,7 @@
                 hx-swap="none"
                 hx-indicator="#globalActionIndicator"
                 hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
+                hx-vals="js:{sessionId: window.claireStreamSessionId || ''}"
                 hx-on::after-request="
                      if (event.detail.successful) {
                          try {

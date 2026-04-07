@@ -37,10 +37,12 @@ final readonly class WebChatMessageJob implements QueueDoer
     {
         $messageText = trim((string) ($payload['message'] ?? ''));
         $chatId = (string) ($payload['chatId'] ?? '');
+        // sessionId is the per-tab SSE binding key (stable across chat switches)
+        $sessionId = (string) ($payload['sessionId'] ?? '');
         $brainAvatar = (string) ($payload['brainAvatar'] ?? '');
         $sessionValues = $payload['session'] ?? [];
 
-        if ($messageText === '' || $chatId === '' || ! is_array($sessionValues)) {
+        if ($messageText === '' || $chatId === '' || $sessionId === '' || ! is_array($sessionValues)) {
             return;
         }
 
@@ -78,13 +80,16 @@ final readonly class WebChatMessageJob implements QueueDoer
                             'toolCallId' => null,
                             'toolCall' => null,
                         ]);
-                        $this->chatStreamPublisher->publish($chatId, 'message.assistant.start', [
+                        // Publish to sessionId (per-tab stream) instead of chatId
+                        $this->chatStreamPublisher->publish($sessionId, 'message.assistant.start', [
                             'chatId' => $chatId,
+                            'sessionId' => $sessionId,
                             'messageId' => $messageId,
                             'messageArticleId' => $messageArticleId,
                         ]);
-                        $this->chatStreamPublisher->publish($chatId, 'message.assistant.placeholder', [
+                        $this->chatStreamPublisher->publish($sessionId, 'message.assistant.placeholder', [
                             'chatId' => $chatId,
+                            'sessionId' => $sessionId,
                             'messageId' => $messageId,
                             'messageArticleId' => $messageArticleId,
                             'html' => $placeholderHtml,
@@ -105,8 +110,9 @@ final readonly class WebChatMessageJob implements QueueDoer
                             'toolCallId' => $toolCallId,
                             'toolCall' => $toolText,
                         ]);
-                        $this->chatStreamPublisher->publish($chatId, 'message.assistant.placeholder', [
+                        $this->chatStreamPublisher->publish($sessionId, 'message.assistant.placeholder', [
                             'chatId' => $chatId,
+                            'sessionId' => $sessionId,
                             'messageId' => $messageId,
                             'messageArticleId' => $messageArticleId,
                             'html' => $placeholderHtml,
@@ -114,8 +120,9 @@ final readonly class WebChatMessageJob implements QueueDoer
                         $toolPlaceholderPublished = true;
                     }
 
-                    $this->chatStreamPublisher->publish($chatId, 'tool.update', [
+                    $this->chatStreamPublisher->publish($sessionId, 'tool.update', [
                         'chatId' => $chatId,
+                        'sessionId' => $sessionId,
                         'messageId' => $messageId,
                         'messageArticleId' => $messageArticleId,
                         'toolCallId' => $toolCallId,
@@ -139,13 +146,15 @@ final readonly class WebChatMessageJob implements QueueDoer
                         'toolCallId' => null,
                         'toolCall' => null,
                     ]);
-                    $this->chatStreamPublisher->publish($chatId, 'message.assistant.start', [
+                    $this->chatStreamPublisher->publish($sessionId, 'message.assistant.start', [
                         'chatId' => $chatId,
+                        'sessionId' => $sessionId,
                         'messageId' => $messageId,
                         'messageArticleId' => $messageArticleId,
                     ]);
-                    $this->chatStreamPublisher->publish($chatId, 'message.assistant.placeholder', [
+                    $this->chatStreamPublisher->publish($sessionId, 'message.assistant.placeholder', [
                         'chatId' => $chatId,
+                        'sessionId' => $sessionId,
                         'messageId' => $messageId,
                         'messageArticleId' => $messageArticleId,
                         'html' => $placeholderHtml,
@@ -156,8 +165,9 @@ final readonly class WebChatMessageJob implements QueueDoer
                 $streamedText .= $chunk->content;
                 $html = $this->twig->fetch('partials/md.twig', ['message' => $streamedText]);
 
-                $this->chatStreamPublisher->publish($chatId, 'message.assistant.delta', [
+                $this->chatStreamPublisher->publish($sessionId, 'message.assistant.delta', [
                     'chatId' => $chatId,
+                    'sessionId' => $sessionId,
                     'messageId' => $messageId,
                     'messageArticleId' => $messageArticleId,
                     'html' => $html,
@@ -169,21 +179,24 @@ final readonly class WebChatMessageJob implements QueueDoer
                 'message' => $agentMessage->getContent(),
             ]);
 
-            $this->chatStreamPublisher->publish($chatId, 'message.assistant.delta', [
+            $this->chatStreamPublisher->publish($sessionId, 'message.assistant.delta', [
                 'chatId' => $chatId,
+                'sessionId' => $sessionId,
                 'messageId' => $messageId,
                 'messageArticleId' => $messageArticleId,
                 'html' => $finalHtml,
             ]);
-            $this->chatStreamPublisher->publish($chatId, 'message.assistant.done', [
+            $this->chatStreamPublisher->publish($sessionId, 'message.assistant.done', [
                 'chatId' => $chatId,
+                'sessionId' => $sessionId,
                 'messageId' => $messageId,
                 'messageArticleId' => $messageArticleId,
             ]);
         } catch (\Throwable $throwable) {
-            $this->logger->error('Web chat job failed', ['exception' => $throwable, 'chatId' => $chatId]);
-            $this->chatStreamPublisher->publish($chatId, 'chat.error', [
+            $this->logger->error('Web chat job failed', ['exception' => $throwable, 'chatId' => $chatId, 'sessionId' => $sessionId]);
+            $this->chatStreamPublisher->publish($sessionId, 'chat.error', [
                 'chatId' => $chatId,
+                'sessionId' => $sessionId,
                 'message' => 'Désolé, une erreur est survenue lors du traitement de votre message.',
             ]);
         }

@@ -90,10 +90,14 @@ final readonly class HomeController
             $meta = $this->brainRegistry->getMeta($currentBrain);
         }
 
+        // Generate a per-tab stream session ID for SSE binding
+        $streamSessionId = uniqid('sess-', true);
+
         return $this->twig->render($response, 'chat.twig', [
             'time' => $time,
             'messages' => $messages,
             'current_chat_id' => $chatId,
+            'stream_session_id' => $streamSessionId,
             'uinfo' => $session->get(Auth::USERINFO),
             'layout_mode' => $layoutMode,
             'brain_info' => $meta,
