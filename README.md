@@ -509,6 +509,9 @@ services:
 
       DATA_PATH: /data
 
+      # Queue workers (optionnel, défaut: 1)
+      # QUEUE_WORKERS: 2
+
       # Session JWT (obligatoire)
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?set_me}
 
@@ -594,6 +597,10 @@ Notes Docker/FrankenPHP:
 - Si `ENABLE_LETSENCRYPT=false`, le conteneur reste en HTTP sur le port 80, ce qui est recommande derriere un reverse proxy TLS.
 - `ENABLE_ACCESS_LOGS` permet d'activer ou couper les logs d'acces HTTP sans rebuilder l'image.
 - Pour Let's Encrypt, le domaine doit etre publiquement resolvable vers le conteneur et les ports 80/443 doivent etre accessibles.
+
+#### Variables d'environnement Docker
+
+- `QUEUE_WORKERS` — Nombre de workers de queue Redis à lancer (défaut: 1). Augmentez cette valeur si vous avez besoin de traiter plus de jobs en parallèle (ex: `QUEUE_WORKERS=4`).
 
 #### Points clés de l'image Docker
 
