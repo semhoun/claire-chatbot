@@ -10,7 +10,7 @@ final readonly class SseEventFormatter
      * Format for native EventSource (inspired by sse-driven-htmx)
      * Returns: data: {"html": {"elementId": "content"}}\n\n
      */
-    public function formatHtmlUpdate(string $elementId, string $html): string
+    public function formatHtmlUpdate(string $elementId, string $html, ?string $eventId = null): string
     {
         $payload = json_encode([
             'html' => [
@@ -18,7 +18,7 @@ final readonly class SseEventFormatter
             ],
         ], JSON_THROW_ON_ERROR);
 
-        return "data: {$payload}\n\n";
+        return $this->formatDataPayload($payload, $eventId);
     }
 
     /**
@@ -34,6 +34,17 @@ final readonly class SseEventFormatter
         ], JSON_THROW_ON_ERROR);
 
         return "data: {$payload}\n\n";
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function formatJsonEvent(array $payload, ?string $eventId = null): string
+    {
+        return $this->formatDataPayload(
+            json_encode($payload, JSON_THROW_ON_ERROR),
+            $eventId,
+        );
     }
 
     /**
@@ -64,5 +75,15 @@ final readonly class SseEventFormatter
     public function keepalive(): string
     {
         return ": keepalive\n\n";
+    }
+
+    private function formatDataPayload(string $payload, ?string $eventId = null): string
+    {
+        $frame = '';
+        if ($eventId !== null && $eventId !== '') {
+            $frame .= 'id: ' . $eventId . "\n";
+        }
+
+        return $frame . "data: {$payload}\n\n";
     }
 }

@@ -53,45 +53,62 @@ final readonly class WebChatMessageJob implements QueueDoer
 
         $streamedText = '';
         $toolCallId = null;
-        $toolText = null;
+        $toolText = '';
         $toolPlaceholderPublished = false;
+        $assistantStarted = false;
         $messageId = uniqid('assistant-', true);
+        $messageArticleId = trim((string) ($payload['messageArticleId'] ?? ''));
+        if ($messageArticleId === '') {
+            $messageArticleId = uniqid('assistant-message-', true);
+        }
         $timestamp = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
 
         try {
             $agentHandler = $agent->stream($userMessage);
 
-            $placeholderHtml = $this->twig->fetch('partials/message.twig', [
-                'message' => '',
-                'time' => $timestamp,
-                'sent' => false,
-                'streamId' => $messageId,
-                'toolCallId' => null,
-                'toolCall' => null,
-            ]);
-            $this->chatStreamPublisher->publish($chatId, 'message.assistant.placeholder', [
-                'chatId' => $chatId,
-                'messageId' => $messageId,
-                'html' => $placeholderHtml,
-            ]);
-
             foreach ($agentHandler->events() as $chunk) {
                 if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
+                    if (! $assistantStarted) {
+                        $placeholderHtml = $this->twig->fetch('partials/message.twig', [
+                            'message' => $streamedText,
+                            'time' => $timestamp,
+                            'sent' => false,
+                            'messageArticleId' => $messageArticleId,
+                            'streamId' => $messageId,
+                            'toolCallId' => null,
+                            'toolCall' => null,
+                        ]);
+                        $this->chatStreamPublisher->publish($chatId, 'message.assistant.start', [
+                            'chatId' => $chatId,
+                            'messageId' => $messageId,
+                            'messageArticleId' => $messageArticleId,
+                        ]);
+                        $this->chatStreamPublisher->publish($chatId, 'message.assistant.placeholder', [
+                            'chatId' => $chatId,
+                            'messageId' => $messageId,
+                            'messageArticleId' => $messageArticleId,
+                            'html' => $placeholderHtml,
+                        ]);
+                        $assistantStarted = true;
+                    }
+
                     $toolCallId ??= uniqid('tool-', true);
-                    $toolText = $this->formatToolChunk($chunk);
+                    $toolText .= $this->formatToolChunk($chunk);
 
                     if (! $toolPlaceholderPublished) {
                         $placeholderHtml = $this->twig->fetch('partials/message.twig', [
                             'message' => $streamedText,
                             'time' => $timestamp,
                             'sent' => false,
+                            'messageArticleId' => $messageArticleId,
                             'streamId' => $messageId,
                             'toolCallId' => $toolCallId,
-                            'toolCall' => '',
+                            'toolCall' => $toolText,
                         ]);
                         $this->chatStreamPublisher->publish($chatId, 'message.assistant.placeholder', [
                             'chatId' => $chatId,
                             'messageId' => $messageId,
+                            'messageArticleId' => $messageArticleId,
                             'html' => $placeholderHtml,
                         ]);
                         $toolPlaceholderPublished = true;
@@ -100,6 +117,7 @@ final readonly class WebChatMessageJob implements QueueDoer
                     $this->chatStreamPublisher->publish($chatId, 'tool.update', [
                         'chatId' => $chatId,
                         'messageId' => $messageId,
+                        'messageArticleId' => $messageArticleId,
                         'toolCallId' => $toolCallId,
                         'html' => $toolText,
                     ]);
@@ -111,12 +129,37 @@ final readonly class WebChatMessageJob implements QueueDoer
                     continue;
                 }
 
+                if (! $assistantStarted) {
+                    $placeholderHtml = $this->twig->fetch('partials/message.twig', [
+                        'message' => '',
+                        'time' => $timestamp,
+                        'sent' => false,
+                        'messageArticleId' => $messageArticleId,
+                        'streamId' => $messageId,
+                        'toolCallId' => null,
+                        'toolCall' => null,
+                    ]);
+                    $this->chatStreamPublisher->publish($chatId, 'message.assistant.start', [
+                        'chatId' => $chatId,
+                        'messageId' => $messageId,
+                        'messageArticleId' => $messageArticleId,
+                    ]);
+                    $this->chatStreamPublisher->publish($chatId, 'message.assistant.placeholder', [
+                        'chatId' => $chatId,
+                        'messageId' => $messageId,
+                        'messageArticleId' => $messageArticleId,
+                        'html' => $placeholderHtml,
+                    ]);
+                    $assistantStarted = true;
+                }
+
                 $streamedText .= $chunk->content;
                 $html = $this->twig->fetch('partials/md.twig', ['message' => $streamedText]);
 
                 $this->chatStreamPublisher->publish($chatId, 'message.assistant.delta', [
                     'chatId' => $chatId,
                     'messageId' => $messageId,
+                    'messageArticleId' => $messageArticleId,
                     'html' => $html,
                 ]);
             }
@@ -129,11 +172,13 @@ final readonly class WebChatMessageJob implements QueueDoer
             $this->chatStreamPublisher->publish($chatId, 'message.assistant.delta', [
                 'chatId' => $chatId,
                 'messageId' => $messageId,
+                'messageArticleId' => $messageArticleId,
                 'html' => $finalHtml,
             ]);
             $this->chatStreamPublisher->publish($chatId, 'message.assistant.done', [
                 'chatId' => $chatId,
                 'messageId' => $messageId,
+                'messageArticleId' => $messageArticleId,
             ]);
         } catch (\Throwable $throwable) {
             $this->logger->error('Web chat job failed', ['exception' => $throwable, 'chatId' => $chatId]);

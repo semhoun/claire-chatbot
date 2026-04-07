@@ -220,9 +220,12 @@ final readonly class BrainController
             return $response->withStatus(400);
         }
 
+        $messageArticleId = uniqid('assistant-message-', true);
+
         $session->set('chatId', $chatId);
         $this->queueDispatcher->dispatch(WebChatMessageJob::class, [
             'chatId' => $chatId,
+            'messageArticleId' => $messageArticleId,
             'brainAvatar' => (string) $session->get('brain_avatar'),
             'message' => $userStr,
             'session' => $session->all(),
@@ -230,6 +233,7 @@ final readonly class BrainController
 
         $response->getBody()->write(json_encode([
             'chatId' => $chatId,
+            'messageArticleId' => $messageArticleId,
             'accepted' => true,
         ], JSON_THROW_ON_ERROR));
 
@@ -306,8 +310,13 @@ final readonly class BrainController
                 // Route events based on mode
                 if ($mode === 'incremental') {
                     // Incremental mode: only send granular events as JSON
-                    if (in_array($eventName, ['message.assistant.placeholder', 'message.assistant.delta', 'tool.update', 'message.assistant.done', 'chat.error'], true)) {
+                    if (in_array($eventName, ['message.assistant.start', 'message.assistant.placeholder', 'message.assistant.delta', 'tool.update', 'message.assistant.done', 'chat.error'], true)) {
                         $incrementalPayload = match ($eventName) {
+                            'message.assistant.start' => [
+                                'event' => $eventName,
+                                'messageId' => $payload['messageId'] ?? null,
+                                'messageArticleId' => $payload['messageArticleId'] ?? null,
+                            ],
                             'message.assistant.placeholder' => [
                                 'html' => [
                                     'messages' => (string) ($payload['html'] ?? ''),
@@ -315,6 +324,7 @@ final readonly class BrainController
                                 'mode' => 'append',
                                 'event' => $eventName,
                                 'messageId' => $payload['messageId'] ?? null,
+                                'messageArticleId' => $payload['messageArticleId'] ?? null,
                             ],
                             'message.assistant.delta' => [
                                 'html' => [
@@ -323,6 +333,7 @@ final readonly class BrainController
                                 'mode' => 'replace',
                                 'event' => $eventName,
                                 'messageId' => $payload['messageId'] ?? null,
+                                'messageArticleId' => $payload['messageArticleId'] ?? null,
                             ],
                             'tool.update' => [
                                 'html' => [
@@ -331,7 +342,13 @@ final readonly class BrainController
                                 'mode' => 'replace',
                                 'event' => $eventName,
                                 'messageId' => $payload['messageId'] ?? null,
+                                'messageArticleId' => $payload['messageArticleId'] ?? null,
                                 'toolCallId' => $payload['toolCallId'] ?? null,
+                            ],
+                            'message.assistant.done' => [
+                                'event' => $eventName,
+                                'messageId' => $payload['messageId'] ?? null,
+                                'messageArticleId' => $payload['messageArticleId'] ?? null,
                             ],
                             'chat.error' => [
                                 'error' => (string) ($payload['message'] ?? 'Une erreur est survenue.'),
@@ -342,7 +359,15 @@ final readonly class BrainController
                             ],
                         };
 
-                        $stream->write("data: " . json_encode($incrementalPayload, JSON_THROW_ON_ERROR) . "\n\n");
+                        $eventId = (string) ($payload['messageArticleId'] ?? '');
+                        if ($eventId === '') {
+                            $eventId = (string) ($payload['messageId'] ?? '');
+                        }
+
+                        $stream->write($this->sseEventFormatter->formatJsonEvent(
+                            $incrementalPayload,
+                            $eventId !== '' ? $eventId : null,
+                        ));
                     }
 
                     // Note: chat.snapshot is NOT sent in incremental mode (HTMX SSE handles it)

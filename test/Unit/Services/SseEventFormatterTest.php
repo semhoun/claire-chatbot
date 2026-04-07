@@ -22,6 +22,16 @@ final class SseEventFormatterTest extends TestCase
         $this->assertSame(['html' => ['messages' => '<div>test</div>']], $json);
     }
 
+    public function testFormatHtmlUpdateIncludesEventIdWhenProvided(): void
+    {
+        $formatter = new SseEventFormatter();
+
+        $result = $formatter->formatHtmlUpdate('messages', '<div>test</div>', 'assistant-message-123');
+
+        $this->assertStringStartsWith("id: assistant-message-123\n", $result);
+        $this->assertStringContainsString("data: {\"html\":{\"messages\":\"<div>test</div>\"}}\n\n", $result);
+    }
+
     public function testFormatJsExecReturnsNativeEventSourceFormat(): void
     {
         $formatter = new SseEventFormatter();
@@ -52,5 +62,20 @@ final class SseEventFormatterTest extends TestCase
         $formatter = new SseEventFormatter();
 
         $this->assertSame(": keepalive\n\n", $formatter->keepalive());
+    }
+
+    public function testFormatJsonEventIncludesEventId(): void
+    {
+        $formatter = new SseEventFormatter();
+
+        $result = $formatter->formatJsonEvent([
+            'event' => 'message.assistant.start',
+            'messageArticleId' => 'assistant-message-123',
+        ], 'assistant-message-123');
+
+        $this->assertSame(
+            "id: assistant-message-123\ndata: {\"event\":\"message.assistant.start\",\"messageArticleId\":\"assistant-message-123\"}\n\n",
+            $result,
+        );
     }
 }

@@ -60,6 +60,10 @@ final class ChatTemplateSseTest extends TestCase
         $this->assertStringContainsString('/brain/stream?chatId=', $html);
         $this->assertStringContainsString('mode=incremental', $html);
         $this->assertStringContainsString('window.chatIncrementalEventSource', $html);
+        $this->assertStringContainsString("update.event === 'message.assistant.start'", $html);
+        $this->assertStringContainsString('messageArticleId', $html);
+        $this->assertStringNotContainsString('hx-indicator="#typingIndicator"', $html);
+        $this->assertStringContainsString('class="typing-indicator" aria-hidden="true"', $html);
 
         // JSON message handling for incremental updates
         $this->assertStringContainsString('JSON.parse(event.data)', $html);
@@ -72,6 +76,44 @@ final class ChatTemplateSseTest extends TestCase
 
         // Reconnection handling
         $this->assertStringContainsString('setTimeout', $html);
+    }
+
+    public function testChatTemplateReusesExistingAssistantArticleForPlaceholderUpdates(): void
+    {
+        $twig = $this->createTwig();
+
+        $html = $twig->render('chat.twig', [
+            'base_url' => '',
+            'brain_info' => [
+                'avatar' => '/avatar.png',
+                'name' => 'Claire',
+                'description' => 'Assistant',
+                'css' => null,
+                'css_inline' => null,
+            ],
+            'messages' => [],
+            'settings' => new class() {
+                public function get(string $key): string
+                {
+                    return match ($key) {
+                        'files.upload.acceptedExt' => '.txt',
+                        default => '',
+                    };
+                }
+            },
+            'current_chat_id' => 'thread-42',
+            'layout_mode' => 'full',
+            'brains' => [],
+            'current_brain' => 'claire',
+            'comfyui_enabled' => false,
+            'comfyui_workflows' => [],
+            'current_comfyui_workflow' => '',
+            'uinfo' => ['id' => 'default'],
+        ]);
+
+        $this->assertStringContainsString('const existingTarget = document.getElementById(incomingMessageId);', $html);
+        $this->assertStringContainsString('document.getElementById(update.messageArticleId)', $html);
+        $this->assertStringContainsString('existingArticle.outerHTML = htmlContent;', $html);
     }
 
     public function testLayoutLoadsHtmxSseExtension(): void
