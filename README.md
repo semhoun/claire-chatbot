@@ -1,8 +1,8 @@
-# Claire 1.3.1 — Agent de Chat IA (PHP, Slim 4)
+# Claire — Agent de Chat IA (PHP, Slim 4)
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-Claire 1.3.1 est une application web de chat IA construite avec Slim 4, Twig et Neuron AI. Elle fournit une interface web, un endpoint API, une integration Telegram et un runtime Docker base sur FrankenPHP/Caddy pour piloter des LLM compatibles OpenAI.
+Claire est une application web de chat IA construite avec Slim 4, Twig et Neuron AI. Elle fournit une interface web, un endpoint API, une integration Telegram et un runtime Docker base sur FrankenPHP/Caddy pour piloter des LLM compatibles OpenAI.
 
 ## Démarrage rapide
 
@@ -45,7 +45,7 @@ docker run -d -p 8080:80 \
 
 ## Fonctionnalités
 
-- Interface web de chat avec horodatage, annulation du dernier echange, affichage instantane du message utilisateur, mode streaming par defaut, raccourci pour revenir en bas de conversation et ajustements visuels sur les themes et la mise en page.
+- Interface web de chat avec streaming SSE, horodatage, suppression du dernier message, affichage instantane du message utilisateur, raccourci pour revenir en bas de conversation et ajustements visuels sur les themes et la mise en page.
 - Endpoint API `POST /brain/messages` pour envoyer un message au traitement asynchrone du chat web.
 - Healthcheck `GET /health` (JSON) pour la supervision.
 - Intégration d'un fournisseur LLM « OpenAI-like » (URL, clé et modèle configurables).
@@ -600,7 +600,7 @@ Notes Docker/FrankenPHP:
 
 #### Variables d'environnement Docker
 
-- `QUEUE_WORKERS` — Nombre de workers de queue Redis à lancer (défaut: 1). Augmentez cette valeur si vous avez besoin de traiter plus de jobs en parallèle (ex: `QUEUE_WORKERS=4`).
+- `QUEUE_WORKERS` — Nombre de workers de queue Redis à lancer (défaut: 1). Augmentez cette valeur si vous avez besoin de traiter plus de jobs en parallèle (ex: `QUEUE_WORKERS=4`). Chaque worker tourne dans son propre processus supervisé.
 
 #### Points clés de l'image Docker
 
@@ -650,8 +650,8 @@ services:
   - Réponse 200 (exemple):
     ```json
     {
-      "version": "1.3.1",
-      "date": "2025-01-01T12:34:56+00:00"
+      "version": "1.4.0",
+      "date": "2026-04-08T12:34:56+00:00"
     }
     ```
   - Utilisation typique: sonde de conteneur/orchestrateur (Docker, Traefik, Kubernetes, etc.).
@@ -677,7 +677,7 @@ services:
 
 ### Configuration (/config)
 
-- `POST /config/chat_mode` — Changer le mode de chat (sync/stream)
+- `POST /config/chat_mode` — Changer le mode de chat (déprécié, streaming uniquement depuis v1.4.0)
 - `POST /config/layout_mode` — Changer le mode d'affichage
 - `POST /config/brain_avatar` — Changer l'avatar/cerveau actif
 - `POST /config/telegram` — Configurer Telegram
@@ -711,7 +711,11 @@ Notes:
   ```
 - Si vous utilisez un autre proxy (Nginx, Traefik, etc.), désactivez la bufferisation équivalente (ex. Nginx: `proxy_buffering off;` sur l’emplacement concerné).
 
-### Architecture SSE actuelle de l’interface web
+### Architecture SSE (Server-Sent Events)
+
+**Note importante**: Depuis la version 1.4.0, l'interface web fonctionne **exclusivement en mode streaming** via SSE. Le mode chat classique (synchrone) a été supprimé.
+
+L’interface web
 
 L’interface web repose sur deux canaux SSE distincts:
 
@@ -747,10 +751,6 @@ Content-Disposition: form-data; name="message"
 
 Analyse ces documents, s'il te plaît.
 ------BOUND
-Content-Disposition: form-data; name="chatId"
-
-chat-123
-------BOUND
 Content-Disposition: form-data; name="sessionId"
 
 sess-abc123
@@ -763,8 +763,8 @@ Content-Type: text/plain
 ```
 
 Réponses possibles:
-- 202: message accepté et mis en file, avec `chatId` et `messageArticleId` en JSON.
-- 400: si `chatId` ou `sessionId` est absent.
+- 202: message accepté et mis en file, avec `messageArticleId` en JSON.
+- 400: si `sessionId` est absent.
 - 422: si le champ `message` est vide.
 
 #### Pièces jointes et fichiers
@@ -784,10 +784,6 @@ Content-Type: multipart/form-data; boundary=----BOUND
 Content-Disposition: form-data; name="message"
 
 Analyse ces documents, s'il te plaît.
-------BOUND
-Content-Disposition: form-data; name="chatId"
-
-chat-123
 ------BOUND
 Content-Disposition: form-data; name="sessionId"
 
@@ -810,10 +806,6 @@ Content-Type: multipart/form-data; boundary=----BOUND
 Content-Disposition: form-data; name="message"
 
 Utilise mes fichiers pour répondre.
-------BOUND
-Content-Disposition: form-data; name="chatId"
-
-chat-123
 ------BOUND
 Content-Disposition: form-data; name="sessionId"
 
