@@ -222,9 +222,11 @@
                             }
                             };
                             cancelBtn.onclick = function() {
+                                confirmBtn.blur();
                                 document.getElementById('modalRoot').classList.remove('is-open');
                                 document.getElementById('modalBackdrop').classList.remove('is-visible');
                                 document.body.classList.remove('modal-open');
+                                document.getElementById('modalRoot').setAttribute('aria-hidden', 'true');
                                 confirmBtn.onclick = null;
                             };
                             document.getElementById('modalBackdrop').classList.add('is-visible');

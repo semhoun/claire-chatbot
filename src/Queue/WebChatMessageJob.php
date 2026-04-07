@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Queue;
 
 use App\Brain\BrainRegistry;
+use App\Brain\Summary;
 use App\Services\ChatStreamPublisher;
 use App\Services\Session\SessionInterface;
+use App\Services\Settings;
+use Doctrine\DBAL\Connection;
 use DateTimeImmutable;
 use DateTimeInterface;
 use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
@@ -25,6 +28,8 @@ final readonly class WebChatMessageJob implements QueueDoer
         private Twig $twig,
         private BrainRegistry $brainRegistry,
         private ChatStreamPublisher $chatStreamPublisher,
+        private Connection $connection,
+        private Settings $settings,
     ) {
     }
 
@@ -192,6 +197,8 @@ final readonly class WebChatMessageJob implements QueueDoer
                 'messageId' => $messageId,
                 'messageArticleId' => $messageArticleId,
             ]);
+
+            $this->manageSummary($inMemorySession);
         } catch (\Throwable $throwable) {
             $this->logger->error('Web chat job failed', ['exception' => $throwable, 'chatId' => $chatId, 'sessionId' => $sessionId]);
             $this->chatStreamPublisher->publish($sessionId, 'chat.error', [
@@ -225,6 +232,21 @@ final readonly class WebChatMessageJob implements QueueDoer
         }
 
         return $toolText;
+    }
+
+    private function manageSummary(SessionInterface $session): void
+    {
+        $summary = new Summary($this->connection, $this->settings, $session);
+        $messages = $summary->getChatHistory()->getDisplayMessages();
+        if ($messages === [] || count($messages) < $this->settings->get('llm.summary.minMessages')) {
+            return;
+        }
+
+        if (count($messages) > $this->settings->get('llm.summary.maxMessages') && $summary->getChatHistory()->getTitle() !== null) {
+            return;
+        }
+
+        $summary->generateAndPersist();
     }
 }
 
