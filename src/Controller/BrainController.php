@@ -270,12 +270,9 @@ final readonly class BrainController
             ->withHeader('X-Accel-Buffering', 'no');
 
         $stream = $response->getBody();
-        $stream->write($this->sseEventFormatter->format('chat.snapshot', $messagesHtml));
-        $stream->write($this->sseEventFormatter->format('chat.snapshot.payload', (string) json_encode([
-            'chatId' => $chatId,
-            'messagesHtml' => $messagesHtml,
-        ], JSON_THROW_ON_ERROR)));
-        $stream->write("retry: 1000\n\n");
+
+        // Send initial snapshot using native EventSource format
+        $stream->write($this->sseEventFormatter->formatHtmlUpdate('messages', $messagesHtml));
 
         $deadline = time() + self::SSE_KEEPALIVE_INTERVAL;
         $offset = $this->chatStreamBuffer->length($chatId);
@@ -296,13 +293,29 @@ final readonly class BrainController
                     continue;
                 }
 
-                $payloadData = $eventName === 'chat.snapshot'
-                    ? (string) ($payload['messagesHtml'] ?? '')
-                    : (string) json_encode($payload, JSON_THROW_ON_ERROR);
+                // Convert events to HTML updates for native EventSource
+                $htmlContent = match ($eventName) {
+                    'chat.snapshot' => $payload['messagesHtml'] ?? '',
+                    'message.assistant.placeholder', 'message.assistant.delta' => $payload['html'] ?? '',
+                    'tool.update' => $payload['html'] ?? '',
+                    default => '',
+                };
 
-                $stream->write($this->sseEventFormatter->format($eventName, $payloadData));
-                if ($eventName === 'chat.snapshot') {
-                    $stream->write($this->sseEventFormatter->format('chat.snapshot.payload', (string) json_encode($payload, JSON_THROW_ON_ERROR)));
+                if ($htmlContent !== '') {
+                    $elementId = match ($eventName) {
+                        'chat.snapshot' => 'messages',
+                        'message.assistant.placeholder', 'message.assistant.delta' => $payload['messageId'] ?? 'messages',
+                        'tool.update' => $payload['toolCallId'] ?? 'messages',
+                        default => 'messages',
+                    };
+
+                    if ($eventName === 'chat.snapshot') {
+                        $stream->write($this->sseEventFormatter->formatHtmlUpdate('messages', $htmlContent));
+                    } else {
+                        // For incremental updates, we need to append or update specific elements
+                        // For now, send full messages update for simplicity
+                        $stream->write($this->sseEventFormatter->formatHtmlUpdate('messages', $htmlContent));
+                    }
                 }
 
                 $offset++;

@@ -42,18 +42,7 @@
         </header>
 
         <main class="chat-body" style="position: relative; z-index: 1;">
-            <div
-                id="chatStream"
-                class="chat-stream"
-                hx-ext="sse"
-                sse-connect="{{ base_url }}/brain/stream?chatId={{ current_chat_id|url_encode }}"
-                sse-swap="chat.snapshot"
-                hx-target="#messages"
-                hx-swap="innerHTML"
-                data-chat-stream
-                data-chat-id="{{ current_chat_id }}"
-            >
-            <div id="messages" class="messages">
+            <div id="messages" class="messages" data-chat-messages data-chat-id="{{ current_chat_id }}">
                 {% if messages is defined and messages is not null and messages is not empty %}
                     {% for m in messages %}
                         {% include 'partials/message.twig' with {
@@ -66,13 +55,11 @@
                     {% endfor %}
                 {% endif %}
             </div>
-            </div>
             <div id="typingIndicator" class="typing-indicator htmx-indicator" aria-hidden="true">
                 <span class="typing-indicator__dot"></span>
                 <span class="typing-indicator__dot"></span>
                 <span class="typing-indicator__dot"></span>
             </div>
-            <!-- Ascenseur: bouton pour descendre en bas du chat -->
             <button
                     id="scrollDownBtn"
                     class="scroll-down-button"
@@ -103,9 +90,7 @@
                 <input type="hidden" name="mode" value="stream" />
                 <input type="hidden" name="chatId" value="{{ current_chat_id }}" data-current-chat-id-input />
                 <input class="chat-input__file" type="file" id="chat-upload" name="upload_files[]" multiple accept="{{ settings.get('files.upload.acceptedExt') }}" />
-                {# Container for attached file chips (chat mode) #}
                 <span id="chatAttachedFilesChat" class="chat-attached"></span>
-                {# Hidden inputs for selected file IDs (from Files list) #}
                 <span id="chatAttachedFilesChatHidden" hidden></span>
                 <textarea
                         class="chat-input__field chat-input__field--multiline form_disabler"
@@ -145,9 +130,98 @@
 <script>
     // Gestion locale des pièces jointes: chips avec suppression + synchronisation du formulaire
     (function () {
+        console.log('[chat:sse] chat script loaded');
+
+        // Native EventSource SSE handler (inspired by sse-driven-htmx reference)
+        document.addEventListener('DOMContentLoaded', function() {
+            const messagesContainer = document.getElementById('messages');
+            const chatId = messagesContainer ? messagesContainer.getAttribute('data-chat-id') : null;
+
+            if (!chatId) {
+                console.error('[chat:sse] no chatId found');
+                return;
+            }
+
+            console.log('[chat:sse] initializing EventSource for chat:', chatId);
+
+            // Close existing connection if any
+            if (window.chatEventSource) {
+                window.chatEventSource.close();
+            }
+
+            // Create new EventSource connection
+            const sseUrl = '{{ base_url }}/brain/stream?chatId=' + encodeURIComponent(chatId);
+            window.chatEventSource = new EventSource(sseUrl);
+
+            window.chatEventSource.onopen = function() {
+                console.log('[chat:sse] EventSource connection opened');
+            };
+
+            window.chatEventSource.onmessage = function(event) {
+                console.log('[chat:sse] message received:', event.data.slice(0, 200));
+
+                try {
+                    const update = JSON.parse(event.data);
+
+                    // Handle HTML updates
+                    if (update.html) {
+                        Object.entries(update.html).forEach(([elementId, htmlContent]) => {
+                            const element = document.getElementById(elementId);
+                            if (element) {
+                                element.innerHTML = htmlContent;
+                                console.log('[chat:sse] updated element:', elementId, 'length:', htmlContent.length);
+
+                                // Scroll to bottom after update
+                                const chatBody = document.querySelector('.chat-body');
+                                if (chatBody) {
+                                    chatBody.scrollTop = chatBody.scrollHeight;
+                                }
+                            } else {
+                                console.warn('[chat:sse] element not found:', elementId);
+                            }
+                        });
+                    }
+
+                    // Handle JS execution
+                    if (update.js) {
+                        Object.entries(update.js).forEach(([key, value]) => {
+                            if (key === 'exec') {
+                                eval(value);
+                                console.log('[chat:sse] executed JS:', value);
+                            } else {
+                                window[key] = value;
+                                console.log('[chat:sse] set window.' + key + ':', value);
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error('[chat:sse] error processing message:', error);
+                    console.error('[chat:sse] raw data:', event.data);
+                }
+            };
+
+            window.chatEventSource.onerror = function(error) {
+                console.error('[chat:sse] EventSource error:', error);
+                window.chatEventSource.close();
+
+                // Attempt reconnection after 5 seconds
+                setTimeout(function() {
+                    console.log('[chat:sse] attempting reconnection...');
+                    window.location.reload();
+                }, 5000);
+            };
+        });
+
+        window.addEventListener('load', function () {
+            console.log('[chat:sse] window loaded', {
+                hasHtmx: Boolean(window.htmx),
+                messagesNode: Boolean(document.getElementById('messages')),
+                initialMessagesLength: document.getElementById('messages') ? document.getElementById('messages').innerHTML.length : null,
+            });
+        });
+
         window.chatClick = function chatClick(event) {
             const form = event.target;
-           // Désactiver tous les éléments du formulaire avec la classe form_disabler
             const disablers = form.querySelectorAll('.form_disabler');
             disablers.forEach(el => { el.setAttribute('disabled', true); });
             form.classList.add('is-busy');
@@ -155,196 +229,114 @@
             const input = form.querySelector('[name="message"]');
             if (!input) return;
             const text = (input.value || '').trim();
-            if (!text) return; // nothing to append
+            if (!text) return;
+
             const messages = document.getElementById('messages');
             const chatBody = document.querySelector('.chat-body');
             const scrollBtn = document.getElementById('scrollDownBtn');
             if (!messages || !chatBody) return;
-            // Build the message bubble
+
             const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
             const wrapper = document.createElement('div');
-            wrapper.innerHTML = '<article class="message message--sent">\
-            <div class="message__bubble"></div>\
-            <span class="message__meta"></span>\
-        </article>';
+            wrapper.innerHTML = '<article class="message message--sent"><div class="message__bubble"></div><span class="message__meta"></span></article>';
             const article = wrapper.firstElementChild;
             article.querySelector('.message__bubble').textContent = text;
             article.querySelector('.message__meta').textContent = time + ' • Vous';
             messages.appendChild(article);
+
             const loader = document.createElement('article');
             loader.className = 'message';
             loader.setAttribute('data-role', 'assistant-loader');
             loader.innerHTML = '<div class="message__bubble">Claire réfléchit...</div>';
             messages.appendChild(loader);
-            // Ensure we scroll to the bottom to keep the newest message in view
+
             chatBody.scrollTop = chatBody.scrollHeight;
             if (scrollBtn) scrollBtn.style.display = 'none';
-            // Do not clear input here; it will be cleared on successful response via hx-on::after-request
-        }
+        };
 
         function autoResizeComposer(input) {
-            if (!input) {
-                return;
-            }
-
+            if (!input) return;
             input.style.height = 'auto';
             input.style.height = Math.min(input.scrollHeight, 160) + 'px';
         }
 
         function updateComposerToggleState(input) {
-            if (!input) {
-                return;
-            }
-
+            if (!input) return;
             const form = input.closest('form');
-            if (!form) {
-                return;
-            }
-
+            if (!form) return;
             form.classList.toggle('chat-input__form--typing', input.value.trim() !== '');
         }
 
         window.clearInput = function clearInput(event) {
             const form = event.target;
-
             const disablers = form.querySelectorAll('.form_disabler');
             disablers.forEach(el => { el.removeAttribute('disabled'); });
             form.classList.remove('is-busy');
 
-            if(!event.detail.successful) {
-                return;
-            }
+            if (!event.detail.successful) return;
+
             event.target.reset();
-            let elements = document.querySelectorAll('.chat-chip__remove');
-            elements.forEach(element => {removeChatChip(element);})
+            document.querySelectorAll('.chat-chip__remove').forEach(el => removeChatChip(el));
 
             const input = form.querySelector('[name="message"]');
             autoResizeComposer(input);
             updateComposerToggleState(input);
-        }
+        };
 
         window.updatePersistentChatStream = function updatePersistentChatStream(chatId) {
-            const stream = document.querySelector('[data-chat-stream]');
+            const messagesContainer = document.getElementById('messages');
             const chatIdInput = document.querySelector('[data-current-chat-id-input]');
-            if (!stream || !chatId) {
+
+            if (!messagesContainer || !chatId) {
+                console.debug('[chat:sse] skip stream update', { hasContainer: Boolean(messagesContainer), chatId });
                 return;
             }
 
-            stream.setAttribute('data-chat-id', chatId);
-            stream.setAttribute('sse-connect', '{{ base_url }}/brain/stream?chatId=' + encodeURIComponent(chatId));
-            if (chatIdInput) {
-                chatIdInput.value = chatId;
+            console.debug('[chat:sse] updating chat stream to:', chatId);
+            messagesContainer.setAttribute('data-chat-id', chatId);
+            if (chatIdInput) chatIdInput.value = chatId;
+
+            // Close and reopen EventSource with new chatId
+            if (window.chatEventSource) {
+                window.chatEventSource.close();
             }
 
-            if (window.htmx && window.htmx.process) {
-                window.htmx.process(stream);
-            }
-        }
+            const sseUrl = '{{ base_url }}/brain/stream?chatId=' + encodeURIComponent(chatId);
+            window.chatEventSource = new EventSource(sseUrl);
+
+            window.chatEventSource.onmessage = function(event) {
+                try {
+                    const update = JSON.parse(event.data);
+                    if (update.html) {
+                        Object.entries(update.html).forEach(([elementId, htmlContent]) => {
+                            const element = document.getElementById(elementId);
+                            if (element) {
+                                element.innerHTML = htmlContent;
+                                const chatBody = document.querySelector('.chat-body');
+                                if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error('[chat:sse] error:', error);
+                }
+            };
+        };
 
         window.handleLastExchangeResponse = function handleLastExchangeResponse(event) {
             const detail = event.detail || {};
+            if (!detail.successful) return;
+
+            try {
+                const payload = JSON.parse(detail.xhr.responseText || '{}');
+                if (payload.chatId && window.updatePersistentChatStream) {
+                    window.updatePersistentChatStream(payload.chatId);
+                }
+            } catch (e) {}
+
             const chatBody = document.querySelector('.chat-body');
-            const scrollBtn = document.getElementById('scrollDownBtn');
-
-            if (!detail.successful) {
-                return;
-            }
-
-             try {
-                 const payload = JSON.parse(detail.xhr.responseText || '{}');
-                 if (payload.chatId && window.updatePersistentChatStream) {
-                     window.updatePersistentChatStream(payload.chatId);
-                 }
-             } catch (e) {}
-
-            if (chatBody) {
-                chatBody.scrollTop = chatBody.scrollHeight;
-            }
-
-            if (scrollBtn) {
-                scrollBtn.style.display = 'none';
-            }
-        }
-
-        document.body.addEventListener('htmx:sseError', function () {
-            const stream = document.querySelector('[data-chat-stream]');
-            if (!stream) {
-                return;
-            }
-
-            window.setTimeout(function () {
-                if (window.htmx && window.htmx.process) {
-                    window.htmx.process(stream);
-                }
-            }, 1000);
-        });
-
-        document.body.addEventListener('htmx:sseBeforeMessage', function (event) {
-            const detail = event.detail || {};
-            const eventName = detail.type;
-            const data = detail.data || '';
-            const chatBody = document.querySelector('.chat-body');
-            const messages = document.getElementById('messages');
-            const scrollBtn = document.getElementById('scrollDownBtn');
-
-            if (!messages) {
-                return;
-            }
-
-            if (eventName === 'chat.snapshot.payload') {
-                const payload = JSON.parse(data);
-                messages.innerHTML = payload.messagesHtml || '';
-            }
-
-            if (eventName === 'message.assistant.placeholder') {
-                const payload = JSON.parse(data);
-                const tempLoader = messages.querySelector('[data-role="assistant-loader"]');
-                if (tempLoader) {
-                    tempLoader.outerHTML = payload.html;
-                } else {
-                    messages.insertAdjacentHTML('beforeend', payload.html);
-                }
-            }
-
-            if (eventName === 'message.assistant.delta') {
-                const payload = JSON.parse(data);
-                const target = document.getElementById(payload.messageId);
-                if (target) {
-                    target.innerHTML = payload.html;
-                }
-            }
-
-            if (eventName === 'tool.update') {
-                const payload = JSON.parse(data);
-                const article = document.getElementById(payload.messageId);
-                if (article) {
-                    let toolNode = document.getElementById(payload.toolCallId);
-                    if (!toolNode) {
-                        article.insertAdjacentHTML('afterend', '<div id="' + payload.toolCallId + '"></div>');
-                        toolNode = document.getElementById(payload.toolCallId);
-                    }
-                    if (toolNode) {
-                        toolNode.innerHTML = payload.html;
-                    }
-                }
-            }
-
-            if (eventName === 'chat.error') {
-                const payload = JSON.parse(data);
-                const loader = messages.querySelector('[data-role="assistant-loader"]');
-                if (loader) {
-                    loader.remove();
-                }
-                messages.insertAdjacentHTML('beforeend', '<article class="message"><div class="message__bubble">' + payload.message + '</div></article>');
-            }
-
-            if (chatBody) {
-                chatBody.scrollTop = chatBody.scrollHeight;
-            }
-            if (scrollBtn) {
-                scrollBtn.style.display = 'none';
-            }
-        });
+            if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
+        };
 
         function $(sel, root=document) { return root.querySelector(sel); }
         function chipSelectorById(id) { return '.chat-chip[data-file-id="' + CSS.escape(String(id)) + '"]'; }
@@ -363,17 +355,10 @@
         };
 
         function svgFileIcon() {
-            return '<svg viewBox="0 0 24 24" aria-hidden="true">\
-                <path d="M6 2h7l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>\
-                <path d="M13 2v6h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>\
-            </svg>';
+            return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h7l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13 2v6h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
         }
         function removeBtn() {
-            return '<button type="button" class="chat-chip__remove" aria-label="Retirer" title="Retirer">\
-                <svg viewBox="0 0 24 24" aria-hidden="true">\
-                    <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>\
-                </svg>\
-            </button>';
+            return '<button type="button" class="chat-chip__remove" aria-label="Retirer" title="Retirer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>';
         }
 
         function createIdChip(fileId, fileName) {
@@ -430,7 +415,6 @@
             return [file.name, file.size, file.type, file.lastModified].join('|');
         }
 
-        // Click on "Ajouter à la conversation" from Files list → add ID chips and hidden inputs
         document.addEventListener('click', function (e) {
             const btn = e.target && e.target.closest ? e.target.closest('[data-add-file-id]') : null;
             if (!btn) return;
@@ -447,7 +431,6 @@
             }
         });
 
-        // Local file selection via <input type=file multiple>
         for (const mode of Object.keys(containers)) {
             const { chips, fileInput } = containers[mode];
             if (!fileInput || !chips) continue;
@@ -471,24 +454,15 @@
                 updateComposerToggleState(messageInput);
             });
             messageInput.addEventListener('keydown', function (event) {
-                if (event.key !== 'Enter' || event.shiftKey) {
-                    return;
-                }
-
+                if (event.key !== 'Enter' || event.shiftKey) return;
                 event.preventDefault();
-
                 const form = messageInput.closest('form');
-                if (!form || !messageInput.value.trim()) {
-                    return;
-                }
-
+                if (!form || !messageInput.value.trim()) return;
                 if (typeof form.requestSubmit === 'function') {
                     form.requestSubmit();
-
-                    return;
+                } else {
+                    form.submit();
                 }
-
-                form.submit();
             });
         }
 
@@ -503,7 +477,6 @@
                 const fid = chip.getAttribute('data-file-id');
                 removeHiddenId(containers.chat.hidden, fid);
                 removeHiddenId(containers.stream.hidden, fid);
-                // Remove from both chip containers if duplicated
                 for (const mode of Object.keys(containers)) {
                     const list = containers[mode].chips;
                     if (!list) continue;
@@ -517,33 +490,30 @@
                 for (const mode of Object.keys(containers)) {
                     const list = containers[mode].chips;
                     if (!list) continue;
-                    list.querySelectorAll('.chat-chip[data-type="local"][data-tmp-key="' + CSS.escape(tmpKey) + '"]')
-                        .forEach(node => node.remove());
+                    list.querySelectorAll('.chat-chip[data-type="local"][data-tmp-key="' + CSS.escape(tmpKey) + '"]').forEach(node => node.remove());
                 }
             }
         }
 
-        // Remove chip (either id-based or local upload)
         document.addEventListener('click', function (e) {
             removeChatChip(e.target);
         });
     })();
 
-    // Gestion de l'ascenseur (bouton descendre en bas)
+    // Gestion de l'ascenseur
     (function () {
         const chatBody = document.querySelector('.chat-body');
         const messages = document.getElementById('messages');
         const scrollBtn = document.getElementById('scrollDownBtn');
         if (!chatBody || !scrollBtn) return;
 
-        const threshold = 24; // px avant le bas pour cacher le bouton
+        const threshold = 24;
 
         function atBottomOf(el) {
             return el.scrollTop + el.clientHeight >= el.scrollHeight - threshold;
         }
 
         function updateButtonVisibility() {
-            // Si pas de débordement, cacher
             if (chatBody.scrollHeight <= chatBody.clientHeight + 1) {
                 scrollBtn.style.display = 'none';
                 return;
@@ -563,12 +533,10 @@
             chatBody.scrollTo({top: chatBody.scrollHeight, behavior: 'smooth'});
         });
 
-        // Met à jour à l'initialisation sans forcer de scroll
         window.addEventListener('DOMContentLoaded', function () {
             updateButtonVisibility();
         });
 
-        // Après chaque swap HTMX, on met uniquement à jour le bouton
         document.body.addEventListener('htmx:afterSwap', function (evt) {
             const detail = evt.detail || {};
             const target = detail.target;
@@ -577,7 +545,6 @@
             }
         });
 
-        // Observe les mutations du contenu des messages (fallback si pas d'HTMX)
         if (window.MutationObserver && messages) {
             const mo = new MutationObserver(function () {
                 updateButtonVisibility();
@@ -585,7 +552,6 @@
             mo.observe(messages, {childList: true, subtree: false});
         }
 
-        // Premier calcul
         updateButtonVisibility();
     })();
 </script>

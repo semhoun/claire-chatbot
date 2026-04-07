@@ -9,7 +9,33 @@ use PHPUnit\Framework\TestCase;
 
 final class SseEventFormatterTest extends TestCase
 {
-    public function testFormatBuildsExpectedPayload(): void
+    public function testFormatHtmlUpdateReturnsNativeEventSourceFormat(): void
+    {
+        $formatter = new SseEventFormatter();
+
+        $result = $formatter->formatHtmlUpdate('messages', '<div>test</div>');
+
+        $this->assertStringStartsWith('data: ', $result);
+        $this->assertStringEndsWith("\n\n", $result);
+
+        $json = json_decode(substr($result, 6), true);
+        $this->assertSame(['html' => ['messages' => '<div>test</div>']], $json);
+    }
+
+    public function testFormatJsExecReturnsNativeEventSourceFormat(): void
+    {
+        $formatter = new SseEventFormatter();
+
+        $result = $formatter->formatJsExec('alert("test")');
+
+        $this->assertStringStartsWith('data: ', $result);
+        $this->assertStringEndsWith("\n\n", $result);
+
+        $json = json_decode(substr($result, 6), true);
+        $this->assertSame(['js' => ['exec' => 'alert("test")']], $json);
+    }
+
+    public function testLegacyFormatBuildsExpectedPayload(): void
     {
         $formatter = new SseEventFormatter();
 
