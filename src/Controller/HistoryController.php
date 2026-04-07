@@ -67,7 +67,7 @@ final readonly class HistoryController
 
         $this->publishSnapshot($threadId, $userChatHistory);
 
-        $response->getBody()->write((string) json_encode([
+        $response->getBody()->write(json_encode([
             'chatId' => $threadId,
         ], JSON_THROW_ON_ERROR));
 
@@ -155,7 +155,7 @@ final readonly class HistoryController
 
         $this->publishSnapshot($threadId, $userChatHistory);
 
-        $response->getBody()->write((string) json_encode([
+        $response->getBody()->write(json_encode([
             'chatId' => $threadId,
         ], JSON_THROW_ON_ERROR));
 
@@ -221,7 +221,7 @@ final readonly class HistoryController
 
         $this->publishSnapshot($threadId, $userChatHistory);
 
-        $response->getBody()->write((string) json_encode([
+        $response->getBody()->write(json_encode([
             'chatId' => $threadId,
             'removedMessage' => $removedMessage,
         ], JSON_THROW_ON_ERROR));

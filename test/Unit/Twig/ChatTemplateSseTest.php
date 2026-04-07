@@ -16,7 +16,7 @@ use Twig\Loader\FilesystemLoader;
 
 final class ChatTemplateSseTest extends TestCase
 {
-    public function testChatTemplateLoadsNativeEventSourceConnectionOnPageLoad(): void
+    public function testChatTemplateLoadsHybridSseConnectionOnPageLoad(): void
     {
         $twig = $this->createTwig();
 
@@ -49,13 +49,19 @@ final class ChatTemplateSseTest extends TestCase
             'uinfo' => ['id' => 'default'],
         ]);
 
-        // Native EventSource (no HTMX SSE extension)
-        $this->assertStringContainsString('new EventSource', $html);
+        // HTMX SSE for snapshots
+        $this->assertStringContainsString('hx-ext="sse"', $html);
+        $this->assertStringContainsString('sse-connect="/brain/stream?chatId=thread-42"', $html);
+        $this->assertStringContainsString('sse-swap="chat.snapshot"', $html);
         $this->assertStringContainsString('data-chat-id="thread-42"', $html);
-        $this->assertStringContainsString('/brain/stream?chatId=', $html);
-        $this->assertStringContainsString('window.chatEventSource', $html);
 
-        // JSON message handling
+        // Native EventSource for incremental updates
+        $this->assertStringContainsString('new EventSource', $html);
+        $this->assertStringContainsString('/brain/stream?chatId=', $html);
+        $this->assertStringContainsString('mode=incremental', $html);
+        $this->assertStringContainsString('window.chatIncrementalEventSource', $html);
+
+        // JSON message handling for incremental updates
         $this->assertStringContainsString('JSON.parse(event.data)', $html);
         $this->assertStringContainsString('update.html', $html);
         $this->assertStringContainsString('element.innerHTML = htmlContent', $html);
@@ -66,10 +72,9 @@ final class ChatTemplateSseTest extends TestCase
 
         // Reconnection handling
         $this->assertStringContainsString('setTimeout', $html);
-        $this->assertStringContainsString('window.location.reload', $html);
     }
 
-    public function testLayoutDoesNotLoadHtmxSseExtension(): void
+    public function testLayoutLoadsHtmxSseExtension(): void
     {
         $twig = $this->createTwig();
 
@@ -97,9 +102,9 @@ final class ChatTemplateSseTest extends TestCase
             'uinfo' => ['id' => 'default'],
         ]);
 
-        // Should NOT contain HTMX SSE extension
-        $this->assertStringNotContainsString('htmx-ext-sse', $html);
-        $this->assertStringNotContainsString('sse.js', $html);
+        // Should contain HTMX SSE extension for hybrid SSE
+        $this->assertStringContainsString('htmx-ext-sse', $html);
+        $this->assertStringContainsString('sse.js', $html);
     }
 
     private function createTwig(): Environment

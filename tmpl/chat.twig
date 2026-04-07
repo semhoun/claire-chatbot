@@ -42,18 +42,30 @@
         </header>
 
         <main class="chat-body" style="position: relative; z-index: 1;">
-            <div id="messages" class="messages" data-chat-messages data-chat-id="{{ current_chat_id }}">
-                {% if messages is defined and messages is not null and messages is not empty %}
-                    {% for m in messages %}
-                        {% include 'partials/message.twig' with {
-                            message: m.message,
-                            time: m.time,
-                            sent: m.sent,
-                            toolCallId: m.toolCallId,
-                            toolCall: m.toolText,
-                        } %}
-                    {% endfor %}
-                {% endif %}
+            {# HTMX SSE container for chat snapshots - handles full message list updates #}
+            <div
+                id="chatStream"
+                hx-ext="sse"
+                sse-connect="{{ base_url }}/brain/stream?chatId={{ current_chat_id }}"
+                sse-swap="chat.snapshot"
+                hx-target="#messages"
+                hx-swap="innerHTML"
+                data-chat-id="{{ current_chat_id }}"
+                style="display: contents;"
+            >
+                <div id="messages" class="messages" data-chat-messages data-chat-id="{{ current_chat_id }}">
+                    {% if messages is defined and messages is not null and messages is not empty %}
+                        {% for m in messages %}
+                            {% include 'partials/message.twig' with {
+                                message: m.message,
+                                time: m.time,
+                                sent: m.sent,
+                                toolCallId: m.toolCallId,
+                                toolCall: m.toolText,
+                            } %}
+                        {% endfor %}
+                    {% endif %}
+                </div>
             </div>
             <div id="typingIndicator" class="typing-indicator htmx-indicator" aria-hidden="true">
                 <span class="typing-indicator__dot"></span>
@@ -129,47 +141,82 @@
 {% block script %}
 <script>
     // Gestion locale des pièces jointes: chips avec suppression + synchronisation du formulaire
+    // Hybrid SSE: HTMX SSE handles chat.snapshot, native EventSource handles incremental updates
     (function () {
-        console.log('[chat:sse] chat script loaded');
+        console.log('[chat:sse] chat script loaded (hybrid mode)');
 
-        // Native EventSource SSE handler (inspired by sse-driven-htmx reference)
+        // Native EventSource for incremental updates only (placeholder, delta, tool.update)
+        // HTMX SSE handles chat.snapshot via sse-swap
         document.addEventListener('DOMContentLoaded', function() {
-            const messagesContainer = document.getElementById('messages');
-            const chatId = messagesContainer ? messagesContainer.getAttribute('data-chat-id') : null;
+            const chatStreamContainer = document.getElementById('chatStream');
+            const chatId = chatStreamContainer ? chatStreamContainer.getAttribute('data-chat-id') : null;
 
             if (!chatId) {
                 console.error('[chat:sse] no chatId found');
                 return;
             }
 
-            console.log('[chat:sse] initializing EventSource for chat:', chatId);
+            console.log('[chat:sse] initializing incremental EventSource for chat:', chatId);
+            initIncrementalEventSource(chatId);
+        });
 
+        function initIncrementalEventSource(chatId) {
             // Close existing connection if any
-            if (window.chatEventSource) {
-                window.chatEventSource.close();
+            if (window.chatIncrementalEventSource) {
+                window.chatIncrementalEventSource.close();
             }
 
-            // Create new EventSource connection
-            const sseUrl = '{{ base_url }}/brain/stream?chatId=' + encodeURIComponent(chatId);
-            window.chatEventSource = new EventSource(sseUrl);
+            // Create new EventSource connection for incremental updates
+            // The stream endpoint now filters to only send non-snapshot events to this connection
+            const sseUrl = '{{ base_url }}/brain/stream?chatId=' + encodeURIComponent(chatId) + '&mode=incremental';
+            window.chatIncrementalEventSource = new EventSource(sseUrl);
 
-            window.chatEventSource.onopen = function() {
-                console.log('[chat:sse] EventSource connection opened');
+            window.chatIncrementalEventSource.onopen = function() {
+                console.log('[chat:sse] incremental EventSource connection opened');
             };
 
-            window.chatEventSource.onmessage = function(event) {
-                console.log('[chat:sse] message received:', event.data.slice(0, 200));
+            window.chatIncrementalEventSource.onmessage = function(event) {
+                console.log('[chat:sse] incremental message received:', event.data.slice(0, 200));
 
                 try {
                     const update = JSON.parse(event.data);
 
-                    // Handle HTML updates
+                    // Handle HTML updates for incremental content (placeholder, delta, tool.update)
                     if (update.html) {
                         Object.entries(update.html).forEach(([elementId, htmlContent]) => {
-                            const element = document.getElementById(elementId);
-                            if (element) {
+                            const mode = update.mode || 'replace';
+                            let element = document.getElementById(elementId);
+
+                            if (mode === 'append' && elementId === 'messages') {
+                                element = document.getElementById('messages');
+                                if (element) {
+                                    const loader = element.querySelector('[data-role="assistant-loader"]');
+                                    if (loader) {
+                                        loader.outerHTML = htmlContent;
+                                    } else {
+                                        element.insertAdjacentHTML('beforeend', htmlContent);
+                                    }
+                                    console.log('[chat:sse] appended/replaced placeholder in messages');
+                                }
+                            } else if (update.event === 'tool.update' && update.toolCallId) {
+                                const articleTarget = update.messageId ? document.getElementById(update.messageId) : null;
+                                if (articleTarget) {
+                                    let toolNode = document.getElementById(update.toolCallId);
+                                    if (!toolNode) {
+                                        const bubble = articleTarget.closest('.message')?.querySelector('.message__bubble') || articleTarget.parentElement;
+                                        if (bubble) {
+                                            bubble.insertAdjacentHTML('afterbegin', '<div class="message__subbubble message__subbubble--toolcall"><details class="toolcall" open><summary class="toolcall__summary" aria-label="Appels d\'outils" title="Appels d\'outils"><span class="visually-hidden">Appels d\'outils</span></summary><div class="toolcall__text" id="' + update.toolCallId + '"></div></details></div>');
+                                            toolNode = document.getElementById(update.toolCallId);
+                                        }
+                                    }
+                                    if (toolNode) {
+                                        toolNode.innerHTML = htmlContent;
+                                        console.log('[chat:sse] created/updated tool target:', update.toolCallId);
+                                    }
+                                }
+                            } else if (element) {
                                 element.innerHTML = htmlContent;
-                                console.log('[chat:sse] updated element:', elementId, 'length:', htmlContent.length);
+                                console.log('[chat:sse] updated element:', elementId, 'length:', htmlContent.length, 'mode:', mode);
 
                                 // Scroll to bottom after update
                                 const chatBody = document.querySelector('.chat-body');
@@ -177,7 +224,7 @@
                                     chatBody.scrollTop = chatBody.scrollHeight;
                                 }
                             } else {
-                                console.warn('[chat:sse] element not found:', elementId);
+                                console.warn('[chat:sse] element not found:', elementId, 'mode:', mode, 'event:', update.event);
                             }
                         });
                     }
@@ -194,26 +241,37 @@
                             }
                         });
                     }
+
+                    if (update.error) {
+                        const messages = document.getElementById('messages');
+                        if (messages) {
+                            const loader = messages.querySelector('[data-role="assistant-loader"]');
+                            if (loader) {
+                                loader.remove();
+                            }
+                            messages.insertAdjacentHTML('beforeend', '<article class="message message--received"><div class="message__bubble"><span class="message__text">' + update.error + '</span></div></article>');
+                        }
+                    }
                 } catch (error) {
-                    console.error('[chat:sse] error processing message:', error);
+                    console.error('[chat:sse] error processing incremental message:', error);
                     console.error('[chat:sse] raw data:', event.data);
                 }
             };
 
-            window.chatEventSource.onerror = function(error) {
-                console.error('[chat:sse] EventSource error:', error);
-                window.chatEventSource.close();
+            window.chatIncrementalEventSource.onerror = function(error) {
+                console.error('[chat:sse] incremental EventSource error:', error);
+                window.chatIncrementalEventSource.close();
 
                 // Attempt reconnection after 5 seconds
                 setTimeout(function() {
-                    console.log('[chat:sse] attempting reconnection...');
-                    window.location.reload();
+                    console.log('[chat:sse] attempting incremental reconnection...');
+                    initIncrementalEventSource(chatId);
                 }, 5000);
             };
-        });
+        }
 
         window.addEventListener('load', function () {
-            console.log('[chat:sse] window loaded', {
+            console.log('[chat:sse] window loaded (hybrid mode)', {
                 hasHtmx: Boolean(window.htmx),
                 messagesNode: Boolean(document.getElementById('messages')),
                 initialMessagesLength: document.getElementById('messages') ? document.getElementById('messages').innerHTML.length : null,
@@ -284,42 +342,110 @@
         };
 
         window.updatePersistentChatStream = function updatePersistentChatStream(chatId) {
+            const chatStreamContainer = document.getElementById('chatStream');
             const messagesContainer = document.getElementById('messages');
             const chatIdInput = document.querySelector('[data-current-chat-id-input]');
 
-            if (!messagesContainer || !chatId) {
-                console.debug('[chat:sse] skip stream update', { hasContainer: Boolean(messagesContainer), chatId });
+            if (!chatStreamContainer || !chatId) {
+                console.debug('[chat:sse] skip stream update', { hasContainer: Boolean(chatStreamContainer), chatId });
                 return;
             }
 
             console.debug('[chat:sse] updating chat stream to:', chatId);
-            messagesContainer.setAttribute('data-chat-id', chatId);
+
+            // Update data attributes
+            chatStreamContainer.setAttribute('data-chat-id', chatId);
+            if (messagesContainer) messagesContainer.setAttribute('data-chat-id', chatId);
             if (chatIdInput) chatIdInput.value = chatId;
 
-            // Close and reopen EventSource with new chatId
-            if (window.chatEventSource) {
-                window.chatEventSource.close();
+            // Update HTMX SSE connection URL
+            const newSseUrl = '{{ base_url }}/brain/stream?chatId=' + encodeURIComponent(chatId);
+            chatStreamContainer.setAttribute('sse-connect', newSseUrl);
+
+            // Reprocess HTMX SSE extension to pick up new URL
+            if (window.htmx) {
+                window.htmx.process(chatStreamContainer);
             }
 
-            const sseUrl = '{{ base_url }}/brain/stream?chatId=' + encodeURIComponent(chatId);
-            window.chatEventSource = new EventSource(sseUrl);
+            // Close and reopen incremental EventSource with new chatId
+            if (window.chatIncrementalEventSource) {
+                window.chatIncrementalEventSource.close();
+            }
 
-            window.chatEventSource.onmessage = function(event) {
+            const incrementalUrl = newSseUrl + '&mode=incremental';
+            window.chatIncrementalEventSource = new EventSource(incrementalUrl);
+
+            window.chatIncrementalEventSource.onmessage = function(event) {
                 try {
                     const update = JSON.parse(event.data);
                     if (update.html) {
                         Object.entries(update.html).forEach(([elementId, htmlContent]) => {
-                            const element = document.getElementById(elementId);
-                            if (element) {
+                            const mode = update.mode || 'replace';
+                            let element = document.getElementById(elementId);
+                            if (mode === 'append' && elementId === 'messages') {
+                                element = document.getElementById('messages');
+                                if (element) {
+                                    const loader = element.querySelector('[data-role="assistant-loader"]');
+                                    if (loader) {
+                                        loader.outerHTML = htmlContent;
+                                    } else {
+                                        element.insertAdjacentHTML('beforeend', htmlContent);
+                                    }
+                                }
+                            } else if (update.event === 'tool.update' && update.toolCallId) {
+                                const articleTarget = update.messageId ? document.getElementById(update.messageId) : null;
+                                if (articleTarget) {
+                                    let toolNode = document.getElementById(update.toolCallId);
+                                    if (!toolNode) {
+                                        const bubble = articleTarget.closest('.message')?.querySelector('.message__bubble') || articleTarget.parentElement;
+                                        if (bubble) {
+                                            bubble.insertAdjacentHTML('afterbegin', '<div class="message__subbubble message__subbubble--toolcall"><details class="toolcall" open><summary class="toolcall__summary" aria-label="Appels d\'outils" title="Appels d\'outils"><span class="visually-hidden">Appels d\'outils</span></summary><div class="toolcall__text" id="' + update.toolCallId + '"></div></details></div>');
+                                            toolNode = document.getElementById(update.toolCallId);
+                                        }
+                                    }
+                                    if (toolNode) {
+                                        toolNode.innerHTML = htmlContent;
+                                    }
+                                }
+                            } else if (element) {
                                 element.innerHTML = htmlContent;
-                                const chatBody = document.querySelector('.chat-body');
-                                if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
+                            }
+                            const chatBody = document.querySelector('.chat-body');
+                            if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
+                        });
+                    }
+
+                    if (update.js) {
+                        Object.entries(update.js).forEach(([key, value]) => {
+                            if (key === 'exec') {
+                                eval(value);
+                            } else {
+                                window[key] = value;
                             }
                         });
                     }
+
+                    if (update.error) {
+                        const messages = document.getElementById('messages');
+                        if (messages) {
+                            const loader = messages.querySelector('[data-role="assistant-loader"]');
+                            if (loader) {
+                                loader.remove();
+                            }
+                            messages.insertAdjacentHTML('beforeend', '<article class="message message--received"><div class="message__bubble"><span class="message__text">' + update.error + '</span></div></article>');
+                        }
+                    }
                 } catch (error) {
-                    console.error('[chat:sse] error:', error);
+                    console.error('[chat:sse] incremental error:', error);
                 }
+            };
+
+            window.chatIncrementalEventSource.onerror = function(error) {
+                console.error('[chat:sse] incremental EventSource error:', error);
+                window.chatIncrementalEventSource.close();
+                setTimeout(function() {
+                    initIncrementalEventSource(chatId);
+                }, 5000);
             };
         };
 

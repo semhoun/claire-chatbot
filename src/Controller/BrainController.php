@@ -228,7 +228,7 @@ final readonly class BrainController
             'session' => $session->all(),
         ]);
 
-        $response->getBody()->write((string) json_encode([
+        $response->getBody()->write(json_encode([
             'chatId' => $chatId,
             'accepted' => true,
         ], JSON_THROW_ON_ERROR));
@@ -248,6 +248,9 @@ final readonly class BrainController
         if ($chatId === '') {
             return $response->withStatus(400);
         }
+
+        // Mode: 'full' (default) for HTMX SSE, 'incremental' for native EventSource
+        $mode = (string) ($request->getQueryParams()['mode'] ?? 'full');
 
         $session->set('chatId', $chatId);
         $userChatHistory = new UserChatHistory(
@@ -271,8 +274,15 @@ final readonly class BrainController
 
         $stream = $response->getBody();
 
-        // Send initial snapshot using native EventSource format
-        $stream->write($this->sseEventFormatter->formatHtmlUpdate('messages', $messagesHtml));
+        // Send initial snapshot
+        // HTMX SSE expects named event with raw HTML; incremental mode expects JSON
+        if ($mode === 'incremental') {
+            // Native EventSource format for incremental updates
+            $stream->write($this->sseEventFormatter->formatHtmlUpdate('messages', $messagesHtml));
+        } else {
+            // HTMX SSE format: named event with raw HTML
+            $stream->write($this->sseEventFormatter->formatNamedEvent('chat.snapshot', $messagesHtml));
+        }
 
         $deadline = time() + self::SSE_KEEPALIVE_INTERVAL;
         $offset = $this->chatStreamBuffer->length($chatId);
@@ -293,29 +303,59 @@ final readonly class BrainController
                     continue;
                 }
 
-                // Convert events to HTML updates for native EventSource
-                $htmlContent = match ($eventName) {
-                    'chat.snapshot' => $payload['messagesHtml'] ?? '',
-                    'message.assistant.placeholder', 'message.assistant.delta' => $payload['html'] ?? '',
-                    'tool.update' => $payload['html'] ?? '',
-                    default => '',
-                };
+                // Route events based on mode
+                if ($mode === 'incremental') {
+                    // Incremental mode: only send granular events as JSON
+                    if (in_array($eventName, ['message.assistant.placeholder', 'message.assistant.delta', 'tool.update', 'message.assistant.done', 'chat.error'], true)) {
+                        $incrementalPayload = match ($eventName) {
+                            'message.assistant.placeholder' => [
+                                'html' => [
+                                    'messages' => (string) ($payload['html'] ?? ''),
+                                ],
+                                'mode' => 'append',
+                                'event' => $eventName,
+                                'messageId' => $payload['messageId'] ?? null,
+                            ],
+                            'message.assistant.delta' => [
+                                'html' => [
+                                    (string) ($payload['messageId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
+                                ],
+                                'mode' => 'replace',
+                                'event' => $eventName,
+                                'messageId' => $payload['messageId'] ?? null,
+                            ],
+                            'tool.update' => [
+                                'html' => [
+                                    (string) ($payload['toolCallId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
+                                ],
+                                'mode' => 'replace',
+                                'event' => $eventName,
+                                'messageId' => $payload['messageId'] ?? null,
+                                'toolCallId' => $payload['toolCallId'] ?? null,
+                            ],
+                            'chat.error' => [
+                                'error' => (string) ($payload['message'] ?? 'Une erreur est survenue.'),
+                                'event' => $eventName,
+                            ],
+                            default => [
+                                'event' => $eventName,
+                            ],
+                        };
 
-                if ($htmlContent !== '') {
-                    $elementId = match ($eventName) {
-                        'chat.snapshot' => 'messages',
-                        'message.assistant.placeholder', 'message.assistant.delta' => $payload['messageId'] ?? 'messages',
-                        'tool.update' => $payload['toolCallId'] ?? 'messages',
-                        default => 'messages',
-                    };
-
-                    if ($eventName === 'chat.snapshot') {
-                        $stream->write($this->sseEventFormatter->formatHtmlUpdate('messages', $htmlContent));
-                    } else {
-                        // For incremental updates, we need to append or update specific elements
-                        // For now, send full messages update for simplicity
-                        $stream->write($this->sseEventFormatter->formatHtmlUpdate('messages', $htmlContent));
+                        $stream->write("data: " . json_encode($incrementalPayload, JSON_THROW_ON_ERROR) . "\n\n");
                     }
+
+                    // Note: chat.snapshot is NOT sent in incremental mode (HTMX SSE handles it)
+                } else {
+                    // Full mode (HTMX SSE): send named events for snapshots
+                    if ($eventName === 'chat.snapshot') {
+                        $htmlContent = $payload['messagesHtml'] ?? '';
+                        if ($htmlContent !== '') {
+                            $stream->write($this->sseEventFormatter->formatNamedEvent('chat.snapshot', $htmlContent));
+                        }
+                    }
+
+                    // Note: incremental events are NOT sent in full mode (native EventSource handles them)
                 }
 
                 $offset++;

@@ -123,6 +123,7 @@ final class ComfyUIWorkflowRegistry
             if ($type === '') {
                 continue;
             }
+
             if ($label === '') {
                 continue;
             }
@@ -130,10 +131,12 @@ final class ComfyUIWorkflowRegistry
             if (is_array($workflow)) {
                 $workflow = json_encode($workflow, JSON_THROW_ON_ERROR);
             }
+
             if (! is_string($workflow)) {
                 continue;
             }
-            if (trim((string) $workflow) === '') {
+
+            if (trim($workflow) === '') {
                 continue;
             }
 

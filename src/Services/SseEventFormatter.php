@@ -37,19 +37,28 @@ final readonly class SseEventFormatter
     }
 
     /**
-     * Legacy format with named events (for HTMX SSE extension)
-     * @deprecated Use formatHtmlUpdate instead
+     * Format for HTMX SSE extension with named events
+     * Returns: event: name\ndata: <html>\n\n
      */
-    public function format(string $event, string $data): string
+    public function formatNamedEvent(string $event, string $data): string
     {
         $lines = preg_split('/\R/', $data) ?: [''];
-        $payload = "event: {$event}\n";
+        $payload = sprintf('event: %s%s', $event, PHP_EOL);
 
         foreach ($lines as $line) {
             $payload .= 'data: ' . $line . "\n";
         }
 
         return $payload . "\n";
+    }
+
+    /**
+     * Legacy format with named events (for HTMX SSE extension)
+     */
+    #[\Deprecated(message: 'Use formatNamedEvent instead')]
+    public function format(string $event, string $data): string
+    {
+        return $this->formatNamedEvent($event, $data);
     }
 
     public function keepalive(): string

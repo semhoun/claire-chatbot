@@ -18,13 +18,13 @@ use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
 use Slim\Views\Twig;
 
-final class WebChatMessageJob implements QueueDoer
+final readonly class WebChatMessageJob implements QueueDoer
 {
     public function __construct(
-        private readonly Logger $logger,
-        private readonly Twig $twig,
-        private readonly BrainRegistry $brainRegistry,
-        private readonly ChatStreamPublisher $publisher,
+        private Logger $logger,
+        private Twig $twig,
+        private BrainRegistry $brainRegistry,
+        private ChatStreamPublisher $chatStreamPublisher,
     ) {
     }
 
@@ -44,21 +44,22 @@ final class WebChatMessageJob implements QueueDoer
             return;
         }
 
-        $session = new InMemorySession($sessionValues);
-        $session->set('chatId', $chatId);
+        $inMemorySession = new InMemorySession($sessionValues);
+        $inMemorySession->set('chatId', $chatId);
 
-        $brain = $this->brainRegistry->get($brainAvatar, $session);
+        $agent = $this->brainRegistry->get($brainAvatar, $inMemorySession);
         $userMessage = new UserMessage($messageText);
         $userMessage->addMetadata('timestamp', new DateTimeImmutable()->format(DateTimeInterface::ATOM));
 
         $streamedText = '';
         $toolCallId = null;
         $toolText = null;
+        $toolPlaceholderPublished = false;
         $messageId = uniqid('assistant-', true);
         $timestamp = new DateTimeImmutable()->format(DateTimeInterface::ATOM);
 
         try {
-            $agentHandler = $brain->stream($userMessage);
+            $agentHandler = $agent->stream($userMessage);
 
             $placeholderHtml = $this->twig->fetch('partials/message.twig', [
                 'message' => '',
@@ -68,7 +69,7 @@ final class WebChatMessageJob implements QueueDoer
                 'toolCallId' => null,
                 'toolCall' => null,
             ]);
-            $this->publisher->publish($chatId, 'message.assistant.placeholder', [
+            $this->chatStreamPublisher->publish($chatId, 'message.assistant.placeholder', [
                 'chatId' => $chatId,
                 'messageId' => $messageId,
                 'html' => $placeholderHtml,
@@ -79,7 +80,24 @@ final class WebChatMessageJob implements QueueDoer
                     $toolCallId ??= uniqid('tool-', true);
                     $toolText = $this->formatToolChunk($chunk);
 
-                    $this->publisher->publish($chatId, 'tool.update', [
+                    if (! $toolPlaceholderPublished) {
+                        $placeholderHtml = $this->twig->fetch('partials/message.twig', [
+                            'message' => $streamedText,
+                            'time' => $timestamp,
+                            'sent' => false,
+                            'streamId' => $messageId,
+                            'toolCallId' => $toolCallId,
+                            'toolCall' => '',
+                        ]);
+                        $this->chatStreamPublisher->publish($chatId, 'message.assistant.placeholder', [
+                            'chatId' => $chatId,
+                            'messageId' => $messageId,
+                            'html' => $placeholderHtml,
+                        ]);
+                        $toolPlaceholderPublished = true;
+                    }
+
+                    $this->chatStreamPublisher->publish($chatId, 'tool.update', [
                         'chatId' => $chatId,
                         'messageId' => $messageId,
                         'toolCallId' => $toolCallId,
@@ -96,7 +114,7 @@ final class WebChatMessageJob implements QueueDoer
                 $streamedText .= $chunk->content;
                 $html = $this->twig->fetch('partials/md.twig', ['message' => $streamedText]);
 
-                $this->publisher->publish($chatId, 'message.assistant.delta', [
+                $this->chatStreamPublisher->publish($chatId, 'message.assistant.delta', [
                     'chatId' => $chatId,
                     'messageId' => $messageId,
                     'html' => $html,
@@ -108,18 +126,18 @@ final class WebChatMessageJob implements QueueDoer
                 'message' => $agentMessage->getContent(),
             ]);
 
-            $this->publisher->publish($chatId, 'message.assistant.delta', [
+            $this->chatStreamPublisher->publish($chatId, 'message.assistant.delta', [
                 'chatId' => $chatId,
                 'messageId' => $messageId,
                 'html' => $finalHtml,
             ]);
-            $this->publisher->publish($chatId, 'message.assistant.done', [
+            $this->chatStreamPublisher->publish($chatId, 'message.assistant.done', [
                 'chatId' => $chatId,
                 'messageId' => $messageId,
             ]);
         } catch (\Throwable $throwable) {
             $this->logger->error('Web chat job failed', ['exception' => $throwable, 'chatId' => $chatId]);
-            $this->publisher->publish($chatId, 'chat.error', [
+            $this->chatStreamPublisher->publish($chatId, 'chat.error', [
                 'chatId' => $chatId,
                 'message' => 'Désolé, une erreur est survenue lors du traitement de votre message.',
             ]);
