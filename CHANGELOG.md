@@ -9,6 +9,9 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [1.4.0] - 2026-04-08
 
+### Fixed
+- Correction du formatage MarkdownV2 pour les slugs de workflows et de brains dans Telegram (remplacement du gras par du code monospace pour éviter les erreurs de parsing avec les underscores)
+
 ### Added
 - Implementation complete de Server-Sent Events (SSE) pour le streaming des reponses
 - Support des workers de queue multiples dans Docker avec variable `QUEUE_WORKERS`
@@ -21,6 +24,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Le `QueueWorkCommand` utilise l'abstraction cache au lieu de Redis directement
 - Amelioration de l'interface utilisateur et corrections visuelles diverses
 - Optimisation du systeme de files d'attente avec meilleure gestion des workers
+- Amélioration du prompt de résumé dans `ShortMemory` pour mieux préserver les directives et préférences utilisateur
 
 ### Fixed
 - Correction de la suppression du dernier message dans l'historique

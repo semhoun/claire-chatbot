@@ -552,7 +552,7 @@ class TelegramService implements QueueDoer
         $message = "Personnalités disponibles :\n";
         $brains = $this->brainRegistry->list();
         foreach ($brains as $brain) {
-            $message .= sprintf('- *%s* : %s', $brain['slug'], $brain['description']) . "\n";
+            $message .= sprintf('- `%s` : %s', $brain['slug'], $brain['description']) . "\n";
         }
 
         $this->sendMessage($telegramChatId, $message);
@@ -606,7 +606,7 @@ class TelegramService implements QueueDoer
 
             $message .= "\n\nWorkflows disponibles :\n";
             foreach ($workflows as $workflow) {
-                $message .= sprintf('- *%s* : %s (%s)', $workflow['slug'], $workflow['label'], $workflow['type']) . "\n";
+                $message .= sprintf('- `%s` : %s (%s)', $workflow['slug'], $workflow['label'], $workflow['type']) . "\n";
             }
 
             $this->sendMessage($telegramChatId, $message);
