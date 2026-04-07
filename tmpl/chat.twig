@@ -380,10 +380,17 @@
         }
 
         window.clearInput = function clearInput(event) {
-            const form = event.target;
-            if (!event.detail.successful) return;
+            const detail = event.detail || {};
+            if (!detail.successful) return;
 
-            event.target.reset();
+            const form = detail.elt instanceof HTMLFormElement
+                ? detail.elt
+                : (event.target instanceof HTMLFormElement ? event.target : null);
+            if (!form) {
+                return;
+            }
+
+            form.reset();
             document.querySelectorAll('.chat-chip__remove').forEach(el => removeChatChip(el));
 
             const input = form.querySelector('[name="message"]');
@@ -469,7 +476,10 @@
 
         window.handleLastExchangeResponse = function handleLastExchangeResponse(event) {
             const detail = event.detail || {};
-            if (!detail.successful) return;
+            if (!detail.successful) {
+                setComposerBusyState(false);
+                return;
+            }
 
             try {
                 const payload = JSON.parse(detail.xhr.responseText || '{}');
@@ -480,6 +490,7 @@
 
             const chatBody = document.querySelector('.chat-body');
             if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
+            setComposerBusyState(false);
         };
 
         function $(sel, root=document) { return root.querySelector(sel); }
