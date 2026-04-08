@@ -62,6 +62,13 @@ RUN apt-get update -y \
   && install composer.phar /usr/bin/composer \
   \
   \
+# Install ember \
+    && EMBER_LATEST_TAG=$(curl -fsSL https://api.github.com/repos/alexandre-daubois/ember/releases/latest | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//') \
+    && curl -fsSL -o /tmp/ember.tar.gz https://github.com/alexandre-daubois/ember/releases/download/${EMBER_LATEST_TAG}/ember_${EMBER_LATEST_TAG#v}_linux_amd64.tar.gz \
+    && tar -xzf  /tmp/ember.tar.gz -C /tmp \
+    && install ember /usr/local/bin/ \
+    \
+    \
 # Clean \
   && apt-get -y purge libmemcached-dev zlib1g-dev libmagickwand-dev \
   && apt-get -y autoremove \

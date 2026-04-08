@@ -2,15 +2,15 @@
 
 set -e
 
-cp /opt/conf/php/*  ${PHP_INI_DIR}/conf.d/
+cp /opt/conf/php/*  "${PHP_INI_DIR}/conf.d/"
 if [ "${DEBUG_MODE}" == "true" ]; then
-  cp  ${PHP_INI_DIR}/php.ini-development  ${PHP_INI_DIR}/php.ini
-  cat > ${PHP_INI_DIR}/conf.d/99-debug.ini << 'EOF'
+  cp  "${PHP_INI_DIR}/php.ini-development"  "${PHP_INI_DIR}/php.ini"
+  cat > "${PHP_INI_DIR}/conf.d/99-debug.ini" << 'EOF'
 display_errors = On
 display_startup_errors = On
 EOF
 else
-  cp ${PHP_INI_DIR}/php.ini-production ${PHP_INI_DIR}/php.ini
+  cp "${PHP_INI_DIR}/php.ini-production" "${PHP_INI_DIR}/php.ini"
 fi
 
 # Check and create $VAR_PATH and subfolders
@@ -36,21 +36,17 @@ TRACING_BLOCK='  tracing {
 '
 fi
 SITE_ADDRESS=':80'
-CADDY_GLOBAL_OPTIONS=''
-if [ "${ENABLE_LETSENCRYPT}" = "true" ]; then
+CADDY_HTTPS_OPTIONS='  auto_https off'
+if [ "${ENABLE_LETSENCRYPT}" = "true" ] && [ -n "${ACME_EMAIL}" ]; then
   SITE_ADDRESS="${SERVER_NAME}"
-  if [ -n "${ACME_EMAIL}" ]; then
-    CADDY_GLOBAL_OPTIONS="  email ${ACME_EMAIL}
-${CADDY_GLOBAL_OPTIONS}"
-  fi
-else
-  CADDY_GLOBAL_OPTIONS="  auto_https off
-${CADDY_GLOBAL_OPTIONS}"
+  CADDY_HTTPS_OPTIONS="  email ${ACME_EMAIL}"
 fi
 cat > /etc/caddy/Caddyfile << EOF
 {
   frankenphp
-  ${CADDY_GLOBAL_OPTIONS}
+  order php_server before file_server
+  metrics
+  ${CADDY_HTTPS_OPTIONS}
   log {
     output stderr
   }
@@ -69,14 +65,6 @@ ${SITE_ADDRESS} {
     output stdout
     format formatted "{common_log}"
   }
-  handle /.well-known/health {
-  }
-  handle /* {
-${TRACING_BLOCK}
-  }
-
-  @health path /.well-known/health
-  header @health Cache-Control "no-store"
 }
 EOF
 

@@ -38,27 +38,6 @@ final class QueueWorker
                 break;
             }
 
-            if (! $this->redisClient->ping()) {
-                $this->logger->warning('Redis connection lost, attempting to reconnect', [
-                    'worker_id' => $workerId,
-                ]);
-                $output->writeln('<warning>Redis connection lost, attempting to reconnect...</warning>');
-
-                if (! $this->redisClient->reconnect()) {
-                    $this->logger->error('Failed to reconnect to Redis', [
-                        'worker_id' => $workerId,
-                    ]);
-                    $output->writeln('<error>Failed to reconnect to Redis, stopping worker</error>');
-
-                    break;
-                }
-
-                $this->logger->info('Successfully reconnected to Redis', [
-                    'worker_id' => $workerId,
-                ]);
-                $output->writeln('<info>Successfully reconnected to Redis</info>');
-            }
-
             $job = $this->queueBackend->reserveNextAvailable(
                 $queueWorkerOptions->queueName,
             );
@@ -68,7 +47,11 @@ final class QueueWorker
                     break;
                 }
 
-                sleep($queueWorkerOptions->sleep);
+                $this->sleepWithSignalDispatch($queueWorkerOptions->sleep);
+
+                // Force Redis reconnection after sleep to prevent stale connection
+                // Redis server may have closed the connection during our idle period
+                $this->redisClient->reconnect();
 
                 continue;
             }
@@ -108,5 +91,24 @@ final class QueueWorker
         }
 
         return $queueWorkerOptions->maxTime > 0 && (time() - $startedAt) >= $queueWorkerOptions->maxTime;
+    }
+
+    /**
+     * Sleep while dispatching PCNTL signals to allow graceful shutdown.
+     */
+    private function sleepWithSignalDispatch(int $seconds): void
+    {
+        if (function_exists('pcntl_signal_dispatch')) {
+            for ($i = 0; $i < $seconds; $i++) {
+                pcntl_signal_dispatch();
+                if (! $this->running) {
+                    break;
+                }
+
+                sleep(1);
+            }
+        } else {
+            sleep($seconds);
+        }
     }
 }

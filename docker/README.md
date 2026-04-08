@@ -87,7 +87,6 @@ Au demarrage, l'entrypoint:
 | `SERVER_ADMIN` | `webmaster@docker.test` | Adresse admin associee au serveur |
 | `ENABLE_LETSENCRYPT` | `false` | Active HTTPS direct avec certificats Let's Encrypt |
 | `ACME_EMAIL` | vide | Email ACME pour l'emission des certificats |
-| `ENABLE_ACCESS_LOGS` | `true` | Conserve la compatibilite avec la config applicative |
 | `DEBUG_MODE` | `false` | Active le mode debug PHP |
 | `DATA_PATH` | `/data` | Repertoire racine des donnees persistantes |
 | `QUEUE_WORKERS` | `1` | Nombre de workers de queue Redis a lancer |
@@ -282,7 +281,6 @@ docker exec -it claire bash
 
 - Le dossier `/data` doit etre persistant pour conserver la base SQLite et les fichiers utilisateurs.
 - Si vous utilisez SQLite, pensez a executer `./console migrations:migrate` au premier demarrage.
-- `ENABLE_ACCESS_LOGS` existe cote application, mais la journalisation HTTP est actuellement generee par le `Caddyfile` cree au demarrage.
 - Le fichier `docker/compose.yml` du depot sert surtout d'exemple local de developpement et contient des valeurs specifiques a un environnement de travail.
 
 ## Liens

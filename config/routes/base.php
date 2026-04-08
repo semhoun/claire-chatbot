@@ -8,5 +8,5 @@ use Slim\App;
 return static function (
     App $app,
 ): void {
-    $app->get('/.well-known/health', [HomeController::class, 'index'])->setName('home');
+    $app->get('/health', [HomeController::class, 'index'])->setName('home');
 };
