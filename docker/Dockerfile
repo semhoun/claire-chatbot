@@ -1,4 +1,4 @@
-FROM dunglas/frankenphp:builder-php8.4-trixie AS frankenphp-builder
+FROM dunglas/frankenphp:builder-php8.5-trixie AS frankenphp-builder
 
 # Copy xcaddy in the builder image
 COPY --from=caddy:builder /usr/bin/xcaddy /usr/bin/xcaddy
@@ -20,7 +20,7 @@ RUN CGO_ENABLED=1 \
         # Add extra Caddy modules here
         --with github.com/caddyserver/transform-encoder
 
-FROM dunglas/frankenphp:php8.4-trixie AS base
+FROM dunglas/frankenphp:php8.5-trixie AS base
 
 COPY --from=frankenphp-builder /usr/local/bin/frankenphp /usr/local/bin/frankenphp
 
@@ -31,12 +31,11 @@ RUN apt-get update -y \
   && apt-get install -y --no-install-recommends curl wget ca-certificates bash dos2unix git unzip gpg \
     iputils-ping iproute2 less vim \
     locales aspell-fr \
-    imagemagick graphicsmagick  exiftran \
     redis \
     supervisor \
   \
 # Dev packages \
-  && apt-get install -y libmemcached-dev zlib1g-dev libmagickwand-dev \
+  && apt-get install -y zlib1g-dev libmagickwand-dev \
   \
   \
 # Configure locales \
@@ -51,8 +50,6 @@ RUN apt-get update -y \
   && install-php-extensions bcmath bz2 curl exif gd gmp intl mbstring opcache pcntl pdo_mysql pdo_pgsql pdo_sqlite redis sodium xsl zip \
   && pecl install opentelemetry \
   && docker-php-ext-enable opentelemetry \
-  && pecl install imagick memcache \
-  && docker-php-ext-enable imagick memcache \
   \
   \
 # Install composer \
@@ -70,7 +67,6 @@ RUN apt-get update -y \
     \
     \
 # Clean \
-  && apt-get -y purge libmemcached-dev zlib1g-dev libmagickwand-dev \
   && apt-get -y autoremove \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
