@@ -26,7 +26,6 @@ COPY --from=frankenphp-builder /usr/local/bin/frankenphp /usr/local/bin/frankenp
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TERM=linux
-ENV FRANKENPHP_CONFIG="worker /www/public/index.php"
 
 RUN apt-get update -y \
   && apt-get install -y --no-install-recommends curl wget ca-certificates bash dos2unix git unzip gpg \
@@ -73,7 +72,6 @@ RUN mkdir -p /var/www \
   && chown -R www-data:www-data /var/www \
   && usermod www-data -s /bin/bash -d /var/www
 
-
 FROM base AS build
 
 COPY . /rootfs/www
@@ -102,10 +100,10 @@ ENV LC_ALL=en_US.UTF-8
 
 # Default env values
 ENV DEBUG_MODE="false"
-ENV ENABLE_ACCESS_LOGS="true"
 ENV ENABLE_LETSENCRYPT="false"
 ENV ACME_EMAIL=""
 ENV QUEUE_WORKERS="2"
+ENV FRANKENPHP_CONFIG="worker /www/public/index.php"
 
 # DATA dir
 ENV DATA_PATH=/data
@@ -118,4 +116,4 @@ EXPOSE 80 443
 # Docker starting params
 CMD ["/usr/bin/supervisord","-c","/etc/supervisor/supervisord.conf"]
 ENTRYPOINT ["/opt/bin/entrypoint.sh"]
-HEALTHCHECK --start-period=60s --interval=15s --timeout=5s --retries=3 CMD curl --fail http://localhost/health || exit 1
+HEALTHCHECK --start-period=60s --interval=15s --timeout=5s --retries=3 CMD curl --fail http://localhost/.well-known/health || exit 1

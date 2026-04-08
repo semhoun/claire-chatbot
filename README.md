@@ -122,7 +122,6 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 - Mode et logs:
   - `DEBUG_MODE` = `true|false` (active un niveau de logs plus verbeux)
   - `ENABLE_LETSENCRYPT` = `true|false` (active HTTPS automatique via Let's Encrypt dans le conteneur FrankenPHP/Caddy)
-  - `ENABLE_ACCESS_LOGS` = `true|false` (active les access logs HTTP sur la sortie standard du conteneur)
   - `ACME_EMAIL` — email utilisé pour l'enregistrement ACME/Let's Encrypt (optionnel)
 
 - Stockage des fichiers et données:
@@ -506,7 +505,6 @@ services:
       SERVER_ADMIN: webmaster@example.com
       SERVER_NAME: claire.example.com
       DEBUG_MODE: "false"
-      ENABLE_ACCESS_LOGS: "true"
       ENABLE_LETSENCRYPT: "false"
       # ACME_EMAIL: admin@example.com
 
@@ -598,7 +596,6 @@ Notes Docker/FrankenPHP:
 - L'image Docker utilise FrankenPHP avec Caddy comme serveur HTTP integre.
 - Si `ENABLE_LETSENCRYPT=true`, le conteneur sert directement votre domaine `SERVER_NAME` en HTTPS avec certificats Let's Encrypt automatiques.
 - Si `ENABLE_LETSENCRYPT=false`, le conteneur reste en HTTP sur le port 80, ce qui est recommande derriere un reverse proxy TLS.
-- `ENABLE_ACCESS_LOGS` permet d'activer ou couper les logs d'acces HTTP sans rebuilder l'image.
 - Pour Let's Encrypt, le domaine doit etre publiquement resolvable vers le conteneur et les ports 80/443 doivent etre accessibles.
 
 #### Variables d'environnement Docker
@@ -680,7 +677,6 @@ services:
 
 ### Configuration (/config)
 
-- `POST /config/chat_mode` — Changer le mode de chat (déprécié, streaming uniquement depuis v1.4.0)
 - `POST /config/layout_mode` — Changer le mode d'affichage
 - `POST /config/brain_avatar` — Changer l'avatar/cerveau actif
 - `POST /config/telegram` — Configurer Telegram
@@ -688,31 +684,13 @@ services:
 
 ### Streaming SSE (Server‑Sent Events) et proxy HTTP
 
-L’endpoint de streaming utilise le type `text/event-stream` et écrit au fil de l’eau (pas de buffer côté application). Cependant, certains reverse proxies / frontaux web peuvent bufferiser la réponse et empêcher l’affichage progressif côté navigateur.
+L’endpoint de streaming utilise le type `text/event-stream` et écrit au fil de l’eau (pas de buffer côté application). Avec FrankenPHP/Caddy (runtime Docker), le streaming SSE fonctionne nativement sans configuration particulière.
 
-Pour garantir un streaming fluide, désactivez la bufferisation au niveau du proxy. Exemple avec Apache quand PHP est servi via `mod_proxy_fcgi`:
+Si vous placez l’application derrière un reverse proxy (Nginx, Traefik, Apache, etc.), désactivez la bufferisation pour garantir un streaming fluide:
 
-```apache
-# Assurez-vous que mod_proxy et mod_proxy_fcgi sont activés
-# a2enmod proxy proxy_fcgi
-
-# Votre mapping vers PHP-FPM (à adapter à votre environnement)
-# ProxyPassMatch ^/(.*\.php(/.*)?)$ fcgi://127.0.0.1:9000/var/www/html/$1
-
-# Désactiver la bufferisation pour le backend FastCGI
-<Proxy "fcgi://localhost/" flushpackets=on flushwait=20>
-</Proxy>
-```
-
-Notes:
-- Remplacez l’URL FastCGI (`fcgi://localhost/` ou `fcgi://127.0.0.1:9000/…`) par celle de votre instance PHP‑FPM.
-- Selon la version d’Apache, vous pouvez également utiliser `ProxySet` à l’intérieur du bloc `<Proxy>`:
-  ```apache
-  <Proxy "fcgi://127.0.0.1:9000">
-      ProxySet flushpackets=on flushwait=20
-  </Proxy>
-  ```
-- Si vous utilisez un autre proxy (Nginx, Traefik, etc.), désactivez la bufferisation équivalente (ex. Nginx: `proxy_buffering off;` sur l’emplacement concerné).
+- **Nginx**: `proxy_buffering off;` sur l’emplacement concerné
+- **Traefik**: ajoutez l’annotation `traefik.http.middlewares.nobuffer.buffering.maxRequestBodyBytes: 0`
+- **Apache**: `ProxySet flushpackets=on` dans la configuration du proxy
 
 ### Architecture SSE (Server-Sent Events)
 
@@ -731,8 +709,7 @@ Le `sessionId` est généré côté serveur lors du chargement de `/`, stocké e
 - l’envoi des messages via `POST /brain/messages`;
 - les actions liées à l’historique qui doivent publier un snapshot vers le bon onglet.
 
-Le frontend charge l’extension SSE HTMX localement via `public/js/sse.js`. L’ancien helper `public/js/htmx-stream.js` n’est plus utilisé.
-
+Le frontend charge l’extension SSE HTMX localement via `public/js/sse.js`. 
 Exemple simplifié de cycle web actuel:
 
 ```text
@@ -1050,11 +1027,6 @@ vendor/bin/phpunit                              # Tous les tests
 vendor/bin/phpunit test/Unit/Services/FooTest.php      # Fichier spécifique
 vendor/bin/phpunit --filter testMethodName    # Méthode spécifique
 ```
-
-### Debug
-
-- Slim Tracy (debug console) est activable en mode debug via la configuration.
-- Définissez `DISABLE_TRACY_BAR=false` pour activer la barre de debug.
 
 ## Dépannage
 

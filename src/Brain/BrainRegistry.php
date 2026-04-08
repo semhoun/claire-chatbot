@@ -90,12 +90,8 @@ final class BrainRegistry
         return isset($yamlBrains[$slug]);
     }
 
-    public function get(?string $slug, SessionInterface $session): Agent
+    public function get(string $slug, SessionInterface $session): Agent
     {
-        if ($slug === null) {
-            $slug = $this->settings->get('llm.defaultBrain');
-        }
-
         $brains = (array) $this->settings->get('llm.brains');
         $class = (string) ($brains[$slug] ?? '');
         if ($class === '' || ! class_exists($class) || ! is_subclass_of($class, BrainAvatar::class)) {

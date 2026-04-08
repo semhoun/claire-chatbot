@@ -69,13 +69,13 @@ ${SITE_ADDRESS} {
     output stdout
     format formatted "{common_log}"
   }
-  handle /health {
+  handle /.well-known/health {
   }
   handle /* {
 ${TRACING_BLOCK}
   }
 
-  @health path /health
+  @health path /.well-known/health
   header @health Cache-Control "no-store"
 }
 EOF

@@ -26,7 +26,7 @@ final class AuthTest extends TestCase
     {
         $this->session = $this->createMock(SessionInterface::class);
         $this->entityManager = $this->createMock(EntityManager::class);
-        $this->settings = new Settings(['llm' => ['defaultBrain' => 'claire']]);
+        $this->settings = new Settings(['session' => ['defaultParams' => ['brain_avatar' => 'claire', 'layout_mode' => 'full']]]);
         $this->auth = new Auth($this->entityManager, $this->settings);
     }
 

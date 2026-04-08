@@ -103,7 +103,6 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ### Changed
 - Mise à jour de la documentation pour le runtime Docker basé sur FrankenPHP/Caddy
 - Documentation des variables `ENABLE_LETSENCRYPT` et `ACME_EMAIL` pour activer HTTPS automatique via Let's Encrypt
-- Ajout de la variable `ENABLE_ACCESS_LOGS` pour activer ou désactiver les access logs HTTP sur la sortie standard du conteneur Docker
 - Migration du runtime Docker principal vers FrankenPHP avec Caddy et activation des modules `transform-encoder`, Mercure et Vulcain
 - Suppression de Tracy au profit d'OpenTelemetry pour l'observabilite et le diagnostic
 - Amelioration de la persistance des conversations avec separation entre messages internes LLM et messages affichables

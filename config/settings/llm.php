@@ -47,7 +47,6 @@ return [
     'yamlBrains' => [
         'path' => Settings::getAppRoot() . '/addons/agents',
     ],
-    'defaultBrain' => 'claire',
     'rawMimeTypes' => [
         'application/x-csh',
         'text/css',

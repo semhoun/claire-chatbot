@@ -569,7 +569,7 @@ class TelegramService implements QueueDoer
         $brain = (string) $args[0];
         try {
             if ($brain === 'reset') {
-                $brain = $this->settings->get('llm.defaultBrain');
+                $brain = $this->settings->get('session.defaultParams.brain_avatar');
             }
 
             $meta = $this->brainRegistry->getMeta($brain);

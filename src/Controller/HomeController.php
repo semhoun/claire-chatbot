@@ -80,15 +80,7 @@ final readonly class HomeController
             $userChatHistory->validateMessageSequences();
         }
 
-        // Métadonnées du brain courant via la registry
-        try {
-            $meta = $this->brainRegistry->getMeta($currentBrain);
-        } catch (\InvalidArgumentException) {
-            // Fallback sur le brain par défaut si le slug n'est pas valide
-            $currentBrain = $this->settings->get('llm.defaultBrain');
-            $session->set('brain_avatar', $currentBrain);
-            $meta = $this->brainRegistry->getMeta($currentBrain);
-        }
+        $meta = $this->brainRegistry->getMeta($currentBrain);
 
         // Generate a per-tab stream session ID for SSE binding
         $streamSessionId = uniqid('sess-', true);
