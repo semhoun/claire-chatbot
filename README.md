@@ -135,7 +135,7 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
     - Générales
       - `OTEL_PHP_AUTOLOAD_ENABLED` — active l’auto‑instrumentation PHP (true/false).
       - `OTEL_SERVICE_NAME` — nom du service (utilisé par les 3 signaux).
-      - `OTEL_RESOURCE_ATTRIBUTES` — attributs ressource supplémentaires (ex: `deployment.environment=dev,service.version=1.3.1`).
+      - `OTEL_RESOURCE_ATTRIBUTES` — attributs ressource supplémentaires (ex: `deployment.environment=dev,service.version=1.4.0`).
       - `OTEL_PROPAGATORS` — propagateurs de contexte (ex: `baggage,tracecontext`).
     - Traces
       - `OTEL_TRACES_EXPORTER` — exporteur des traces (`otlp`, `none`).
