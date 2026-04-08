@@ -5,9 +5,10 @@ set -e
 cp /opt/conf/php/*  "${PHP_INI_DIR}/conf.d/"
 if [ "${DEBUG_MODE}" == "true" ]; then
   cp  "${PHP_INI_DIR}/php.ini-development"  "${PHP_INI_DIR}/php.ini"
-  cat > "${PHP_INI_DIR}/conf.d/99-debug.ini" << 'EOF'
+  cat > "${PHP_INI_DIR}/conf.d/z99-debug.ini" << 'EOF'
 display_errors = On
 display_startup_errors = On
+opcache.enable = Off
 EOF
 else
   cp "${PHP_INI_DIR}/php.ini-production" "${PHP_INI_DIR}/php.ini"
@@ -64,19 +65,12 @@ ${SITE_ADDRESS} {
     output stdout
     format formatted "{common_log}"
   }
-}
 
-${SITE_ADDRESS}/health {
-  root * /www/public
-
-  php_server {
-    index index.php
+  handle /health {
+      header Cache-Control "no-store"
   }
-  header Cache-Control "no-store"
 }
 EOF
-
-cat /etc/caddy/Caddyfile
 
 # Configure queue workers count
 sed -i "s/numprocs=1/numprocs=${QUEUE_WORKERS:-1}/" /etc/supervisor/conf.d/php.conf
