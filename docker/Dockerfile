@@ -93,10 +93,6 @@ RUN cd /rootfs/www \
         --no-dev \
         install
 
-RUN mkdir -p /rootfs/data \
-  && chown -R www-data:www-data /rootfs/data /rootfs/www \
-  && chmod +x /rootfs/opt/bin/*
-
 FROM base AS final
 COPY --from=build /rootfs /
 
@@ -112,9 +108,27 @@ ENV ACME_EMAIL=""
 ENV QUEUE_WORKERS="2"
 ENV FRANKENPHP_CONFIG="worker /www/public/index.php"
 
+# Manage permissions
+RUN mkdir -p \
+    /config/caddy \
+    /data/caddy \
+    /etc/caddy \
+    /usr/share/caddy \
+  && touch /etc/caddy/Caddyfile \
+  && chown -R www-data:www-data \
+    /config/caddy \
+    /data/caddy \
+    /etc/caddy \
+    /usr/share/caddy \
+  && setcap -r /usr/local/bin/frankenphp \
+## Application directories \
+  && mkdir -p /opt/data \
+  && chown -R www-data:www-data /opt/data /www \
+  && chmod +x /opt/bin/*
+
 # DATA dir
-ENV DATA_PATH=/data
-VOLUME ["/data"]
+ENV DATA_PATH=/opt/data
+VOLUME ["/opt/data"]
 WORKDIR "/www"
 
 #Expose port
@@ -123,4 +137,3 @@ EXPOSE 80 443
 # Docker starting params
 CMD ["/usr/bin/supervisord","-c","/etc/supervisor/supervisord.conf"]
 ENTRYPOINT ["/opt/bin/entrypoint.sh"]
-HEALTHCHECK --start-period=60s --interval=15s --timeout=5s --retries=3 CMD curl --fail http://localhost/.well-known/health || exit 1

@@ -39,7 +39,7 @@ docker build -t claire:latest -f docker/Dockerfile .
 docker run -d -p 8080:80 \
   -e OPENAPI_KEY=votre-clé-api \
   -e SESSION_JWT_SECRET=$(openssl rand -hex 32) \
-  -v claire_data:/data \
+  -v claire_data:/opt/data \
   claire:latest
 ```
 
@@ -498,7 +498,7 @@ services:
     # volumes:
     #   - .:/www
     volumes:
-      - claire_data:/data  # Persistance des données (base SQLite, fichiers uploadés, etc.)
+      - claire_data:/opt/data # Persistance des données (base SQLite, fichiers uploadés, etc.)
     ports:
       - "8080:80"
     environment:
@@ -508,7 +508,7 @@ services:
       ENABLE_LETSENCRYPT: "false"
       # ACME_EMAIL: admin@example.com
 
-      DATA_PATH: /data
+      DATA_PATH: /opt/data
 
       # Queue workers (optionnel, défaut: 1)
       # QUEUE_WORKERS: 2

@@ -26,7 +26,6 @@ if [ ! -d "/www/var/cache/proxy" ]; then
   su www-data -c "./console app:generate-proxies"
 fi
 
-mkdir -p /etc/caddy
 TRACING_BLOCK=''
 if [ -n "${OTEL_EXPORTER_OTLP_ENDPOINT}" ]; then
 TRACING_BLOCK='  tracing {
@@ -46,10 +45,10 @@ cat > /etc/caddy/Caddyfile << EOF
   frankenphp
   order php_server before file_server
   metrics
-  ${CADDY_HTTPS_OPTIONS}
   log {
     output stderr
   }
+  ${CADDY_HTTPS_OPTIONS}
 }
 
 ${SITE_ADDRESS} {
@@ -66,7 +65,18 @@ ${SITE_ADDRESS} {
     format formatted "{common_log}"
   }
 }
+
+${SITE_ADDRESS}/health {
+  root * /www/public
+
+  php_server {
+    index index.php
+  }
+  header Cache-Control "no-store"
+}
 EOF
+
+cat /etc/caddy/Caddyfile
 
 # Configure queue workers count
 sed -i "s/numprocs=1/numprocs=${QUEUE_WORKERS:-1}/" /etc/supervisor/conf.d/php.conf
