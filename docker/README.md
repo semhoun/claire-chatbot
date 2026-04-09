@@ -48,7 +48,7 @@ docker exec claire ./console migrations:migrate
 - Base: `dunglas/frankenphp:php8.4-trixie`
 - Serveur HTTP: FrankenPHP + Caddy
 - Supervision: Supervisor
-- Repertoire de travail: `/www`
+- Repertoire de travail: `/opt/www`
 - Donnees persistantes: `/data`
 - Ports exposes: `80`, `443`
 - Healthcheck: `GET /health`
@@ -266,8 +266,8 @@ docker exec -it claire bash
 |--------|-------|
 | `/data` | Base SQLite, fichiers uploades, cache applicatif persistant |
 | `/data/filer` | Stockage des fichiers envoyes |
-| `/www/var/cache` | Cache local de l'application |
-| `/www/var/tmp` | Repertoire temporaire |
+| `/opt/www/var/cache` | Cache local de l'application |
+| `/opt/www/var/tmp` | Repertoire temporaire |
 
 ## Sante et exposition reseau
 

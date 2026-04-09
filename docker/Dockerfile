@@ -77,11 +77,13 @@ RUN mkdir -p /var/www \
 
 FROM base AS build
 
-COPY . /rootfs/www
-RUN mv /rootfs/www/docker/rootfs/* /rootfs/ \
-    && rm -rf /rootfs/www/docker
+COPY . /src
+RUN mkdir /rootfs \
+    && mv /src/docker/rootfs/* /rootfs/ \
+    && rm -rf /src/docker \
+    && mv /src /rootfs/opt/www
 
-RUN cd /rootfs/www \
+RUN cd /rootfs/opt/www \
     && COMPOSER_ALLOW_SUPERUSER=1 php /usr/bin/composer \
         --no-cache \
         --optimize-autoloader \
@@ -102,7 +104,7 @@ ENV DEBUG_MODE="false"
 ENV ENABLE_LETSENCRYPT="false"
 ENV ACME_EMAIL=""
 ENV QUEUE_WORKERS="2"
-ENV FRANKENPHP_CONFIG="worker /www/public/index.php"
+ENV FRANKENPHP_CONFIG="worker /opt/www/public/index.php"
 
 # Manage permissions
 RUN mkdir -p \
@@ -119,13 +121,13 @@ RUN mkdir -p \
   && setcap -r /usr/local/bin/frankenphp \
 ## Application directories \
   && mkdir -p /opt/data \
-  && chown -R www-data:www-data /opt/data /www \
+  && chown -R www-data:www-data /opt/data /opt/www \
   && chmod +x /opt/bin/*
 
 # DATA dir
 ENV DATA_PATH=/opt/data
 VOLUME ["/opt/data"]
-WORKDIR "/www"
+WORKDIR "/opt/www"
 
 #Expose port
 EXPOSE 80 443

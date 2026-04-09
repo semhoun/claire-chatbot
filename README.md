@@ -496,7 +496,7 @@ services:
     # Ou utilisez l'image de développement avec volumes montés:
     # image: semhoun/webserver:8.4
     # volumes:
-    #   - .:/www
+    #   - .:/opt/www
     volumes:
       - claire_data:/opt/data # Persistance des données (base SQLite, fichiers uploadés, etc.)
     ports:
@@ -638,7 +638,7 @@ services:
   claire:
     image: semhoun/webserver:8.4
     volumes:
-      - .:/www
+      - .:/opt/www
     # ... reste de la configuration
 ```
 

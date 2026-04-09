@@ -607,7 +607,7 @@ class TelegramService implements QueueDoer
                 $message .= 'non défini';
             }
 
-            $message .= "**\n\n---\nWorkflows disponibles :\n";
+            $message .= "**\n\n---\n_Workflows disponibles_ :\n";
             foreach ($workflows as $workflow) {
                 $message .= sprintf('- `%s` : %s (%s)', $workflow['slug'], $workflow['label'], $workflow['type']) . "\n";
             }

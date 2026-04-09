@@ -5,8 +5,6 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
-## [Unreleased]
-
 ## [1.4.0] - 2026-04-09
 
 ### Added
@@ -18,6 +16,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Identifiant SSE unique pour chaque connexion streaming
 
 ### Changed
+
+- **BREAKING**: Déplacement du répertoire applicatif de `/www` vers `/opt/www` dans l'image Docker
 - **BREAKING**: L'interface web passe en mode streaming uniquement (suppression du mode chat classique)
 - Remplacement de `chatid` par `session_id` dans les endpoints pour plus de coherence
 - Le `QueueWorkCommand` utilise l'abstraction cache au lieu de Redis directement

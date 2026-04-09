@@ -16,15 +16,15 @@ else
 fi
 
 # Check and create $VAR_PATH and subfolders
-for dir in "${DATA_PATH}" "${DATA_PATH}/filer" "/www/var/cache" "/www/var/tmp"; do
+for dir in "${DATA_PATH}" "${DATA_PATH}/filer" "/opt/www/var/cache" "/opt/www/var/tmp"; do
   if [ ! -d "$dir" ]; then
     mkdir -p "$dir"
   fi
   chown www-data:www-data "$dir"
 done
 
-if [ ! -d "/www/var/cache/proxy" ]; then
-  cd /www
+if [ ! -d "/opt/www/var/cache/proxy" ]; then
+  cd /opt/www
   su www-data -c "./console app:generate-proxies"
 fi
 
@@ -54,7 +54,7 @@ cat > /etc/caddy/Caddyfile << EOF
 }
 
 ${SITE_ADDRESS} {
-  root * /www/public
+  root * /opt/www/public
   encode zstd gzip
 
   php_server {
