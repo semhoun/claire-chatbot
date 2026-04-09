@@ -9,6 +9,7 @@ if [ "${DEBUG_MODE}" == "true" ]; then
 display_errors = On
 display_startup_errors = On
 opcache.enable = Off
+opcache.enable_cli = Off
 EOF
 else
   cp "${PHP_INI_DIR}/php.ini-production" "${PHP_INI_DIR}/php.ini"
@@ -65,7 +66,11 @@ ${SITE_ADDRESS} {
     output stdout
     format formatted "{common_log}"
   }
+  log_skip /health
 
+  handle /* {
+    ${TRACING_BLOCK}
+  }
   handle /health {
       header Cache-Control "no-store"
   }
