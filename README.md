@@ -922,13 +922,11 @@ Le bot Telegram supporte:
 - **Photos**: Envoi d'images avec analyse (si un modèle de vision est configuré)
 - **Documents**: Upload de fichiers pour analyse
 - **Génération d'images**: Création d'images via ComfyUI (si configuré)
-- **Changement de cerveau**: Commande `/<nom_du_cerveau>` pour basculer d'avatar
 - **Commandes intégrées:**
   - `/start` — Démarrer une nouvelle conversation
   - `/help` — Afficher l'aide
-  - `/list` — Lister les personnalités
-  - `/brain` — Voir ou changer de personnalité
-  - `/comfyui` — Voir ou changer le workflow ComfyUI
+  - `/brain` — Voir ou changer de personnalité (affiche la liste si sans argument)
+  - `/comfyui` — Voir ou changer le workflow ComfyUI (affiche la liste si sans argument)
 
 #### Configuration de la base de données
 

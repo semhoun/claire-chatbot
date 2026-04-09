@@ -7,7 +7,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
-## [1.4.0] - 2026-04-08
+## [1.4.0] - 2026-04-09
 
 ### Added
 - Nouvelles méthodes dans `RedisClientInterface`: `ping()`, `close()`, `setReadTimeout()`, `reconnect()`
@@ -24,6 +24,11 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Amelioration de l'interface utilisateur et corrections visuelles diverses
 - Optimisation du systeme de files d'attente avec meilleure gestion des workers
 - Amélioration du prompt de résumé dans `ShortMemory` pour mieux préserver les directives et préférences utilisateur
+- **Telegram**: La commande `/brain` sans arguments affiche maintenant la personnalité actuelle ET la liste des personnalités disponibles
+- **Telegram**: Reformattage de l'affichage des workflows ComfyUI (suppression des titres markdown, texte simple)
+
+### Removed
+- **Telegram**: Suppression de la commande `/list` (fonctionnalité intégrée dans `/brain`)
 
 ### Fixed
 - Correction de la suppression du dernier message dans l'historique
@@ -197,7 +202,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Nouvelle commande console `telegram:set-commands` pour configurer le menu des commandes du bot Telegram
 - Outil de recherche web (`web_search`) via SearXNG
 - Support du SDK Telegram `phptg/bot-api` (remplace `irazasyed/telegram-bot-sdk`)
-- Commandes Telegram mises à jour: `/start`, `/help`, `/list`, `/brain`
+- Commandes Telegram mises à jour: `/start`, `/help`, `/brain`
 - Entité `TelegramSession` pour persister les sessions utilisateurs Telegram
 - Repository `TelegramSessionRepository` pour la gestion des sessions Telegram
 
