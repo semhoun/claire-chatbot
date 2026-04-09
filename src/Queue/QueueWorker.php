@@ -52,30 +52,10 @@ final class QueueWorker
                 break;
             }
 
-            // Log every 100 iterations to confirm worker is alive
-            if ($loopCount % 100 === 0) {
-                $this->logger->debug('Queue worker heartbeat', [
-                    'worker_id' => $workerId,
-                    'loop_count' => $loopCount,
-                    'processed_jobs' => $processedJobs,
-                ]);
-            }
-
             try {
-                $this->logger->debug('Attempting to reserve job', [
-                    'worker_id' => $workerId,
-                    'queue' => $queueWorkerOptions->queueName,
-                    'loop' => $loopCount,
-                ]);
-
                 $job = $this->queueBackend->reserveNextAvailable(
                     $queueWorkerOptions->queueName,
                 );
-
-                $this->logger->debug('Reserve completed', [
-                    'worker_id' => $workerId,
-                    'has_job' => $job instanceof QueueMessage,
-                ]);
             } catch (Throwable $e) {
                 $this->logger->error('Failed to reserve job', [
                     'worker_id' => $workerId,
@@ -109,16 +89,7 @@ final class QueueWorker
                     break;
                 }
 
-                $this->logger->debug('No job available, sleeping', [
-                    'worker_id' => $workerId,
-                    'sleep_seconds' => $queueWorkerOptions->sleep,
-                ]);
-
                 $this->sleepWithSignalDispatch($queueWorkerOptions->sleep);
-
-                $this->logger->debug('Sleep completed', [
-                    'worker_id' => $workerId,
-                ]);
 
                 continue;
             }
