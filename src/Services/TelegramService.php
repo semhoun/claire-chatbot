@@ -33,8 +33,7 @@ class TelegramService implements QueueDoer
     public const array COMMANDS = [
         'start' => 'Démarrer une nouvelle conversation',
         'help' => "Afficher l'aide",
-        'list' => 'Lister les personnalités',
-        'brain' => 'Voir ou changer de personnalité (choisir reset pour celui par défaut)',
+        'brain' => 'Voir ou changer de personnalité',
         'comfyui' => 'Voir ou changer le workflow ComfyUI',
     ];
 
@@ -547,22 +546,26 @@ class TelegramService implements QueueDoer
         $this->sendMessage($telegramChatId, $message);
     }
 
-    private function cmd_list(int $telegramChatId): void
-    {
-        $message = "Personnalités disponibles :\n";
-        $brains = $this->brainRegistry->list();
-        foreach ($brains as $brain) {
-            $message .= sprintf('- `%s` : %s', $brain['slug'], $brain['description']) . "\n";
-        }
-
-        $this->sendMessage($telegramChatId, $message);
-    }
-
     private function cmd_brain(int $telegramChatId, array $args): void
     {
         if ($args === []) {
-            $currentBrain = $this->telegramSession->get('brain_avatar');
-            $this->sendMessage($telegramChatId, sprintf('Personnalité actuelle : %s', $this->brainRegistry->getMeta($currentBrain)['name']));
+            $message = '**Personnalité actuelle : ';
+            try {
+                $currentBrain = $this->telegramSession->get('brain_avatar');
+                $message .= $this->brainRegistry->getMeta($currentBrain)['name'];
+            }
+            catch (\Exception $exception) {
+                $message .= 'Aucune personnalité sélectionnée';
+            }
+
+            $message .= "**\n\n---\n_Personnalités disponibles_ :\n";
+            $message .= "- **reset** : Personnalité par défaut\n";
+            $brains = $this->brainRegistry->list();
+            foreach ($brains as $brain) {
+                $message .= sprintf('- `%s` : %s', $brain['slug'], $brain['description']) . "\n";
+            }
+
+            $this->sendMessage($telegramChatId, $message);
             return;
         }
 
@@ -596,7 +599,7 @@ class TelegramService implements QueueDoer
 
         if ($args === []) {
             $currentWorkflow = (string) $this->telegramSession->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
-            $message = '### **Workflow ComfyUI actuel : ';
+            $message = '**Workflow ComfyUI actuel : ';
 
             if ($currentWorkflow !== '' && $this->comfyUIWorkflowRegistry->has($currentWorkflow)) {
                 $message .= $this->comfyUIWorkflowRegistry->getMeta($currentWorkflow)['label'];
@@ -604,12 +607,11 @@ class TelegramService implements QueueDoer
                 $message .= 'non défini';
             }
 
-            $message .= "**\n\n---\n\n#### Workflows disponibles :\n";
+            $message .= "**\n\n---\nWorkflows disponibles :\n";
             foreach ($workflows as $workflow) {
                 $message .= sprintf('- `%s` : %s (%s)', $workflow['slug'], $workflow['label'], $workflow['type']) . "\n";
             }
 
-            $this->logger->debug('message', ['message' => $message]);
             $this->sendMessage($telegramChatId, $message);
             return;
         }
