@@ -135,4 +135,14 @@ final class RedisClient implements RedisClientInterface
 
         return true;
     }
+
+    public function getLastError(): ?string
+    {
+        return $this->redis->getLastError();
+    }
+
+    public function clearLastError(): void
+    {
+        $this->redis->clearLastError();
+    }
 }

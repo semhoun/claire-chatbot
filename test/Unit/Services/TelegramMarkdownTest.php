@@ -234,7 +234,7 @@ final class TelegramMarkdownTest extends TestCase
         $markdown = "1. First\n2. Second\n3. Third";
         $result = $this->converter->convertToMarkdownV2($markdown);
 
-        $this->assertSame("1. First\n2. Second\n3. Third\n\n", $result);
+        $this->assertSame("1\. First\n2\. Second\n3\. Third\n\n", $result);
     }
 
     public function testOrderedListStartingAtNumber(): void
@@ -242,7 +242,7 @@ final class TelegramMarkdownTest extends TestCase
         $markdown = "5. Fifth\n6. Sixth";
         $result = $this->converter->convertToMarkdownV2($markdown);
 
-        $this->assertSame("5. Fifth\n6. Sixth\n\n", $result);
+        $this->assertSame("5\. Fifth\n6\. Sixth\n\n", $result);
     }
 
     public function testNestedList(): void

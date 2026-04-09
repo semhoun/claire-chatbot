@@ -9,15 +9,15 @@ use App\Queue\QueueJobFactory;
 use App\Queue\QueueSerializer;
 use App\Queue\QueueWorker;
 use App\Queue\RedisQueueBackend;
+use App\Services\ChatStreamBuffer;
+use App\Services\ChatStreamPublisher;
 use App\Services\ComfyUIService;
 use App\Services\ComfyUIWorkflowRegistry;
-use App\Services\ChatStreamPublisher;
-use App\Services\ChatStreamBuffer;
 use App\Services\OidcClient;
 use App\Services\RedisClient;
 use App\Services\RedisClientInterface;
-use App\Services\SseEventFormatter;
 use App\Services\Settings;
+use App\Services\SseEventFormatter;
 use App\Services\Twig\GeneratedImageExtension;
 use App\Services\Twig\TimestampExtension;
 use Doctrine\DBAL\Connection;
@@ -82,6 +82,7 @@ return [
         $configuration->setProxyNamespace('App\\Proxies');
 
         $configuration->setAutoGenerateProxyClasses($isDevMode);
+        $configuration->enableNativeLazyObjects(true);
 
         return $configuration;
     },

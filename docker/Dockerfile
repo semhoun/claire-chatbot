@@ -47,9 +47,9 @@ RUN apt-get update -y \
   \
   \
 # Install php addons \
-  && install-php-extensions bcmath bz2 curl exif gd gmp intl mbstring opcache pcntl pdo_mysql pdo_pgsql pdo_sqlite redis sodium xsl zip \
-  && pecl install opentelemetry \
-  && docker-php-ext-enable opentelemetry \
+  && install-php-extensions bcmath bz2 curl exif gd gmp intl mbstring opcache pcntl \
+    pdo_mysql pdo_pgsql pdo_sqlite redis \
+    sodium xsl zip opentelemetry \
   \
   \
 # Install composer \

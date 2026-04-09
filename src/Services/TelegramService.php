@@ -596,7 +596,7 @@ class TelegramService implements QueueDoer
 
         if ($args === []) {
             $currentWorkflow = (string) $this->telegramSession->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
-            $message = 'Workflow ComfyUI actuel : ';
+            $message = '### **Workflow ComfyUI actuel : ';
 
             if ($currentWorkflow !== '' && $this->comfyUIWorkflowRegistry->has($currentWorkflow)) {
                 $message .= $this->comfyUIWorkflowRegistry->getMeta($currentWorkflow)['label'];
@@ -604,11 +604,12 @@ class TelegramService implements QueueDoer
                 $message .= 'non défini';
             }
 
-            $message .= "\n\nWorkflows disponibles :\n";
+            $message .= "**\n\n---\n\n#### Workflows disponibles :\n";
             foreach ($workflows as $workflow) {
                 $message .= sprintf('- `%s` : %s (%s)', $workflow['slug'], $workflow['label'], $workflow['type']) . "\n";
             }
 
+            $this->logger->debug('message', ['message' => $message]);
             $this->sendMessage($telegramChatId, $message);
             return;
         }

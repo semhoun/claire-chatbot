@@ -47,14 +47,16 @@ $dependencyFactory = DependencyFactory::fromEntityManager(
 );
 
 // Build the app
-$cli = new Application();
-$cli->add($container->get(CacheClearConsoleCommand::class));
-$cli->add($container->get(CacheInitConsoleCommand::class));
-$cli->add($container->get(GenerateProxies::class));
-$cli->add($container->get(QueueWorkCommand::class));
-$cli->add($container->get(TelegramDaemonCommand::class));
-$cli->add($container->get(TelegramSetCommandsCommand::class));
-$cli->add($container->get(TelegramWebhookCommand::class));
+$cli = new Application('Claire Chat-Bot', $settings->get('version'));
+$cli->addCommands([
+    $container->get(CacheClearConsoleCommand::class),
+    $container->get(CacheInitConsoleCommand::class),
+    $container->get(GenerateProxies::class),
+    $container->get(QueueWorkCommand::class),
+    $container->get(TelegramDaemonCommand::class),
+    $container->get(TelegramSetCommandsCommand::class),
+    $container->get(TelegramWebhookCommand::class),
+]);
 
 $cli->addCommands([
     new Command\DumpSchemaCommand($dependencyFactory),

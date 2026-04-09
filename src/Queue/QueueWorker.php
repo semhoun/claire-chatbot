@@ -7,6 +7,7 @@ namespace App\Queue;
 use App\Services\RedisClientInterface;
 use Psr\Log\LoggerInterface as Logger;
 use Symfony\Component\Console\Output\OutputInterface;
+use Throwable;
 
 final class QueueWorker
 {
@@ -32,29 +33,101 @@ final class QueueWorker
     ): int {
         $startedAt = time();
         $processedJobs = 0;
+        $loopCount = 0;
+
+        $this->logger->info('Queue worker started', [
+            'worker_id' => $workerId,
+            'queue' => $queueWorkerOptions->queueName,
+        ]);
 
         while ($this->running) {
+            $loopCount++;
+
             if ($this->hasReachedRuntimeLimit($queueWorkerOptions, $startedAt, $processedJobs)) {
+                $this->logger->info('Queue worker reached runtime limit', [
+                    'worker_id' => $workerId,
+                    'processed_jobs' => $processedJobs,
+                    'loop_count' => $loopCount,
+                ]);
                 break;
             }
 
-            $job = $this->queueBackend->reserveNextAvailable(
-                $queueWorkerOptions->queueName,
-            );
+            // Log every 100 iterations to confirm worker is alive
+            if ($loopCount % 100 === 0) {
+                $this->logger->debug('Queue worker heartbeat', [
+                    'worker_id' => $workerId,
+                    'loop_count' => $loopCount,
+                    'processed_jobs' => $processedJobs,
+                ]);
+            }
+
+            try {
+                $this->logger->debug('Attempting to reserve job', [
+                    'worker_id' => $workerId,
+                    'queue' => $queueWorkerOptions->queueName,
+                    'loop' => $loopCount,
+                ]);
+
+                $job = $this->queueBackend->reserveNextAvailable(
+                    $queueWorkerOptions->queueName,
+                );
+
+                $this->logger->debug('Reserve completed', [
+                    'worker_id' => $workerId,
+                    'has_job' => $job instanceof QueueMessage,
+                ]);
+            } catch (Throwable $e) {
+                $this->logger->error('Failed to reserve job', [
+                    'worker_id' => $workerId,
+                    'error' => $e->getMessage(),
+                    'class' => $e::class,
+                ]);
+                $output->writeln(sprintf('<error>Reserve error: %s</error>', $e->getMessage()));
+
+                // Try to reconnect Redis on error
+                try {
+                    $this->logger->info('Attempting Redis reconnection after error', [
+                        'worker_id' => $workerId,
+                    ]);
+                    $this->redisClient->reconnect();
+                    $this->logger->info('Redis reconnection successful', [
+                        'worker_id' => $workerId,
+                    ]);
+                } catch (Throwable $reconnectError) {
+                    $this->logger->error('Redis reconnection failed', [
+                        'worker_id' => $workerId,
+                        'error' => $reconnectError->getMessage(),
+                    ]);
+                }
+
+                sleep(1);
+                continue;
+            }
 
             if (! $job instanceof QueueMessage) {
                 if ($queueWorkerOptions->once) {
                     break;
                 }
 
+                $this->logger->debug('No job available, sleeping', [
+                    'worker_id' => $workerId,
+                    'sleep_seconds' => $queueWorkerOptions->sleep,
+                ]);
+
                 $this->sleepWithSignalDispatch($queueWorkerOptions->sleep);
 
-                // Force Redis reconnection after sleep to prevent stale connection
-                // Redis server may have closed the connection during our idle period
-                $this->redisClient->reconnect();
+                $this->logger->debug('Sleep completed', [
+                    'worker_id' => $workerId,
+                ]);
 
                 continue;
             }
+
+            $this->logger->info('Processing job', [
+                'worker_id' => $workerId,
+                'job_id' => $job->id,
+                'job_class' => $job->jobClass,
+            ]);
 
             $processedJobs++;
             $this->processJob($job, $output);
@@ -63,6 +136,13 @@ final class QueueWorker
                 break;
             }
         }
+
+        $this->logger->info('Queue worker stopping', [
+            'worker_id' => $workerId,
+            'processed_jobs' => $processedJobs,
+            'loop_count' => $loopCount,
+            'running' => $this->running,
+        ]);
 
         return $processedJobs;
     }

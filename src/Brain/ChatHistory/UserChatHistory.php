@@ -100,7 +100,7 @@ class UserChatHistory extends AbstractChatHistory
     public function removeLastExchange(): ?string
     {
         $lastUserMessage = $this->removeLastExchangeFromMessages($this->history);
-        if (!$lastUserMessage instanceof \NeuronAI\Chat\Messages\UserMessage) {
+        if (! $lastUserMessage instanceof \NeuronAI\Chat\Messages\UserMessage) {
             return null;
         }
 
