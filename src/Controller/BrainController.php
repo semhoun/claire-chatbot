@@ -107,24 +107,6 @@ final readonly class BrainController
         // Mode: 'full' (default) for HTMX SSE, 'incremental' for native EventSource
         $mode = (string) ($queryParams['mode'] ?? 'full');
 
-        $chatId = trim((string) ($queryParams['chatId'] ?? $session->get('chatId') ?? ''));
-        $messagesHtml = '';
-        if ($chatId !== '') {
-            $session->set('chatId', $chatId);
-
-            $userChatHistory = new UserChatHistory(
-                session: $session,
-                pdo: $this->entityManager->getConnection()->getNativeConnection(),
-                contextWindow: $this->settings->get('llm.openai.contextWindow')
-            );
-            $userChatHistory->setThreadId($chatId);
-            $userChatHistory->validateMessageSequences();
-
-            $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-                'messages' => $userChatHistory->getFormattedMessages(),
-            ]);
-        }
-
         $response = $response
             ->withBody(new NonBufferedBody())
             ->withHeader('Content-Type', 'text/event-stream')
@@ -135,10 +117,22 @@ final readonly class BrainController
         $stream = $response->getBody();
 
         // Send initial snapshot for current chat
-        if ($mode === 'incremental') {
-            $stream->write($this->sseEventFormatter->formatHtmlUpdate('messages', $messagesHtml));
-        } else {
-            $stream->write($this->sseEventFormatter->formatNamedEvent('chat.snapshot', $messagesHtml));
+        if ($mode !== 'incremental') {
+            $chatId = trim((string) ($queryParams['chatId'] ?? $session->get('chatId') ?? ''));
+            if ($chatId !== '') {
+                $session->set('chatId', $chatId);
+
+                $userChatHistory = new UserChatHistory(
+                    session: $session,
+                    pdo: $this->entityManager->getConnection()->getNativeConnection(),
+                    contextWindow: $this->settings->get('llm.openai.contextWindow')
+                );
+                $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
+                    'messages' => $userChatHistory->getFormattedMessages(),
+                ]);
+
+                $stream->write($this->sseEventFormatter->formatNamedEvent('chat.snapshot', $messagesHtml));
+            }
         }
 
         $deadline = time() + self::SSE_KEEPALIVE_INTERVAL;

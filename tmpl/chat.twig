@@ -46,7 +46,7 @@
             <div
                 id="chatStream"
                 hx-ext="sse"
-                sse-connect="{{ base_url }}/brain/stream?sessionId={{ stream_session_id }}"
+                sse-connect="{{ base_url }}/brain/stream?sessionId={{ stream_session_id }}&chatId={{ current_chat_id }}"
                 sse-swap="chat.snapshot"
                 hx-target="#messages"
                 hx-swap="innerHTML"
@@ -55,17 +55,6 @@
                 style="display: contents;"
             >
                 <div id="messages" class="messages" data-chat-messages data-chat-id="{{ current_chat_id }}">
-                    {% if messages is defined and messages is not null and messages is not empty %}
-                        {% for m in messages %}
-                            {% include 'partials/message.twig' with {
-                                message: m.message,
-                                time: m.time,
-                                sent: m.sent,
-                                toolCallId: m.toolCallId,
-                                toolCall: m.toolText,
-                            } %}
-                        {% endfor %}
-                    {% endif %}
                 </div>
             </div>
             <button

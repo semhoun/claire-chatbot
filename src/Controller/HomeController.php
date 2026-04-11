@@ -15,6 +15,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Psr\Log\LoggerInterface as Logger;
 use Slim\Views\Twig;
 
 final readonly class HomeController
@@ -22,6 +23,7 @@ final readonly class HomeController
     use SessionFromRequestTrait;
 
     public function __construct(
+        private Logger $logger,
         private Twig $twig,
         private BrainRegistry $brainRegistry,
         private EntityManagerInterface $entityManager,
@@ -51,11 +53,11 @@ final readonly class HomeController
 
         // Conserver le chatId courant s'il existe, sinon en générer un nouveau
         $chatId = $session->get('chatId');
-        if ($chatId !== null || count($userChatHistory->getDisplayMessages()) === 0) {
+        if ($chatId !== null && count($userChatHistory->getDisplayMessages()) > 1) {
+            $userChatHistory->validateMessageSequences();
+        }
+        else {
             set_time_limit((int) $this->settings->get('llm.workflow.timeout'));
-
-            $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
-            $session->set('chatId', $chatId);
 
             // Nettoyage des conversations vides de l'utilisateur
             $userId = (string) $session->get(Auth::USERID);
@@ -63,21 +65,22 @@ final readonly class HomeController
                 $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
             }
 
+            $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
+            $session->set('chatId', $chatId);
+            $userChatHistory->setThreadId($chatId);
+
             $openingMessage = $this->brainRegistry->get($currentBrain, $session)->getOpeningText();
             $assistantMessage = new AssistantMessage($openingMessage)
                 ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
             $userChatHistory->replaceDisplayMessages([$assistantMessage]);
             $userChatHistory->replaceMessages([]);
             $messages = $userChatHistory->getFormattedMessages();
-
+            $this->logger->debug('new messages  ', ['messages' => $messages]);
             // On configure le Workflow par défaut au premier chat
             if ($this->settings->get('comfyui.enabled') === true && $currentComfyuiWorkflow === '') {
                 $currentComfyuiWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug() ?? '';
                 $session->set(ComfyUIWorkflowRegistry::SESSION_KEY, $currentComfyuiWorkflow);
             }
-        } else {
-            $messages = $userChatHistory->getFormattedMessages();
-            $userChatHistory->validateMessageSequences();
         }
 
         $meta = $this->brainRegistry->getMeta($currentBrain);
@@ -87,7 +90,6 @@ final readonly class HomeController
 
         return $this->twig->render($response, 'chat.twig', [
             'time' => $time,
-            'messages' => $messages,
             'current_chat_id' => $chatId,
             'stream_session_id' => $streamSessionId,
             'uinfo' => $session->get(Auth::USERINFO),
