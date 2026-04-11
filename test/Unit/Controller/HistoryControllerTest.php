@@ -77,11 +77,8 @@ final class HistoryControllerTest extends TestCase
                 })
             )
             ->willReturn(1);
-        $buffer = $this->createMock(\App\Services\ChatStreamBuffer::class);
-        $buffer->expects($this->once())
-            ->method('push')
-            ->with('thread-1', $this->isType('string'));
-        $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $buffer, $settings);
+        $subscriber = new \App\Services\ChatStreamSubscriber($redis, $settings);
+        $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber);
 
         $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher);
 
@@ -157,11 +154,8 @@ final class HistoryControllerTest extends TestCase
                 })
             )
             ->willReturn(1);
-        $buffer = $this->createMock(\App\Services\ChatStreamBuffer::class);
-        $buffer->expects($this->once())
-            ->method('push')
-            ->with('sess-abc123', $this->isType('string'));
-        $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $buffer, $settings);
+        $subscriber = new \App\Services\ChatStreamSubscriber($redis, $settings);
+        $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber);
 
         $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher);
 

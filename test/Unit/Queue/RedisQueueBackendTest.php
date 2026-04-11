@@ -145,6 +145,18 @@ final class InMemoryRedisClient implements RedisClientInterface
         return 1;
     }
 
+    public function subscribe(array $channels, callable $callback): void
+    {
+    }
+
+    public function subscribeWithHeartbeat(
+        array $channels,
+        callable $callback,
+        float $heartbeatSeconds,
+        callable $shouldContinue,
+    ): void {
+    }
+
     public function ping(): bool
     {
         return true;

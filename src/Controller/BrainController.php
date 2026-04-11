@@ -8,8 +8,8 @@ use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Queue\QueueDispatcherInterface;
 use App\Queue\WebChatMessageJob;
-use App\Services\ChatStreamBuffer;
 use App\Services\ChatStreamPublisher;
+use App\Services\ChatStreamSubscriber;
 use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Settings;
 use App\Services\SseEventFormatter;
@@ -30,8 +30,6 @@ final readonly class BrainController
 {
     use SessionFromRequestTrait;
 
-    private const int SSE_KEEPALIVE_INTERVAL = 15;
-
     public function __construct(
         private Logger $logger,
         private Twig $twig,
@@ -40,8 +38,8 @@ final readonly class BrainController
         private Filesystem $filesystem,
         private Settings $settings,
         private QueueDispatcherInterface $queueDispatcher,
-        private ChatStreamBuffer $chatStreamBuffer,
         private ChatStreamPublisher $chatStreamPublisher,
+        private ChatStreamSubscriber $chatStreamSubscriber,
         private SseEventFormatter $sseEventFormatter,
     ) {
     }
@@ -134,103 +132,90 @@ final readonly class BrainController
             ], eventId: $chatId, eventName: 'chat.snapshot'));
         }
 
-        $deadline = time() + self::SSE_KEEPALIVE_INTERVAL;
-        // Use sessionId as the stream key (per-tab) instead of chatId
-        $offset = $this->chatStreamBuffer->length($sessionId);
+        $stream->write($this->sseEventFormatter->keepalive());
 
-        while (! connection_aborted()) {
-            $messages = $this->chatStreamBuffer->readSince($sessionId, $offset);
-            foreach ($messages as $message) {
-                $event = json_decode($message, true, flags: JSON_THROW_ON_ERROR);
-                if (! is_array($event)) {
-                    $offset++;
-                    continue;
-                }
-
-                // sessionId is carried in payload for per-tab routing
-                $eventSessionId = (string) ($event['payload']['sessionId'] ?? $event['chatId'] ?? '');
-                if ($eventSessionId !== $sessionId) {
-                    $offset++;
-                    continue;
-                }
-
-                $eventName = (string) ($event['event'] ?? '');
-                $payload = $event['payload'] ?? [];
-                if ($eventName === '' || ! is_array($payload)) {
-                    $offset++;
-                    continue;
-                }
-
-                if (in_array($eventName, ['chat.snapshot', 'message.assistant.start', 'message.assistant.placeholder', 'message.assistant.delta', 'tool.update', 'message.assistant.done', 'chat.error'], true)) {
-                    $streamPayload = match ($eventName) {
-                        'chat.snapshot' => [
-                            'html' => [
-                                'messages' => (string) ($payload['messagesHtml'] ?? ''),
-                            ],
-                            'mode' => 'replace',
-                        ],
-                        'message.assistant.start' => [
-                            'messageId' => $payload['messageId'] ?? null,
-                            'messageArticleId' => $payload['messageArticleId'] ?? null,
-                        ],
-                        'message.assistant.placeholder' => [
-                            'html' => [
-                                'messages' => (string) ($payload['html'] ?? ''),
-                            ],
-                            'mode' => 'append',
-                            'messageId' => $payload['messageId'] ?? null,
-                            'messageArticleId' => $payload['messageArticleId'] ?? null,
-                        ],
-                        'message.assistant.delta' => [
-                            'html' => [
-                                (string) ($payload['messageId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
-                            ],
-                            'mode' => 'replace',
-                            'messageId' => $payload['messageId'] ?? null,
-                            'messageArticleId' => $payload['messageArticleId'] ?? null,
-                        ],
-                        'tool.update' => [
-                            'html' => [
-                                (string) ($payload['toolCallId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
-                            ],
-                            'mode' => 'replace',
-                            'messageId' => $payload['messageId'] ?? null,
-                            'messageArticleId' => $payload['messageArticleId'] ?? null,
-                            'toolCallId' => $payload['toolCallId'] ?? null,
-                        ],
-                        'message.assistant.done' => [
-                            'messageId' => $payload['messageId'] ?? null,
-                            'messageArticleId' => $payload['messageArticleId'] ?? null,
-                        ],
-                        'chat.error' => [
-                            'error' => (string) ($payload['message'] ?? 'Une erreur est survenue.'),
-                        ],
-                        default => [],
-                    };
-
-                    $eventId = (string) ($payload['messageArticleId'] ?? '');
-                    if ($eventId === '') {
-                        $eventId = (string) ($payload['messageId'] ?? '');
-                    }
-
-                    $stream->write($this->sseEventFormatter->formatJsonEvent(
-                        $streamPayload,
-                        $eventId !== '' ? $eventId : null,
-                        $eventName,
-                    ));
-                }
-
-                $offset++;
-                $deadline = time() + self::SSE_KEEPALIVE_INTERVAL;
+        $this->chatStreamSubscriber->subscribe($sessionId, function (string $message) use ($sessionId, $stream): void {
+            if (connection_aborted()) {
+                return;
             }
 
-            if (time() >= $deadline) {
-                $stream->write($this->sseEventFormatter->keepalive());
-                $deadline = time() + self::SSE_KEEPALIVE_INTERVAL;
+            $event = json_decode($message, true, flags: JSON_THROW_ON_ERROR);
+            if (! is_array($event)) {
+                return;
             }
 
-            usleep(250000);
-        }
+            $eventSessionId = (string) ($event['payload']['sessionId'] ?? $event['chatId'] ?? '');
+            if ($eventSessionId !== $sessionId) {
+                return;
+            }
+
+            $eventName = (string) ($event['event'] ?? '');
+            $payload = $event['payload'] ?? [];
+            if ($eventName === '' || ! is_array($payload)) {
+                return;
+            }
+
+            if (! in_array($eventName, ['chat.snapshot', 'message.assistant.start', 'message.assistant.placeholder', 'message.assistant.delta', 'tool.update', 'message.assistant.done', 'chat.error'], true)) {
+                return;
+            }
+
+            $streamPayload = match ($eventName) {
+                'chat.snapshot' => [
+                    'html' => [
+                        'messages' => (string) ($payload['messagesHtml'] ?? ''),
+                    ],
+                    'mode' => 'replace',
+                ],
+                'message.assistant.start' => [
+                    'messageId' => $payload['messageId'] ?? null,
+                    'messageArticleId' => $payload['messageArticleId'] ?? null,
+                ],
+                'message.assistant.placeholder' => [
+                    'html' => [
+                        'messages' => (string) ($payload['html'] ?? ''),
+                    ],
+                    'mode' => 'append',
+                    'messageId' => $payload['messageId'] ?? null,
+                    'messageArticleId' => $payload['messageArticleId'] ?? null,
+                ],
+                'message.assistant.delta' => [
+                    'html' => [
+                        (string) ($payload['messageId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
+                    ],
+                    'mode' => 'replace',
+                    'messageId' => $payload['messageId'] ?? null,
+                    'messageArticleId' => $payload['messageArticleId'] ?? null,
+                ],
+                'tool.update' => [
+                    'html' => [
+                        (string) ($payload['toolCallId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
+                    ],
+                    'mode' => 'replace',
+                    'messageId' => $payload['messageId'] ?? null,
+                    'messageArticleId' => $payload['messageArticleId'] ?? null,
+                    'toolCallId' => $payload['toolCallId'] ?? null,
+                ],
+                'message.assistant.done' => [
+                    'messageId' => $payload['messageId'] ?? null,
+                    'messageArticleId' => $payload['messageArticleId'] ?? null,
+                ],
+                'chat.error' => [
+                    'error' => (string) ($payload['message'] ?? 'Une erreur est survenue.'),
+                ],
+                default => [],
+            };
+
+            $eventId = (string) ($payload['messageArticleId'] ?? '');
+            if ($eventId === '') {
+                $eventId = (string) ($payload['messageId'] ?? '');
+            }
+
+            $stream->write($this->sseEventFormatter->formatJsonEvent(
+                $streamPayload,
+                $eventId !== '' ? $eventId : null,
+                $eventName,
+            ));
+        });
 
         return $response;
     }

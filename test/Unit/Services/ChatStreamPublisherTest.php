@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Test\Unit\Services;
 
 use App\Services\ChatStreamPublisher;
-use App\Services\ChatStreamBuffer;
+use App\Services\ChatStreamSubscriber;
 use App\Services\RedisClientInterface;
 use App\Services\Settings;
 use PHPUnit\Framework\TestCase;
@@ -14,17 +14,13 @@ final class ChatStreamPublisherTest extends TestCase
 {
     public function testPublishUsesThreadScopedChannelAndEnvelope(): void
     {
-        $redis = $this->createMock(RedisClientInterface::class);
-        $buffer = $this->createMock(ChatStreamBuffer::class);
         $settings = new Settings([
             'redis' => [
                 'prefix' => 'claire:',
             ],
         ]);
-
-        $buffer->expects($this->once())
-            ->method('push')
-            ->with('thread-1', $this->isType('string'));
+        $redis = $this->createMock(RedisClientInterface::class);
+        $subscriber = new ChatStreamSubscriber($redis, $settings);
 
         $redis->expects($this->once())
             ->method('publish')
@@ -42,7 +38,7 @@ final class ChatStreamPublisherTest extends TestCase
             )
             ->willReturn(1);
 
-        $publisher = new ChatStreamPublisher($redis, $buffer, $settings);
+        $publisher = new ChatStreamPublisher($redis, $subscriber);
         $publisher->publish('thread-1', 'chat.snapshot', [
             'messagesHtml' => '<div>ok</div>',
         ]);

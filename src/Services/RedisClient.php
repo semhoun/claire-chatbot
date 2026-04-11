@@ -39,6 +39,36 @@ final class RedisClient implements RedisClientInterface
         return $this->redis->publish($channel, $message);
     }
 
+    public function subscribeWithHeartbeat(
+        array $channels,
+        callable $callback,
+        float $heartbeatSeconds,
+        callable $shouldContinue,
+    ): void {
+        $this->setReadTimeout($heartbeatSeconds);
+
+        while ($shouldContinue()) {
+            try {
+                $this->redis->subscribe($channels, static function ($redis, string $channel, string $message) use ($callback, $shouldContinue): void {
+                    $callback($channel, $message);
+
+                    if (! $shouldContinue()) {
+                        $redis->unsubscribe();
+                    }
+                });
+
+                return;
+            } catch (\RedisException $exception) {
+                if (! $shouldContinue() || ! str_contains(strtolower($exception->getMessage()), 'read error')) {
+                    throw $exception;
+                }
+
+                $this->reconnect();
+                $this->setReadTimeout($heartbeatSeconds);
+            }
+        }
+    }
+
     public function zadd(string $key, array $membersAndScores): int|false
     {
         $arguments = [$key];
@@ -134,15 +164,5 @@ final class RedisClient implements RedisClientInterface
         $this->redis->select($this->database);
 
         return true;
-    }
-
-    public function getLastError(): ?string
-    {
-        return $this->redis->getLastError();
-    }
-
-    public function clearLastError(): void
-    {
-        $this->redis->clearLastError();
     }
 }

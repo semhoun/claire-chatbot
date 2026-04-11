@@ -9,8 +9,8 @@ use App\Queue\QueueJobFactory;
 use App\Queue\QueueSerializer;
 use App\Queue\QueueWorker;
 use App\Queue\RedisQueueBackend;
-use App\Services\ChatStreamBuffer;
 use App\Services\ChatStreamPublisher;
+use App\Services\ChatStreamSubscriber;
 use App\Services\ComfyUIService;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\OidcClient;
@@ -161,7 +161,7 @@ return [
 
         return $client;
     },
-    ChatStreamBuffer::class => DI\autowire(),
+    ChatStreamSubscriber::class => DI\autowire(),
     ChatStreamPublisher::class => DI\autowire(),
     SseEventFormatter::class => DI\autowire(),
     RedisQueueBackend::class => DI\autowire(),

@@ -10,6 +10,16 @@ interface RedisClientInterface
 
     public function publish(string $channel, string $message): int|false;
 
+    /**
+     * @param callable(): bool $shouldContinue
+     */
+    public function subscribeWithHeartbeat(
+        array $channels,
+        callable $callback,
+        float $heartbeatSeconds,
+        callable $shouldContinue,
+    ): void;
+
     public function zadd(string $key, array $membersAndScores): int|false;
 
     public function hset(string $key, array $hash): int|false;
