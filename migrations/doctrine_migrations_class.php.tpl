@@ -2,10 +2,10 @@
 
 namespace <namespace>;
 
+use App\BaseMigration;
 use Doctrine\DBAL\Schema\Schema;
-use Doctrine\Migrations\AbstractMigration;
 
-final class <className> extends AbstractMigration
+final class <className> extends BaseMigration
 {
     public function getDescription(): string
     {

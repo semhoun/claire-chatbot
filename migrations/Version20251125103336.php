@@ -2,12 +2,13 @@
 
 declare(strict_types=1);
 
-namespace app;
+namespace Migrations;
 
+use App\BaseMigration;
+use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Schema\Schema;
-use Doctrine\Migrations\AbstractMigration;
 
-final class Version20251125103336 extends AbstractMigration
+final class Version20251125103336 extends BaseMigration
 {
     public function getDescription(): string
     {
@@ -16,7 +17,10 @@ final class Version20251125103336 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
-        if ($this->connection->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\SQLitePlatform) {
+        $platform = $this->connection->getDatabasePlatform();
+        $userTable = $this->quoteUserTable($platform);
+
+        if ($this->isSqlitePlatform($platform)) {
             $this->addSql(
                 <<<EOT
 CREATE TABLE IF NOT EXISTS chat_history (
@@ -28,7 +32,7 @@ CREATE TABLE IF NOT EXISTS chat_history (
     summary TEXT,
     created_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
     updated_at DATETIME DEFAULT (CURRENT_TIMESTAMP),
-    CONSTRAINT fk_chat_history_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE ON UPDATE NO ACTION
+    CONSTRAINT fk_chat_history_user FOREIGN KEY (user_id) REFERENCES {$userTable}(id) ON DELETE CASCADE ON UPDATE NO ACTION
 );
 
 -- Indexes (separate statements in SQLite)
@@ -37,9 +41,36 @@ CREATE INDEX IF NOT EXISTS idx_user_id ON chat_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_thread_id ON chat_history(thread_id);
 EOT
             );
-        } else {
+
+            return;
+        }
+
+        if ($this->isPostgreSqlPlatform($platform)) {
             $this->addSql(
                 <<<EOT
+CREATE TABLE IF NOT EXISTS chat_history (
+    id BIGSERIAL PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    thread_id VARCHAR(128) NOT NULL,
+    messages TEXT NOT NULL,
+    title TEXT,
+    summary TEXT,
+    created_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_chat_history_user FOREIGN KEY (user_id) REFERENCES {$userTable}(id) ON DELETE CASCADE
+);
+EOT
+            );
+
+            $this->addSql('CREATE UNIQUE INDEX IF NOT EXISTS uk_thread_id ON chat_history(thread_id)');
+            $this->addSql('CREATE INDEX IF NOT EXISTS idx_user_id ON chat_history(user_id)');
+            $this->addSql('CREATE INDEX IF NOT EXISTS idx_thread_id ON chat_history(thread_id)');
+
+            return;
+        }
+
+        $this->addSql(
+            <<<EOT
 CREATE TABLE IF NOT EXISTS chat_history (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id VARCHAR(64) NOT NULL,
@@ -49,19 +80,25 @@ CREATE TABLE IF NOT EXISTS chat_history (
     summary TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
     UNIQUE KEY uk_thread_id (thread_id),
     INDEX idx_thread_id (thread_id),
     INDEX idx_user_id (user_id),
-    CONSTRAINT fk_chat_history_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE ON UPDATE NO ACTION
+    CONSTRAINT fk_chat_history_user FOREIGN KEY (user_id) REFERENCES {$userTable}(id) ON DELETE CASCADE ON UPDATE NO ACTION
 );
 EOT
-            );
-        }
+        );
     }
 
     public function down(Schema $schema): void
     {
         $this->addSql('DROP TABLE chat_history');
+    }
+
+    private function quoteUserTable(AbstractPlatform $platform): string
+    {
+        return match (true) {
+            $this->isMySqlPlatform($platform) => '`user`',
+            default => '"user"',
+        };
     }
 }

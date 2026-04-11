@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Services\Settings;
 
 return [
-    // Driver: sqlite, mysql, postgres
+    // Driver: sqlite, mysql, pgsql
     'driver' => env('DATABASE_KIND'),
 
-    // Used for mysql, postgres, mariadb
+    // Used for mysql, pgsql
     'host' => env('DATABASE_HOST'),
     'port' => env('DATABASE_PORT'),
     'dbname' => env('DATABASE_NAME'),
@@ -29,7 +29,7 @@ return [
                 'execution_time_column_name' => 'execution_time',
             ],
             'migrations_paths' => [
-                'app' => Settings::getAppRoot() . '/migrations',
+                'Migrations' => Settings::getAppRoot() . '/migrations',
             ],
             'all_or_nothing' => true,
             'transactional' => true,

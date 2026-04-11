@@ -2,12 +2,13 @@
 
 declare(strict_types=1);
 
-namespace app;
+namespace Migrations;
 
+use App\BaseMigration;
+use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Schema\Schema;
-use Doctrine\Migrations\AbstractMigration;
 
-final class Version20251122210810 extends AbstractMigration
+final class Version20251122210810 extends BaseMigration
 {
     public function getDescription(): string
     {
@@ -16,10 +17,13 @@ final class Version20251122210810 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
-        if ($this->connection->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\SQLitePlatform) {
+        $platform = $this->connection->getDatabasePlatform();
+        $userTable = $this->quoteUserTable($platform);
+
+        if ($this->isSqlitePlatform($platform)) {
             $this->addSql(
                 <<<EOT
-CREATE TABLE IF NOT EXISTS user (
+CREATE TABLE IF NOT EXISTS {$userTable} (
     id TEXT NOT NULL,
     first_name TEXT,
     last_name TEXT,
@@ -29,10 +33,27 @@ CREATE TABLE IF NOT EXISTS user (
 );
 EOT
             );
-        } else {
+        } elseif ($this->isPostgreSqlPlatform($platform)) {
             $this->addSql(
                 <<<EOT
-CREATE TABLE IF NOT EXISTS user (
+CREATE TABLE IF NOT EXISTS {$userTable} (
+    id VARCHAR(64) NOT NULL,
+    first_name VARCHAR(128),
+    last_name VARCHAR(128),
+    email VARCHAR(255),
+    params TEXT,
+    picture BYTEA,
+    PRIMARY KEY (id)
+);
+EOT
+            );
+
+            return;
+        }
+
+        $this->addSql(
+            <<<EOT
+CREATE TABLE IF NOT EXISTS {$userTable} (
     id VARCHAR(64) NOT NULL,
     first_name VARCHAR(128),
     last_name VARCHAR(128),
@@ -42,12 +63,22 @@ CREATE TABLE IF NOT EXISTS user (
     PRIMARY KEY (id)
 );
 EOT
-            );
-        }
+        );
     }
 
     public function down(Schema $schema): void
     {
-        $this->addSql('DROP TABLE user');
+        $platform = $this->connection->getDatabasePlatform();
+
+        $this->addSql(sprintf('DROP TABLE %s', $this->quoteUserTable($platform)));
     }
+
+    private function quoteUserTable(AbstractPlatform $platform): string
+    {
+        return match (true) {
+            $this->isMySqlPlatform($platform) => '`user`',
+            default => '"user"',
+        };
+    }
+
 }
