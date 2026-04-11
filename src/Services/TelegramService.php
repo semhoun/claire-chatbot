@@ -553,8 +553,7 @@ class TelegramService implements QueueDoer
             try {
                 $currentBrain = $this->telegramSession->get('brain_avatar');
                 $message .= $this->brainRegistry->getMeta($currentBrain)['name'];
-            }
-            catch (\Exception $exception) {
+            } catch (\Exception) {
                 $message .= 'Aucune personnalité sélectionnée';
             }
 

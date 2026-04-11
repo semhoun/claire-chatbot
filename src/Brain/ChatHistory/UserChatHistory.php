@@ -111,7 +111,7 @@ class UserChatHistory extends AbstractChatHistory
         return $lastUserMessage->getContent();
     }
 
-    public function getFormattedMessages(string $mode): array
+    public function getFormattedMessages(): array
     {
         if ($this->displayHistory === []) {
             return [];
@@ -121,7 +121,7 @@ class UserChatHistory extends AbstractChatHistory
         $toolCallId = null;
         $toolText = null;
         foreach ($this->displayHistory as $message) {
-            if ($message instanceof ToolCallMessage && $mode === 'stream') {
+            if ($message instanceof ToolCallMessage) {
                 $toolCallId = uniqid('tool-', true);
             } elseif ($message instanceof ToolResultMessage) {
                 $toolText = '<span class="tools-done-flag" style="display:none"></span>' . "\n";

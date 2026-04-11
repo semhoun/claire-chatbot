@@ -80,7 +80,7 @@ FROM base AS build
 COPY . /src
 RUN mkdir /rootfs \
     && mv /src/docker/rootfs/* /rootfs/ \
-    && rm -rf /src/docker \
+    && rm -rf /src/docker /src/.dockerignore /src/.git \
     && mv /src /rootfs/opt/www
 
 RUN cd /rootfs/opt/www \

@@ -150,7 +150,7 @@ final readonly class HistoryController
         $userChatHistory->setThreadId($threadId);
         $userChatHistory->validateMessageSequences();
 
-        $messages = $userChatHistory->getFormattedMessages('stream');
+        $messages = $userChatHistory->getFormattedMessages();
         if ($messages === []) {
             return $response->withStatus(400);
         }
@@ -238,7 +238,7 @@ final readonly class HistoryController
     private function publishSnapshot(string $threadId, UserChatHistory $userChatHistory, string $sessionId = ''): void
     {
         $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-            'messages' => $userChatHistory->getFormattedMessages('stream'),
+            'messages' => $userChatHistory->getFormattedMessages(),
         ]);
 
         // Publish to sessionId if provided (per-tab SSE), otherwise fallback to threadId

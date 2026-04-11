@@ -26,19 +26,17 @@ class GenerateImageTool extends Tool implements MessagePostProcessorInterface
         $promptStyle = $this->getPromptStyle();
         $description = $promptStyle === 'flux'
             ? <<<EOT
-Generates an image from a text description using ComfyUI, generated image will be send to the user.
-IMPORTANT: This tool MUST be used whenever the user needs an image or photo - whether they ask to create, generate, draw, or simply want/need an image.
-Any request that requires providing an image, picture, or photo should use this tool.
-The prompt should be written in natural english language, describing the scene in detail with complete sentences.
-To insert a generated image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@), don't insert "<img>" tag.
+Generates an image from a text description using ComfyUI. The generated image will be sent to the user.
+IMPORTANT: Use this tool whenever the user requests or needs an image, photo, drawing, illustration, or any other visual output.
+The prompt must be written in natural English, using complete sentences and enough visual detail to clearly describe the scene. Do not use specific character names; use only generic character types such as rabbit, man, woman, child, thief, or robot.
+To insert a generated image into the text, provide only its ID (for example: @@GENERATED@@<dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png>@@) and do not use an <img> tag.
 EOT
             : <<<EOT
-Generates an image from a text description using ComfyUI, generated image will be send to the user.
-IMPORTANT: This tool MUST be used whenever the user needs an image or photo - whether they ask to create, generate, draw, or simply want/need an image.
-Any request that requires providing an image, picture, or photo should use this tool.
-The prompt should be formatted as comma-separated english keywords, for example: "masterpiece, best quality, sunlit forest, vibrant colors, detailed trees, cinematic lighting".
-Avoid natural language sentences; use descriptive tags and keywords for best results.
-To insert a generated image into the text: Simply provide its ID (e.g., @@GENERATED@@dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png@@), don't insert "<img>" tag.
+Generates an image from a text description using ComfyUI. The generated image will be sent to the user.
+IMPORTANT: This tool must be used whenever the user requests or needs an image, photo, drawing, illustration, or any other visual output, including any request to create, generate, or draw an image.
+The prompt must be written as comma-separated English keywords, for example: masterpiece, best quality, sunlit forest, vibrant colors, detailed trees, cinematic lighting. Use descriptive tags and keywords rather than natural language sentences for best results.
+When referring to characters, do not use specific names; use only generic character types such as rabbit, man, woman, child, thief, or robot.
+To insert a generated image into the text, provide only its ID (for example: @@GENERATED@@<dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png>@@) and do not use an <img> tag.
 EOT;
 
         parent::__construct(

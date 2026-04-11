@@ -69,7 +69,6 @@ final readonly class BrainController
         $messageArticleId = uniqid('assistant-message-', true);
         $attachments = $this->extractAttachments($request, includeStoredFiles: true);
 
-        $session->set('chatId', $chatId);
         $this->queueDispatcher->dispatch(WebChatMessageJob::class, [
             'chatId' => $chatId,
             'sessionId' => $sessionId,
@@ -122,7 +121,7 @@ final readonly class BrainController
             $userChatHistory->validateMessageSequences();
 
             $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-                'messages' => $userChatHistory->getFormattedMessages('stream'),
+                'messages' => $userChatHistory->getFormattedMessages(),
             ]);
         }
 

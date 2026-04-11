@@ -51,7 +51,7 @@ final readonly class HomeController
 
         // Conserver le chatId courant s'il existe, sinon en générer un nouveau
         $chatId = $session->get('chatId');
-        if ($chatId === null) {
+        if ($chatId !== null || count($userChatHistory->getDisplayMessages()) === 0) {
             set_time_limit((int) $this->settings->get('llm.workflow.timeout'));
 
             $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
@@ -68,7 +68,7 @@ final readonly class HomeController
                 ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
             $userChatHistory->replaceDisplayMessages([$assistantMessage]);
             $userChatHistory->replaceMessages([]);
-            $messages = $userChatHistory->getFormattedMessages('stream');
+            $messages = $userChatHistory->getFormattedMessages();
 
             // On configure le Workflow par défaut au premier chat
             if ($this->settings->get('comfyui.enabled') === true && $currentComfyuiWorkflow === '') {
@@ -76,7 +76,7 @@ final readonly class HomeController
                 $session->set(ComfyUIWorkflowRegistry::SESSION_KEY, $currentComfyuiWorkflow);
             }
         } else {
-            $messages = $userChatHistory->getFormattedMessages('stream');
+            $messages = $userChatHistory->getFormattedMessages();
             $userChatHistory->validateMessageSequences();
         }
 
