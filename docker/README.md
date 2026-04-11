@@ -1,7 +1,7 @@
 # Claire Chatbot Docker Image
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/semhoun/claire-chatbot)](https://hub.docker.com/r/semhoun/claire-chatbot)
-[![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white)](https://php.net)
+[![PHP Version](https://img.shields.io/badge/PHP-8.5%2B-777bb4?logo=php&logoColor=white)](https://php.net)
 [![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300)](https://frankenphp.dev/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](https://github.com/semhoun/claire-chatbot/blob/main/LICENSE)
 
@@ -11,7 +11,7 @@ Image Docker officielle de Claire Chatbot.
 - Repository: `https://hub.docker.com/r/semhoun/claire-chatbot`
 - Sources: `https://github.com/semhoun/claire-chatbot`
 
-Cette image embarque Claire avec PHP 8.4, FrankenPHP, Caddy, Supervisor, Doctrine, OpenTelemetry et les extensions PHP necessaires pour SQLite, MySQL, PostgreSQL, Redis, Memcache, GD et Imagick.
+Cette image embarque Claire avec PHP 8.5, FrankenPHP, Caddy, Supervisor, Doctrine, OpenTelemetry et les extensions PHP necessaires pour SQLite, MySQL, PostgreSQL, Redis, Memcache, GD et Imagick.
 
 ## Demarrage rapide
 
@@ -45,7 +45,7 @@ docker exec claire ./console migrations:migrate
 
 ## Image et runtime
 
-- Base: `dunglas/frankenphp:php8.4-trixie`
+- Base: `dunglas/frankenphp:php8.5-trixie`
 - Serveur HTTP: FrankenPHP + Caddy
 - Supervision: Supervisor
 - Repertoire de travail: `/opt/www`

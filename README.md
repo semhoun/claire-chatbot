@@ -1,6 +1,6 @@
 # Claire — Agent de Chat IA (PHP, Slim 4)
 
-![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
+![PHP Version](https://img.shields.io/badge/PHP-8.5%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
 Claire est une application web de chat IA construite avec Slim 4, Twig et Neuron AI. Elle fournit une interface web, un endpoint API, une integration Telegram et un runtime Docker base sur FrankenPHP/Caddy pour piloter des LLM compatibles OpenAI.
 
@@ -60,7 +60,7 @@ docker run -d -p 8080:80 \
 
 ## Pile technique
 
-- PHP 8.4+
+- PHP 8.5+
 - [Slim 4](https://www.slimframework.com/) (routing, middlewares)
 - [PHP-DI](https://php-di.org/) (container)
 - [Twig](https://twig.symfony.com/) (templates)
@@ -75,7 +75,7 @@ docker run -d -p 8080:80 \
 
 ## Prérequis
 
-- PHP 8.4 ou supérieur avec les extensions:
+- PHP 8.5 ou supérieur avec les extensions:
   - `ext-json`
   - `ext-sqlite3` ou 'ext-mysql' ou 'ext-pgsql'
   - `ext-libxml`
@@ -504,7 +504,7 @@ export REDIS_PORT=6379
 
 ### Via Docker
 
-Claire fournit une image Docker complete basee sur FrankenPHP, Caddy et PHP 8.4.
+Claire fournit une image Docker complete basée sur FrankenPHP, Caddy et PHP 8.5.
 
 #### Build de l'image
 
@@ -520,10 +520,6 @@ L'extrait ci‑dessous présente une configuration Docker Compose de référence
 services:
   claire:
     image: claire:latest
-    # Ou utilisez l'image de développement avec volumes montés:
-    # image: semhoun/webserver:8.4
-    # volumes:
-    #   - .:/opt/www
     volumes:
       - claire_data:/opt/data # Persistance des données (base SQLite, fichiers uploadés, etc.)
     ports:
@@ -631,7 +627,7 @@ Notes Docker/FrankenPHP:
 
 #### Points clés de l'image Docker
 
-- **Base**: Debian Trixie Slim avec PHP 8.4
+- **Base**: Debian Trixie Slim avec PHP 8.5
 - **Services**: FrankenPHP + Caddy + Supervisor
 - **Extensions PHP**: SQLite3, MySQL, PostgreSQL, GD, Imagick, Redis, Memcache, etc.
 - **OpenTelemetry**: Extension pré-installée et configurée
@@ -654,19 +650,6 @@ docker compose logs -f claire
 # Exécuter des commandes dans le conteneur
 docker compose exec claire ./console migrations:migrate
 docker compose exec claire ./console cache:clear
-```
-
-#### Développement avec volumes montés
-
-Pour un développement actif avec rechargement automatique, utilisez l'image `semhoun/webserver:8.4` avec un volume monté:
-
-```yaml
-services:
-  claire:
-    image: semhoun/webserver:8.4
-    volumes:
-      - .:/opt/www
-    # ... reste de la configuration
 ```
 
 ## API et routes
@@ -1017,7 +1000,7 @@ Claire, peux-tu générer une image d'un chat sur la lune?
   composer start
   ```
 
-- Rector (modernisation PHP 8.4):
+- Rector (modernisation PHP 8.5):
   - Vérifier: `composer rector-check`
   - Appliquer: `composer rector-fix`
 
