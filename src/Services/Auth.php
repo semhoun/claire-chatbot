@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Brain\BrainRegistry;
 use App\Entity\User;
 use App\Exception;
 use App\Services\Session\SessionInterface;
@@ -20,6 +21,7 @@ class Auth
     public function __construct(
         private readonly EntityManager $entityManager,
         private readonly Settings $settings,
+        private readonly BrainRegistry $brainRegistry,
     ) {
     }
 
@@ -75,6 +77,11 @@ class Auth
                 if (! $session->has($key)) {
                     $session->set($key, $value);
                 }
+            }
+
+            $brain = $session->get('brain_avatar');
+            if ($brain === null || $brain === '' || !$this->brainRegistry->has($brain)) {
+                $session->set('brain_avatar', $this->settings->get('session.defaultParams.brain_avatar'));
             }
         } catch (\Exception $exception) {
             throw new Exception('User [' . $userId . "] not found in database and can't add it: " . $exception->getMessage(), $exception->getCode(), $exception);
