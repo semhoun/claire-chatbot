@@ -19,6 +19,7 @@ class GeneratedImageExtension extends AbstractExtension
     {
         return [
             new TwigFilter('process_generated_images', $this->processGeneratedImages(...), ['is_safe' => ['html']]),
+            new TwigFilter('process_generated_images_placeholder', $this->processGeneratedImagesPlaceholder(...), ['is_safe' => ['html']]),
         ];
     }
 
@@ -45,6 +46,21 @@ class GeneratedImageExtension extends AbstractExtension
             return sprintf(
                 '<img src="/files/img_serve/%s" alt="Generated image" class="generated-image">',
                 htmlspecialchars($imgId, ENT_QUOTES, 'UTF-8')
+            );
+        }, $content);
+    }
+
+    /**
+     * Convert generated/xxx.png paths to a lightweight placeholder during streaming.
+     */
+    public function processGeneratedImagesPlaceholder(string $content): string
+    {
+        return preg_replace_callback(ComfyUIService::IMAGE_PATTERN, static function (array $matches): string {
+            $imgId = htmlspecialchars($matches[1], ENT_QUOTES, 'UTF-8');
+
+            return sprintf(
+                '<span class="generated-image-placeholder" data-generated-image="%s" role="img" aria-label="Image generee">&#128247;</span>',
+                $imgId
             );
         }, $content);
     }

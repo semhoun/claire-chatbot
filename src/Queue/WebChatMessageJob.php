@@ -171,7 +171,10 @@ final readonly class WebChatMessageJob implements QueueDoer
                 }
 
                 $streamedText .= $chunk->content;
-                $html = $this->twig->fetch('partials/md.twig', ['message' => $streamedText]);
+                $html = $this->twig->fetch('partials/md.twig', [
+                    'message' => $streamedText,
+                    'streaming_placeholder_images' => true,
+                ]);
 
                 $this->chatStreamPublisher->publish($sessionId, 'message.assistant.delta', [
                     'chatId' => $chatId,
@@ -185,6 +188,7 @@ final readonly class WebChatMessageJob implements QueueDoer
             $agentMessage = $agentHandler->getMessage();
             $finalHtml = $this->twig->fetch('partials/md.twig', [
                 'message' => $agentMessage->getContent(),
+                'streaming_placeholder_images' => false,
             ]);
 
             $this->chatStreamPublisher->publish($sessionId, 'message.assistant.delta', [
