@@ -610,7 +610,6 @@ body.compact .chat-input {
 
 .chat-input__field:focus {
     background: rgba(255, 255, 255, 0.12);
-    box-shadow: inset 0 0 0 1px var(--input-field-border-glow), 0 10px 24px var(--input-field-shadow-focus);
 }
 
 .chat-input__field::placeholder {

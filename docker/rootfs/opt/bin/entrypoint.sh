@@ -12,6 +12,7 @@ opcache.enable = Off
 opcache.enable_cli = Off
 EOF
 else
+  export FRANKENPHP_CONFIG="worker /opt/www/public/index.php"
   cp "${PHP_INI_DIR}/php.ini-production" "${PHP_INI_DIR}/php.ini"
 fi
 

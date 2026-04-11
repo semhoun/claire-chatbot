@@ -89,8 +89,8 @@
       "@pre-commit-line-endings",
       "@pre-commit-permissions-files",
       "@pre-commit-permissions-dirs",
-      "@rector-fix"
-      "@insights-fix",
+      "@rector-fix",
+      "@insights-fix"
     ]
   },
   "extra": {

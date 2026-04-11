@@ -104,7 +104,6 @@ ENV DEBUG_MODE="false"
 ENV ENABLE_LETSENCRYPT="false"
 ENV ACME_EMAIL=""
 ENV QUEUE_WORKERS="2"
-ENV FRANKENPHP_CONFIG="worker /opt/www/public/index.php"
 
 # Manage permissions
 RUN mkdir -p \
