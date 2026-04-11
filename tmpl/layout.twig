@@ -324,12 +324,24 @@
         observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
     })();
 
+    function setGlobalActionIndicatorState(isVisible) {
+        const indicator = document.getElementById('globalActionIndicator');
+        if (!indicator) {
+            return;
+        }
+
+        indicator.classList.toggle('htmx-request', isVisible);
+    }
+
     // Sélecteur d'assistant (N assistants)
     (function() {
         const sel = document.getElementById('brainSelector');
         if (!sel) return;
+
         sel.addEventListener('change', async function() {
             const val = sel.value;
+            setGlobalActionIndicatorState(true);
+
             try {
                 await fetch('{{ base_url }}/config/brain_avatar', {
                     method: 'POST',
@@ -338,7 +350,10 @@
                 });
             } catch (e) {
                 console.error(e);
+            } finally {
+                setGlobalActionIndicatorState(false);
             }
+
             // Recharger pour appliquer l'avatar/nom/description
             window.location.reload();
         });
@@ -347,8 +362,11 @@
     (function() {
         const sel = document.getElementById('comfyuiWorkflowSelector');
         if (!sel) return;
+
         sel.addEventListener('change', async function() {
             const val = sel.value;
+            setGlobalActionIndicatorState(true);
+
             try {
                 await fetch('{{ base_url }}/config/comfyui_workflow', {
                     method: 'POST',
@@ -357,6 +375,8 @@
                 });
             } catch (e) {
                 console.error(e);
+            } finally {
+                setGlobalActionIndicatorState(false);
             }
         });
     })();
