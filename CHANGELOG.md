@@ -5,6 +5,18 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [Unreleased]
+
+### Added
+- Support de la variable `{{USER}}` dans les instructions de tous les agents - remplacée par le nom d'affichage de l'utilisateur
+
+### Changed
+- Déplacement du WORKINGDIR Docker de `/www` vers `/opt/www` pour plus de cohérence avec les conventions Linux
+
+### Fixed
+- Correction des retours à la ligne dans les messages
+- Nettoyage de code divers
+
 ## [1.4.0] - 2026-04-09
 
 ### Added

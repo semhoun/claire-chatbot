@@ -36,6 +36,12 @@ class Agent extends \NeuronAI\Agent\Agent
     public function resolveInstructions(): string
     {
         $instructions = parent::resolveInstructions();
+
+        $nickname = $this->session->get('user_info')['displayName'] ?? null;
+        if (is_string($nickname)) {
+            $instructions = str_replace('{{USER}}', $nickname, $instructions);
+        }
+
         $dateLine = sprintf(
             "\n\n[OC] Date et heure actuelles : %s[/OC]\n",
             new \DateTimeImmutable()->format('Y-m-d H:i:s')

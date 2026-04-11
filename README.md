@@ -196,6 +196,14 @@ instruction: |
   Utilisez plusieurs lignes si nécessaire.
 ```
 
+**Variables dans les instructions:**
+
+Tous les agents (PHP et YAML) supportent les variables dans leurs instructions :
+
+| Variable | Description |
+|----------|-------------|
+| `{{USER}}` | Remplacée par le nom d'affichage de l'utilisateur (si disponible) |
+
 **Exemple de fichier `addons/agents/coach.yaml`:**
 
 ```yaml
