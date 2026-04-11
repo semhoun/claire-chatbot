@@ -42,14 +42,8 @@
         </header>
 
         <main class="chat-body" style="position: relative; z-index: 1;">
-            {# HTMX SSE container for chat snapshots - handles full message list updates #}
             <div
                 id="chatStream"
-                hx-ext="sse"
-                sse-connect="{{ base_url }}/brain/stream?sessionId={{ stream_session_id }}&chatId={{ current_chat_id }}"
-                sse-swap="chat.snapshot"
-                hx-target="#messages"
-                hx-swap="innerHTML"
                 data-chat-id="{{ current_chat_id }}"
                 data-stream-session-id="{{ stream_session_id }}"
                 style="display: contents;"
@@ -126,11 +120,9 @@
 {% block script %}
 <script>
     // Gestion locale des pièces jointes: chips avec suppression + synchronisation du formulaire
-    // Hybrid SSE: HTMX SSE handles chat.snapshot, native EventSource handles incremental updates
+    // Single SSE stream: native EventSource handles snapshots and incremental updates
     (function () {
 
-        // Native EventSource for incremental updates only (placeholder, delta, tool.update)
-        // HTMX SSE handles chat.snapshot via sse-swap
         // Per-tab session ID for SSE binding (stored in sessionStorage to survive navigation)
         (function() {
             const STORAGE_KEY = 'claireStreamSessionId';
@@ -156,7 +148,7 @@
                 return;
             }
 
-            initIncrementalEventSource(sessionId);
+            initChatEventSource(sessionId);
         });
 
         function setComposerBusyState(isBusy) {
@@ -202,7 +194,7 @@
             }
         }
 
-        function handleIncrementalUpdate(update) {
+        function handleIncrementalUpdate(eventType, update) {
             if (update.html) {
                 Object.entries(update.html).forEach(([elementId, htmlContent]) => {
                     const mode = update.mode || 'replace';
@@ -242,7 +234,7 @@
                                 }
                             }
                         }
-                    } else if (update.event === 'tool.update' && update.toolCallId) {
+                    } else if (eventType === 'tool.update' && update.toolCallId) {
                         const articleTarget = update.messageId ? document.getElementById(update.messageId) : null;
                         if (articleTarget) {
                             let toolNode = document.getElementById(update.toolCallId);
@@ -275,11 +267,11 @@
                 });
             }
 
-            if (update.event === 'message.assistant.start') {
+            if (eventType === 'message.assistant.start') {
                 removeAssistantLoader();
             }
 
-            if (update.event === 'message.assistant.done') {
+            if (eventType === 'message.assistant.done') {
                 finalizeAssistantResponse();
             }
 
@@ -292,33 +284,66 @@
             }
         }
 
-        function initIncrementalEventSource(sessionId) {
-            // Close existing connection if any
-            if (window.chatIncrementalEventSource) {
-                window.chatIncrementalEventSource.close();
-            }
+        function bindChatEventSource(sessionId, eventSource) {
+            window.chatEventSource = eventSource;
 
-            // Create new EventSource connection for incremental updates
-            // Uses sessionId (per-tab) instead of chatId to maintain stable SSE binding across chat switches
-            const sseUrl = '{{ base_url }}/brain/stream?sessionId=' + encodeURIComponent(sessionId) + '&mode=incremental';
-            window.chatIncrementalEventSource = new EventSource(sseUrl);
-
-            window.chatIncrementalEventSource.onmessage = function(event) {
+            const handleEvent = function(eventType, event) {
                 try {
                     const update = JSON.parse(event.data);
 
-                    handleIncrementalUpdate(update);
+                    handleIncrementalUpdate(eventType, update);
                 } catch (error) {}
             };
 
-            window.chatIncrementalEventSource.onerror = function(error) {
-                window.chatIncrementalEventSource.close();
+            eventSource.onmessage = function(event) {
+                handleEvent('message', event);
+            };
 
-                // Attempt reconnection after 5 seconds
+            eventSource.addEventListener('chat.snapshot', function(event) {
+                handleEvent('chat.snapshot', event);
+            });
+
+            eventSource.addEventListener('message.assistant.start', function(event) {
+                handleEvent('message.assistant.start', event);
+            });
+
+            eventSource.addEventListener('message.assistant.placeholder', function(event) {
+                handleEvent('message.assistant.placeholder', event);
+            });
+
+            eventSource.addEventListener('message.assistant.delta', function(event) {
+                handleEvent('message.assistant.delta', event);
+            });
+
+            eventSource.addEventListener('tool.update', function(event) {
+                handleEvent('tool.update', event);
+            });
+
+            eventSource.addEventListener('message.assistant.done', function(event) {
+                handleEvent('message.assistant.done', event);
+            });
+
+            eventSource.addEventListener('chat.error', function(event) {
+                handleEvent('chat.error', event);
+            });
+
+            eventSource.onerror = function(error) {
+                eventSource.close();
+
                 setTimeout(function() {
-                    initIncrementalEventSource(sessionId);
+                    initChatEventSource(sessionId);
                 }, 5000);
             };
+        }
+
+        function initChatEventSource(sessionId) {
+            if (window.chatEventSource) {
+                window.chatEventSource.close();
+            }
+
+            const chatId = document.querySelector('[data-current-chat-id-input]')?.value || '';
+            const sseUrl = '{{ base_url }}/brain/stream?sessionId=' + encodeURIComponent(sessionId) + '&chatId=' + encodeURIComponent(chatId);
+            bindChatEventSource(sessionId, new EventSource(sseUrl));
         }
 
         window.chatClick = function chatClick(event) {
@@ -401,36 +426,7 @@
             if (messagesContainer) messagesContainer.setAttribute('data-chat-id', chatId);
             if (chatIdInput) chatIdInput.value = chatId;
 
-            // HTMX SSE connection uses stable sessionId (not chatId)
-            const newSseUrl = '{{ base_url }}/brain/stream?sessionId=' + encodeURIComponent(sessionId);
-            chatStreamContainer.setAttribute('sse-connect', newSseUrl);
-
-            // Reprocess HTMX SSE extension to pick up new URL
-            if (window.htmx) {
-                window.htmx.process(chatStreamContainer);
-            }
-
-            // Close and reopen incremental EventSource with stable sessionId
-            if (window.chatIncrementalEventSource) {
-                window.chatIncrementalEventSource.close();
-            }
-
-            const incrementalUrl = newSseUrl + '&mode=incremental';
-            window.chatIncrementalEventSource = new EventSource(incrementalUrl);
-
-            window.chatIncrementalEventSource.onmessage = function(event) {
-                try {
-                    const update = JSON.parse(event.data);
-                    handleIncrementalUpdate(update);
-                } catch (error) {}
-            };
-
-            window.chatIncrementalEventSource.onerror = function(error) {
-                window.chatIncrementalEventSource.close();
-                setTimeout(function() {
-                    initIncrementalEventSource(sessionId);
-                }, 5000);
-            };
+            initChatEventSource(sessionId);
         };
 
         function ensureToolNode(articleTarget, toolCallId) {

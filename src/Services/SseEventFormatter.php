@@ -39,11 +39,12 @@ final readonly class SseEventFormatter
     /**
      * @param array<string, mixed> $payload
      */
-    public function formatJsonEvent(array $payload, ?string $eventId = null): string
+    public function formatJsonEvent(array $payload, ?string $eventId = null, ?string $eventName = null): string
     {
         return $this->formatDataPayload(
             json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
             $eventId,
+            $eventName,
         );
     }
 
@@ -77,11 +78,19 @@ final readonly class SseEventFormatter
         return ": keepalive\n\n";
     }
 
-    private function formatDataPayload(string $payload, ?string $eventId = null): string
+    private function formatDataPayload(
+        string $payload,
+        ?string $eventId = null,
+        ?string $eventName = null,
+    ): string
     {
         $frame = '';
         if ($eventId !== null && $eventId !== '') {
             $frame .= 'id: ' . $eventId . "\n";
+        }
+
+        if ($eventName !== null && $eventName !== '') {
+            $frame .= 'event: ' . $eventName . "\n";
         }
 
         return $frame . "data: {$payload}\n\n";

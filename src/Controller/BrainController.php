@@ -104,9 +104,6 @@ final readonly class BrainController
             return $response->withStatus(400);
         }
 
-        // Mode: 'full' (default) for HTMX SSE, 'incremental' for native EventSource
-        $mode = (string) ($queryParams['mode'] ?? 'full');
-
         $response = $response
             ->withBody(new NonBufferedBody())
             ->withHeader('Content-Type', 'text/event-stream')
@@ -116,23 +113,25 @@ final readonly class BrainController
 
         $stream = $response->getBody();
 
-        // Send initial snapshot for current chat
-        if ($mode !== 'incremental') {
-            $chatId = trim((string) ($queryParams['chatId'] ?? $session->get('chatId') ?? ''));
-            if ($chatId !== '') {
-                $session->set('chatId', $chatId);
+        $chatId = trim((string) ($queryParams['chatId'] ?? $session->get('chatId') ?? ''));
+        if ($chatId !== '') {
+            $session->set('chatId', $chatId);
 
-                $userChatHistory = new UserChatHistory(
-                    session: $session,
-                    pdo: $this->entityManager->getConnection()->getNativeConnection(),
-                    contextWindow: $this->settings->get('llm.openai.contextWindow')
-                );
-                $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-                    'messages' => $userChatHistory->getFormattedMessages(),
-                ]);
+            $userChatHistory = new UserChatHistory(
+                session: $session,
+                pdo: $this->entityManager->getConnection()->getNativeConnection(),
+                contextWindow: $this->settings->get('llm.openai.contextWindow')
+            );
+            $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
+                'messages' => $userChatHistory->getFormattedMessages(),
+            ]);
 
-                $stream->write($this->sseEventFormatter->formatNamedEvent('chat.snapshot', $messagesHtml));
-            }
+            $stream->write($this->sseEventFormatter->formatJsonEvent([
+                'html' => [
+                    'messages' => $messagesHtml,
+                ],
+                'mode' => 'replace',
+            ], eventId: $chatId, eventName: 'chat.snapshot'));
         }
 
         $deadline = time() + self::SSE_KEEPALIVE_INTERVAL;
@@ -162,80 +161,63 @@ final readonly class BrainController
                     continue;
                 }
 
-                // Route events based on mode
-                if ($mode === 'incremental') {
-                    // Incremental mode: only send granular events as JSON
-                    if (in_array($eventName, ['message.assistant.start', 'message.assistant.placeholder', 'message.assistant.delta', 'tool.update', 'message.assistant.done', 'chat.error'], true)) {
-                        $incrementalPayload = match ($eventName) {
-                            'message.assistant.start' => [
-                                'event' => $eventName,
-                                'messageId' => $payload['messageId'] ?? null,
-                                'messageArticleId' => $payload['messageArticleId'] ?? null,
+                if (in_array($eventName, ['chat.snapshot', 'message.assistant.start', 'message.assistant.placeholder', 'message.assistant.delta', 'tool.update', 'message.assistant.done', 'chat.error'], true)) {
+                    $streamPayload = match ($eventName) {
+                        'chat.snapshot' => [
+                            'html' => [
+                                'messages' => (string) ($payload['messagesHtml'] ?? ''),
                             ],
-                            'message.assistant.placeholder' => [
-                                'html' => [
-                                    'messages' => (string) ($payload['html'] ?? ''),
-                                ],
-                                'mode' => 'append',
-                                'event' => $eventName,
-                                'messageId' => $payload['messageId'] ?? null,
-                                'messageArticleId' => $payload['messageArticleId'] ?? null,
+                            'mode' => 'replace',
+                        ],
+                        'message.assistant.start' => [
+                            'messageId' => $payload['messageId'] ?? null,
+                            'messageArticleId' => $payload['messageArticleId'] ?? null,
+                        ],
+                        'message.assistant.placeholder' => [
+                            'html' => [
+                                'messages' => (string) ($payload['html'] ?? ''),
                             ],
-                            'message.assistant.delta' => [
-                                'html' => [
-                                    (string) ($payload['messageId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
-                                ],
-                                'mode' => 'replace',
-                                'event' => $eventName,
-                                'messageId' => $payload['messageId'] ?? null,
-                                'messageArticleId' => $payload['messageArticleId'] ?? null,
+                            'mode' => 'append',
+                            'messageId' => $payload['messageId'] ?? null,
+                            'messageArticleId' => $payload['messageArticleId'] ?? null,
+                        ],
+                        'message.assistant.delta' => [
+                            'html' => [
+                                (string) ($payload['messageId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
                             ],
-                            'tool.update' => [
-                                'html' => [
-                                    (string) ($payload['toolCallId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
-                                ],
-                                'mode' => 'replace',
-                                'event' => $eventName,
-                                'messageId' => $payload['messageId'] ?? null,
-                                'messageArticleId' => $payload['messageArticleId'] ?? null,
-                                'toolCallId' => $payload['toolCallId'] ?? null,
+                            'mode' => 'replace',
+                            'messageId' => $payload['messageId'] ?? null,
+                            'messageArticleId' => $payload['messageArticleId'] ?? null,
+                        ],
+                        'tool.update' => [
+                            'html' => [
+                                (string) ($payload['toolCallId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
                             ],
-                            'message.assistant.done' => [
-                                'event' => $eventName,
-                                'messageId' => $payload['messageId'] ?? null,
-                                'messageArticleId' => $payload['messageArticleId'] ?? null,
-                            ],
-                            'chat.error' => [
-                                'error' => (string) ($payload['message'] ?? 'Une erreur est survenue.'),
-                                'event' => $eventName,
-                            ],
-                            default => [
-                                'event' => $eventName,
-                            ],
-                        };
+                            'mode' => 'replace',
+                            'messageId' => $payload['messageId'] ?? null,
+                            'messageArticleId' => $payload['messageArticleId'] ?? null,
+                            'toolCallId' => $payload['toolCallId'] ?? null,
+                        ],
+                        'message.assistant.done' => [
+                            'messageId' => $payload['messageId'] ?? null,
+                            'messageArticleId' => $payload['messageArticleId'] ?? null,
+                        ],
+                        'chat.error' => [
+                            'error' => (string) ($payload['message'] ?? 'Une erreur est survenue.'),
+                        ],
+                        default => [],
+                    };
 
-                        $eventId = (string) ($payload['messageArticleId'] ?? '');
-                        if ($eventId === '') {
-                            $eventId = (string) ($payload['messageId'] ?? '');
-                        }
-
-                        $stream->write($this->sseEventFormatter->formatJsonEvent(
-                            $incrementalPayload,
-                            $eventId !== '' ? $eventId : null,
-                        ));
+                    $eventId = (string) ($payload['messageArticleId'] ?? '');
+                    if ($eventId === '') {
+                        $eventId = (string) ($payload['messageId'] ?? '');
                     }
 
-                    // Note: chat.snapshot is NOT sent in incremental mode (HTMX SSE handles it)
-                } else {
-                    // Full mode (HTMX SSE): send named events for snapshots
-                    if ($eventName === 'chat.snapshot') {
-                        $htmlContent = $payload['messagesHtml'] ?? '';
-                        if ($htmlContent !== '') {
-                            $stream->write($this->sseEventFormatter->formatNamedEvent('chat.snapshot', $htmlContent));
-                        }
-                    }
-
-                    // Note: incremental events are NOT sent in full mode (native EventSource handles them)
+                    $stream->write($this->sseEventFormatter->formatJsonEvent(
+                        $streamPayload,
+                        $eventId !== '' ? $eventId : null,
+                        $eventName,
+                    ));
                 }
 
                 $offset++;

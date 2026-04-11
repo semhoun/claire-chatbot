@@ -69,12 +69,11 @@ final class SseEventFormatterTest extends TestCase
         $formatter = new SseEventFormatter();
 
         $result = $formatter->formatJsonEvent([
-            'event' => 'message.assistant.start',
             'messageArticleId' => 'assistant-message-123',
-        ], 'assistant-message-123');
+        ], 'assistant-message-123', 'message.assistant.start');
 
         $this->assertSame(
-            "id: assistant-message-123\ndata: {\"event\":\"message.assistant.start\",\"messageArticleId\":\"assistant-message-123\"}\n\n",
+            "id: assistant-message-123\nevent: message.assistant.start\ndata: {\"messageArticleId\":\"assistant-message-123\"}\n\n",
             $result,
         );
     }

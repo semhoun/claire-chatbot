@@ -16,7 +16,7 @@ use Twig\Loader\FilesystemLoader;
 
 final class ChatTemplateSseTest extends TestCase
 {
-    public function testChatTemplateLoadsHybridSseConnectionOnPageLoad(): void
+    public function testChatTemplateLoadsSingleSseConnectionOnPageLoad(): void
     {
         $twig = $this->createTwig();
 
@@ -50,19 +50,18 @@ final class ChatTemplateSseTest extends TestCase
             'uinfo' => ['id' => 'default'],
         ]);
 
-        // HTMX SSE for snapshots uses sessionId (per-tab binding)
-        $this->assertStringContainsString('hx-ext="sse"', $html);
-        $this->assertStringContainsString('sse-connect="/brain/stream?sessionId=sess-abc123"', $html);
-        $this->assertStringContainsString('sse-swap="chat.snapshot"', $html);
+        // Single EventSource uses sessionId and current chatId
         $this->assertStringContainsString('data-chat-id="thread-42"', $html);
         $this->assertStringContainsString('data-stream-session-id="sess-abc123"', $html);
 
-        // Native EventSource for incremental updates uses sessionId
+        // Native EventSource handles snapshots and incremental updates
         $this->assertStringContainsString('new EventSource', $html);
         $this->assertStringContainsString('/brain/stream?sessionId=', $html);
-        $this->assertStringContainsString('mode=incremental', $html);
-        $this->assertStringContainsString('window.chatIncrementalEventSource', $html);
-        $this->assertStringContainsString("update.event === 'message.assistant.start'", $html);
+        $this->assertStringContainsString('&chatId=', $html);
+        $this->assertStringContainsString('window.chatEventSource', $html);
+        $this->assertStringContainsString("eventType === 'message.assistant.start'", $html);
+        $this->assertStringContainsString("addEventListener('chat.snapshot'", $html);
+        $this->assertStringContainsString("addEventListener('message.assistant.delta'", $html);
         $this->assertStringContainsString('messageArticleId', $html);
         $this->assertStringNotContainsString('hx-indicator="#typingIndicator"', $html);
         $this->assertStringContainsString('class="typing-indicator" aria-hidden="true"', $html);
@@ -85,6 +84,7 @@ final class ChatTemplateSseTest extends TestCase
 
         // Reconnection handling
         $this->assertStringContainsString('setTimeout', $html);
+        $this->assertStringContainsString('initChatEventSource(sessionId)', $html);
     }
 
     public function testChatTemplateReusesExistingAssistantArticleForPlaceholderUpdates(): void
