@@ -170,6 +170,19 @@
             form.classList.toggle('is-busy', isBusy);
         }
 
+        function getChatBody() {
+            return document.querySelector('.chat-body');
+        }
+
+        function scrollChatToBottom() {
+            const chatBody = getChatBody();
+            if (!chatBody) {
+                return;
+            }
+
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+
         function finalizeAssistantResponse() {
             const messages = document.getElementById('messages');
             if (messages) {
@@ -248,10 +261,6 @@
                     } else if (element) {
                         element.innerHTML = htmlContent;
 
-                        const chatBody = document.querySelector('.chat-body');
-                        if (chatBody) {
-                            chatBody.scrollTop = chatBody.scrollHeight;
-                        }
                     } else {
                     }
                 });
@@ -356,7 +365,7 @@
             if (!text) return;
 
             const messages = document.getElementById('messages');
-            const chatBody = document.querySelector('.chat-body');
+            const chatBody = getChatBody();
             const scrollBtn = document.getElementById('scrollDownBtn');
             if (!messages || !chatBody) return;
 
@@ -375,7 +384,7 @@
             loader.innerHTML = '<div class="message__bubble"><span class="typing-indicator" aria-hidden="true"><span class="typing-indicator__dot"></span><span class="typing-indicator__dot"></span><span class="typing-indicator__dot"></span></span></div>';
             messages.appendChild(loader);
 
-            chatBody.scrollTop = chatBody.scrollHeight;
+            scrollChatToBottom();
             if (scrollBtn) scrollBtn.style.display = 'none';
         };
 
@@ -472,8 +481,7 @@
                 }
             } catch (e) {}
 
-            const chatBody = document.querySelector('.chat-body');
-            if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
+            scrollChatToBottom();
             setComposerBusyState(false);
         };
 
