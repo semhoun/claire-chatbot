@@ -23,10 +23,15 @@ for dir in "${DATA_PATH}" "${DATA_PATH}/filer" "/opt/www/var/cache" "/opt/www/va
   fi
   chown www-data:www-data "$dir"
 done
-
 if [ ! -d "/opt/www/var/cache/proxy" ]; then
   cd /opt/www
   su www-data -c "./console app:generate-proxies"
+fi
+
+# Init addons if needed
+if [ ! -d "${ADDONS_PATH}/agents" ]; then
+  cp -R /opt/dist/addons/* "${ADDONS_PATH}/"
+  chown -R www-data:www-data "${ADDONS_PATH}"
 fi
 
 TRACING_BLOCK=''

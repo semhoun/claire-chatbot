@@ -45,7 +45,7 @@ return [
         'einstein' => App\Brain\Einstein::class,
     ],
     'yamlBrains' => [
-        'path' => Settings::getAppRoot() . '/addons/agents',
+        'path' => Settings::getAddonsPath() . '/agents',
     ],
     'rawMimeTypes' => [
         'application/x-csh',

@@ -63,6 +63,11 @@ final readonly class Settings
         return env('DATA_PATH', self::getAppRoot() . '/var/data');
     }
 
+    public static function getAddonsPath(): string
+    {
+        return env('ADDONS_PATH', self::getAppRoot() . '/var/addons');
+    }
+
     private function hasSetting(mixed $settings, string $key): bool
     {
         return is_array($settings) && (isset($settings[$key]) || array_key_exists($key, $settings));

@@ -125,7 +125,8 @@ RUN mkdir -p \
 
 # DATA dir
 ENV DATA_PATH=/opt/data
-VOLUME ["/opt/data"]
+ENV ADDONS_PATH=/opt/addons
+VOLUME ["/opt/data", "/opt/addons"]
 WORKDIR "/opt/www"
 
 #Expose port
