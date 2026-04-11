@@ -7,14 +7,24 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-04-11
+
 ### Added
-- Support de la variable `{{USER}}` dans les instructions de tous les agents - remplacée par le nom d'affichage de l'utilisateur
+- Support de la variable `{{USER}}` dans les instructions de tous les agents, remplacée par le nom d'affichage de l'utilisateur
+- Documentation de l'authentification SSO OpenID Connect via `/auth/sso` et `/auth/callback`, avec fallback automatique sur un utilisateur de démonstration si OIDC n'est pas configuré
+- Documentation de l'association d'un compte utilisateur web avec Telegram via l'enregistrement d'un identifiant Telegram dans l'interface
+- Documentation des commandes Telegram `telegram:webhook` et `telegram:set-commands`, ainsi que du secret `TELEGRAM_WEBHOOK_SECRET`
 
 ### Changed
-- Déplacement du WORKINGDIR Docker de `/www` vers `/opt/www` pour plus de cohérence avec les conventions Linux
+- Validation du brain actif lors de la connexion pour éviter de conserver une sélection invalide
+- Initialisation des addons depuis `/opt/addons` lorsqu'ils ne sont pas encore présents
+- Mise à jour du README pour refléter la version 1.4.1, l'endpoint `/files/img_serve/{id}`, les types de fichiers acceptés et la persistance des workflows ComfyUI côté web/Telegram
 
 ### Fixed
 - Correction des retours à la ligne dans les messages
+- Suppression du retour automatique en bas de conversation pendant le streaming
+- Désactivation de l'affichage d'image pendant le streaming
+- Alignement de la documentation sur le comportement actuel du streaming SSE par onglet via `sessionId`
 - Nettoyage de code divers
 
 ## [1.4.0] - 2026-04-09
@@ -292,7 +302,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.0...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.1...HEAD
+[1.4.1]: https://github.com/semhoun/claire-chatbot/compare/1.4.0...1.4.1
 [1.4.0]: https://github.com/semhoun/claire-chatbot/compare/1.3.3...1.4.0
 [1.3.3]: https://github.com/semhoun/claire-chatbot/compare/1.3.2...1.3.3
 [1.3.2]: https://github.com/semhoun/claire-chatbot/compare/1.3.1...1.3.2

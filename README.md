@@ -52,9 +52,9 @@ docker run -d -p 8080:80 \
 - Ajout automatique de la date et l'heure courantes dans le contexte système des agents.
 - Memoire courte avec resume automatique pour contenir l'historique dans la fenetre de contexte.
 - Recherche web optionnelle via SearXNG et RAG fichier via embeddings OpenAI-like.
-- Génération d'images avec ComfyUI (optionnel).
+- Génération d'images avec ComfyUI (optionnel), avec sélection et persistance du workflow par utilisateur depuis le web et Telegram.
 - Support d'agents personnalisés via classes PHP et fichiers YAML.
-- Intégration Telegram avec filtrage des balises `[OC]`, prise en charge des photos et documents, meilleur rendu MarkdownV2 des listes, et mise en queue des updates via un worker CLI Redis.
+- Intégration Telegram avec filtrage des balises `[OC]`, prise en charge des photos et documents, meilleur rendu MarkdownV2 des listes, association facultative d'un compte utilisateur via identifiant Telegram, et mise en queue des updates via un worker CLI Redis.
 - Observabilite via OpenTelemetry pour traces, metriques et logs, y compris l'instrumentation interne des agents.
 - Historique de conversation avec separation entre messages LLM et messages affiches a l'utilisateur, y compris conservation du message d'ouverture dans l'affichage.
 
@@ -109,6 +109,13 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
 
 - Telegram (voir `config/settings/telegram.php`):
   - `TELEGRAM_BOT_TOKEN` — Token de votre bot Telegram (obtenu via @BotFather).
+  - `TELEGRAM_WEBHOOK_SECRET` — secret partagé optionnel/recommandé pour sécuriser les webhooks Telegram.
+
+- OpenID Connect / SSO (voir `config/settings/oidc.php`):
+  - `OPENID_WELLKNOWN_URL` — URL du document de découverte OpenID Connect.
+  - `OPENID_CLIENT_ID` — identifiant du client OIDC.
+  - `OPENID_CLIENT_SECRET` — secret du client OIDC.
+  - `OPENID_REDIRECT_URI_BASE` — URL publique racine de l'application; le callback effectif est `${OPENID_REDIRECT_URI_BASE}/auth/callback`.
 
 - Queue (voir `config/settings/queue.php` et `config/settings/redis.php`):
   - `REDIS_HOST` — hote Redis (defaut: `127.0.0.1`).
@@ -125,7 +132,8 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
   - `ACME_EMAIL` — email utilisé pour l'enregistrement ACME/Let's Encrypt (optionnel)
 
 - Stockage des fichiers et données:
-  - `DATA_PATH` — chemin racine pour les données persistantes (base de données SQLite, fichiers, cache; par défaut: `var/data`)
+  - `DATA_PATH` — chemin racine pour les données persistantes (base de données SQLite, fichiers utilisateur, artefacts stockés; par défaut: `var/data`). Ce répertoire est prévu pour les contenus générés et les données métier persistées, mais pas pour le cache applicatif.
+  - `ADDONS_PATH` — chemin racine des extensions métier chargeables à chaud (par défaut: `var/addons`). Il contient notamment `agents/` pour les cerveaux YAML et `comfyui/` pour les workflows ComfyUI personnalisés. Si `${ADDONS_PATH}/agents` n'existe pas, le contenu de `${ADDONS_PATH}` est initialisé avec les fichiers par défaut fournis par l'application.
   - `FILES_PATH` — chemin vers le répertoire de stockage des fichiers (par défaut: `var/filer`)
 
 - Observabilité (OpenTelemetry — requis):
@@ -135,7 +143,7 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
     - Générales
       - `OTEL_PHP_AUTOLOAD_ENABLED` — active l’auto‑instrumentation PHP (true/false).
       - `OTEL_SERVICE_NAME` — nom du service (utilisé par les 3 signaux).
-      - `OTEL_RESOURCE_ATTRIBUTES` — attributs ressource supplémentaires (ex: `deployment.environment=dev,service.version=1.4.0`).
+      - `OTEL_RESOURCE_ATTRIBUTES` — attributs ressource supplémentaires (ex: `deployment.environment=dev,service.version=1.4.1`).
       - `OTEL_PROPAGATORS` — propagateurs de contexte (ex: `baggage,tracecontext`).
     - Traces
       - `OTEL_TRACES_EXPORTER` — exporteur des traces (`otlp`, `none`).
@@ -170,7 +178,16 @@ L'application permet de sélectionner différents « cerveaux » (avatars) pour 
 
 #### Ajout de cerveaux personnalisés via YAML
 
-Vous pouvez créer vos propres agents sans écrire de code PHP en plaçant des fichiers YAML dans le répertoire `addons/agents/`. Chaque fichier définit un nouveau cerveau avec ses propres caractéristiques.
+Vous pouvez créer vos propres agents sans écrire de code PHP en plaçant des fichiers YAML dans le répertoire `addons/agents/`.
+
+Par défaut, ce chemin correspond à `${ADDONS_PATH}/agents`, avec `ADDONS_PATH=var/addons` si la variable n'est pas définie. Cela permet de séparer clairement:
+
+- `DATA_PATH` pour les données persistantes générées par l'application
+- `ADDONS_PATH` pour les ressources personnalisées fournies par l'exploitant
+
+Au premier démarrage, si `${ADDONS_PATH}/agents` n'existe pas encore, l'application initialise `${ADDONS_PATH}` avec les fichiers par défaut afin de fournir une base immédiatement exploitable.
+
+Chaque fichier définit un nouveau cerveau avec ses propres caractéristiques.
 
 **Structure d'un fichier YAML:**
 
@@ -309,6 +326,8 @@ export COMFYUI_DEFAULT_WORKFLOW=sdxl
 
 Vous pouvez définir plusieurs workflows ComfyUI, comme pour les agents YAML, en ajoutant un fichier `.yaml`, `.yml` ou `.json` dans `addons/comfyui/`.
 
+Par défaut, ce chemin correspond à `${ADDONS_PATH}/comfyui`, avec `ADDONS_PATH=var/addons` si la variable n'est pas définie.
+
 Chaque workflow doit définir:
 
 - `type` : type de prompt attendu (`sdxl`, `flux`, etc.)
@@ -351,12 +370,12 @@ Note: le workflow doit contenir un placeholder `{{PROMPT}}` qui sera remplacé p
 - Lorsqu'activé, l'outil `generate_image` est disponible pour tous les cerveaux
 - L'agent peut décider de générer une image en réponse à une demande utilisateur
 - Les images générées sont stockées dans `var/generated_images/`
-- Les images sont servies via l'endpoint `/files/generated/{filename}`
+- Les images sont servies via l'endpoint `/files/img_serve/{id}`
 - Le bot Telegram supporte l'envoi des images générées
 
 ### Authentification OpenID Connect (SSO)
 
-L’application prend en charge une authentification via SSO OpenID Connect, si les paramètres sont définis sinon elle utilise un utilisateur par défaut. La configuration est lue dans `config/settings/oidc.php` et repose sur les variables d’environnement suivantes:
+L’application utilise une authentification SSO OpenID Connect via les routes `GET /auth/sso` et `GET /auth/callback`. Si la configuration OIDC n'est pas renseignée, elle bascule automatiquement sur un utilisateur de démonstration par défaut. La configuration est lue dans `config/settings/oidc.php` et repose sur les variables d’environnement suivantes:
 
 - `OPENID_WELLKNOWN_URL` — URL du document de découverte OpenID Connect 1.0 (ex: `https://votre-idp/.well-known/openid-configuration`).
 - `OPENID_CLIENT_ID` — identifiant du client OIDC (côté fournisseur).
@@ -658,7 +677,7 @@ services:
   - Réponse 200 (exemple):
     ```json
     {
-      "version": "1.4.0",
+      "version": "1.4.1",
       "date": "2026-04-08T12:34:56+00:00"
     }
     ```
@@ -672,7 +691,14 @@ services:
 - `POST /files/upload` — Upload de fichier(s) standard
 - `POST /files/upload_rag` — Upload de fichier pour le RAG (vectorisation)
 - `DELETE /files/delete/{id}` — Suppression d'un fichier
-- `GET /files/generated/{filename}` — Récupération d'une image générée
+- `GET /files/img_serve/{id}` — Récupération d'une image générée
+- Types acceptés côté interface: images, PDF, DOC, DOCX, JSON, TXT et CSV
+
+Organisation recommandée:
+
+- `DATA_PATH` héberge les données d'exécution et de persistance, par exemple la base SQLite, les fichiers utilisateur et d'autres artefacts runtime persistés.
+- `ADDONS_PATH` héberge les éléments déclaratifs maintenus par l'utilisateur ou l'intégrateur, par exemple les agents YAML et les workflows ComfyUI.
+- Le cache applicatif reste dans `var/` au sein de l'application, indépendamment de `DATA_PATH`.
 
 ### Historique des conversations (/history)
 
@@ -702,7 +728,7 @@ Si vous placez l’application derrière un reverse proxy (Nginx, Traefik, Apach
 
 ### Architecture SSE (Server-Sent Events)
 
-**Note importante**: Depuis la version 1.4.0, l'interface web fonctionne **exclusivement en mode streaming** via SSE. Le mode chat classique (synchrone) a été supprimé.
+**Note importante**: Depuis la version 1.4.1, l'interface web fonctionne **exclusivement en mode streaming** via SSE. Le mode chat classique (synchrone) a été supprimé.
 
 L’interface web
 
@@ -843,6 +869,12 @@ Variable d'environnement (définie dans `.env` ou via Docker):
 | `TELEGRAM_BOT_TOKEN` | Oui | Token du bot fourni par @BotFather |
 | `TELEGRAM_WEBHOOK_SECRET` | Recommandé | Token secret pour sécuriser le webhook (générez une chaîne aléatoire de 32+ caractères) |
 
+Associer un compte web a Telegram:
+
+- Depuis l'interface web, ouvrez la configuration Telegram puis enregistrez votre identifiant numerique Telegram.
+- Cet identifiant permet au bot de reconnaitre et rattacher vos interactions Telegram a votre compte utilisateur.
+- Vous pouvez recuperer cet identifiant via `@userinfobot` ou `@myidbot`.
+
 #### Mode Webhook (recommandé pour la production)
 
 Le mode webhook permet à Telegram d'envoyer les mises à jour directement à votre serveur via HTTPS.
@@ -850,7 +882,7 @@ Le mode webhook permet à Telegram d'envoyer les mises à jour directement à vo
 **Configuration du webhook:**
 
 1. Définissez `TELEGRAM_WEBHOOK_SECRET` dans votre fichier `.env` (générez une chaîne aléatoire sécurisée)
-2. Configurez le webhook:
+2. Configurez le webhook puis publiez le menu des commandes du bot:
 
 ```bash
 # Option 1: Utiliser --domain (recommandé, HTTPS forcé)
@@ -864,6 +896,9 @@ Le mode webhook permet à Telegram d'envoyer les mises à jour directement à vo
 
 # Supprimer le webhook (revenir au mode polling manuel)
 ./console telegram:webhook --delete
+
+# Publier les commandes Telegram configurees dans le bot
+./console telegram:set-commands
 ```
 
 **Points d'entrée:**

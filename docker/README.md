@@ -88,7 +88,8 @@ Au demarrage, l'entrypoint:
 | `ENABLE_LETSENCRYPT` | `false` | Active HTTPS direct avec certificats Let's Encrypt |
 | `ACME_EMAIL` | vide | Email ACME pour l'emission des certificats |
 | `DEBUG_MODE` | `false` | Active le mode debug PHP |
-| `DATA_PATH` | `/data` | Repertoire racine des donnees persistantes |
+| `DATA_PATH` | `/data` | Repertoire racine des donnees persistantes generees par l'application (base SQLite, fichiers, artefacts runtime persistants) |
+| `ADDONS_PATH` | `/opt/www/var/addons` | Repertoire racine des ressources personnalisables fournies par l'utilisateur (agents YAML, workflows ComfyUI, etc.). Si `${ADDONS_PATH}/agents` est absent, le contenu de `${ADDONS_PATH}` est initialise avec les fichiers par defaut de l'image. |
 | `QUEUE_WORKERS` | `1` | Nombre de workers de queue Redis a lancer |
 
 ### LLM
@@ -121,6 +122,14 @@ En mode SQLite, la base est stockee dans `/data/database.sqlite`.
 | Variable | Defaut | Description |
 |----------|--------|-------------|
 | `FILES_PATH` | `${DATA_PATH}/filer` | Repertoire des fichiers uploades |
+
+Separation des repertoires:
+
+- `DATA_PATH` sert aux donnees persistantes produites par Claire pendant son execution.
+- `ADDONS_PATH` sert aux contenus declaratifs ajoutes par l'exploitant, sans modifier le code applicatif.
+- Les agents YAML sont recherches dans `${ADDONS_PATH}/agents`.
+- Les workflows ComfyUI sont recherches dans `${ADDONS_PATH}/comfyui`.
+- Si `${ADDONS_PATH}/agents` n'existe pas encore, l'image initialise `${ADDONS_PATH}` avec les fichiers par defaut fournis par l'application.
 
 ### OpenTelemetry
 
@@ -162,7 +171,7 @@ Si `OTEL_EXPORTER_OTLP_ENDPOINT` est defini, l'entrypoint ajoute un bloc de trac
 | `COMFYUI_TIMEOUT` | `300` | Timeout en secondes |
 | `COMFYUI_DEFAULT_WORKFLOW` | vide | Slug du workflow ComfyUI a utiliser par defaut |
 
-Les workflows ComfyUI doivent etre declares via des fichiers dans `addons/comfyui/`.
+Les workflows ComfyUI doivent etre declares via des fichiers dans `${ADDONS_PATH}/comfyui`.
 Si `COMFYUI_DEFAULT_WORKFLOW` correspond a un slug existant, il devient le workflow par defaut.
 Sinon, le premier workflow trouve devient le workflow par defaut.
 
@@ -264,10 +273,8 @@ docker exec -it claire bash
 
 | Chemin | Usage |
 |--------|-------|
-| `/data` | Base SQLite, fichiers uploades, cache applicatif persistant |
+| `/data` | Base SQLite, fichiers uploades et autres donnees persistantes |
 | `/data/filer` | Stockage des fichiers envoyes |
-| `/opt/www/var/cache` | Cache local de l'application |
-| `/opt/www/var/tmp` | Repertoire temporaire |
 
 ## Sante et exposition reseau
 
