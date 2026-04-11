@@ -135,7 +135,7 @@ final readonly class BrainController
         $stream->write($this->sseEventFormatter->keepalive());
 
         $this->chatStreamSubscriber->subscribe($sessionId, function (string $message) use ($sessionId, $stream): void {
-            if (connection_aborted()) {
+            if (connection_aborted() !== 0) {
                 return;
             }
 

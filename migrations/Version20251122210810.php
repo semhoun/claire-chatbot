@@ -5,20 +5,19 @@ declare(strict_types=1);
 namespace Migrations;
 
 use App\BaseMigration;
-use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Schema\Schema;
 
 final class Version20251122210810 extends BaseMigration
 {
     public function getDescription(): string
     {
-        return 'Create user table';
+        return 'Create account table';
     }
 
     public function up(Schema $schema): void
     {
         $platform = $this->connection->getDatabasePlatform();
-        $userTable = $this->quoteUserTable($platform);
+        $userTable = 'account';
 
         if ($this->isSqlitePlatform($platform)) {
             $this->addSql(
@@ -68,17 +67,6 @@ EOT
 
     public function down(Schema $schema): void
     {
-        $platform = $this->connection->getDatabasePlatform();
-
-        $this->addSql(sprintf('DROP TABLE %s', $this->quoteUserTable($platform)));
+        $this->addSql('DROP TABLE account');
     }
-
-    private function quoteUserTable(AbstractPlatform $platform): string
-    {
-        return match (true) {
-            $this->isMySqlPlatform($platform) => '`user`',
-            default => '"user"',
-        };
-    }
-
 }

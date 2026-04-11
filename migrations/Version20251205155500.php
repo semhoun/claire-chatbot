@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Migrations;
 
 use App\BaseMigration;
-use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Schema\Schema;
 
 /**
@@ -23,7 +22,7 @@ final class Version20251205155500 extends BaseMigration
     public function up(Schema $schema): void
     {
         $platform = $this->connection->getDatabasePlatform();
-        $userTable = $this->quoteUserTable($platform);
+        $userTable = 'account';
 
         if ($this->isSqlitePlatform($platform)) {
             $this->addSql(<<<SQL
@@ -88,13 +87,5 @@ SQL);
         }
 
         $this->addSql('DROP TABLE IF EXISTS "file"');
-    }
-
-    private function quoteUserTable(AbstractPlatform $platform): string
-    {
-        return match (true) {
-            $this->isMySqlPlatform($platform) => '`user`',
-            default => '"user"',
-        };
     }
 }

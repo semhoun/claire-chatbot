@@ -80,7 +80,7 @@ class Auth
             }
 
             $brain = $session->get('brain_avatar');
-            if ($brain === null || $brain === '' || !$this->brainRegistry->has($brain)) {
+            if ($brain === null || $brain === '' || ! $this->brainRegistry->has($brain)) {
                 $session->set('brain_avatar', $this->settings->get('session.defaultParams.brain_avatar'));
             }
         } catch (\Exception $exception) {

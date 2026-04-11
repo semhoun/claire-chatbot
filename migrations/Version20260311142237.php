@@ -5,20 +5,19 @@ declare(strict_types=1);
 namespace Migrations;
 
 use App\BaseMigration;
-use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Schema\Schema;
 
 final class Version20260311142237 extends BaseMigration
 {
     public function getDescription(): string
     {
-        return 'Add telegram_id column to user table with unique index';
+        return 'Add telegram_id column to account table with unique index';
     }
 
     public function up(Schema $schema): void
     {
         $platform = $this->connection->getDatabasePlatform();
-        $userTable = $this->quoteUserTable($platform);
+        $userTable = 'account';
 
         if ($this->isSqlitePlatform($platform)) {
             $this->addSql(sprintf('ALTER TABLE %s ADD COLUMN telegram_id TEXT', $userTable));
@@ -46,7 +45,7 @@ final class Version20260311142237 extends BaseMigration
     public function down(Schema $schema): void
     {
         $platform = $this->connection->getDatabasePlatform();
-        $userTable = $this->quoteUserTable($platform);
+        $userTable = 'account';
 
         if ($this->isSqlitePlatform($platform)) {
             return;
@@ -61,13 +60,5 @@ final class Version20260311142237 extends BaseMigration
 
         $this->addSql(sprintf('DROP INDEX uk_telegram_id ON %s', $userTable));
         $this->addSql(sprintf('ALTER TABLE %s DROP COLUMN telegram_id', $userTable));
-    }
-
-    private function quoteUserTable(AbstractPlatform $platform): string
-    {
-        return match (true) {
-            $this->isMySqlPlatform($platform) => '`user`',
-            default => '"user"',
-        };
     }
 }

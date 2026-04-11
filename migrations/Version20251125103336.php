@@ -5,20 +5,19 @@ declare(strict_types=1);
 namespace Migrations;
 
 use App\BaseMigration;
-use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Schema\Schema;
 
 final class Version20251125103336 extends BaseMigration
 {
     public function getDescription(): string
     {
-        return 'Create chat_history table with FK to user.id';
+        return 'Create chat_history table with FK to account.id';
     }
 
     public function up(Schema $schema): void
     {
         $platform = $this->connection->getDatabasePlatform();
-        $userTable = $this->quoteUserTable($platform);
+        $userTable = 'account';
 
         if ($this->isSqlitePlatform($platform)) {
             $this->addSql(
@@ -92,13 +91,5 @@ EOT
     public function down(Schema $schema): void
     {
         $this->addSql('DROP TABLE chat_history');
-    }
-
-    private function quoteUserTable(AbstractPlatform $platform): string
-    {
-        return match (true) {
-            $this->isMySqlPlatform($platform) => '`user`',
-            default => '"user"',
-        };
     }
 }

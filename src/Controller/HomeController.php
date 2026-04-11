@@ -55,8 +55,7 @@ final readonly class HomeController
         $chatId = $session->get('chatId');
         if ($chatId !== null && count($userChatHistory->getDisplayMessages()) > 1) {
             $userChatHistory->validateMessageSequences();
-        }
-        else {
+        } else {
             set_time_limit((int) $this->settings->get('llm.workflow.timeout'));
 
             // Nettoyage des conversations vides de l'utilisateur

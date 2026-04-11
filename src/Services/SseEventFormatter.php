@@ -82,8 +82,7 @@ final readonly class SseEventFormatter
         string $payload,
         ?string $eventId = null,
         ?string $eventName = null,
-    ): string
-    {
+    ): string {
         $frame = '';
         if ($eventId !== null && $eventId !== '') {
             $frame .= 'id: ' . $eventId . "\n";

@@ -84,7 +84,7 @@ final class Version20260403153531 extends BaseMigration
             $this->addSql('DROP INDEX IF EXISTS idx_thread_id');
             $this->addSql('DROP INDEX IF EXISTS idx_user_id');
             $this->addSql('DROP INDEX IF EXISTS uk_thread_id');
-            $this->addSql('CREATE TABLE chat_history_tmp (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, thread_id TEXT NOT NULL, messages TEXT NOT NULL, title TEXT, summary TEXT, created_at DATETIME DEFAULT (CURRENT_TIMESTAMP), updated_at DATETIME DEFAULT (CURRENT_TIMESTAMP), CONSTRAINT fk_chat_history_user FOREIGN KEY (user_id) REFERENCES "user"(id) ON DELETE CASCADE ON UPDATE NO ACTION)');
+            $this->addSql('CREATE TABLE chat_history_tmp (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, thread_id TEXT NOT NULL, messages TEXT NOT NULL, title TEXT, summary TEXT, created_at DATETIME DEFAULT (CURRENT_TIMESTAMP), updated_at DATETIME DEFAULT (CURRENT_TIMESTAMP), CONSTRAINT fk_chat_history_user FOREIGN KEY (user_id) REFERENCES account(id) ON DELETE CASCADE ON UPDATE NO ACTION)');
             $this->addSql('INSERT INTO chat_history_tmp (id, user_id, thread_id, messages, title, summary, created_at, updated_at) SELECT id, user_id, thread_id, messages, title, summary, created_at, updated_at FROM chat_history');
             $this->addSql('DROP TABLE chat_history');
             $this->addSql('ALTER TABLE chat_history_tmp RENAME TO chat_history');
