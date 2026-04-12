@@ -7,22 +7,18 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-04-12
+
+### Added
+- Fonction `App::Env()` pour remplacer l'ancien helper `env()` avec une approche plus robuste
+- Support de ZImage Turbo pour la génération d'images (workflow plus rapide et léger)
+
 ### Changed
 - **Queue**: Migration de l'architecture Sorted Set (ZRANGEBYSCORE) vers List (BRPOP/LPUSH) pour une exécution immédiate des jobs
 - **Queue**: Suppression du paramètre `availableAt` - tous les jobs sont exécutés dès que possible
 - **Queue**: Remplacement du polling PHP par un blocage Redis avec `BRPOP` (timeout configurable)
 - **Queue**: Option `--sleep` remplacée par `--timeout` dans `queue:work`
 - **Queue**: Le worker n'attend plus en PHP quand la queue est vide, mais bloque directement dans Redis
-
-### Removed
-- **RedisClient**: Suppression des méthodes inutilisées `eval()`, `zadd()`, `expire()`, `ping()`
-
-## [1.4.2] - 2026-04-12
-
-### Added
-- Fonction `App::Env()` pour remplacer l'ancien helper `env()` avec une approche plus robuste
-
-### Changed
 - Sauvegarde des sessions Telegram uniquement si des modifications ont été détectées (optimisation SQLite)
 - Nettoyage du code suite à l'analyse PHP Insights
 - Suppression des configurations de serveurs web alternatifs non utilisés
@@ -32,6 +28,10 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Correction des migrations pour assurer la compatibilité avec PostgreSQL (renommage de la table `user` en `account`)
 - Correction du rafraîchissement forcé de l'entité de session Telegram, particulièrement utile pour SQLite
 - Correction des migrations pour éviter les conflits de noms de tables réservés
+
+### Removed
+- **RedisClient**: Suppression des méthodes inutilisées `eval()`, `zadd()`, `expire()`, `ping()`
+- **ComfyUI**: Suppression du support SDXL et de la génération de mots-clés (remplacé par ZImage Turbo)
 
 ## [1.4.1] - 2026-04-11
 
