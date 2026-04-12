@@ -7,6 +7,22 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-04-12
+
+### Added
+- Fonction `App::Env()` pour remplacer l'ancien helper `env()` avec une approche plus robuste
+
+### Changed
+- Sauvegarde des sessions Telegram uniquement si des modifications ont été détectées (optimisation SQLite)
+- Nettoyage du code suite à l'analyse PHP Insights
+- Suppression des configurations de serveurs web alternatifs non utilisés
+- Mise à jour des tests unitaires
+
+### Fixed
+- Correction des migrations pour assurer la compatibilité avec PostgreSQL (renommage de la table `user` en `account`)
+- Correction du rafraîchissement forcé de l'entité de session Telegram, particulièrement utile pour SQLite
+- Correction des migrations pour éviter les conflits de noms de tables réservés
+
 ## [1.4.1] - 2026-04-11
 
 ### Added
@@ -302,7 +318,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.1...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.2...HEAD
+[1.4.2]: https://github.com/semhoun/claire-chatbot/compare/1.4.1...1.4.2
 [1.4.1]: https://github.com/semhoun/claire-chatbot/compare/1.4.0...1.4.1
 [1.4.0]: https://github.com/semhoun/claire-chatbot/compare/1.3.3...1.4.0
 [1.3.3]: https://github.com/semhoun/claire-chatbot/compare/1.3.2...1.3.3

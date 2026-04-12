@@ -6,10 +6,8 @@ namespace App\Brain\ChatHistory;
 
 use App\Services\Auth;
 use App\Services\Session\SessionInterface;
-use NeuronAI\Chat\Enums\MessageRole;
 use NeuronAI\Chat\History\AbstractChatHistory;
 use NeuronAI\Chat\Messages\Message;
-use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
 use PDO;
@@ -69,6 +67,7 @@ class UserChatHistory extends AbstractChatHistory
         $this->load();
     }
 
+    /** @param array<Message> $messages */
     public function replaceMessages(array $messages): void
     {
         $this->setMessages($messages);
@@ -82,6 +81,7 @@ class UserChatHistory extends AbstractChatHistory
         $this->setDisplayMessages($messages);
     }
 
+    /** @return array<Message> */
     public function getDisplayMessages(): array
     {
         return $this->displayHistory;
@@ -111,52 +111,15 @@ class UserChatHistory extends AbstractChatHistory
         return $lastUserMessage->getContent();
     }
 
+    /** @return array<int, array<string, mixed>> */
     public function getFormattedMessages(): array
     {
         if ($this->displayHistory === []) {
             return [];
         }
 
-        $data = [];
-        $toolCallId = null;
-        $toolText = null;
-        foreach ($this->displayHistory as $message) {
-            if ($message instanceof ToolCallMessage) {
-                $toolCallId = uniqid('tool-', true);
-            } elseif ($message instanceof ToolResultMessage) {
-                $toolText = '<span class="tools-done-flag" style="display:none"></span>' . "\n";
-                $tools = $message->getTools();
-                foreach ($tools as $tool) {
-                    $toolText .= "Utilisation de l'outil : " . $tool->getName() . "<br>\n";
-                    $toolText .= "Paramètres : <br>\n";
-                    $toolText .= "<ul>\n";
-                    foreach ($tool->getInputs() as $name => $value) {
-                        $toolText .= '<li>' . $name . ' : ' . $value . "</li>\n";
-                    }
-
-                    $toolText .= "</ul>\n";
-                    $toolText .= "Réponse : <br>\n";
-                    if ($tool->getResult() !== '' && $tool->getResult() !== '0') {
-                        $toolText .= '<pre class="toolcall__result">' . $tool->getResult() . "</pre>\n";
-                    }
-                }
-            } else {
-                $content = $message->getContent();
-                $timestamp = $message->getMetadata('timestamp');
-
-                $data[] = [
-                    'message' => $content ?? '',
-                    'time' => $timestamp ?? '',
-                    'sent' => $message->getRole() === 'user',
-                    'toolCallId' => $toolCallId,
-                    'toolText' => $toolText,
-                ];
-                $toolCallId = null;
-                $toolText = null;
-            }
-        }
-
-        return $data;
+        $messageFormatter = new MessageFormatter();
+        return $messageFormatter->format($this->displayHistory);
     }
 
     public function validateMessageSequences(): void
@@ -241,6 +204,7 @@ class UserChatHistory extends AbstractChatHistory
     }
 
     #[\Override]
+    /** @param array<Message> $messages */
     protected function setMessages(array $messages): void
     {
         $this->history = $messages;
@@ -298,61 +262,8 @@ class UserChatHistory extends AbstractChatHistory
             return [];
         }
 
-        $fixed = [];
-        $expectingUser = true;
-        $lastToolCallIndex = null;
-
-        foreach ($messages as $message) {
-            // Handle ToolResultMessage - must follow ToolCallMessage
-            if ($message instanceof ToolResultMessage) {
-                if ($lastToolCallIndex === null) {
-                    // ToolResult without ToolCall - skip
-                    continue;
-                }
-
-                $fixed[] = $message;
-                $lastToolCallIndex = null;
-                $expectingUser = false;
-
-                continue;
-            }
-
-            // Handle ToolCallMessage - assistant message that expects tool result
-            if ($message instanceof ToolCallMessage) {
-                if (! $expectingUser) {
-                    $fixed[] = $message;
-                    $lastToolCallIndex = array_key_last($fixed);
-                    $expectingUser = true;
-                }
-
-                continue;
-            }
-
-            // Regular messages - check alternation
-            $role = $message->getRole();
-            if ($role === MessageRole::USER->value && $expectingUser) {
-                $fixed[] = $message;
-                $expectingUser = false;
-            } elseif ($role === MessageRole::ASSISTANT->value && ! $expectingUser) {
-                $fixed[] = $message;
-                $expectingUser = true;
-                $lastToolCallIndex = null;
-            }
-        }
-
-        // Remove orphaned ToolCallMessage (without corresponding ToolResultMessage)
-        if ($lastToolCallIndex !== null) {
-            array_splice($fixed, $lastToolCallIndex, 1);
-            while ($fixed !== [] && $fixed[array_key_last($fixed)] instanceof UserMessage) {
-                array_pop($fixed);
-            }
-        }
-
-        while ($fixed !== [] && $fixed[array_key_last($fixed)] instanceof UserMessage) {
-            array_pop($fixed);
-        }
-
-        return $fixed;
+        $messageSequenceFixer = new MessageSequenceFixer();
+        return $messageSequenceFixer->fix($messages);
     }
 
     /**
@@ -374,11 +285,13 @@ class UserChatHistory extends AbstractChatHistory
     private function persistHistories(): void
     {
         $stmt = $this->pdo->prepare(
-            'UPDATE ' . self::TABLE . ' SET '
-            . self::LLM_MESSAGES_COLUMN . ' = :llm_messages, '
-            . self::DISPLAY_MESSAGES_COLUMN . ' = :display_messages, '
-            . self::DISPLAY_MESSAGES_COUNT_COLUMN . ' = :display_messages_count '
-            . 'WHERE thread_id = :thread_id'
+            sprintf(
+                'UPDATE %s SET %s = :llm_messages, %s = :display_messages, %s = :display_messages_count WHERE thread_id = :thread_id',
+                self::TABLE,
+                self::LLM_MESSAGES_COLUMN,
+                self::DISPLAY_MESSAGES_COLUMN,
+                self::DISPLAY_MESSAGES_COUNT_COLUMN
+            )
         );
         $stmt->execute([
             'thread_id' => $this->thread_id,

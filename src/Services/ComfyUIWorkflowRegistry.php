@@ -48,6 +48,7 @@ final class ComfyUIWorkflowRegistry
         return isset($this->loadWorkflows()[$slug]);
     }
 
+    /** @return array{type:string, label:string, workflow:string} */
     public function getMeta(string $slug): array
     {
         if (! $this->has($slug)) {
@@ -95,59 +96,85 @@ final class ComfyUIWorkflowRegistry
         }
 
         $this->cache = [];
+        $files = $this->findWorkflowFiles();
+
+        foreach ($files as $file) {
+            $workflow = $this->loadWorkflowFile($file);
+            if ($workflow !== null) {
+                $slug = pathinfo($file, PATHINFO_FILENAME);
+                $this->cache[$slug] = $workflow;
+            }
+        }
+
+        return $this->cache;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function findWorkflowFiles(): array
+    {
         $path = (string) $this->settings->get('comfyui.workflows_path');
 
         if (! is_dir($path)) {
-            return $this->cache;
+            return [];
         }
 
         $files = glob($path . '/*.{yaml,yml,json}', GLOB_BRACE);
         if ($files === false) {
-            return $this->cache;
+            return [];
         }
 
         sort($files);
 
-        foreach ($files as $file) {
-            $slug = pathinfo($file, PATHINFO_FILENAME);
+        return $files;
+    }
 
-            try {
-                $data = $this->parseFile($file);
-            } catch (\Throwable) {
-                continue;
-            }
-
-            $type = trim((string) ($data['type'] ?? ''));
-            $label = trim((string) ($data['label'] ?? ''));
-            $workflow = $data['workflow'] ?? null;
-            if ($type === '') {
-                continue;
-            }
-
-            if ($label === '') {
-                continue;
-            }
-
-            if (is_array($workflow)) {
-                $workflow = json_encode($workflow, JSON_THROW_ON_ERROR);
-            }
-
-            if (! is_string($workflow)) {
-                continue;
-            }
-
-            if (trim($workflow) === '') {
-                continue;
-            }
-
-            $this->cache[$slug] = [
-                'type' => $type,
-                'label' => $label,
-                'workflow' => $workflow,
-            ];
+    /**
+     * @return array{type:string, label:string, workflow:string}|null
+     */
+    private function loadWorkflowFile(string $file): ?array
+    {
+        try {
+            $data = $this->parseFile($file);
+        } catch (\Throwable) {
+            return null;
         }
 
-        return $this->cache;
+        $type = trim((string) ($data['type'] ?? ''));
+        $label = trim((string) ($data['label'] ?? ''));
+
+        if ($type === '' || $label === '') {
+            return null;
+        }
+
+        $workflow = $this->normalizeWorkflow($data['workflow'] ?? null);
+        if ($workflow === null) {
+            return null;
+        }
+
+        return [
+            'type' => $type,
+            'label' => $label,
+            'workflow' => $workflow,
+        ];
+    }
+
+    private function normalizeWorkflow(mixed $workflow): ?string
+    {
+        if (is_array($workflow)) {
+            try {
+                $workflow = json_encode($workflow, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                return null;
+            }
+        }
+
+        if (! is_string($workflow) || trim($workflow) === '') {
+            return null;
+        }
+
+        return $workflow;
     }
 
     /**

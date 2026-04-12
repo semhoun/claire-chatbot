@@ -46,11 +46,11 @@ final class Env
 
         try {
             self::$dotenv?->required((array) $keys);
-        } catch (ValidationException $exception) {
+        } catch (ValidationException $validationException) {
             throw new RuntimeException(
-                $exception->getMessage(),
-                (int) $exception->getCode(),
-                $exception
+                $validationException->getMessage(),
+                (int) $validationException->getCode(),
+                $validationException
             );
         }
     }

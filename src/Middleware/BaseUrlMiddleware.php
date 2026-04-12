@@ -57,17 +57,30 @@ final readonly class BaseUrlMiddleware implements MiddlewareInterface
     public function getBaseUrl(ServerRequestInterface $serverRequest): string
     {
         $uri = $serverRequest->getUri();
-        $scheme = $uri->getScheme();
-        $authority = $uri->getAuthority();
+
+        return $this->buildSchemePart($uri->getScheme())
+            . $this->buildAuthorityPart($uri->getAuthority())
+            . $this->buildBasePath($uri->getAuthority());
+    }
+
+    private function buildSchemePart(string $scheme): string
+    {
+        return $scheme !== '' ? $scheme . ':' : '';
+    }
+
+    private function buildAuthorityPart(string $authority): string
+    {
+        return $authority !== '' && $authority !== '0' ? '//' . $authority : '';
+    }
+
+    private function buildBasePath(string $authority): string
+    {
         $basePath = $this->basePath;
 
         if ($authority !== '' && ! str_starts_with($basePath, '/')) {
             $basePath = '/' . $basePath;
         }
 
-        $schemePart = ($scheme !== '' ? $scheme . ':' : '');
-        $authorityPart = $authority !== '' && $authority !== '0' ? '//' . $authority : '';
-
-        return $schemePart . $authorityPart . rtrim($basePath, '/');
+        return rtrim($basePath, '/');
     }
 }

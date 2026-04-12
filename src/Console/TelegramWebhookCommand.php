@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console;
 
 use App\Services\Settings;
+use DateTimeImmutable;
 use InvalidArgumentException;
 use Phptg\BotApi\TelegramBotApi;
 use Psr\Log\LoggerInterface as Logger;
@@ -55,82 +56,127 @@ final class TelegramWebhookCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         try {
-            if ($input->getOption('info')) {
-                return $this->getWebhookInfo($output);
-            }
-
-            if ($input->getOption('delete')) {
-                return $this->deleteWebhook($output);
-            }
-
-            $urlOption = $input->getOption('url');
-            $domainOption = $input->getOption('domain');
-
-            if ((is_string($urlOption) && $urlOption !== '') && (is_string($domainOption) && $domainOption !== '')) {
-                throw new InvalidArgumentException(
-                    'Cannot use both --url and --domain options. Please use only one.'
-                );
-            }
-
-            if (is_string($urlOption) && $urlOption !== '') {
-                $url = $urlOption;
-            } elseif (is_string($domainOption) && $domainOption !== '') {
-                $url = $this->buildWebhookUrl($domainOption);
-            } else {
-                throw new InvalidArgumentException(
-                    "No webhook URL or domain provided.\n\n" .
-                    "Usage examples:\n" .
-                    "  ./console telegram:webhook --domain=example.com\n" .
-                    "  ./console telegram:webhook --url=https://example.com/webhook/telegram\n" .
-                    "  ./console telegram:webhook --info\n" .
-                    "  ./console telegram:webhook --delete\n\n" .
-                    "Options:\n" .
-                    "  --domain    Domain name only (HTTPS will be used, path auto-generated)\n" .
-                    "  --url       Full webhook URL (for custom paths or protocols)\n" .
-                    "  --info      Show current webhook status\n" .
-                    '  --delete    Remove the webhook'
-                );
-            }
-
-            return $this->setWebhook($url, $output);
+            return $this->dispatchCommand($input, $output);
         } catch (InvalidArgumentException $e) {
             $output->writeln('<error>' . $e->getMessage() . '</error>');
             return Command::INVALID;
         } catch (\Throwable $e) {
-            $this->logger->error('Telegram webhook command failed: ' . $e->getMessage(), [
-                'exception' => $e,
-            ]);
+            $this->logger->error('Telegram webhook command failed: ' . $e->getMessage(), ['exception' => $e]);
             $output->writeln('<error>Failed to configure webhook: ' . $e->getMessage() . '</error>');
             return Command::FAILURE;
         }
     }
 
+    private function dispatchCommand(InputInterface $input, OutputInterface $output): int
+    {
+        if ($input->getOption('info')) {
+            return $this->getWebhookInfo($output);
+        }
+
+        if ($input->getOption('delete')) {
+            return $this->deleteWebhook($output);
+        }
+
+        return $this->configureWebhook($input, $output);
+    }
+
+    private function configureWebhook(InputInterface $input, OutputInterface $output): int
+    {
+        $url = $this->resolveWebhookUrl($input);
+
+        return $this->setWebhook($url, $output);
+    }
+
+    private function resolveWebhookUrl(InputInterface $input): string
+    {
+        $urlOption = $input->getOption('url');
+        $domainOption = $input->getOption('domain');
+
+        return $this->doResolveWebhookUrl($urlOption, $domainOption);
+    }
+
+    private function doResolveWebhookUrl(mixed $urlOption, mixed $domainOption): string
+    {
+        if ($this->isOptionSet($urlOption) && $this->isOptionSet($domainOption)) {
+            throw new InvalidArgumentException('Cannot use both --url and --domain options. Please use only one.');
+        }
+
+        if ($this->isOptionSet($urlOption)) {
+            return (string) $urlOption;
+        }
+
+        if ($this->isOptionSet($domainOption)) {
+            return $this->buildWebhookUrl((string) $domainOption);
+        }
+
+        throw new InvalidArgumentException($this->getUsageHelp());
+    }
+
+    private function isOptionSet(mixed $option): bool
+    {
+        return is_string($option) && $option !== '';
+    }
+
+    private function getUsageHelp(): string
+    {
+        return <<<'TEXT'
+No webhook URL or domain provided.
+
+Usage examples:
+  ./console telegram:webhook --domain=example.com
+  ./console telegram:webhook --url=https://example.com/webhook/telegram
+  ./console telegram:webhook --info
+  ./console telegram:webhook --delete
+
+Options:
+  --domain    Domain name only (HTTPS will be used, path auto-generated)
+  --url       Full webhook URL (for custom paths or protocols)
+  --info      Show current webhook status
+  --delete    Remove the webhook
+TEXT;
+    }
+
     private function getWebhookInfo(OutputInterface $output): int
     {
-        $webhookInfo = $this->telegramBotApi->getWebhookInfo();
+        $info = $this->telegramBotApi->getWebhookInfo();
 
         $output->writeln('<info>Current Webhook Info:</info>');
-        $output->writeln('  URL: ' . ($webhookInfo->url !== null && $webhookInfo->url !== '' ? $webhookInfo->url : '(not set)'));
-        $output->writeln('  Has Custom Certificate: ' . ($webhookInfo->hasCustomCertificate ? 'Yes' : 'No'));
-        $output->writeln('  Pending Update Count: ' . $webhookInfo->pendingUpdateCount);
-
-        if ($webhookInfo->lastErrorDate !== null) {
-            $output->writeln('  Last Error Date: ' . date('Y-m-d H:i:s', $webhookInfo->lastErrorDate));
-        }
-
-        if ($webhookInfo->lastErrorMessage !== null && $webhookInfo->lastErrorMessage !== '') {
-            $output->writeln('  Last Error Message: ' . $webhookInfo->lastErrorMessage);
-        }
-
-        if ($webhookInfo->maxConnections !== null) {
-            $output->writeln('  Max Connections: ' . $webhookInfo->maxConnections);
-        }
-
-        if ($webhookInfo->ipAddress !== null && $webhookInfo->ipAddress !== '') {
-            $output->writeln('  IP Address: ' . $webhookInfo->ipAddress);
-        }
+        $this->writeBasicInfo($output, $info);
+        $this->writeErrorInfo($output, $info);
+        $this->writeOptionalInfo($output, $info);
 
         return Command::SUCCESS;
+    }
+
+    private function writeBasicInfo(OutputInterface $output, mixed $info): void
+    {
+        $url = $info->url !== null && $info->url !== '' ? $info->url : '(not set)';
+        $output->writeln('  URL: ' . $url);
+        $output->writeln('  Has Custom Certificate: ' . ($info->hasCustomCertificate ? 'Yes' : 'No'));
+        $output->writeln('  Pending Update Count: ' . $info->pendingUpdateCount);
+    }
+
+    private function writeErrorInfo(OutputInterface $output, mixed $info): void
+    {
+        if ($info->lastErrorDate !== null) {
+            $date = DateTimeImmutable::createFromFormat('U', (string) $info->lastErrorDate)->format('Y-m-d H:i:s');
+            $output->writeln('  Last Error Date: ' . $date);
+        }
+
+        if ($info->lastErrorMessage !== null && $info->lastErrorMessage !== '') {
+            $output->writeln('  Last Error Message: ' . $info->lastErrorMessage);
+        }
+    }
+
+    private function writeOptionalInfo(OutputInterface $output, mixed $info): void
+    {
+        if ($info->maxConnections !== null) {
+            $output->writeln('  Max Connections: ' . $info->maxConnections);
+        }
+
+        if ($info->ipAddress !== null && $info->ipAddress !== '') {
+            $output->writeln('  IP Address: ' . $info->ipAddress);
+        }
     }
 
     private function deleteWebhook(OutputInterface $output): int

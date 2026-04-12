@@ -18,6 +18,9 @@ final readonly class RedisQueueBackend implements QueueBackendInterface
     ) {
     }
 
+    /**
+     * @param array<string, mixed> $payload
+     */
     public function dispatch(
         string $jobClass,
         array $payload = [],
@@ -117,7 +120,7 @@ LUA;
             throw new RuntimeException(sprintf('Redis queue job "%s" not found', $jobId));
         }
 
-        return array_map(static fn (mixed $value): string => (string) $value, $jobData);
+        return array_map(static fn (mixed $value): string => $value, $jobData);
     }
 
     private function normalizeQueueName(string $queueName): string

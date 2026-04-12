@@ -54,6 +54,7 @@ EOT
     }
 
     #[\Override]
+    /** @return array<int, ToolProperty> */
     protected function properties(): array
     {
         return [

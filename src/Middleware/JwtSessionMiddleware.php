@@ -50,6 +50,7 @@ final class JwtSessionMiddleware implements MiddlewareInterface
      */
     private array $tokenClaims = [];
 
+    /** @var array<string, mixed>|null */
     private ?array $originalSessionData = null;
 
     public function __construct(

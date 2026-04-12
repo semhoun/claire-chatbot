@@ -11,6 +11,7 @@ use NeuronAI\Chat\Messages\ContentBlocks\TextContent;
 class SummaryChatHistory extends UserChatHistory
 {
     #[\Override]
+    /** @param array<Message> $messages */
     protected function setMessages(array $messages): void
     {
     }
@@ -23,48 +24,57 @@ class SummaryChatHistory extends UserChatHistory
     #[\Override]
     protected function deserializeContent(mixed $content): string|ContentBlockInterface|array|null
     {
-        if ($content === null) {
+        return match (true) {
+            $content === null => null,
+            is_string($content) => $this->deserializeStringContent($content),
+            is_array($content) => $this->deserializeArrayContent($content),
+            default => new TextContent((string) $content),
+        };
+    }
+
+    private function deserializeStringContent(string $content): TextContent
+    {
+        $json = json_decode($content, true);
+        if ($json !== null && $json !== false) {
+            return $this->deserializeContent($json);
+        }
+
+        return new TextContent($content);
+    }
+
+    /**
+     * @param array<mixed> $content
+     */
+    private function deserializeArrayContent(array $content): array|null
+    {
+        if ($content === []) {
             return null;
         }
 
-        // Legacy format: simple string - convert to TextContent for migration
-        if (is_string($content)) {
-            $json = json_decode($content, true);
-            if ($json !== null && $json !== false) {
-                return $this->deserializeContent($json);
+        $textBlocks = $this->extractTextBlocks($content);
+
+        return $textBlocks === [] ? null : $textBlocks;
+    }
+
+    /**
+     * @param array<mixed> $content
+     *
+     * @return array<int, TextContent>
+     */
+    private function extractTextBlocks(array $content): array
+    {
+        $blocks = [];
+
+        foreach ($content as $block) {
+            if (! isset($block['type'])) {
+                return [];
             }
 
-            return new TextContent($content);
+            if (ContentBlockType::from($block['type']) === ContentBlockType::TEXT) {
+                $blocks[] = new TextContent(content: $block['content']);
+            }
         }
 
-        // New format: array of content blocks
-        if (is_array($content)) {
-            // Empty array
-            if ($content === []) {
-                return null;
-            }
-
-            $data = [];
-            foreach ($content as $block) {
-                if (! isset($block['type'])) {
-                    return null;
-                }
-
-                if (ContentBlockType::from($block['type']) !== ContentBlockType::TEXT) {
-                    continue;
-                }
-
-                $data[] = new TextContent(content: $block['content']);
-            }
-
-            if ($data === []) {
-                return null;
-            }
-
-            return $data;
-        }
-
-        // Fallback: treat as string and convert to TextContent
-        return new TextContent((string) $content);
+        return $blocks;
     }
 }

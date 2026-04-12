@@ -6,7 +6,6 @@ namespace App\Brain;
 
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
-use NeuronAI\Agent\Agent;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Yaml\Yaml;
 
@@ -157,25 +156,50 @@ final class BrainRegistry
         }
 
         $this->yamlBrainsCache = [];
-
-        if (! is_dir($this->settings->get('llm.yamlBrains.path'))) {
-            return $this->yamlBrainsCache;
-        }
-
-        $files = glob($this->settings->get('llm.yamlBrains.path'). '/*.yaml');
-        if ($files === false) {
-            return $this->yamlBrainsCache;
-        }
+        $files = $this->findYamlBrainFiles();
 
         foreach ($files as $file) {
-            try {
-                $data = Yaml::parseFile($file);
-                if (! is_array($data)) {
-                    continue;
-                }
+            $brain = $this->parseBrainFile($file);
+            if ($brain !== null) {
+                $this->yamlBrainsCache[$brain['slug']] = $brain['data'];
+            }
+        }
 
-                $slug = basename($file, '.yaml');
-                $this->yamlBrainsCache[$slug] = [
+        return $this->yamlBrainsCache;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function findYamlBrainFiles(): array
+    {
+        $path = $this->settings->get('llm.yamlBrains.path');
+
+        if (! is_dir($path)) {
+            return [];
+        }
+
+        $files = glob($path . '/*.yaml');
+
+        return $files !== false ? $files : [];
+    }
+
+    /**
+     * @return array{slug:string, data:array<string, mixed>}|null
+     */
+    private function parseBrainFile(string $file): ?array
+    {
+        try {
+            $data = Yaml::parseFile($file);
+            if (! is_array($data)) {
+                return null;
+            }
+
+            $slug = basename($file, '.yaml');
+
+            return [
+                'slug' => $slug,
+                'data' => [
                     'name' => (string) ($data['name'] ?? $slug),
                     'description' => (string) ($data['description'] ?? ''),
                     'avatar' => (string) ($data['avatar'] ?? ''),
@@ -183,12 +207,10 @@ final class BrainRegistry
                     'css_inline' => (string) ($data['css_inline'] ?? ''),
                     'welcomes' => (array) ($data['welcomes'] ?? []),
                     'instruction' => (string) ($data['instruction'] ?? ''),
-                ];
-            } catch (\Throwable) {
-                continue;
-            }
+                ],
+            ];
+        } catch (\Throwable) {
+            return null;
         }
-
-        return $this->yamlBrainsCache;
     }
 }

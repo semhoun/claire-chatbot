@@ -82,6 +82,7 @@ class TelegramService implements QueueDoer
         return $container->get(self::class);
     }
 
+    /** @param array<string, mixed> $payload */
     public function handle(array $payload): void
     {
         $updateJson = (string) ($payload['update_json'] ?? '');
@@ -100,37 +101,7 @@ class TelegramService implements QueueDoer
             return;
         }
 
-        $entityRepository = $this->entityManager->getRepository(User::class);
-        $entityRepository->findByTelegramId($telegramUserId);
-
-        if ($message->photo !== null && $message->photo !== []) {
-            $this->handlePhoto($telegramChatId, $message);
-            return;
-        }
-
-        if ($message->document instanceof \Phptg\BotApi\Type\Document) {
-            $this->handleDocument($telegramChatId, $message);
-            return;
-        }
-
-        $text = $message->text;
-        if ($text === null) {
-            $this->sendMessage($telegramChatId, 'Je ne peux traiter que du texte, des photos et des documents.');
-            return;
-        }
-
-        if (str_starts_with($text, '/')) {
-            $handled = $this->handleCommand($telegramChatId, $text);
-            if (! $handled) {
-                $this->sendMessage($telegramChatId, '⚠ Commande inconnue');
-            }
-
-            $this->telegramSession->flush();
-            return;
-        }
-
-        $this->processChatMessage($telegramChatId, $text);
-
+        $this->processMessageByType($telegramChatId, $message);
         $this->telegramSession->flush();
     }
 
@@ -208,58 +179,133 @@ class TelegramService implements QueueDoer
         }
     }
 
-    private function manageSession(string $telegramUserId, bool $renew = false): bool
+    private function processMessageByType(int $telegramChatId, Message $message): void
     {
-        // Initialize session for this Telegram user
-        $this->telegramSession->load($telegramUserId);
-        if ($renew || $this->telegramSession->get(Auth::AUTHENTICATED, false) !== true) {
-            $user = $this->entityManager->getRepository(User::class)->findByTelegramId($telegramUserId);
-            if ($user === null) {
-                return false;
-            }
-
-            $this->telegramSession->set(Auth::USERID, $user->getId());
-            $this->telegramSession->set('telegram_id', $telegramUserId);
-            $this->telegramSession->set(Auth::AUTHENTICATED, true);
-            $this->telegramSession->set(Auth::USERINFO, [
-                'firstName' => $user->getFirstName(),
-                'lastName' => $user->getLastName(),
-                'email' => $user->getEmail(),
-                'displayName' => trim($user->getFirstName() . ' ' . $user->getLastName()),
-            ]);
-
-            foreach ($user->getParams() ?? [] as $key => $value) {
-                // Si le paramète a déjà été sété pour la session on ne le surcharge pas
-                if ($this->telegramSession->get($key) === null) {
-                    $this->telegramSession->set($key, $value);
-                }
-            }
-
-            // Récupération des paramètres par défaut, même si certains ne sont utiles que pour l'ihm
-            foreach ($this->settings->get('session.defaultParams') as $key => $value) {
-                if (! $this->telegramSession->has($key)) {
-                    $this->telegramSession->set($key, $value);
-                }
-            }
-
-            if ($this->settings->get('comfyui.enabled') === true) {
-                $workflow = (string) $this->telegramSession->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
-                if ($workflow === '' || ! $this->comfyUIWorkflowRegistry->has($workflow)) {
-                    $defaultWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug();
-                    if ($defaultWorkflow !== null) {
-                        $this->telegramSession->set(ComfyUIWorkflowRegistry::SESSION_KEY, $defaultWorkflow);
-                    }
-                }
-            }
-
-            $chatId = $this->telegramSession->get('chatId');
-            if ($renew || ! $chatId) {
-                $chatId = uniqid(UserChatHistory::CHAT_TELEGRAM, true);
-                $this->telegramSession->set('chatId', $chatId);
-            }
+        if ($this->hasPhoto($message)) {
+            $this->handlePhoto($telegramChatId, $message);
+            return;
         }
 
+        if ($this->hasDocument($message)) {
+            $this->handleDocument($telegramChatId, $message);
+            return;
+        }
+
+        $text = $message->text;
+        if ($text === null) {
+            $this->sendMessage($telegramChatId, 'Je ne peux traiter que du texte, des photos et des documents.');
+            return;
+        }
+
+        $this->processTextMessage($telegramChatId, $text);
+    }
+
+    private function hasPhoto(Message $message): bool
+    {
+        return $message->photo !== null && $message->photo !== [];
+    }
+
+    private function hasDocument(Message $message): bool
+    {
+        return $message->document instanceof \Phptg\BotApi\Type\Document;
+    }
+
+    private function processTextMessage(int $telegramChatId, string $text): void
+    {
+        if (! str_starts_with($text, '/')) {
+            $this->processChatMessage($telegramChatId, $text);
+            return;
+        }
+
+        $handled = $this->handleCommand($telegramChatId, $text);
+        if (! $handled) {
+            $this->sendMessage($telegramChatId, '⚠ Commande inconnue');
+        }
+    }
+
+    private function manageSession(string $telegramUserId, bool $renew = false): bool
+    {
+        $this->telegramSession->load($telegramUserId);
+
+        if (! $renew && $this->telegramSession->get(Auth::AUTHENTICATED, false) === true) {
+            return true;
+        }
+
+        return $this->initializeSession($telegramUserId, $renew);
+    }
+
+    private function initializeSession(string $telegramUserId, bool $renew): bool
+    {
+        $user = $this->entityManager->getRepository(User::class)->findByTelegramId($telegramUserId);
+        if ($user === null) {
+            return false;
+        }
+
+        $this->setUserSessionData($telegramUserId, $user);
+        $this->setUserParams($user);
+        $this->setDefaultSessionParams();
+        $this->initializeComfyUIWorkflow();
+        $this->initializeChatId($renew);
+
         return true;
+    }
+
+    private function setUserSessionData(string $telegramUserId, User $user): void
+    {
+        $this->telegramSession->set(Auth::USERID, $user->getId());
+        $this->telegramSession->set('telegram_id', $telegramUserId);
+        $this->telegramSession->set(Auth::AUTHENTICATED, true);
+        $this->telegramSession->set(Auth::USERINFO, [
+            'firstName' => $user->getFirstName(),
+            'lastName' => $user->getLastName(),
+            'email' => $user->getEmail(),
+            'displayName' => trim($user->getFirstName() . ' ' . $user->getLastName()),
+        ]);
+    }
+
+    private function setUserParams(User $user): void
+    {
+        foreach ($user->getParams() ?? [] as $key => $value) {
+            if ($this->telegramSession->get($key) === null) {
+                $this->telegramSession->set($key, $value);
+            }
+        }
+    }
+
+    private function setDefaultSessionParams(): void
+    {
+        foreach ($this->settings->get('session.defaultParams') as $key => $value) {
+            if (! $this->telegramSession->has($key)) {
+                $this->telegramSession->set($key, $value);
+            }
+        }
+    }
+
+    private function initializeComfyUIWorkflow(): void
+    {
+        if ($this->settings->get('comfyui.enabled') !== true) {
+            return;
+        }
+
+        $workflow = (string) $this->telegramSession->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
+        if ($workflow !== '' && $this->comfyUIWorkflowRegistry->has($workflow)) {
+            return;
+        }
+
+        $defaultWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug();
+        if ($defaultWorkflow !== null) {
+            $this->telegramSession->set(ComfyUIWorkflowRegistry::SESSION_KEY, $defaultWorkflow);
+        }
+    }
+
+    private function initializeChatId(bool $renew): void
+    {
+        $chatId = $this->telegramSession->get('chatId');
+        if (! $renew && $chatId) {
+            return;
+        }
+
+        $this->telegramSession->set('chatId', uniqid(UserChatHistory::CHAT_TELEGRAM, true));
     }
 
     private function handleCommand(int $telegramChatId, string $text): bool
@@ -271,8 +317,14 @@ class TelegramService implements QueueDoer
             return false;
         }
 
-        $fct = 'cmd_' . $command;
-        $this->$fct($telegramChatId, $parts);
+        $method = match ($command) {
+            'start' => 'cmdStart',
+            'help' => 'cmdHelp',
+            'brain' => 'cmdBrain',
+            'comfyui' => 'cmdComfyui',
+        };
+
+        $this->$method($telegramChatId, $parts);
 
         return true;
     }
@@ -291,46 +343,73 @@ class TelegramService implements QueueDoer
     private function processChatMessage(int $telegramChatId, string $text): void
     {
         try {
-            $currentBrain = $this->telegramSession->get('brain_avatar');
-            $brain = $this->brainRegistry->get($currentBrain, $this->telegramSession);
-
-            $userMessage = new UserMessage($text);
-            $userMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-
-            $agentHandler = $brain->stream($userMessage);
-
-            // Iterate chunks
-            foreach ($agentHandler->events() as $chunk) {
-                if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
-                    if ($chunk->tool instanceof GenerateImageTool) {
-                        $this->sendChatAction($telegramChatId, TelegramAction::GENERATE);
-                    } else {
-                        $this->sendChatAction($telegramChatId, TelegramAction::TEXT);
-                    }
-                } elseif ($chunk instanceof ReasoningChunk) {
-                    $this->sendChatAction($telegramChatId, TelegramAction::TEXT);
-                } elseif ($chunk instanceof TextChunk) {
-                    $this->sendChatAction($telegramChatId, TelegramAction::TEXT);
-                }
-            }
-
-            $agentMessage = $agentHandler->getMessage();
-
-            $agentMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-            $responseText = $agentMessage->getContent();
-
-            // Check for generated images in the response
-            $imageIds = $this->extractImageIds($responseText);
-            if ($imageIds !== []) {
-                $this->handleImageResponse($telegramChatId, $responseText, $imageIds);
-                return;
-            }
-
-            $this->sendMessage($telegramChatId, $responseText);
+            $responseText = $this->generateChatResponse($telegramChatId, $text);
+            $this->sendChatResponse($telegramChatId, $responseText);
         } catch (\Throwable $throwable) {
             $this->logger->error('Chat processing error: ' . $throwable->getMessage());
             $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors du traitement de votre message.');
         }
+    }
+
+    private function generateChatResponse(int $telegramChatId, string $text): string
+    {
+        $currentBrain = $this->telegramSession->get('brain_avatar');
+        $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession);
+
+        $userMessage = new UserMessage($text);
+        $userMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
+
+        $agentHandler = $agent->stream($userMessage);
+        $this->processStreamChunks($agentHandler->events(), $telegramChatId);
+
+        $agentMessage = $agentHandler->getMessage();
+        $agentMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
+
+        return $agentMessage->getContent();
+    }
+
+    /**
+     * @param iterable<mixed> $chunks
+     */
+    private function processStreamChunks(iterable $chunks, int $telegramChatId): void
+    {
+        foreach ($chunks as $chunk) {
+            $action = $this->resolveChunkAction($chunk);
+            if ($action instanceof \App\Enums\TelegramAction) {
+                $this->sendChatAction($telegramChatId, $action);
+            }
+        }
+    }
+
+    private function resolveChunkAction(mixed $chunk): ?TelegramAction
+    {
+        if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
+            return $this->resolveToolChunkAction($chunk);
+        }
+
+        if ($chunk instanceof ReasoningChunk || $chunk instanceof TextChunk) {
+            return TelegramAction::TEXT;
+        }
+
+        return null;
+    }
+
+    private function resolveToolChunkAction(ToolCallChunk|ToolResultChunk $chunk): TelegramAction
+    {
+        return $chunk->tool instanceof GenerateImageTool
+            ? TelegramAction::GENERATE
+            : TelegramAction::TEXT;
+    }
+
+    private function sendChatResponse(int $telegramChatId, string $responseText): void
+    {
+        $imageIds = $this->extractImageIds($responseText);
+        if ($imageIds !== []) {
+            $this->handleImageResponse($telegramChatId, $responseText, $imageIds);
+            return;
+        }
+
+        $this->sendMessage($telegramChatId, $responseText);
     }
 
     private function sendMessage(int $telegramChatId, string $text): void
@@ -443,82 +522,120 @@ class TelegramService implements QueueDoer
      */
     private function sendPhoto(int $telegramChatId, string $imageId, ?string $caption = null): void
     {
+        $imagePath = ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $imageId);
+
         try {
             $this->sendChatAction($telegramChatId, TelegramAction::PHOTO);
-
-            $imagePath = ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $imageId);
-
-            // Read file from Flysystem
-            if (! $this->filesystem->fileExists($imagePath)) {
-                $this->logger->error('Image file not found', ['path' => $imagePath]);
-                $this->sendMessage($telegramChatId, 'Désolé, l\'image générée n\'a pas pu être trouvée.');
-
+            $tempFile = $this->prepareImageFile($telegramChatId, $imagePath);
+            if ($tempFile === null) {
                 return;
             }
 
-            $fileContent = $this->filesystem->read($imagePath);
-
-            // Create temporary file
-            $tempFile = tempnam(sys_get_temp_dir(), 'telegram_');
-            if ($tempFile === false) {
-                throw new \RuntimeException('Failed to create temporary file');
-            }
-
-            file_put_contents($tempFile, $fileContent);
-
-            $formattedCaption = null;
-            if ($caption !== null && $caption !== '') {
-                $filteredCaption = $this->filterOCTags($caption);
-                if ($filteredCaption !== '') {
-                    $formattedCaption = $this->formatForTelegram($filteredCaption);
-                }
-            }
-
-            // Send photo using InputFile
-            $inputFile = InputFile::fromLocalFile($tempFile, basename($imagePath));
-            if (($formattedCaption !== null) && (strlen($formattedCaption) <= 1024)) {
-                $result = $this->telegramBotApi->sendPhoto(
-                    chatId: $telegramChatId,
-                    photo: $inputFile,
-                    caption: $formattedCaption,
-                    parseMode: ParseMode::MARKDOWN_V2
-                );
-                $formattedCaption = null;
-            } else {
-                $result = $this->telegramBotApi->sendPhoto(
-                    chatId: $telegramChatId,
-                    photo: $inputFile
-                );
-            }
-
-            if ($result instanceof FailResult) {
-                $this->logger->error('Failed to send photo', [
-                    'chatId' => $telegramChatId,
-                    'path' => $imagePath,
-                    'error' => $result,
-                    'caption' => $formattedCaption,
-                ]);
-                $this->sendMessage($telegramChatId, 'Désolé, je n\'ai pas pu envoyer l\'image.');
-            }
-
-            if ($formattedCaption !== null) {
-                $this->sendMessage($telegramChatId, $formattedCaption);
-            }
-        } catch (FilesystemException $e) {
-            $this->logger->error('Filesystem error sending photo: ' . $e->getMessage(), ['path' => $imagePath]);
-            $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
+            $formattedCaption = $this->formatCaption($caption);
+            $this->sendPhotoWithInputFile($telegramChatId, $tempFile, $imagePath, $formattedCaption);
         } catch (\Throwable $throwable) {
-            $this->logger->error('Error sending photo: ' . $throwable->getMessage(), ['path' => $imagePath]);
-            $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
+            $this->handlePhotoSendError($throwable, $telegramChatId, $imagePath);
         } finally {
-            // Clean up temporary file
-            if (isset($tempFile) && file_exists($tempFile)) {
-                unlink($tempFile);
-            }
+            $this->cleanupTempFile($tempFile ?? null);
         }
     }
 
-    private function cmd_start(int $telegramChatId): void
+    private function prepareImageFile(int $telegramChatId, string $imagePath): ?string
+    {
+        if (! $this->filesystem->fileExists($imagePath)) {
+            $this->logger->error('Image file not found', ['path' => $imagePath]);
+            $this->sendMessage($telegramChatId, 'Désolé, l\'image générée n\'a pas pu être trouvée.');
+
+            return null;
+        }
+
+        $fileContent = $this->filesystem->read($imagePath);
+        $tempFile = tempnam(sys_get_temp_dir(), 'telegram_');
+        if ($tempFile === false) {
+            throw new \RuntimeException('Failed to create temporary file');
+        }
+
+        file_put_contents($tempFile, $fileContent);
+
+        return $tempFile;
+    }
+
+    private function formatCaption(?string $caption): ?string
+    {
+        if ($caption === null || $caption === '') {
+            return null;
+        }
+
+        $filteredCaption = $this->filterOCTags($caption);
+        if ($filteredCaption === '') {
+            return null;
+        }
+
+        return $this->formatForTelegram($filteredCaption);
+    }
+
+    private function sendPhotoWithInputFile(int $telegramChatId, string $tempFile, string $imagePath, ?string $formattedCaption): void
+    {
+        $inputFile = InputFile::fromLocalFile($tempFile, basename($imagePath));
+
+        if ($this->shouldSendWithCaption($formattedCaption)) {
+            $result = $this->telegramBotApi->sendPhoto(
+                chatId: $telegramChatId,
+                photo: $inputFile,
+                caption: $formattedCaption,
+                parseMode: ParseMode::MARKDOWN_V2
+            );
+            $formattedCaption = null;
+        } else {
+            $result = $this->telegramBotApi->sendPhoto(
+                chatId: $telegramChatId,
+                photo: $inputFile
+            );
+        }
+
+        $this->handlePhotoSendResult($result, $telegramChatId, $imagePath, $formattedCaption);
+    }
+
+    private function shouldSendWithCaption(?string $formattedCaption): bool
+    {
+        return $formattedCaption !== null && strlen($formattedCaption) <= 1024;
+    }
+
+    private function handlePhotoSendResult(mixed $result, int $telegramChatId, string $imagePath, ?string $remainingCaption): void
+    {
+        if ($result instanceof FailResult) {
+            $this->logger->error('Failed to send photo', [
+                'chatId' => $telegramChatId,
+                'path' => $imagePath,
+                'error' => $result,
+                'caption' => $remainingCaption,
+            ]);
+            $this->sendMessage($telegramChatId, 'Désolé, je n\'ai pas pu envoyer l\'image.');
+        }
+
+        if ($remainingCaption !== null) {
+            $this->sendMessage($telegramChatId, $remainingCaption);
+        }
+    }
+
+    private function handlePhotoSendError(\Throwable $throwable, int $telegramChatId, string $imagePath): void
+    {
+        $message = $throwable instanceof FilesystemException
+            ? 'Filesystem error sending photo: ' . $throwable->getMessage()
+            : 'Error sending photo: ' . $throwable->getMessage();
+
+        $this->logger->error($message, ['path' => $imagePath]);
+        $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
+    }
+
+    private function cleanupTempFile(?string $tempFile): void
+    {
+        if ($tempFile !== null && file_exists($tempFile)) {
+            unlink($tempFile);
+        }
+    }
+
+    private function cmdStart(int $telegramChatId): void
     {
         $this->manageSession($this->telegramSession->get('telegram_id'), true);
 
@@ -536,7 +653,7 @@ class TelegramService implements QueueDoer
         $this->sendMessage($telegramChatId, $openingText);
     }
 
-    private function cmd_help(int $telegramChatId): void
+    private function cmdHelp(int $telegramChatId): void
     {
         $message = "Commandes disponibles :\n";
         foreach (self::COMMANDS as $key => $val) {
@@ -546,36 +663,42 @@ class TelegramService implements QueueDoer
         $this->sendMessage($telegramChatId, $message);
     }
 
-    private function cmd_brain(int $telegramChatId, array $args): void
+    /** @param array<int, string> $args */
+    private function cmdBrain(int $telegramChatId, array $args): void
     {
         if ($args === []) {
-            $message = '**Personnalité actuelle : ';
-            try {
-                $currentBrain = $this->telegramSession->get('brain_avatar');
-                $message .= $this->brainRegistry->getMeta($currentBrain)['name'];
-            } catch (\Exception) {
-                $message .= 'Aucune personnalité sélectionnée';
-            }
-
-            $message .= "**\n\n---\n_Personnalités disponibles_ :\n";
-            $message .= "- **reset** : Personnalité par défaut\n";
-            $brains = $this->brainRegistry->list();
-            foreach ($brains as $brain) {
-                $message .= sprintf('- `%s` : %s', $brain['slug'], $brain['description']) . "\n";
-            }
-
-            $this->sendMessage($telegramChatId, $message);
+            $this->sendBrainListMessage($telegramChatId);
             return;
         }
 
-        $brain = (string) $args[0];
+        $this->setBrainFromCommand($telegramChatId, $args[0]);
+    }
+
+    private function sendBrainListMessage(int $telegramChatId): void
+    {
+        $message = '**Personnalité actuelle : ';
         try {
-            if ($brain === 'reset') {
-                $brain = $this->settings->get('session.defaultParams.brain_avatar');
-            }
+            $currentBrain = $this->telegramSession->get('brain_avatar');
+            $message .= $this->brainRegistry->getMeta($currentBrain)['name'];
+        } catch (\Exception) {
+            $message .= 'Aucune personnalité sélectionnée';
+        }
 
+        $message .= "**\n\n---\n_Personnalités disponibles_ :\n";
+        $message .= "- **reset** : Personnalité par défaut\n";
+        $brains = $this->brainRegistry->list();
+        foreach ($brains as $brain) {
+            $message .= sprintf('- `%s` : %s', $brain['slug'], $brain['description']) . "\n";
+        }
+
+        $this->sendMessage($telegramChatId, $message);
+    }
+
+    private function setBrainFromCommand(int $telegramChatId, string $brain): void
+    {
+        try {
+            $brain = $this->resolveBrainSlug($brain);
             $meta = $this->brainRegistry->getMeta($brain);
-
             $this->telegramSession->set('brain_avatar', $brain);
             $this->sendMessage($telegramChatId, sprintf('Personnalité changée : %s', $meta['name']));
         } catch (\Exception $exception) {
@@ -583,9 +706,17 @@ class TelegramService implements QueueDoer
         }
     }
 
-    private function cmd_comfyui(int $telegramChatId, array $args): void
+    private function resolveBrainSlug(string $brain): string
     {
-        if ($this->settings->get('comfyui.enabled') !== true) {
+        return $brain === 'reset'
+            ? $this->settings->get('session.defaultParams.brain_avatar')
+            : $brain;
+    }
+
+    /** @param array<int, string> $args */
+    private function cmdComfyui(int $telegramChatId, array $args): void
+    {
+        if (! $this->isComfyUIEnabled()) {
             $this->sendMessage($telegramChatId, 'ComfyUI est désactivé.');
             return;
         }
@@ -597,42 +728,65 @@ class TelegramService implements QueueDoer
         }
 
         if ($args === []) {
-            $currentWorkflow = (string) $this->telegramSession->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
-            $message = '**Workflow ComfyUI actuel : ';
-
-            if ($currentWorkflow !== '' && $this->comfyUIWorkflowRegistry->has($currentWorkflow)) {
-                $message .= $this->comfyUIWorkflowRegistry->getMeta($currentWorkflow)['label'];
-            } else {
-                $message .= 'non défini';
-            }
-
-            $message .= "**\n\n---\n_Workflows disponibles_ :\n";
-            foreach ($workflows as $workflow) {
-                $message .= sprintf('- `%s` : %s (%s)', $workflow['slug'], $workflow['label'], $workflow['type']) . "\n";
-            }
-
-            $this->sendMessage($telegramChatId, $message);
+            $this->sendWorkflowListMessage($telegramChatId, $workflows);
             return;
         }
 
-        $workflow = strtolower(trim((string) $args[0]));
+        $this->setWorkflowFromCommand($telegramChatId, strtolower(trim($args[0])));
+    }
+
+    private function isComfyUIEnabled(): bool
+    {
+        return $this->settings->get('comfyui.enabled') === true;
+    }
+
+    /**
+     * @param array<int, array{slug:string, label:string, type:string}> $workflows
+     */
+    private function sendWorkflowListMessage(int $telegramChatId, array $workflows): void
+    {
+        $currentWorkflow = (string) $this->telegramSession->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
+        $message = '**Workflow ComfyUI actuel : ';
+
+        if ($currentWorkflow !== '' && $this->comfyUIWorkflowRegistry->has($currentWorkflow)) {
+            $message .= $this->comfyUIWorkflowRegistry->getMeta($currentWorkflow)['label'];
+        } else {
+            $message .= 'non défini';
+        }
+
+        $message .= "**\n\n---\n_Workflows disponibles_ :\n";
+        foreach ($workflows as $workflow) {
+            $message .= sprintf('- `%s` : %s (%s)', $workflow['slug'], $workflow['label'], $workflow['type']) . "\n";
+        }
+
+        $this->sendMessage($telegramChatId, $message);
+    }
+
+    private function setWorkflowFromCommand(int $telegramChatId, string $workflow): void
+    {
         if (! $this->comfyUIWorkflowRegistry->has($workflow)) {
             $this->sendMessage($telegramChatId, 'Workflow ComfyUI inconnu.');
             return;
         }
 
         $this->telegramSession->set(ComfyUIWorkflowRegistry::SESSION_KEY, $workflow);
-
-        $user = $this->entityManager->getRepository(User::class)->find($this->telegramSession->get(Auth::USERID));
-        if ($user instanceof User) {
-            $params = $user->getParams() ?? [];
-            $params[ComfyUIWorkflowRegistry::SESSION_KEY] = $workflow;
-            $user->setParams($params);
-            $this->entityManager->flush();
-        }
+        $this->persistWorkflowToUser($workflow);
 
         $meta = $this->comfyUIWorkflowRegistry->getMeta($workflow);
         $this->sendMessage($telegramChatId, sprintf('Workflow ComfyUI changé : %s', $meta['label']));
+    }
+
+    private function persistWorkflowToUser(string $workflow): void
+    {
+        $user = $this->entityManager->getRepository(User::class)->find($this->telegramSession->get(Auth::USERID));
+        if (! $user instanceof User) {
+            return;
+        }
+
+        $params = $user->getParams() ?? [];
+        $params[ComfyUIWorkflowRegistry::SESSION_KEY] = $workflow;
+        $user->setParams($params);
+        $this->entityManager->flush();
     }
 
     /**

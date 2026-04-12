@@ -101,6 +101,7 @@ final class TelegramSession implements SessionInterface
         return $this->storage[$key] ?? $default;
     }
 
+    /** @return array<string, mixed> */
     public function all(): array
     {
         $this->ensureLoaded();
@@ -117,6 +118,7 @@ final class TelegramSession implements SessionInterface
         $this->storage[$key] = $value;
     }
 
+    /** @param array<string, mixed> $values */
     public function setValues(array $values): void
     {
         $this->ensureLoaded();

@@ -11,6 +11,7 @@ final class YamlBrain extends Agent implements BrainAvatar
 {
     use AgentTrait\Tools;
 
+    /** @var array<int, string> */
     private array $welcomes;
 
     private string $instruction;

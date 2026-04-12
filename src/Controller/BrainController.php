@@ -10,7 +10,7 @@ use App\Queue\QueueDispatcherInterface;
 use App\Queue\WebChatMessageJob;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
-use App\Services\Session\SessionFromRequestTrait;
+use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use App\Services\SseEventFormatter;
 use Doctrine\ORM\EntityManager;
@@ -28,7 +28,7 @@ use Slim\Views\Twig;
 
 final readonly class BrainController
 {
-    use SessionFromRequestTrait;
+    use SessionFromRequest;
 
     public function __construct(
         private Logger $logger,
@@ -225,55 +225,94 @@ final readonly class BrainController
      */
     private function extractAttachments(Request $request, bool $includeStoredFiles): array
     {
+        $fileIds = $this->extractFileIdsFromRequest($request);
+
+        return [
+            'fileIds' => $includeStoredFiles ? $this->serializeStoredFileIds($fileIds) : $fileIds,
+            'uploadedFiles' => $this->extractUploadedFiles($request),
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function extractFileIdsFromRequest(Request $request): array
+    {
         $body = (array) ($request->getParsedBody() ?? []);
-        $fileIds = array_values(array_filter(
+
+        return array_values(array_filter(
             array_map(strval(...), (array) ($body['file_ids'] ?? [])),
             static fn (string $fileId): bool => $fileId !== ''
         ));
+    }
 
+    /**
+     * @param list<string> $fileIds
+     *
+     * @return list<array{filename: string, mimeType: string, content: string}>
+     */
+    private function serializeStoredFileIds(array $fileIds): array
+    {
         $serializedFileIds = [];
-        if ($includeStoredFiles) {
-            foreach ($fileIds as $fileId) {
-                try {
-                    $storedAttachment = $this->getStoredFileAttachment($fileId);
-                    if ($storedAttachment === null) {
-                        continue;
-                    }
 
-                    $serializedFileIds[] = $storedAttachment;
-                } catch (OptimisticLockException | ORMException | FilesystemException | UnableToReadFile $exception) {
-                    $this->logger->error('Failed to extract stored attachment', ['fileId' => $fileId, 'exception' => $exception]);
-                }
-            }
-        }
-
-        $uploadedFiles = [];
-        foreach ((array) ($request->getUploadedFiles()['upload_files'] ?? []) as $uploadedFile) {
-            if (! $uploadedFile instanceof UploadedFileInterface) {
-                continue;
-            }
-
-            if ($uploadedFile->getError() !== UPLOAD_ERR_OK) {
-                continue;
-            }
-
+        foreach ($fileIds as $fileId) {
             try {
-                $stream = $uploadedFile->getStream();
-                $stream->rewind();
-                $uploadedFiles[] = [
-                    'filename' => $uploadedFile->getClientFilename() ?? 'file',
-                    'mimeType' => $uploadedFile->getClientMediaType() ?? 'application/octet-stream',
-                    'content' => base64_encode($stream->getContents()),
-                ];
-            } catch (\Throwable $e) {
-                $this->logger->warning('Failed to extract inline upload', ['error' => $e->getMessage()]);
+                $storedAttachment = $this->getStoredFileAttachment($fileId);
+                if ($storedAttachment !== null) {
+                    $serializedFileIds[] = $storedAttachment;
+                }
+            } catch (OptimisticLockException | ORMException | FilesystemException | UnableToReadFile $exception) {
+                $this->logger->error('Failed to extract stored attachment', ['fileId' => $fileId, 'exception' => $exception]);
             }
         }
 
-        return [
-            'fileIds' => $includeStoredFiles ? $serializedFileIds : $fileIds,
-            'uploadedFiles' => $uploadedFiles,
-        ];
+        return $serializedFileIds;
+    }
+
+    /**
+     * @return list<array{filename: string, mimeType: string, content: string}>
+     */
+    private function extractUploadedFiles(Request $request): array
+    {
+        $uploadedFiles = [];
+
+        foreach ((array) ($request->getUploadedFiles()['upload_files'] ?? []) as $uploadedFile) {
+            $fileData = $this->processUploadedFile($uploadedFile);
+            if ($fileData !== null) {
+                $uploadedFiles[] = $fileData;
+            }
+        }
+
+        return $uploadedFiles;
+    }
+
+    /**
+     * @return array{filename: string, mimeType: string, content: string}|null
+     */
+    private function processUploadedFile(mixed $uploadedFile): ?array
+    {
+        if (! $uploadedFile instanceof UploadedFileInterface) {
+            return null;
+        }
+
+        if ($uploadedFile->getError() !== UPLOAD_ERR_OK) {
+            return null;
+        }
+
+        try {
+            $stream = $uploadedFile->getStream();
+            $stream->rewind();
+
+            return [
+                'filename' => $uploadedFile->getClientFilename() ?? 'file',
+                'mimeType' => $uploadedFile->getClientMediaType() ?? 'application/octet-stream',
+                'content' => base64_encode($stream->getContents()),
+            ];
+        } catch (\Throwable $e) {
+            $this->logger->warning('Failed to extract inline upload', ['error' => $e->getMessage()]);
+
+            return null;
+        }
     }
 
     /**

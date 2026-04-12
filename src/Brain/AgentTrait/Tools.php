@@ -15,6 +15,7 @@ use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 trait Tools
 {
     #[\Override]
+    /** @return array<int, object> */
     protected function tools(): array
     {
         $tools = [

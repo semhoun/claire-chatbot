@@ -6,6 +6,7 @@ namespace App\Renderer;
 
 use League\CommonMark\Extension\CommonMark\Node\Block\FencedCode;
 use League\CommonMark\Node\Node;
+use League\CommonMark\Output\RenderedContentInterface;
 use League\CommonMark\Renderer\ChildNodeRendererInterface;
 use League\CommonMark\Renderer\NodeRendererInterface;
 use League\CommonMark\Util\HtmlElement;
@@ -18,9 +19,12 @@ readonly class ExtendedFencedCodeRendered implements NodeRendererInterface
     {
     }
 
-    public function render(Node $node, ChildNodeRendererInterface $childRenderer)
-    {
+    public function render(
+        Node $node,
+        ChildNodeRendererInterface $childRenderer
+    ): HtmlElement|RenderedContentInterface {
         FencedCode::assertInstanceOf($node);
+        /** @var FencedCode $node */
 
         // Does this contain a mermaid diagram?
         $infoWords = $node->getInfoWords();

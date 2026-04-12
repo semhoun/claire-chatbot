@@ -8,7 +8,7 @@ use App\Brain\BrainRegistry;
 use App\Entity\User;
 use App\Services\Auth;
 use App\Services\ComfyUIWorkflowRegistry;
-use App\Services\Session\SessionFromRequestTrait;
+use App\Services\Session\Trait\SessionFromRequest;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -16,7 +16,7 @@ use Slim\Views\Twig;
 
 readonly class ConfigController
 {
-    use SessionFromRequestTrait;
+    use SessionFromRequest;
 
     public function __construct(
         private Twig $twig,

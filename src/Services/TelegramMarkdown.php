@@ -81,115 +81,73 @@ final readonly class TelegramMarkdown
         Node $node,
         bool $inUrl = false
     ): string {
-        // Handle inline elements
-        if ($node instanceof Text) {
-            return $this->escapeText($node->getLiteral(), $inUrl);
-        }
+        return match (true) {
+            $node instanceof Text => $this->escapeText($node->getLiteral(), $inUrl),
+            $node instanceof Newline => "\n",
+            $node instanceof Strong => $this->wrapChildren($node, '*'),
+            $node instanceof Emphasis => $this->wrapChildren($node, '_'),
+            $node instanceof Code => '`' . $this->escapeCode($node->getLiteral()) . '`',
+            $node instanceof Strikethrough => $this->wrapChildren($node, '~'),
+            $node instanceof Link => $this->convertLink($node),
+            $node instanceof Image => $this->convertImage($node),
+            $node instanceof HtmlInline => $this->convertHtmlInline($node),
+            $node instanceof Paragraph => $this->convertChildren($node, $inUrl) . "\n",
+            $node instanceof Heading => $this->convertHeading($node),
+            $node instanceof FencedCode, $node instanceof IndentedCode => $this->convertCodeBlock($node),
+            $node instanceof BlockQuote => $this->convertBlockQuote($node),
+            $node instanceof ListBlock => $this->convertListBlock($node),
+            $node instanceof ListItem => $this->convertListItem($node),
+            $node instanceof ThematicBreak => "\-\-\-\n",
+            $node instanceof HtmlBlock => $this->convertHtmlBlock($node),
+            $node instanceof Table => $this->convertTable($node),
+            default => $this->convertChildren($node, $inUrl),
+        };
+    }
 
-        if ($node instanceof Newline) {
-            return "\n";
-        }
+    private function convertImage(Image $image): string
+    {
+        $alt = $this->getChildrenText($image);
+        $url = $image->getUrl();
 
-        if ($node instanceof Strong) {
-            return $this->wrapChildren($node, '*');
-        }
-
-        if ($node instanceof Emphasis) {
-            return $this->wrapChildren($node, '_');
-        }
-
-        if ($node instanceof Code) {
-            return '`' . $this->escapeCode($node->getLiteral()) . '`';
-        }
-
-        if ($node instanceof Strikethrough) {
-            return $this->wrapChildren($node, '~');
-        }
-
-        if ($node instanceof Link) {
-            return $this->convertLink($node);
-        }
-
-        if ($node instanceof Image) {
-            // Images are not supported in MarkdownV2, convert to link or text
-            $alt = $this->getChildrenText($node);
-            $url = $node->getUrl();
-
-            if ($url !== '') {
-                $escapedAlt = $this->escapeText($alt);
-                $escapedUrl = $this->escapeUrl($url);
-                return sprintf('[%s](%s)', $escapedAlt, $escapedUrl);
-            }
-
+        if ($url === '') {
             return $this->escapeText($alt);
         }
 
-        if ($node instanceof HtmlInline) {
-            $literal = $node->getLiteral();
+        return sprintf('[%s](%s)', $this->escapeText($alt), $this->escapeUrl($url));
+    }
 
-            // Handle tg-spoiler tags
-            if (str_starts_with($literal, '<tg-spoiler>')) {
-                return $this->wrapChildren($node, '||');
-            }
+    private function convertHtmlInline(HtmlInline $htmlInline): string
+    {
+        $literal = $htmlInline->getLiteral();
 
-            // Strip other HTML tags but keep their content
-            return '';
+        if (str_starts_with($literal, '<tg-spoiler>')) {
+            return $this->wrapChildren($htmlInline, '||');
         }
 
-        // Handle block elements
-        if ($node instanceof Paragraph) {
-            return $this->convertChildren($node, $inUrl) . "\n";
+        return '';
+    }
+
+    private function convertHtmlBlock(HtmlBlock $htmlBlock): string
+    {
+        $literal = $htmlBlock->getLiteral();
+
+        if (str_contains($literal, '<tg-spoiler>')) {
+            return $this->convertSpoilerBlock($literal);
         }
 
-        if ($node instanceof Heading) {
-            return $this->convertHeading($node);
-        }
+        return $this->escapeText(strip_tags($literal)) . "\n";
+    }
 
-        if ($node instanceof FencedCode || $node instanceof IndentedCode) {
-            return $this->convertCodeBlock($node);
-        }
+    private function convertSpoilerBlock(string $literal): string
+    {
+        $content = strip_tags($literal, '<tg-spoiler>');
+        $content = str_replace(
+            ['<tg-spoiler>', '</tg-spoiler>'],
+            ['', ''],
+            $content
+        );
 
-        if ($node instanceof BlockQuote) {
-            return $this->convertBlockQuote($node);
-        }
-
-        if ($node instanceof ListBlock) {
-            return $this->convertListBlock($node);
-        }
-
-        if ($node instanceof ListItem) {
-            return $this->convertListItem($node);
-        }
-
-        if ($node instanceof ThematicBreak) {
-            return "\-\-\-\n";
-        }
-
-        if ($node instanceof HtmlBlock) {
-            $literal = $node->getLiteral();
-
-            // Handle tg-spoiler block
-            if (str_contains($literal, '<tg-spoiler>')) {
-                $content = strip_tags($literal, '<tg-spoiler>');
-                $content = str_replace(
-                    ['<tg-spoiler>', '</tg-spoiler>'],
-                    ['', ''],
-                    $content
-                );
-
-                return '||' . $this->escapeText($content) . "||\n";
-            }
-
-            // Convert HTML block to text
-            return $this->escapeText(strip_tags($literal)) . "\n";
-        }
-
-        if ($node instanceof Table) {
-            return $this->convertTable($node);
-        }
-
-        // For unknown nodes, process children
-        return $this->convertChildren($node, $inUrl);
+        return '||' . $this->escapeText($content) . "||\n";
     }
 
     /**
@@ -238,30 +196,27 @@ final readonly class TelegramMarkdown
         $result = '';
 
         foreach ($node->children() as $child) {
-            if ($child instanceof Text) {
-                $result .= $this->escapeFormattedText(
-                    $child->getLiteral(),
-                    $delimiter
-                );
-            } elseif ($child instanceof Newline) {
-                $result .= "\n";
-            } elseif ($child instanceof Strong) {
-                $result .= $this->wrapChildren($child, '*');
-            } elseif ($child instanceof Emphasis) {
-                $result .= $this->wrapChildren($child, '_');
-            } elseif ($child instanceof Strikethrough) {
-                $result .= $this->wrapChildren($child, '~');
-            } elseif ($child instanceof Code) {
-                $result .= '`' . $this->escapeCode($child->getLiteral()) . '`';
-            } elseif ($child instanceof Link) {
-                $result .= $this->convertLink($child);
-            } else {
-                // For other nodes, convert normally
-                $result .= $this->convertNode($child);
-            }
+            $result .= $this->convertFormattedChild($child, $delimiter);
         }
 
         return $result;
+    }
+
+    private function convertFormattedChild(Node $node, string $delimiter): string
+    {
+        return match (true) {
+            $node instanceof Text => $this->escapeFormattedText(
+                $node->getLiteral(),
+                $delimiter
+            ),
+            $node instanceof Newline => "\n",
+            $node instanceof Strong => $this->wrapChildren($node, '*'),
+            $node instanceof Emphasis => $this->wrapChildren($node, '_'),
+            $node instanceof Strikethrough => $this->wrapChildren($node, '~'),
+            $node instanceof Code => '`' . $this->escapeCode($node->getLiteral()) . '`',
+            $node instanceof Link => $this->convertLink($node),
+            default => $this->convertNode($node),
+        };
     }
 
     /**
@@ -413,20 +368,30 @@ final readonly class TelegramMarkdown
         $result = '';
 
         foreach ($listItem->children() as $child) {
-            if ($child instanceof Paragraph) {
-                $result .= $this->convertChildren($child);
-            } elseif ($child instanceof ListBlock) {
-                // Indent nested lists
-                $nested = $this->convertListBlock($child);
-                $lines = explode("\n", $nested);
+            $result .= $this->convertListItemChild($child);
+        }
 
-                foreach ($lines as $line) {
-                    if ($line !== '') {
-                        $result .= '  ' . $line . "\n";
-                    }
-                }
-            } else {
-                $result .= $this->convertNode($child);
+        return $result;
+    }
+
+    private function convertListItemChild(Node $node): string
+    {
+        return match (true) {
+            $node instanceof Paragraph => $this->convertChildren($node),
+            $node instanceof ListBlock => $this->indentNestedList($node),
+            default => $this->convertNode($node),
+        };
+    }
+
+    private function indentNestedList(ListBlock $listBlock): string
+    {
+        $nested = $this->convertListBlock($listBlock);
+        $lines = explode("\n", $nested);
+        $result = '';
+
+        foreach ($lines as $line) {
+            if ($line !== '') {
+                $result .= '  ' . $line . "\n";
             }
         }
 
@@ -458,41 +423,73 @@ final readonly class TelegramMarkdown
      */
     private function convertTable(Table $table): string
     {
-        $rows = [];
-
-        foreach ($table->children() as $section) {
-            if ($section instanceof TableSection) {
-                foreach ($section->children() as $row) {
-                    if ($row instanceof TableRow) {
-                        $cells = [];
-
-                        $rowChildren = $row->children();
-                        foreach ($rowChildren as $rowChild) {
-                            if ($rowChild instanceof TableCell) {
-                                // Get plain text content (no markdown)
-                                $content = trim($this->getChildrenText($rowChild));
-                                $cells[] = $content;
-                            }
-                        }
-
-                        if ($cells !== []) {
-                            $rows[] = '| ' . implode(' | ', $cells) . ' |';
-                        }
-                    }
-                }
-            }
-        }
+        $rows = $this->extractTableRows($table);
 
         if ($rows === []) {
             return '';
         }
 
-        $tableText = implode("\n", $rows);
+        return $this->formatTableAsCodeBlock($rows);
+    }
 
-        // Escape for code block context (backslashes only)
+    /**
+     * @return array<int, string>
+     */
+    private function extractTableRows(Table $table): array
+    {
+        $rows = [];
+
+        foreach ($table->children() as $section) {
+            if (! $section instanceof TableSection) {
+                continue;
+            }
+
+            foreach ($section->children() as $row) {
+                $rowText = $this->convertTableRow($row);
+                if ($rowText !== null) {
+                    $rows[] = $rowText;
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    private function convertTableRow(Node $node): ?string
+    {
+        if (! $node instanceof TableRow) {
+            return null;
+        }
+
+        $cells = $this->extractCellsFromRow($node);
+
+        return $cells !== [] ? '| ' . implode(' | ', $cells) . ' |' : null;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function extractCellsFromRow(TableRow $tableRow): array
+    {
+        $cells = [];
+
+        foreach ($tableRow->children() as $cell) {
+            if ($cell instanceof TableCell) {
+                $cells[] = trim($this->getChildrenText($cell));
+            }
+        }
+
+        return $cells;
+    }
+
+    /**
+     * @param array<int, string> $rows
+     */
+    private function formatTableAsCodeBlock(array $rows): string
+    {
+        $tableText = implode("\n", $rows);
         $escapedTableText = $this->escapeCodeBlock($tableText);
 
-        // Wrap in code block for monospace formatting
         return "```\n" . $escapedTableText . "\n```\n\n";
     }
 

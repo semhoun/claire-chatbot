@@ -45,56 +45,19 @@ class Auth
      * the session as authenticated.
      *
      * @param string $userId The unique user identifier (OIDC sub).
-     * @param array $data Associative array containing user details such as firstName, lastName, email, and name.
+     * @param array<string, mixed> $data Associative array containing user details such as firstName, lastName, email, and name.
      *
      * @throws Exception If the user cannot be found or persisted in the database.
      */
     public function login(SessionInterface $session, string $userId, array $data): void
     {
-        // Vérifier l'existence de l'utilisateur en base via son id (sub OIDC).
-        // Le créer s'il n'existe pas, sinon mettre à jour les infos de base.
         try {
-            /** @var User|null $user */
-            $user = $this->entityManager->getRepository(User::class)->find($userId);
-            if ($user === null) {
-                $user = new User();
-                $user->setId($userId);
-                $this->entityManager->persist($user);
-                $this->entityManager->flush();
-            }
-
-            $user = $this->entityManager->getRepository(User::class)->find($userId);
-            $user->setFirstName($data['firstName']);
-            $user->setLastName($data['lastName']);
-            $user->setEmail($data['email']);
-            $this->entityManager->flush();
-
-            foreach ($user->getParams() ?? [] as $key => $value) {
-                $session->set($key, $value);
-            }
-
-            foreach ($this->settings->get('session.defaultParams') as $key => $value) {
-                if (! $session->has($key)) {
-                    $session->set($key, $value);
-                }
-            }
-
-            $brain = $session->get('brain_avatar');
-            if ($brain === null || $brain === '' || ! $this->brainRegistry->has($brain)) {
-                $session->set('brain_avatar', $this->settings->get('session.defaultParams.brain_avatar'));
-            }
+            $user = $this->findOrCreateUser($userId);
+            $this->updateUserInfo($user, $data);
+            $this->initializeUserSession($session, $user, $userId, $data);
         } catch (\Exception $exception) {
             throw new Exception('User [' . $userId . "] not found in database and can't add it: " . $exception->getMessage(), $exception->getCode(), $exception);
         }
-
-        $session->set(self::AUTHENTICATED, true);
-        $session->set(self::USERID, $userId);
-        $session->set(self::USERINFO, [
-            'firstName' => $data['firstName'],
-            'lastName' => $data['lastName'],
-            'email' => $data['email'],
-            'displayName' => trim($data['firstName'] . ' ' . $data['lastName']),
-        ]);
     }
 
     /**
@@ -104,5 +67,83 @@ class Auth
     public function logout(SessionInterface $session): void
     {
         $session->clear();
+    }
+
+    private function findOrCreateUser(string $userId): User
+    {
+        /** @var User|null $user */
+        $user = $this->entityManager->getRepository(User::class)->find($userId);
+
+        if ($user === null) {
+            $user = new User();
+            $user->setId($userId);
+            $this->entityManager->persist($user);
+            $this->entityManager->flush();
+            $user = $this->entityManager->getRepository(User::class)->find($userId);
+        }
+
+        return $user;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function updateUserInfo(User $user, array $data): void
+    {
+        $user->setFirstName($data['firstName']);
+        $user->setLastName($data['lastName']);
+        $user->setEmail($data['email']);
+
+        $this->entityManager->flush();
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function initializeUserSession(SessionInterface $session, User $user, string $userId, array $data): void
+    {
+        $this->loadUserParams($session, $user);
+        $this->loadDefaultParams($session);
+        $this->initializeBrainAvatar($session);
+        $this->setAuthSession($session, $userId, $data);
+    }
+
+    private function loadUserParams(SessionInterface $session, User $user): void
+    {
+        foreach ($user->getParams() ?? [] as $key => $value) {
+            $session->set($key, $value);
+        }
+    }
+
+    private function loadDefaultParams(SessionInterface $session): void
+    {
+        foreach ($this->settings->get('session.defaultParams') as $key => $value) {
+            if (! $session->has($key)) {
+                $session->set($key, $value);
+            }
+        }
+    }
+
+    private function initializeBrainAvatar(SessionInterface $session): void
+    {
+        $brain = $session->get('brain_avatar');
+        if ($brain === null || $brain === '' || ! $this->brainRegistry->has($brain)) {
+            $session->set('brain_avatar', $this->settings->get('session.defaultParams.brain_avatar'));
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function setAuthSession(SessionInterface $session, string $userId, array $data): void
+    {
+        $session->set(self::AUTHENTICATED, true);
+        $session->set(self::USERID, $userId);
+        $session->set(self::USERINFO, [
+            'firstName' => $data['firstName'],
+            'lastName' => $data['lastName'],
+            'email' => $data['email'],
+            'displayName' => trim($data['firstName'] . ' ' . $data['lastName']),
+        ]);
     }
 }

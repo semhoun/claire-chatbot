@@ -9,7 +9,7 @@ use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Services\Auth;
 use App\Services\ChatStreamPublisher;
-use App\Services\Session\SessionFromRequestTrait;
+use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
@@ -20,7 +20,7 @@ use Slim\Views\Twig;
 
 final readonly class HistoryController
 {
-    use SessionFromRequestTrait;
+    use SessionFromRequest;
 
     public function __construct(
         private Logger $logger,
@@ -59,7 +59,8 @@ final readonly class HistoryController
         );
         $userChatHistory->setThreadId($threadId);
 
-        $openingMessage = $this->brainRegistry->get($currentBrain, $session)->getOpeningText();
+        $agent = $this->brainRegistry->get($currentBrain, $session);
+        $openingMessage = $agent->getOpeningText();
         $assistantMessage = new AssistantMessage($openingMessage)
             ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
         $userChatHistory->replaceDisplayMessages([$assistantMessage]);

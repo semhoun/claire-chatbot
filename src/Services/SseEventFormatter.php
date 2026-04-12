@@ -54,7 +54,12 @@ final readonly class SseEventFormatter
      */
     public function formatNamedEvent(string $event, string $data): string
     {
-        $lines = preg_split('/\R/', $data) ?: [''];
+        $lines = preg_split('/\R/', $data);
+
+        if ($lines === false) {
+            $lines = [''];
+        }
+
         $payload = sprintf('event: %s%s', $event, PHP_EOL);
 
         foreach ($lines as $line) {
@@ -83,15 +88,15 @@ final readonly class SseEventFormatter
         ?string $eventId = null,
         ?string $eventName = null,
     ): string {
-        $frame = '';
-        if ($eventId !== null && $eventId !== '') {
-            $frame .= 'id: ' . $eventId . "\n";
-        }
+        return $this->formatOptionalField('id', $eventId)
+            . $this->formatOptionalField('event', $eventName)
+            . "data: {$payload}\n\n";
+    }
 
-        if ($eventName !== null && $eventName !== '') {
-            $frame .= 'event: ' . $eventName . "\n";
-        }
-
-        return $frame . "data: {$payload}\n\n";
+    private function formatOptionalField(string $field, ?string $value): string
+    {
+        return $value !== null && $value !== ''
+            ? $field . ': ' . $value . "\n"
+            : '';
     }
 }

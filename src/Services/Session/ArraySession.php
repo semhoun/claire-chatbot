@@ -73,6 +73,7 @@ final class ArraySession implements SessionInterface, SessionManagerInterface
         return $this->storage[$key] ?? $default;
     }
 
+    /** @return array<string, mixed> */
     public function all(): array
     {
         return $this->storage;
@@ -83,6 +84,7 @@ final class ArraySession implements SessionInterface, SessionManagerInterface
         $this->storage[$key] = $value;
     }
 
+    /** @param array<string, mixed> $values */
     public function setValues(array $values): void
     {
         foreach ($values as $key => $value) {

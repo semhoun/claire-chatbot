@@ -33,51 +33,18 @@ class Summary extends \NeuronAI\Agent\Agent
     /**
      * Generates a title and summary based on the processed content.
      *
-     * @return array An associative array containing the following keys:
+     * @return array<string, string> An associative array containing the following keys:
      *               - 'title': The generated title or a default value if generation fails.
      *               - 'summary': The generated summary or an empty string if generation fails.
      */
     public function generate(): array
     {
-        $userMessage = new UserMessage(
-            "Génère 'title' et 'summary'."
-        );
-
+        $userMessage = new UserMessage("Génère 'title' et 'summary'.");
         $message = $this->chat($userMessage)->getMessage();
-        $content = $message->getContent();
 
-        // On isole la partie JSON entre le premier "{" et le dernier "}"
-        $startPos = strpos((string) $content, '{');
-        $endPos = strrpos((string) $content, '}');
-        if ($startPos !== false && $endPos !== false && $endPos >= $startPos) {
-            $content = substr((string) $content, $startPos, $endPos - $startPos + 1);
-        }
+        $jsonContent = $this->extractJsonContent($message->getContent());
 
-        $title = 'Nouvelle conversation';
-        $summary = '';
-
-        try {
-            $decoded = json_decode((string) $content, true, 512, JSON_THROW_ON_ERROR);
-            $t = (string) ($decoded['title'] ?? '');
-            $s = (string) ($decoded['summary'] ?? '');
-            if ($t !== '') {
-                $title = $t;
-            }
-
-            if ($s !== '') {
-                $summary = $s;
-            }
-        } catch (\JsonException) {
-            return [
-                'title' => $title,
-                'summary' => $summary,
-            ];
-        }
-
-        return [
-            'title' => $title,
-            'summary' => $summary,
-        ];
+        return $this->parseGeneratedData($jsonContent);
     }
 
     /**
@@ -90,18 +57,12 @@ class Summary extends \NeuronAI\Agent\Agent
     {
         $userId = (string) ($this->session->get(Auth::USERID) ?? '');
         $threadId = (string) ($this->session->get('chatId') ?? '');
+
         if ($userId === '' || $threadId === '') {
             return;
         }
 
-        $fields = [];
-        if (array_key_exists('title', $data)) {
-            $fields['title'] = $data['title'];
-        }
-
-        if (array_key_exists('summary', $data)) {
-            $fields['summary'] = $data['summary'];
-        }
+        $fields = $this->extractFields($data);
 
         if ($fields === []) {
             return;
@@ -116,7 +77,7 @@ class Summary extends \NeuronAI\Agent\Agent
     /**
      * Generates data, persists it, and returns the generated data.
      *
-     * @return array The generated data after being persisted.
+     * @return array<string, mixed> The generated data after being persisted.
      */
     public function generateAndPersist(): array
     {
@@ -156,5 +117,74 @@ EOF;
             model: $this->settings->get('llm.openai.modelSummary'),
             rawMimeTypes: $this->settings->get('llm.rawMimeTypes'),
         );
+    }
+
+    private function extractJsonContent(?string $content): string
+    {
+        if ($content === null) {
+            return '';
+        }
+
+        $startPos = strpos($content, '{');
+        $endPos = strrpos($content, '}');
+
+        if ($startPos !== false && $endPos !== false && $endPos >= $startPos) {
+            return substr($content, $startPos, $endPos - $startPos + 1);
+        }
+
+        return $content;
+    }
+
+    /**
+     * @return array{title: string, summary: string}
+     */
+    private function parseGeneratedData(string $jsonContent): array
+    {
+        $defaultTitle = 'Nouvelle conversation';
+        $defaultSummary = '';
+
+        try {
+            $decoded = json_decode($jsonContent, true, 512, JSON_THROW_ON_ERROR);
+
+            return [
+                'title' => $this->extractStringValue($decoded, 'title', $defaultTitle),
+                'summary' => $this->extractStringValue($decoded, 'summary', $defaultSummary),
+            ];
+        } catch (\JsonException) {
+            return [
+                'title' => $defaultTitle,
+                'summary' => $defaultSummary,
+            ];
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $decoded
+     */
+    private function extractStringValue(array $decoded, string $key, string $default): string
+    {
+        $value = (string) ($decoded[$key] ?? '');
+
+        return $value !== '' ? $value : $default;
+    }
+
+    /**
+     * @param array{title?:string|null, summary?:string|null} $data
+     *
+     * @return array<string, mixed>
+     */
+    private function extractFields(array $data): array
+    {
+        $fields = [];
+
+        if (array_key_exists('title', $data)) {
+            $fields['title'] = $data['title'];
+        }
+
+        if (array_key_exists('summary', $data)) {
+            $fields['summary'] = $data['summary'];
+        }
+
+        return $fields;
     }
 }

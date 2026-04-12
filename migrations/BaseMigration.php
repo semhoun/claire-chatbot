@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App;
+namespace Migrations;
 
 use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\Migrations\AbstractMigration;

@@ -14,6 +14,7 @@ readonly class ChatStreamPublisher
     ) {
     }
 
+    /** @param array<string, mixed> $payload */
     public function publish(string $chatId, string $event, array $payload): void
     {
         $message = json_encode([

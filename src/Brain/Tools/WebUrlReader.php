@@ -44,6 +44,7 @@ class WebUrlReader extends Tool
     }
 
     #[\Override]
+    /** @return array<int, ToolProperty> */
     protected function properties(): array
     {
         return [
@@ -59,49 +60,84 @@ class WebUrlReader extends Tool
     private function baseDocument(string $url): string
     {
         $uri = new Uri($url);
-        if ($uri->getScheme() === '' || $uri->getHost() === '') {
+
+        if (! $this->isValidUri($uri)) {
             return '';
         }
 
-        $path = $uri->getPath();
+        $path = $this->normalizePath($uri->getPath());
+
+        return (string) $uri->withPath($path)->withQuery('')->withFragment('');
+    }
+
+    private function isValidUri(Uri $uri): bool
+    {
+        return $uri->getScheme() !== '' && $uri->getHost() !== '';
+    }
+
+    private function normalizePath(string $path): string
+    {
         if ($path === '' || ! str_ends_with($path, '/')) {
-            $path = rtrim(dirname($path === '' ? '/' : $path), '/') . '/';
+            return rtrim(dirname($path === '' ? '/' : $path), '/') . '/';
         }
 
-        // On supprime query/fragment pour obtenir la base du document
-        return (string) $uri->withPath($path)->withQuery('')->withFragment('');
+        return $path;
     }
 
     private function resolveUrl(string $base, string $maybeRelative): string
     {
-        // Laisse passer mailto:, data:, tel:, javascript:, #ancres et //host
-        if ($maybeRelative === '' || $maybeRelative[0] === '#' ||
-            preg_match('~^(data:|mailto:|tel:|javascript:)~i', $maybeRelative)) {
+        if ($this->shouldPassThrough($maybeRelative)) {
             return $maybeRelative;
         }
 
         if (str_starts_with($maybeRelative, '//')) {
-            $scheme = parse_url($base, PHP_URL_SCHEME) !== false && parse_url($base, PHP_URL_SCHEME) !== null
-                ? parse_url($base, PHP_URL_SCHEME)
-                : 'http';
-            return $scheme . ':' . $maybeRelative;
+            return $this->resolveProtocolRelativeUrl($base, $maybeRelative);
         }
 
-        $uri = UriResolver::resolve(new Uri($base), new Uri($maybeRelative));
-        return (string) $uri;
+        return (string) UriResolver::resolve(new Uri($base), new Uri($maybeRelative));
+    }
+
+    private function shouldPassThrough(string $url): bool
+    {
+        return $url === '' ||
+            $url[0] === '#' ||
+            preg_match('~^(data:|mailto:|tel:|javascript:)~i', $url);
+    }
+
+    private function resolveProtocolRelativeUrl(string $base, string $url): string
+    {
+        $scheme = parse_url($base, PHP_URL_SCHEME) !== null && parse_url($base, PHP_URL_SCHEME) !== false
+            ? parse_url($base, PHP_URL_SCHEME)
+            : 'http';
+        return $scheme . ':' . $url;
     }
 
     private function absolutizeHtmlUrls(string $html, string $baseUrl): string
     {
-        // Assurer l'UTF-8
         $internalErrors = libxml_use_internal_errors(true);
+        $domDocument = $this->createDomDocument($html);
+        $domxPath = new \DOMXPath($domDocument);
+
+        $this->processAttributeMap($domxPath, $baseUrl);
+        $this->removeBaseTag($domxPath);
+
+        $out = $domDocument->saveHTML();
+        libxml_clear_errors();
+        libxml_use_internal_errors($internalErrors);
+
+        return $out;
+    }
+
+    private function createDomDocument(string $html): \DOMDocument
+    {
         $domDocument = new \DOMDocument('1.0', 'UTF-8');
-        // On force DOMDocument à interpréter la chaîne comme UTF-8 en préfixant
-        // une déclaration d'encodage XML (technique recommandée pour libxml).
         $domDocument->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
 
-        $domxPath = new \DOMXPath($domDocument);
-        // Attributs à réécrire
+        return $domDocument;
+    }
+
+    private function processAttributeMap(\DOMXPath $domxPath, string $baseUrl): void
+    {
         $attrMap = [
             'a' => ['href'],
             'link' => ['href'],
@@ -111,52 +147,67 @@ class WebUrlReader extends Tool
             'source' => ['src', 'srcset'],
             'video' => ['poster'],
         ];
+
         foreach ($attrMap as $tag => $attrs) {
             foreach ($domxPath->query('//' . $tag) as $node) {
-                foreach ($attrs as $attr) {
-                    if (! $node->hasAttribute($attr)) {
-                        continue;
-                    }
-
-                    $val = trim((string) $node->getAttribute($attr));
-                    if ($val === '') {
-                        continue;
-                    }
-
-                    if ($attr === 'srcset') {
-                        // srcset peut contenir plusieurs URLs séparées par des virgules
-                        $parts = array_map(trim(...), explode(',', $val));
-                        $newParts = [];
-                        foreach ($parts as $part) {
-                            // pattern: url [descriptor]
-                            if ($part === '') {
-                                continue;
-                            }
-
-                            $chunks = preg_split('/\s+/', $part, 2);
-                            $url = $chunks[0];
-                            $desc = $chunks[1] ?? '';
-                            $abs = $this->resolveUrl($baseUrl, $url);
-                            $newParts[] = trim($abs . ' ' . $desc);
-                        }
-
-                        $node->setAttribute($attr, implode(', ', $newParts));
-                    } else {
-                        $abs = $this->resolveUrl($baseUrl, $val);
-                        $node->setAttribute($attr, $abs);
-                    }
-                }
+                $this->processNodeAttributes($node, $attrs, $baseUrl);
             }
         }
+    }
 
-        // Si une balise <base> existe, la retirer pour éviter des effets de bord ultérieurs
+    /**
+     * @param array<int, string> $attrs
+     */
+    private function processNodeAttributes(\DOMElement $domElement, array $attrs, string $baseUrl): void
+    {
+        foreach ($attrs as $attr) {
+            if (! $domElement->hasAttribute($attr)) {
+                continue;
+            }
+
+            $val = trim($domElement->getAttribute($attr));
+            if ($val === '') {
+                continue;
+            }
+
+            $newVal = $attr === 'srcset'
+                ? $this->processSrcset($val, $baseUrl)
+                : $this->resolveUrl($baseUrl, $val);
+
+            $domElement->setAttribute($attr, $newVal);
+        }
+    }
+
+    private function processSrcset(string $srcset, string $baseUrl): string
+    {
+        $parts = array_map(trim(...), explode(',', $srcset));
+        $newParts = [];
+
+        foreach ($parts as $part) {
+            if ($part === '') {
+                continue;
+            }
+
+            $newParts[] = $this->processSrcsetPart($part, $baseUrl);
+        }
+
+        return implode(', ', $newParts);
+    }
+
+    private function processSrcsetPart(string $part, string $baseUrl): string
+    {
+        $chunks = preg_split('/\s+/', $part, 2);
+        $url = $chunks[0];
+        $desc = $chunks[1] ?? '';
+        $abs = $this->resolveUrl($baseUrl, $url);
+
+        return trim($abs . ' ' . $desc);
+    }
+
+    private function removeBaseTag(\DOMXPath $domxPath): void
+    {
         foreach ($domxPath->query('//base') as $base) {
             $base->parentNode?->removeChild($base);
         }
-
-        $out = $domDocument->saveHTML();
-        libxml_clear_errors();
-        libxml_use_internal_errors($internalErrors);
-        return $out;
     }
 }

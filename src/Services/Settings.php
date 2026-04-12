@@ -60,12 +60,12 @@ final readonly class Settings
 
     public static function getDataPath(): string
     {
-        return env('DATA_PATH', self::getAppRoot() . '/var/data');
+        return Env::get('DATA_PATH', self::getAppRoot() . '/var/data');
     }
 
     public static function getAddonsPath(): string
     {
-        return env('ADDONS_PATH', self::getAppRoot() . '/var/addons');
+        return Env::get('ADDONS_PATH', self::getAppRoot() . '/var/addons');
     }
 
     private function hasSetting(mixed $settings, string $key): bool

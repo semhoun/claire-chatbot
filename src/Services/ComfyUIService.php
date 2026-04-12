@@ -134,49 +134,90 @@ final readonly class ComfyUIService
         $pollInterval = 2;
 
         while (time() - $startTime < $timeout) {
-            $response = $this->httpClient->get('/history/' . $promptId);
-            $history = json_decode(
-                (string) $response->getBody(),
-                true,
-                512,
-                JSON_THROW_ON_ERROR
-            );
+            $result = $this->pollForResult($promptId);
 
-            if (! isset($history[$promptId])) {
+            if ($result === null) {
                 sleep($pollInterval);
                 continue;
             }
 
-            $promptData = $history[$promptId];
-
-            // Check for errors
-            if (isset($promptData['status']['status_str']) && $promptData['status']['status_str'] === 'error') {
-                throw new RuntimeException('ComfyUI workflow execution failed');
-            }
-
-            // Check if outputs are ready
-            if (empty($promptData['outputs'])) {
-                sleep($pollInterval);
-                continue;
-            }
-
-            // Extract image data from the first output node with images
-            foreach ($promptData['outputs'] as $output) {
-                if (isset($output['images']) && $output['images'] !== []) {
-                    $image = $output['images'][0];
-
-                    return [
-                        'filename' => (string) ($image['filename'] ?? ''),
-                        'subfolder' => (string) ($image['subfolder'] ?? ''),
-                        'type' => (string) ($image['type'] ?? 'output'),
-                    ];
-                }
-            }
-
-            sleep($pollInterval);
+            return $result;
         }
 
         throw new RuntimeException('ComfyUI generation timed out after ' . $timeout . ' seconds');
+    }
+
+    /**
+     * @return array{filename: string, subfolder: string, type: string}|null
+     *
+     * @throws GuzzleException
+     */
+    private function pollForResult(string $promptId): ?array
+    {
+        $promptData = $this->fetchPromptData($promptId);
+
+        if ($promptData === null) {
+            return null;
+        }
+
+        if ($this->isPromptError($promptData)) {
+            throw new RuntimeException('ComfyUI workflow execution failed');
+        }
+
+        if (empty($promptData['outputs'])) {
+            return null;
+        }
+
+        return $this->extractImageFromOutputs($promptData['outputs']);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     *
+     * @throws GuzzleException
+     */
+    private function fetchPromptData(string $promptId): ?array
+    {
+        $response = $this->httpClient->get('/history/' . $promptId);
+        $history = json_decode(
+            (string) $response->getBody(),
+            true,
+            512,
+            JSON_THROW_ON_ERROR
+        );
+
+        return $history[$promptId] ?? null;
+    }
+
+    /**
+     * @param array<string, mixed> $promptData
+     */
+    private function isPromptError(array $promptData): bool
+    {
+        return isset($promptData['status']['status_str'])
+            && $promptData['status']['status_str'] === 'error';
+    }
+
+    /**
+     * @param array<string, mixed> $outputs
+     *
+     * @return array{filename: string, subfolder: string, type: string}|null
+     */
+    private function extractImageFromOutputs(array $outputs): ?array
+    {
+        foreach ($outputs as $output) {
+            if (isset($output['images']) && $output['images'] !== []) {
+                $image = $output['images'][0];
+
+                return [
+                    'filename' => (string) ($image['filename'] ?? ''),
+                    'subfolder' => (string) ($image['subfolder'] ?? ''),
+                    'type' => (string) ($image['type'] ?? 'output'),
+                ];
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -206,6 +247,8 @@ final readonly class ComfyUIService
     /**
      * Save the image to the filesystem.
      *
+     * @param array{filename: string, subfolder: string, type: string} $imageData
+     *
      * @throws FilesystemException
      *
      * @return string The local file path
@@ -213,7 +256,13 @@ final readonly class ComfyUIService
     private function saveImage(SessionInterface $session, array $imageData): string
     {
         $imageContent = $this->downloadImage($imageData);
-        $extension = pathinfo((string) $imageData['filename'], PATHINFO_EXTENSION) ?: 'png';
+        $detectedExtension = pathinfo(
+            (string) $imageData['filename'],
+            PATHINFO_EXTENSION
+        );
+        $extension = is_string($detectedExtension) && $detectedExtension !== ''
+            ? $detectedExtension
+            : 'png';
         $filename = Uuid::uuid4() . '.' . $extension;
         $localPath = self::FOLDER_PREFIX . '/' . $session->get(Auth::USERID) . '/' . $filename;
         $imgId = '@@GENERATED@@' . $session->get(Auth::USERID) . self::FOLDER_SEPARATOR . $filename . '@@';

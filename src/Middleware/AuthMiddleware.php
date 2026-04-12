@@ -38,42 +38,78 @@ final readonly class AuthMiddleware implements MiddlewareInterface
 
     public function process(Request $request, Handler $handler): Response
     {
-        if ($request->getMethod() === 'OPTIONS') {
+        if ($this->shouldAllowRequest($request)) {
             return $handler->handle($request);
         }
 
-        $path = $request->getUri()->getPath();
-        $publicRoutes = $this->settings->get('security.public_routes');
-        if (array_any($publicRoutes, static fn ($prefix): bool => $path === $prefix || str_starts_with($path, rtrim((string) $prefix, '/') . '/'))) {
-            return $handler->handle($request);
+        return $this->handleUnauthorized($request);
+    }
+
+    private function shouldAllowRequest(Request $request): bool
+    {
+        if ($request->getMethod() === 'OPTIONS') {
+            return true;
+        }
+
+        if ($this->isPublicRoute($request)) {
+            return true;
         }
 
         $session = $request->getAttribute('session');
         if (! $session instanceof SessionInterface) {
-            return $handler->handle($request);
+            return true;
         }
 
         if ($this->auth->isAuthenticated($session)) {
-            return $handler->handle($request);
+            return true;
         }
 
+        return $this->attemptAutoLogin($session);
+    }
+
+    private function isPublicRoute(Request $request): bool
+    {
+        $path = $request->getUri()->getPath();
+        $publicRoutes = $this->settings->get('security.public_routes');
+
+        return array_any($publicRoutes, static fn ($prefix): bool => $path === $prefix || str_starts_with($path, rtrim((string) $prefix, '/') . '/'));
+    }
+
+    private function attemptAutoLogin(SessionInterface $session): bool
+    {
         $oidcClient = $this->container->get(OidcClient::class);
-        if (! $oidcClient->isEnabled()) {
-            $this->auth->login($session, $oidcClient->getDefaultUserId(), $oidcClient->getDefaultUserData());
-            return $handler->handle($request);
+
+        if ($oidcClient->isEnabled()) {
+            return false;
         }
 
-        $accept = $request->getHeaderLine('Accept');
+        $this->auth->login($session, $oidcClient->getDefaultUserId(), $oidcClient->getDefaultUserData());
 
-        // JSON/API request
-        if (str_contains($accept, 'application/json')) {
-            $res = new SlimResponse(401);
-            $res->getBody()->write((string) json_encode(['error' => 'unauthorized']));
-            return $res->withHeader('Content-Type', 'application/json');
-        }
+        return true;
+    }
 
-        // HTML request: render welcome.twig directly
-        $response = new SlimResponse(200);
-        return $this->twig->render($response, 'welcome.twig');
+    private function handleUnauthorized(Request $request): Response
+    {
+        return $this->isJsonRequest($request)
+            ? $this->createJsonUnauthorizedResponse()
+            : $this->createHtmlUnauthorizedResponse();
+    }
+
+    private function isJsonRequest(Request $request): bool
+    {
+        return str_contains($request->getHeaderLine('Accept'), 'application/json');
+    }
+
+    private function createJsonUnauthorizedResponse(): Response
+    {
+        $response = new SlimResponse(401);
+        $response->getBody()->write((string) json_encode(['error' => 'unauthorized']));
+
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    private function createHtmlUnauthorizedResponse(): Response
+    {
+        return $this->twig->render(new SlimResponse(200), 'welcome.twig');
     }
 }

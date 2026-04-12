@@ -35,6 +35,7 @@ class User
     #[ORM\Column(name: 'telegram_id', type: 'string', length: 64, unique: true, nullable: true)]
     private ?string $telegramId = null;
 
+    /** @return array<string, mixed>|null */
     public function getParams(): ?array
     {
         if ($this->params === null) {
@@ -48,6 +49,7 @@ class User
         }
     }
 
+    /** @param array<string, mixed>|null $params */
     public function setParams(?array $params): void
     {
         if ($params === null) {

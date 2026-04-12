@@ -65,6 +65,7 @@ return [
 
     'exclude' => [
         'var',
+        'config/dependencies.php',
     ],
 
     'add' => [
@@ -85,6 +86,8 @@ return [
         ForbiddenNormalClasses::class,
         InlineDocCommentDeclarationSniff::class,
         DisallowSuperGlobalVariableSniff::class,
+        LineLengthSniff::class,
+        SlevomatCodingStandard\Sniffs\Namespaces\AlphabeticallySortedUsesSniff::class,
     ],
 
     'config' => [

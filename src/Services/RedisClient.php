@@ -29,6 +29,7 @@ final class RedisClient implements RedisClientInterface
         $this->redis = new \Redis();
     }
 
+    /** @param array<int, mixed> $arguments */
     public function eval(string $script, array $arguments, int $keyCount): mixed
     {
         return $this->redis->eval($script, $arguments, $keyCount);
@@ -39,6 +40,11 @@ final class RedisClient implements RedisClientInterface
         return $this->redis->publish($channel, $message);
     }
 
+    /**
+     * @param array<int, string> $channels
+     * @param callable(string, string): void $callback
+     * @param callable(): bool $shouldContinue
+     */
     public function subscribeWithHeartbeat(
         array $channels,
         callable $callback,
@@ -69,6 +75,7 @@ final class RedisClient implements RedisClientInterface
         }
     }
 
+    /** @param array<string, float|int> $membersAndScores */
     public function zadd(string $key, array $membersAndScores): int|false
     {
         $arguments = [$key];
@@ -81,6 +88,7 @@ final class RedisClient implements RedisClientInterface
         return $this->redis->zAdd(...$arguments);
     }
 
+    /** @param array<string, scalar|null> $hash */
     public function hset(string $key, array $hash): int|false
     {
         $result = $this->redis->hMSet($key, $hash);
@@ -88,6 +96,7 @@ final class RedisClient implements RedisClientInterface
         return $result ? 1 : false;
     }
 
+    /** @return array<string, string>|false */
     public function hgetall(string $key): array|false
     {
         return $this->redis->hGetAll($key);

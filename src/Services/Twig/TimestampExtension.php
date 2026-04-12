@@ -9,6 +9,9 @@ use Twig\TwigFilter;
 
 final class TimestampExtension extends AbstractExtension
 {
+    /**
+     * @return array<int, TwigFilter>
+     */
     #[\Override]
     public function getFilters(): array
     {
@@ -33,9 +36,7 @@ final class TimestampExtension extends AbstractExtension
         try {
             $dateTime = new \DateTimeImmutable($timestamp);
             return $dateTime->format('H:i');
-        } catch (\Exception $exception) {
-            // Log error for debugging
-            error_log('TimestampExtension: Failed to parse timestamp: ' . $timestamp . ' - ' . $exception->getMessage());
+        } catch (\Exception) {
             return '';
         }
     }

@@ -27,6 +27,7 @@ final class ArrayFlash implements FlashInterface
         $this->consumed[$key] = false;
     }
 
+    /** @return array<int, string> */
     public function get(string $key): array
     {
         if (! isset($this->messages[$key])) {
@@ -50,12 +51,14 @@ final class ArrayFlash implements FlashInterface
         $this->consumed = [];
     }
 
+    /** @param array<int, string> $messages */
     public function set(string $key, array $messages): void
     {
         $this->messages[$key] = $messages;
         $this->consumed[$key] = false;
     }
 
+    /** @return array<string, array<int, string>> */
     public function all(): array
     {
         $all = [];

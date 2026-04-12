@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Migrations;
 
-use App\BaseMigration;
 use Doctrine\DBAL\Schema\Schema;
 
 final class Version20260311142237 extends BaseMigration

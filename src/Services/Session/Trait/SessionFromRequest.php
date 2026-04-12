@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Services\Session;
+namespace App\Services\Session\Trait;
 
 use App\Middleware\JwtSessionMiddleware;
+use App\Services\Session\SessionInterface;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
 /**
@@ -12,7 +13,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
  *
  * Usage: $session = $this->getSession($request);
  */
-trait SessionFromRequestTrait
+trait SessionFromRequest
 {
     protected function getSession(Request $request): SessionInterface
     {

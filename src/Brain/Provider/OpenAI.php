@@ -10,6 +10,10 @@ use NeuronAI\Providers\OpenAILike;
 
 class OpenAI extends OpenAILike
 {
+    /**
+     * @param array<int, string> $rawMimeTypes
+     * @param array<string, mixed> $parameters
+     */
     public function __construct(
         protected string $baseUri,
         protected string $key,

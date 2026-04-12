@@ -72,6 +72,7 @@ class ShortMemory extends Summarization
         $this->summarizeHistory($state, $messages);
     }
 
+    /** @param array<Message> $messages */
     protected function estimateTokens(array $messages): int
     {
         return array_reduce(
@@ -200,36 +201,18 @@ class ShortMemory extends Summarization
      */
 
     #[\Override]
-
     protected function isSafeCutoffPoint(array $messages, int $index): bool
     {
         if (! isset($messages[$index])) {
             return false;
         }
 
-        // Check if a message at cutoff index is a ToolCallMessage
+        $message = $messages[$index];
 
-        if ($messages[$index] instanceof ToolCallMessage) {
-            return false;
-        }
-
-        // Check if a message at cutoff index is a ToolResultMessage
-
-        // (ToolResultMessage must follow ToolCallMessage, cannot be first in recentMessages)
-
-        if ($messages[$index] instanceof ToolResultMessage) {
-            return false;
-        }
-
-        // Check if a previous message is a ToolResultMessage (would be separated from its result)
-
-        if ($index > 0 && isset($messages[$index - 1]) && $messages[$index - 1] instanceof ToolResultMessage) {
-            return false;
-        }
-
-        // Check if a message at cutoff index is an AssistantMessage
-
-        return $messages[$index]->getRole() === MessageRole::ASSISTANT->value;
+        return ! $this->isToolMessage($message)
+            && ! $this->isToolResultMessage($message)
+            && ! $this->isPreviousToolResult($messages, $index)
+            && $this->isAssistantMessage($message);
     }
 
     #[\Override]
@@ -252,5 +235,28 @@ that would be needed to continue the conversation meaningfully.
 
 Make sure to clearly retain and highlight any instructions, preferences, or directives given by the user so they can be consistently respected afterward.
 PROMPT;
+    }
+
+    private function isToolMessage(Message $message): bool
+    {
+        return $message instanceof ToolCallMessage;
+    }
+
+    private function isToolResultMessage(Message $message): bool
+    {
+        return $message instanceof ToolResultMessage;
+    }
+
+    /**
+     * @param array<Message> $messages
+     */
+    private function isPreviousToolResult(array $messages, int $index): bool
+    {
+        return $index > 0 && isset($messages[$index - 1]) && $messages[$index - 1] instanceof ToolResultMessage;
+    }
+
+    private function isAssistantMessage(Message $message): bool
+    {
+        return $message->getRole() === MessageRole::ASSISTANT->value;
     }
 }

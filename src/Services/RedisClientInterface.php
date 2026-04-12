@@ -6,11 +6,14 @@ namespace App\Services;
 
 interface RedisClientInterface
 {
+    /** @param array<int, mixed> $arguments */
     public function eval(string $script, array $arguments, int $keyCount): mixed;
 
     public function publish(string $channel, string $message): int|false;
 
     /**
+     * @param array<int, string> $channels
+     * @param callable(string, string): void $callback
      * @param callable(): bool $shouldContinue
      */
     public function subscribeWithHeartbeat(
@@ -20,10 +23,13 @@ interface RedisClientInterface
         callable $shouldContinue,
     ): void;
 
+    /** @param array<string, float|int> $membersAndScores */
     public function zadd(string $key, array $membersAndScores): int|false;
 
+    /** @param array<string, scalar|null> $hash */
     public function hset(string $key, array $hash): int|false;
 
+    /** @return array<string, string>|false */
     public function hgetall(string $key): array|false;
 
     public function del(array|string $keys): int|false;

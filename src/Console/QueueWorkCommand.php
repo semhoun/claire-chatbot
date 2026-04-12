@@ -42,25 +42,52 @@ final class QueueWorkCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $this->queueWorker = $this->container->get(QueueWorker::class);
-
         $this->setupSignalHandlers();
 
-        $workerId = sprintf('%s:%d', gethostname() ?: 'localhost', getmypid());
-        $queueWorkerOptions = new QueueWorkerOptions(
-            queueName: (string) ($input->getOption('queue') ?: $this->settings->get('queue.defaultQueue')),
-            sleep: max(1, (int) ($input->getOption('sleep') ?: $this->settings->get('queue.sleep'))),
-            once: (bool) $input->getOption('once'),
-            maxJobs: max(0, (int) $input->getOption('max-jobs')),
-            maxTime: max(0, (int) $input->getOption('max-time')),
-        );
+        $workerId = $this->generateWorkerId();
+        $options = $this->createWorkerOptions($input);
 
-        $output->writeln(sprintf('<info>Starting queue worker %s on queue %s</info>', $workerId, $queueWorkerOptions->queueName));
+        $output->writeln(sprintf('<info>Starting queue worker %s on queue %s</info>', $workerId, $options->queueName));
 
-        $processedJobs = $this->queueWorker->run($queueWorkerOptions, $workerId, $output);
+        $processedJobs = $this->queueWorker->run($options, $workerId, $output);
 
         $output->writeln(sprintf('<info>Queue worker stopped after %d job(s)</info>', $processedJobs));
 
         return Command::SUCCESS;
+    }
+
+    private function generateWorkerId(): string
+    {
+        $hostname = gethostname();
+        $host = is_string($hostname) && $hostname !== '' ? $hostname : 'localhost';
+
+        return sprintf('%s:%d', $host, getmypid());
+    }
+
+    private function createWorkerOptions(InputInterface $input): QueueWorkerOptions
+    {
+        $queueName = $input->getOption('queue');
+        $sleep = $input->getOption('sleep');
+
+        return new QueueWorkerOptions(
+            queueName: $this->resolveQueueName($queueName),
+            sleep: $this->resolveSleepTime($sleep),
+            once: (bool) $input->getOption('once'),
+            maxJobs: max(0, (int) $input->getOption('max-jobs')),
+            maxTime: max(0, (int) $input->getOption('max-time')),
+        );
+    }
+
+    private function resolveQueueName(mixed $queueName): string
+    {
+        return is_string($queueName) && $queueName !== ''
+            ? $queueName
+            : (string) $this->settings->get('queue.defaultQueue');
+    }
+
+    private function resolveSleepTime(mixed $sleep): int
+    {
+        return max(1, is_numeric($sleep) ? (int) $sleep : (int) $this->settings->get('queue.sleep'));
     }
 
     private function setupSignalHandlers(): void

@@ -6,15 +6,15 @@ namespace App\Controller;
 
 use App\Services\Auth;
 use App\Services\OidcClient;
-use App\Services\Session\SessionFromRequestTrait;
 use App\Services\Session\SessionInterface;
+use App\Services\Session\Trait\SessionFromRequest;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
 
 final readonly class AuthController
 {
-    use SessionFromRequestTrait;
+    use SessionFromRequest;
 
     public function __construct(
         private OidcClient $oidcClient,

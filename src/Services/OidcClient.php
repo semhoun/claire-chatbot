@@ -15,14 +15,16 @@ final class OidcClient
 {
     private bool $enabled = false;
 
+    /** @var array<string, mixed> */
     private array $discovery;
 
     private readonly GenericProvider $genericProvider;
 
     private readonly string $redirectUri;
 
-    private string $tokenAuthMethod;
+    private readonly string $tokenAuthMethod;
 
+    /** @var array<int, string> */
     private readonly array $scopes;
 
     public function __construct(
@@ -30,9 +32,6 @@ final class OidcClient
     ) {
         $wellKnownUrl = $this->settings->get('oidc.well_known_url');
         $clientId = $this->settings->get('oidc.client_id');
-        $clientSecret = $this->settings->get('oidc.client_secret');
-        $this->scopes = $this->settings->get('oidc.scopes');
-        $this->redirectUri = $this->settings->get('oidc.redirect_uri_base') .  '/auth/callback';
 
         if (empty($wellKnownUrl) || empty($clientId)) {
             $this->enabled = false;
@@ -40,38 +39,12 @@ final class OidcClient
         }
 
         $this->enabled = true;
+        $this->scopes = $this->settings->get('oidc.scopes');
+        $this->redirectUri = $this->settings->get('oidc.redirect_uri_base') . '/auth/callback';
 
-        $client = new Client(['timeout' => 5.0]);
-        $response = $client->get($wellKnownUrl);
-        $this->discovery = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
-
-        // Determine token endpoint client authentication method
-        $supported = array_map(strval(...), (array) ($this->discovery['token_endpoint_auth_methods_supported'] ?? []));
-        // Auto-detect with sensible default
-        if (in_array('client_secret_basic', $supported, true)) {
-            $this->tokenAuthMethod = 'client_secret_basic';
-        } elseif (in_array('client_secret_post', $supported, true)) {
-            $this->tokenAuthMethod = 'client_secret_post';
-        } else {
-            $this->tokenAuthMethod = 'client_secret_basic';
-        }
-
-        $optionProvider = $this->tokenAuthMethod === 'client_secret_post'
-            ? new PostAuthOptionProvider()
-            : new HttpBasicAuthOptionProvider();
-
-        $this->genericProvider = new GenericProvider([
-            'clientId' => $clientId,
-            'clientSecret' => $clientSecret,
-            'redirectUri' => $this->redirectUri,
-            'urlAuthorize' => $this->discovery['authorization_endpoint'] ?? '',
-            'urlAccessToken' => $this->discovery['token_endpoint'] ?? '',
-            'urlResourceOwnerDetails' => $this->discovery['userinfo_endpoint'] ?? '',
-            // Ensure scopes are space-delimited per OIDC (encoded as '+')
-            'scopeSeparator' => ' ',
-            'scopes' => $this->scopes,
-            'optionProvider' => $optionProvider,
-        ]);
+        $this->discovery = $this->fetchDiscovery($wellKnownUrl);
+        $this->tokenAuthMethod = $this->detectAuthMethod();
+        $this->genericProvider = $this->createGenericProvider($clientId);
     }
 
     public function isEnabled(): bool
@@ -84,6 +57,7 @@ final class OidcClient
         return $this->settings->get('oidc.default_user.id');
     }
 
+    /** @return array<string, mixed> */
     public function getDefaultUserData(): array
     {
         return $this->settings->get('oidc.default_user.data');
@@ -100,15 +74,92 @@ final class OidcClient
     }
 
     /**
+     * @param array<string, mixed> $queryParams
+     *
      * @return array{logged:bool,id?:string,data?:array<string,mixed>,error?:string,error_description?:string} Normalized outcome
      */
     public function handleCallback(SessionInterface $session, array $queryParams): array
+    {
+        $validationResult = $this->validateCallback($session, $queryParams);
+        if ($validationResult !== null) {
+            return $validationResult;
+        }
+
+        $accessToken = $this->fetchAccessToken($queryParams['code']);
+        if ($accessToken === null) {
+            return ['logged' => false];
+        }
+
+        $tokenInfo = $this->fetchUserInfo($accessToken);
+        if ($tokenInfo === null) {
+            return ['logged' => false];
+        }
+
+        $session->delete('oidc_state');
+
+        return [
+            'logged' => true,
+            'id' => $tokenInfo['sub'] ?? null,
+            'data' => $this->normalizeUserData($tokenInfo),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function fetchDiscovery(string $wellKnownUrl): array
+    {
+        $client = new Client(['timeout' => 5.0]);
+        $response = $client->get($wellKnownUrl);
+
+        return json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    private function detectAuthMethod(): string
+    {
+        $supported = array_map(strval(...), (array) ($this->discovery['token_endpoint_auth_methods_supported'] ?? []));
+
+        if (in_array('client_secret_basic', $supported, true)) {
+            return 'client_secret_basic';
+        }
+
+        if (in_array('client_secret_post', $supported, true)) {
+            return 'client_secret_post';
+        }
+
+        return 'client_secret_basic';
+    }
+
+    private function createGenericProvider(string $clientId): GenericProvider
+    {
+        $optionProvider = $this->tokenAuthMethod === 'client_secret_post'
+            ? new PostAuthOptionProvider()
+            : new HttpBasicAuthOptionProvider();
+
+        return new GenericProvider([
+            'clientId' => $clientId,
+            'clientSecret' => $this->settings->get('oidc.client_secret'),
+            'redirectUri' => $this->redirectUri,
+            'urlAuthorize' => $this->discovery['authorization_endpoint'] ?? '',
+            'urlAccessToken' => $this->discovery['token_endpoint'] ?? '',
+            'urlResourceOwnerDetails' => $this->discovery['userinfo_endpoint'] ?? '',
+            'scopeSeparator' => ' ',
+            'scopes' => $this->scopes,
+            'optionProvider' => $optionProvider,
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $queryParams
+     *
+     * @return array{logged:bool,error?:string,error_description?:string}|null
+     */
+    private function validateCallback(SessionInterface $session, array $queryParams): ?array
     {
         if (! isset($queryParams['state']) || $session->get('oidc_state') !== $queryParams['state']) {
             return ['logged' => false];
         }
 
-        // Check for OAuth error response from the authorization server
         if (isset($queryParams['error'])) {
             return [
                 'logged' => false,
@@ -121,20 +172,26 @@ final class OidcClient
             return ['logged' => false];
         }
 
+        return null;
+    }
+
+    private function fetchAccessToken(string $code): ?object
+    {
         try {
-            $accessToken = $this->genericProvider->getAccessToken('authorization_code', [
-                'code' => $queryParams['code'],
+            return $this->genericProvider->getAccessToken('authorization_code', [
+                'code' => $code,
                 'redirect_uri' => $this->redirectUri,
             ]);
-        } catch (IdentityProviderException) {
-            // Note: do not leak provider internals to user; simply fail auth.
-            // You can enable DEBUG_MODE to see detailed errors via Slim error handler.
-            return ['logged' => false];
-        } catch (\Throwable) {
-            return ['logged' => false];
+        } catch (IdentityProviderException|\Throwable) {
+            return null;
         }
+    }
 
-        // Fetch user info from userinfo endpoint
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchUserInfo(object $accessToken): ?array
+    {
         $request = $this->genericProvider->getAuthenticatedRequest(
             'GET',
             $this->discovery['userinfo_endpoint'] ?? '',
@@ -144,12 +201,16 @@ final class OidcClient
         $response = $client->send($request);
         $tokenInfo = json_decode((string) $response->getBody(), true);
 
-        if (! is_array($tokenInfo)) {
-            return ['logged' => false];
-        }
+        return is_array($tokenInfo) ? $tokenInfo : null;
+    }
 
-        // Normalize
-        $id = $tokenInfo['sub'] ?? null;
+    /**
+     * @param array<string, mixed> $tokenInfo
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizeUserData(array $tokenInfo): array
+    {
         $data = [
             'firstName' => $tokenInfo['given_name'] ?? null,
             'lastName' => $tokenInfo['family_name'] ?? null,
@@ -163,12 +224,6 @@ final class OidcClient
             $data['firstName'] = $tokenInfo['name'];
         }
 
-        $session->delete('oidc_state');
-
-        return [
-            'logged' => true,
-            'id' => $id,
-            'data' => $data,
-        ];
+        return $data;
     }
 }

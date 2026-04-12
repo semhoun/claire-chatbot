@@ -8,10 +8,12 @@ interface SessionInterface
 {
     public function get(string $key, mixed $default = null): mixed;
 
+    /** @return array<string, mixed> */
     public function all(): array;
 
     public function set(string $key, mixed $value): void;
 
+    /** @param array<string, mixed> $values */
     public function setValues(array $values): void;
 
     public function has(string $key): bool;

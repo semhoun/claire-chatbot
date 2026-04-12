@@ -11,6 +11,14 @@ use Twig\TwigFunction;
 
 class GeneratedImageExtension extends AbstractExtension
 {
+    private const string IMAGE_TAG_TEMPLATE = <<<'HTML'
+<img src="/files/img_serve/%s" alt="Generated image" class="generated-image">
+HTML;
+
+    private const string PLACEHOLDER_TEMPLATE = <<<'HTML'
+<span class="generated-image-placeholder" data-generated-image="%s" role="img" aria-label="Image generee">&#128247;</span>
+HTML;
+
     /**
      * @return array<TwigFilter>
      */
@@ -44,7 +52,7 @@ class GeneratedImageExtension extends AbstractExtension
             $imgId = $matches[1];
 
             return sprintf(
-                '<img src="/files/img_serve/%s" alt="Generated image" class="generated-image">',
+                self::IMAGE_TAG_TEMPLATE,
                 htmlspecialchars($imgId, ENT_QUOTES, 'UTF-8')
             );
         }, $content);
@@ -59,7 +67,7 @@ class GeneratedImageExtension extends AbstractExtension
             $imgId = htmlspecialchars($matches[1], ENT_QUOTES, 'UTF-8');
 
             return sprintf(
-                '<span class="generated-image-placeholder" data-generated-image="%s" role="img" aria-label="Image generee">&#128247;</span>',
+                self::PLACEHOLDER_TEMPLATE,
                 $imgId
             );
         }, $content);
@@ -68,10 +76,19 @@ class GeneratedImageExtension extends AbstractExtension
     /**
      * Extract generated image paths from content.
      * Returns array of paths like "generated/xxx.png".
+     *
+     * @return array<int, string>
      */
     public function extractGeneratedImages(string $content): array
     {
-        if (preg_match_all(ComfyUIService::IMAGE_PATTERN, $content, $matches, PREG_SET_ORDER) === false) {
+        $matched = preg_match_all(
+            ComfyUIService::IMAGE_PATTERN,
+            $content,
+            $matches,
+            PREG_SET_ORDER
+        );
+
+        if ($matched === false) {
             return [];
         }
 

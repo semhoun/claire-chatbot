@@ -17,9 +17,9 @@ class Agent extends \NeuronAI\Agent\Agent
     {
         // Générer le message de bienvenue via le LLM
         $userMessage = new UserMessage(
-            "[OC]Génère un message de bienvenue chaleureux et concis pour accueillir l'utilisateur. " .
-            "Présente-toi brièvement et invite l'utilisateur à poser ses questions. " .
-            'Réponds uniquement avec le message de bienvenue, sans guillemets ni formatage.[/OC]'
+            <<<'PROMPT'
+[OC]Génère un message de bienvenue chaleureux et concis pour accueillir l'utilisateur. Présente-toi brièvement et invite l'utilisateur à poser ses questions. Réponds uniquement avec le message de bienvenue, sans guillemets ni formatage.[/OC]
+PROMPT
         );
         $userMessage->addMetadata('message_type', 'out_of_context');
 

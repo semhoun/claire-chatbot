@@ -80,60 +80,21 @@ EOT;
     #[\Override]
     public function postProcessMessage(Message $message): Message
     {
-        $result = $this->getResult();
+        $imageId = $this->extractImageId();
 
-        if ($result === null) {
+        if ($imageId === null) {
             return $message;
         }
 
-        try {
-            $resultData = json_decode($result, true, 512, JSON_THROW_ON_ERROR);
-
-            // Check if the result contains a successfully generated image
-            if (! isset($resultData['status'], $resultData['id']) || $resultData['status'] !== 'success') {
-                return $message;
-            }
-
-            $imageId = $resultData['id'];
-            $messageContent = $message->getContent() ?? '';
-
-            // If the image ID is already in the message, no need to modify
-            if (str_contains($messageContent, (string) $imageId)) {
-                return $message;
-            }
-
-            // Append the image ID to the message content
-            $newContent = $messageContent . "\n" . $imageId;
-
-            // Replace the text content blocks with the updated content
-            $contentBlocks = $message->getContentBlocks();
-            $updatedBlocks = [];
-            $hasTextBlock = false;
-
-            foreach ($contentBlocks as $contentBlock) {
-                if ($contentBlock instanceof TextContent && ! $hasTextBlock) {
-                    $updatedBlocks[] = new TextContent($newContent);
-                    $hasTextBlock = true;
-                } else {
-                    $updatedBlocks[] = $contentBlock;
-                }
-            }
-
-            // If no text block exists, add one
-            if (! $hasTextBlock) {
-                $updatedBlocks[] = new TextContent($imageId);
-            }
-
-            $message->setContents($updatedBlocks);
-
-            return $message;
-        } catch (JsonException) {
-            // If result is not valid JSON, return message unchanged
+        if ($this->isImageIdInMessage($message, $imageId)) {
             return $message;
         }
+
+        return $this->appendImageIdToMessage($message, $imageId);
     }
 
     #[\Override]
+    /** @return array<int, ToolProperty> */
     protected function properties(): array
     {
         $promptStyle = $this->getPromptStyle();
@@ -149,6 +110,70 @@ EOT;
                 true
             ),
         ];
+    }
+
+    private function extractImageId(): ?string
+    {
+        $result = $this->getResult();
+
+        if ($result === null) {
+            return null;
+        }
+
+        try {
+            $resultData = json_decode($result, true, 512, JSON_THROW_ON_ERROR);
+
+            if (! isset($resultData['status'], $resultData['id']) || $resultData['status'] !== 'success') {
+                return null;
+            }
+
+            return $resultData['id'];
+        } catch (JsonException) {
+            return null;
+        }
+    }
+
+    private function isImageIdInMessage(Message $message, string $imageId): bool
+    {
+        $messageContent = $message->getContent() ?? '';
+
+        return str_contains($messageContent, $imageId);
+    }
+
+    private function appendImageIdToMessage(Message $message, string $imageId): Message
+    {
+        $newContent = $message->getContent() . "\n" . $imageId;
+        $updatedBlocks = $this->updateContentBlocks($message->getContentBlocks(), $newContent, $imageId);
+
+        $message->setContents($updatedBlocks);
+
+        return $message;
+    }
+
+    /**
+     * @param array<int, mixed> $contentBlocks
+     *
+     * @return array<int, mixed>
+     */
+    private function updateContentBlocks(array $contentBlocks, string $newContent, string $imageId): array
+    {
+        $updatedBlocks = [];
+        $hasTextBlock = false;
+
+        foreach ($contentBlocks as $contentBlock) {
+            if ($contentBlock instanceof TextContent && ! $hasTextBlock) {
+                $updatedBlocks[] = new TextContent($newContent);
+                $hasTextBlock = true;
+            } else {
+                $updatedBlocks[] = $contentBlock;
+            }
+        }
+
+        if (! $hasTextBlock) {
+            $updatedBlocks[] = new TextContent($imageId);
+        }
+
+        return $updatedBlocks;
     }
 
     private function getPromptStyle(): string

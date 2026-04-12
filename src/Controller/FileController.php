@@ -9,7 +9,7 @@ use App\Entity\User;
 use App\Services\Auth;
 use App\Services\ComfyUIService;
 use App\Services\Markdown;
-use App\Services\Session\SessionFromRequestTrait;
+use App\Services\Session\Trait\SessionFromRequest;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use NeuronAI\RAG\DataLoader\StringDataLoader;
@@ -19,12 +19,13 @@ use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Psr\Http\Message\UploadedFileInterface;
 use Ramsey\Uuid\Uuid;
 use Slim\Views\Twig;
 
 final readonly class FileController
 {
-    use SessionFromRequestTrait;
+    use SessionFromRequest;
 
     public function __construct(
         private Twig $twig,
@@ -104,51 +105,21 @@ final readonly class FileController
 
     public function uploadRag(Request $request, Response $response): Response
     {
-        $uploadedFiles = $request->getUploadedFiles();
-        $file = $uploadedFiles['file'] ?? null;
+        $file = $this->getUploadedFile($request);
+
         if ($file === null || $file->getError() !== UPLOAD_ERR_OK) {
             return $response->withStatus(400);
         }
 
-        $contentStream = $file->getStream();
-        $contentStream->rewind();
-
-        $data = $contentStream->getContents();
-
-        $entity = new File();
-        $entity->setFilename($file->getClientFilename() ?? 'fichier');
-        $entity->setMimeType($file->getClientMediaType() ?? 'application/octet-stream');
-        $entity->setFileId(Uuid::uuid7()->toString());
-        $entity->setSizeBytes((string) $file->getSize());
+        $data = $this->readFileContent($file);
+        $entity = $this->createFileEntity($file, $data);
 
         $this->filesystem->write($entity->getFileId(), $data);
-
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
 
-        // Ajout dans le RAG
-        if ($file->getClientMediaType() === 'application/xhtml+xml' || $file->getClientMediaType() === 'text/html') {
-            $data = Markdown::fromHtml($data);
-        }
-
-        if ($file->getClientMediaType() === 'application/pdf') {
-            $data = Markdown::fromPdf($data);
-        }
-
-        $embedder = $this->container->get(EmbeddingsProviderInterface::class);
-        $store = $this->container->get(VectorStoreInterface::class);
-        $documents = StringDataLoader::for($data)
-            ->withSplitter(
-                new DelimiterTextSplitter(
-                    maxLength: 1000,
-                    separator: '.',
-                    wordOverlap: 0
-                )
-            )
-            ->getDocuments();
-        $store->addDocuments(
-            $embedder->embedDocuments($documents)
-        );
+        $processedData = $this->convertToMarkdown($file->getClientMediaType(), $data);
+        $this->indexInRag($processedData);
 
         return $response->withStatus(201);
     }
@@ -209,5 +180,58 @@ final readonly class FileController
         return $response
             ->withHeader('Content-Type', $mimeType)
             ->withHeader('Content-Length', (string) strlen($content));
+    }
+
+    private function getUploadedFile(Request $request): ?UploadedFileInterface
+    {
+        $uploadedFiles = $request->getUploadedFiles();
+
+        return $uploadedFiles['file'] ?? null;
+    }
+
+    private function readFileContent(UploadedFileInterface $file): string
+    {
+        $stream = $file->getStream();
+        $stream->rewind();
+
+        return $stream->getContents();
+    }
+
+    private function createFileEntity(UploadedFileInterface $file, string $data): File
+    {
+        $entity = new File();
+        $entity->setFilename($file->getClientFilename() ?? 'fichier');
+        $entity->setMimeType($file->getClientMediaType() ?? 'application/octet-stream');
+        $entity->setFileId(Uuid::uuid7()->toString());
+        $entity->setSizeBytes((string) $file->getSize());
+
+        return $entity;
+    }
+
+    private function convertToMarkdown(?string $mimeType, string $data): string
+    {
+        return match ($mimeType) {
+            'application/xhtml+xml', 'text/html' => Markdown::fromHtml($data),
+            'application/pdf' => Markdown::fromPdf($data),
+            default => $data,
+        };
+    }
+
+    private function indexInRag(string $data): void
+    {
+        $embedder = $this->container->get(EmbeddingsProviderInterface::class);
+        $store = $this->container->get(VectorStoreInterface::class);
+
+        $documents = StringDataLoader::for($data)
+            ->withSplitter(
+                new DelimiterTextSplitter(
+                    maxLength: 1000,
+                    separator: '.',
+                    wordOverlap: 0
+                )
+            )
+            ->getDocuments();
+
+        $store->addDocuments($embedder->embedDocuments($documents));
     }
 }

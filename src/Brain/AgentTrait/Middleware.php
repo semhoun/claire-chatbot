@@ -14,6 +14,7 @@ use NeuronAI\HttpClient\GuzzleHttpClient;
 trait Middleware
 {
     #[\Override]
+    /** @return array<class-string, array<object>> */
     protected function middleware(): array
     {
         $openAI = new \App\Brain\Provider\OpenAI(

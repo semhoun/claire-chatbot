@@ -114,6 +114,7 @@ class Observer implements ObserverInterface
         return \substr(\strrchr($class, '\\'), 1);
     }
 
+    /** @return array<string, mixed> */
     protected function prepareMessageItem(Message $message): array
     {
         $messageJson = $message->jsonSerialize();

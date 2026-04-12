@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Brain\Agent;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Services\Auth;
 use App\Services\ComfyUIWorkflowRegistry;
-use App\Services\Session\SessionFromRequestTrait;
+use App\Services\Session\SessionInterface;
+use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
@@ -20,7 +22,7 @@ use Slim\Views\Twig;
 
 final readonly class HomeController
 {
-    use SessionFromRequestTrait;
+    use SessionFromRequest;
 
     public function __construct(
         private Logger $logger,
@@ -35,70 +37,93 @@ final readonly class HomeController
     public function index(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
+        $userChatHistory = $this->createUserChatHistory($session);
+        $chatId = $this->resolveChatId($session, $userChatHistory);
 
-        $time = new \DateTime()->format('H:i');
+        if ($chatId === null) {
+            $chatId = $this->initializeNewChat($session, $userChatHistory);
+        } else {
+            $userChatHistory->validateMessageSequences();
+        }
 
-        $currentBrain = $session->get('brain_avatar');
-        $layoutMode = $session->get('layout_mode');
         $comfyuiEnabled = $this->settings->get('comfyui.enabled') === true;
-        $comfyuiWorkflows = $comfyuiEnabled ? $this->comfyUIWorkflowRegistry->list() : [];
         $currentComfyuiWorkflow = (string) $session->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
 
-        // Charger les messages existants pour le thread courant si disponibles
-        $userChatHistory = new UserChatHistory(
+        return $this->twig->render($response, 'chat.twig', [
+            'time' => new \DateTime()->format('H:i'),
+            'current_chat_id' => $chatId,
+            'stream_session_id' => uniqid('sess-', true),
+            'uinfo' => $session->get(Auth::USERINFO),
+            'layout_mode' => $session->get('layout_mode'),
+            'brain_info' => $this->brainRegistry->getMeta($session->get('brain_avatar')),
+            'current_brain' => $session->get('brain_avatar'),
+            'brains' => $this->brainRegistry->list(),
+            'comfyui_enabled' => $comfyuiEnabled,
+            'comfyui_workflows' => $comfyuiEnabled ? $this->comfyUIWorkflowRegistry->list() : [],
+            'current_comfyui_workflow' => $currentComfyuiWorkflow,
+        ]);
+    }
+
+    private function createUserChatHistory(SessionInterface $session): UserChatHistory
+    {
+        return new UserChatHistory(
             session: $session,
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
             contextWindow: $this->settings->get('llm.openai.contextWindow')
         );
+    }
 
-        // Conserver le chatId courant s'il existe, sinon en générer un nouveau
+    private function resolveChatId(SessionInterface $session, UserChatHistory $userChatHistory): ?string
+    {
         $chatId = $session->get('chatId');
+
         if ($chatId !== null && count($userChatHistory->getDisplayMessages()) > 1) {
-            $userChatHistory->validateMessageSequences();
-        } else {
-            set_time_limit((int) $this->settings->get('llm.workflow.timeout'));
-
-            // Nettoyage des conversations vides de l'utilisateur
-            $userId = (string) $session->get(Auth::USERID);
-            if ($userId !== '') {
-                $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
-            }
-
-            $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
-            $session->set('chatId', $chatId);
-            $userChatHistory->setThreadId($chatId);
-
-            $openingMessage = $this->brainRegistry->get($currentBrain, $session)->getOpeningText();
-            $assistantMessage = new AssistantMessage($openingMessage)
-                ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-            $userChatHistory->replaceDisplayMessages([$assistantMessage]);
-            $userChatHistory->replaceMessages([]);
-            $messages = $userChatHistory->getFormattedMessages();
-            $this->logger->debug('new messages  ', ['messages' => $messages]);
-            // On configure le Workflow par défaut au premier chat
-            if ($this->settings->get('comfyui.enabled') === true && $currentComfyuiWorkflow === '') {
-                $currentComfyuiWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug() ?? '';
-                $session->set(ComfyUIWorkflowRegistry::SESSION_KEY, $currentComfyuiWorkflow);
-            }
+            return $chatId;
         }
 
-        $meta = $this->brainRegistry->getMeta($currentBrain);
+        return null;
+    }
 
-        // Generate a per-tab stream session ID for SSE binding
-        $streamSessionId = uniqid('sess-', true);
+    private function initializeNewChat(SessionInterface $session, UserChatHistory $userChatHistory): string
+    {
+        set_time_limit((int) $this->settings->get('llm.workflow.timeout'));
+        $this->cleanupEmptyConversations($session);
 
-        return $this->twig->render($response, 'chat.twig', [
-            'time' => $time,
-            'current_chat_id' => $chatId,
-            'stream_session_id' => $streamSessionId,
-            'uinfo' => $session->get(Auth::USERINFO),
-            'layout_mode' => $layoutMode,
-            'brain_info' => $meta,
-            'current_brain' => $currentBrain,
-            'brains' => $this->brainRegistry->list(),
-            'comfyui_enabled' => $comfyuiEnabled,
-            'comfyui_workflows' => $comfyuiWorkflows,
-            'current_comfyui_workflow' => $currentComfyuiWorkflow,
-        ]);
+        $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
+        $session->set('chatId', $chatId);
+        $userChatHistory->setThreadId($chatId);
+
+        $agent = $this->brainRegistry->get($session->get('brain_avatar'), $session);
+        $this->setOpeningMessage($userChatHistory, $agent);
+        $this->setDefaultWorkflow($session);
+
+        return $chatId;
+    }
+
+    private function cleanupEmptyConversations(SessionInterface $session): void
+    {
+        $userId = (string) $session->get(Auth::USERID);
+        if ($userId !== '') {
+            $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
+        }
+    }
+
+    private function setOpeningMessage(UserChatHistory $userChatHistory, Agent $agent): void
+    {
+        $openingMessage = $agent->getOpeningText();
+        $assistantMessage = new AssistantMessage($openingMessage)
+            ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
+        $userChatHistory->replaceDisplayMessages([$assistantMessage]);
+        $userChatHistory->replaceMessages([]);
+        $this->logger->debug('new messages', ['messages' => $userChatHistory->getFormattedMessages()]);
+    }
+
+    private function setDefaultWorkflow(SessionInterface $session): void
+    {
+        $currentComfyuiWorkflow = (string) $session->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
+        if ($this->settings->get('comfyui.enabled') === true && $currentComfyuiWorkflow === '') {
+            $defaultWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug() ?? '';
+            $session->set(ComfyUIWorkflowRegistry::SESSION_KEY, $defaultWorkflow);
+        }
     }
 }

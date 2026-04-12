@@ -18,7 +18,9 @@ interface SessionManagerInterface
 
     public function getName(): string;
 
+    /** @return array<string, mixed>|null */
     public function getStorageAsArray(): ?array;
 
+    /** @param array<string, mixed> $data */
     public function setStorageFromArray(array $data): void;
 }
