@@ -48,6 +48,7 @@ final class TelegramSession implements SessionInterface
 
         $telegramSessionRepository = $this->getRepository();
         $this->telegramSessionEntity = $telegramSessionRepository->findOrCreateByTelegramId($this->telegramId);
+        $this->entityManager->refresh($this->telegramSessionEntity);
         $this->storage = $this->telegramSessionEntity->getSessionData();
         $this->loaded = true;
 
