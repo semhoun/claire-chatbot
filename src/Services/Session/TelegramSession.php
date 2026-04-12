@@ -29,6 +29,11 @@ final class TelegramSession implements SessionInterface
      */
     private array $storage = [];
 
+    /**
+     * @var array<string, mixed>|null
+     */
+    private ?array $originalStorage = null;
+
     private bool $loaded = false;
 
     private ?TelegramFlash $telegramFlash = null;
@@ -50,6 +55,7 @@ final class TelegramSession implements SessionInterface
         $this->telegramSessionEntity = $telegramSessionRepository->findOrCreateByTelegramId($this->telegramId);
         $this->entityManager->refresh($this->telegramSessionEntity);
         $this->storage = $this->telegramSessionEntity->getSessionData();
+        $this->originalStorage = $this->storage;
         $this->loaded = true;
 
         // Initialize flash handler with storage reference
@@ -67,21 +73,16 @@ final class TelegramSession implements SessionInterface
             return;
         }
 
-        // Ensure flash data is included in storage
+        $storage = $this->getPersistedStorage();
 
-        if ($this->telegramFlash instanceof \App\Services\Session\TelegramFlash) {
-            $flashData = $this->telegramFlash->toArray();
-
-            if ($flashData !== []) {
-                $this->storage[self::FLASH_KEY] = $flashData;
-            } else {
-                unset($this->storage[self::FLASH_KEY]);
-            }
+        if ($storage === $this->originalStorage) {
+            return;
         }
 
-        $this->telegramSessionEntity->setSessionData($this->storage);
+        $this->telegramSessionEntity->setSessionData($storage);
 
         $this->entityManager->flush();
+        $this->originalStorage = $storage;
     }
 
     public function flush(): void
@@ -141,6 +142,7 @@ final class TelegramSession implements SessionInterface
     public function clear(): void
     {
         $this->storage = [];
+        $this->originalStorage = null;
 
         if ($this->telegramFlash instanceof \App\Services\Session\TelegramFlash) {
             $this->telegramFlash->clear();
@@ -178,5 +180,25 @@ final class TelegramSession implements SessionInterface
         }
 
         return $entityRepository;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function getPersistedStorage(): array
+    {
+        $storage = $this->storage;
+
+        if ($this->telegramFlash instanceof \App\Services\Session\TelegramFlash) {
+            $flashData = $this->telegramFlash->toArray();
+
+            if ($flashData !== []) {
+                $storage[self::FLASH_KEY] = $flashData;
+            } else {
+                unset($storage[self::FLASH_KEY]);
+            }
+        }
+
+        return $storage;
     }
 }
