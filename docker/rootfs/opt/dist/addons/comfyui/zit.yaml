@@ -1,20 +1,40 @@
-type: sdxl
-label: Base SDXL
+label: ZImage Turbo
 workflow: |
   {
     "1": {
       "inputs": {
-        "ckpt_name": "sdXL_v10RefinerVAEFix.safetensors"
+        "unet_name": "zImageTurboFP8.safetensors",
+        "weight_dtype": "default"
       },
-      "class_type": "CheckpointLoaderSimple",
+      "class_type": "UNETLoader",
       "_meta": {
-        "title": "Load Checkpoint"
+        "title": "Load Diffusion Model"
       }
     },
     "2": {
       "inputs": {
+        "clip_name": "qwen_3_4b.safetensors",
+        "type": "lumina2",
+        "device": "default"
+      },
+      "class_type": "CLIPLoader",
+      "_meta": {
+        "title": "Load CLIP"
+      }
+    },
+    "3": {
+      "inputs": {
+        "vae_name": "ae.safetensors"
+      },
+      "class_type": "VAELoader",
+      "_meta": {
+        "title": "Load VAE"
+      }
+    },
+    "4": {
+      "inputs": {
         "width": 832,
-        "height": 1216,
+        "height": 1344,
         "batch_size": 1
       },
       "class_type": "EmptyLatentImage",
@@ -22,12 +42,12 @@ workflow: |
         "title": "Empty Latent Image"
       }
     },
-    "3": {
+    "5": {
       "inputs": {
         "text": "{{PROMPT}}",
         "clip": [
-          "1",
-          1
+          "2",
+          0
         ]
       },
       "class_type": "CLIPTextEncode",
@@ -35,24 +55,23 @@ workflow: |
         "title": "CLIP Text Encode (Prompt)"
       }
     },
-    "4": {
+    "6": {
       "inputs": {
-        "text": "bad quality, worst quality, worst detail, sketch, watermark, signature, artist name, deformed, deformed face, extra fingers, deformed teeth, logo, split image, out of frame, out of focus, CGI, render, 3D",
-        "clip": [
-          "1",
-          1
+        "conditioning": [
+          "5",
+          0
         ]
       },
-      "class_type": "CLIPTextEncode",
+      "class_type": "ConditioningZeroOut",
       "_meta": {
-        "title": "CLIP Text Encode (Prompt)"
+        "title": "ConditioningZeroOut"
       }
     },
-    "5": {
+    "7": {
       "inputs": {
-        "seed": 0,
-        "steps": 20,
-        "cfg": 8,
+        "seed": {{SEED}},
+        "steps": 8,
+        "cfg": 1,
         "sampler_name": "euler",
         "scheduler": "simple",
         "denoise": 1,
@@ -61,15 +80,15 @@ workflow: |
           0
         ],
         "positive": [
-          "3",
+          "5",
           0
         ],
         "negative": [
-          "4",
+          "6",
           0
         ],
         "latent_image": [
-          "2",
+          "4",
           0
         ]
       },
@@ -78,15 +97,15 @@ workflow: |
         "title": "KSampler"
       }
     },
-    "6": {
+    "9": {
       "inputs": {
         "samples": [
-          "5",
+          "7",
           0
         ],
         "vae": [
-          "1",
-          2
+          "3",
+          0
         ]
       },
       "class_type": "VAEDecode",
@@ -94,11 +113,11 @@ workflow: |
         "title": "VAE Decode"
       }
     },
-    "7": {
+    "10": {
       "inputs": {
         "filename_prefix": "ClaireChatBot",
         "images": [
-          "6",
+          "9",
           0
         ]
       },

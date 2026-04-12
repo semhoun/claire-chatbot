@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Brain\Tools;
 
 use App\Services\ComfyUIService;
-use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use JsonException;
@@ -21,21 +20,11 @@ class GenerateImageTool extends Tool implements MessagePostProcessorInterface
         private readonly ComfyUIService $comfyUIService,
         private readonly Settings $settings,
         private readonly SessionInterface $session,
-        private readonly ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
     ) {
-        $promptStyle = $this->getPromptStyle();
-        $description = $promptStyle === 'flux'
-            ? <<<EOT
+        $description = <<<EOT
 Generates an image from a text description using ComfyUI. The generated image will be sent to the user.
 IMPORTANT: Use this tool whenever the user requests or needs an image, photo, drawing, illustration, or any other visual output.
 The prompt must be written in natural English, using complete sentences and enough visual detail to clearly describe the scene. Do not use specific character names; use only generic character types such as rabbit, man, woman, child, thief, or robot.
-To insert a generated image into the text, provide only its ID (for example: @@GENERATED@@<dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png>@@) and do not use an <img> tag.
-EOT
-            : <<<EOT
-Generates an image from a text description using ComfyUI. The generated image will be sent to the user.
-IMPORTANT: This tool must be used whenever the user requests or needs an image, photo, drawing, illustration, or any other visual output, including any request to create, generate, or draw an image.
-The prompt must be written as comma-separated English keywords, for example: masterpiece, best quality, sunlit forest, vibrant colors, detailed trees, cinematic lighting. Use descriptive tags and keywords rather than natural language sentences for best results.
-When referring to characters, do not use specific names; use only generic character types such as rabbit, man, woman, child, thief, or robot.
 To insert a generated image into the text, provide only its ID (for example: @@GENERATED@@<dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png>@@) and do not use an <img> tag.
 EOT;
 
@@ -97,16 +86,11 @@ EOT;
     /** @return array<int, ToolProperty> */
     protected function properties(): array
     {
-        $promptStyle = $this->getPromptStyle();
-        $propertyDescription = $promptStyle === 'flux'
-            ? 'The text description of the image to generate. Use natural english language with complete sentences.'
-            : 'The text description of the image to generate. Use comma-separated english keywords. Be detailed and descriptive.';
-
         return [
             new ToolProperty(
                 'prompt',
                 PropertyType::STRING,
-                $propertyDescription,
+                'The text description of the image to generate. Use natural english language with complete sentences.',
                 true
             ),
         ];
@@ -174,20 +158,5 @@ EOT;
         }
 
         return $updatedBlocks;
-    }
-
-    private function getPromptStyle(): string
-    {
-        $workflow = (string) $this->session->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
-        if ($workflow !== '' && $this->comfyUIWorkflowRegistry->has($workflow)) {
-            return $this->comfyUIWorkflowRegistry->getMeta($workflow)['type'];
-        }
-
-        $defaultWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug();
-        if ($defaultWorkflow !== null) {
-            return $this->comfyUIWorkflowRegistry->getMeta($defaultWorkflow)['type'];
-        }
-
-        return 'sdxl';
     }
 }

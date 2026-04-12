@@ -10,7 +10,7 @@ final class ComfyUIWorkflowRegistry
 {
     public const string SESSION_KEY = 'comfyui_workflow';
 
-    /** @var array<string, array{type:string, label:string, workflow:string}>|null */
+    /** @var array<string, array{label:string, workflow:string}>|null */
     private ?array $cache = null;
 
     public function __construct(
@@ -19,7 +19,7 @@ final class ComfyUIWorkflowRegistry
     }
 
     /**
-     * @return array<int, array{slug:string, type:string, label:string}>
+     * @return array<int, array{slug:string, label:string}>
      */
     public function list(): array
     {
@@ -31,7 +31,6 @@ final class ComfyUIWorkflowRegistry
         foreach ($this->loadWorkflows() as $slug => $workflow) {
             $workflows[] = [
                 'slug' => $slug,
-                'type' => $workflow['type'],
                 'label' => $workflow['label'],
             ];
         }
@@ -48,7 +47,7 @@ final class ComfyUIWorkflowRegistry
         return isset($this->loadWorkflows()[$slug]);
     }
 
-    /** @return array{type:string, label:string, workflow:string} */
+    /** @return array{label:string, workflow:string} */
     public function getMeta(string $slug): array
     {
         if (! $this->has($slug)) {
@@ -87,7 +86,7 @@ final class ComfyUIWorkflowRegistry
     }
 
     /**
-     * @return array<string, array{type:string, label:string, workflow:string}>
+     * @return array<string, array{label:string, workflow:string}>
      */
     private function loadWorkflows(): array
     {
@@ -131,7 +130,7 @@ final class ComfyUIWorkflowRegistry
     }
 
     /**
-     * @return array{type:string, label:string, workflow:string}|null
+     * @return array{label:string, workflow:string}|null
      */
     private function loadWorkflowFile(string $file): ?array
     {
@@ -141,10 +140,9 @@ final class ComfyUIWorkflowRegistry
             return null;
         }
 
-        $type = trim((string) ($data['type'] ?? ''));
         $label = trim((string) ($data['label'] ?? ''));
 
-        if ($type === '' || $label === '') {
+        if ($label === '') {
             return null;
         }
 
@@ -154,7 +152,6 @@ final class ComfyUIWorkflowRegistry
         }
 
         return [
-            'type' => $type,
             'label' => $label,
             'workflow' => $workflow,
         ];

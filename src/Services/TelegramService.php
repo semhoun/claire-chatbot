@@ -756,7 +756,7 @@ class TelegramService implements QueueDoer
 
         $message .= "**\n\n---\n_Workflows disponibles_ :\n";
         foreach ($workflows as $workflow) {
-            $message .= sprintf('- `%s` : %s (%s)', $workflow['slug'], $workflow['label'], $workflow['type']) . "\n";
+            $message .= sprintf('- `%s` : %s', $workflow['slug'], $workflow['label']) . "\n";
         }
 
         $this->sendMessage($telegramChatId, $message);

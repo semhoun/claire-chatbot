@@ -1,5 +1,4 @@
-type: flux
-label: Base Flux
+label: Flux.1 Dev
 workflow: |
   {
     "1": {
@@ -14,8 +13,8 @@ workflow: |
     },
     "2": {
       "inputs": {
-        "clip_name1": "clip_l.safetensors",
-        "clip_name2": "t5xxl_fp8.safetensors",
+        "clip_name1": "t5xxl_fp8.safetensors",
+        "clip_name2": "clip_l.safetensors",
         "type": "flux",
         "device": "default"
       },
@@ -35,20 +34,18 @@ workflow: |
     },
     "4": {
       "inputs": {
-        "text": "{{PROMPT}}",
-        "clip": [
-          "2",
-          0
-        ]
+        "width": 832,
+        "height": 1344,
+        "batch_size": 1
       },
-      "class_type": "CLIPTextEncode",
+      "class_type": "EmptyLatentImage",
       "_meta": {
-        "title": "CLIP Text Encode (Prompt)"
+        "title": "Empty Latent Image"
       }
     },
     "5": {
       "inputs": {
-        "text": "",
+        "text": "{{PROMPT}}",
         "clip": [
           "2",
           0
@@ -61,7 +58,19 @@ workflow: |
     },
     "6": {
       "inputs": {
-        "seed": 0,
+        "conditioning": [
+          "5",
+          0
+        ]
+      },
+      "class_type": "ConditioningZeroOut",
+      "_meta": {
+        "title": "ConditioningZeroOut"
+      }
+    },
+    "7": {
+      "inputs": {
+        "seed": {{SEED}},
         "steps": 20,
         "cfg": 1,
         "sampler_name": "euler",
@@ -72,15 +81,15 @@ workflow: |
           0
         ],
         "positive": [
-          "4",
-          0
-        ],
-        "negative": [
           "5",
           0
         ],
+        "negative": [
+          "6",
+          0
+        ],
         "latent_image": [
-          "9",
+          "4",
           0
         ]
       },
@@ -89,10 +98,10 @@ workflow: |
         "title": "KSampler"
       }
     },
-    "7": {
+    "9": {
       "inputs": {
         "samples": [
-          "6",
+          "7",
           0
         ],
         "vae": [
@@ -105,28 +114,17 @@ workflow: |
         "title": "VAE Decode"
       }
     },
-    "8": {
+    "10": {
       "inputs": {
         "filename_prefix": "ClaireChatBot",
         "images": [
-          "7",
+          "9",
           0
         ]
       },
       "class_type": "SaveImage",
       "_meta": {
         "title": "Save Image"
-      }
-    },
-    "9": {
-      "inputs": {
-        "width": 832,
-        "height": 1216,
-        "batch_size": 1
-      },
-      "class_type": "EmptyLatentImage",
-      "_meta": {
-        "title": "Empty Latent Image"
       }
     }
   }

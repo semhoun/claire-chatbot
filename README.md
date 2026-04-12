@@ -322,7 +322,7 @@ L'application peut générer des images via ComfyUI lorsque la configuration app
 # Activation de ComfyUI
 export COMFYUI_ENABLED=true
 export COMFYUI_URL=http://comfyui:8188
-export COMFYUI_DEFAULT_WORKFLOW=sdxl
+export COMFYUI_DEFAULT_WORKFLOW=flux
 ```
 
 **Workflows multiples via `addons/comfyui/`:**
@@ -333,17 +333,21 @@ Par défaut, ce chemin correspond à `${ADDONS_PATH}/comfyui`, avec `ADDONS_PATH
 
 Chaque workflow doit définir:
 
-- `type` : type de prompt attendu (`sdxl`, `flux`, etc.)
 - `label` : libellé affiché dans l'interface web et sur Telegram
-- `workflow` : JSON ComfyUI avec le placeholder `{{PROMPT}}`
+- `workflow` : JSON ComfyUI avec les placeholders `{{PROMPT}}` et `{{SEED}}`
 
 Exemple:
 
 ```yaml
-type: sdxl
-label: Portrait SDXL
+label: Portrait Flux
 workflow: |
   {
+    "3": {
+      "inputs": {
+        "seed": {{SEED}}
+      },
+      "class_type": "KSampler"
+    },
     "6": {
       "inputs": {
         "text": "{{PROMPT}}"
@@ -355,7 +359,7 @@ workflow: |
 
 **Notes de fonctionnement:**
 
-- Le slug du workflow est déterminé par le nom du fichier, par exemple `portrait-sdxl.yaml` → `portrait-sdxl`
+- Le slug du workflow est déterminé par le nom du fichier, par exemple `portrait-flux.yaml` → `portrait-flux`
 - Si `COMFYUI_DEFAULT_WORKFLOW` est défini et correspond à un slug existant, il devient le workflow par défaut
 - Sinon, le premier fichier trouvé dans `addons/comfyui/` devient le workflow par défaut
 - Le workflow sélectionné est mémorisé dans la session utilisateur et dans ses options persistées
@@ -363,11 +367,7 @@ workflow: |
 - Ce système n'est actif que si `COMFYUI_ENABLED=true`
 - Si aucun fichier n'est présent dans `addons/comfyui/`, la génération d'image n'est pas disponible
 
-Note: le workflow doit contenir un placeholder `{{PROMPT}}` qui sera remplacé par la description de l'image à générer.
-
-**Styles de prompts:**
-- `sdxl`: Prompts optimisés pour SDXL (mots-clés séparés par des virgules)
-- `flux`: Prompts en langage naturel pour Flux
+Note: le workflow doit contenir les placeholders `{{PROMPT}}` (remplacé par la description) et `{{SEED}}` (remplacé par une valeur aléatoire).
 
 **Fonctionnement:**
 - Lorsqu'activé, l'outil `generate_image` est disponible pour tous les cerveaux

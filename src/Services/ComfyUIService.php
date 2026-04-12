@@ -64,7 +64,15 @@ final readonly class ComfyUIService
     private function getWorkflow(SessionInterface $session, string $prompt): array
     {
         $workflow = $this->resolveWorkflow($session);
-        $workflow = str_replace('{{PROMPT}}', addcslashes($prompt, '"'), $workflow);
+        $workflow = str_replace([
+                '{{PROMPT}}',
+                '{{SEED}}'
+            ],
+            [
+                addcslashes($prompt, '"'),
+                (string)random_int(1, PHP_INT_MAX)
+            ]
+            , $workflow);
 
         return json_decode($workflow, true, 512, JSON_THROW_ON_ERROR);
     }
