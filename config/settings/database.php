@@ -2,18 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Services\Env;
 use App\Services\Settings;
 
 return [
     // Driver: sqlite, mysql, pgsql
-    'driver' => env('DATABASE_KIND'),
+    'driver' => Env::get('DATABASE_KIND'),
 
     // Used for mysql, pgsql
-    'host' => env('DATABASE_HOST'),
-    'port' => env('DATABASE_PORT'),
-    'dbname' => env('DATABASE_NAME'),
-    'user' => env('DATABASE_USER'),
-    'password' => env('DATABASE_PASSWORD'),
+    'host' => Env::get('DATABASE_HOST'),
+    'port' => Env::get('DATABASE_PORT'),
+    'dbname' => Env::get('DATABASE_NAME'),
+    'user' => Env::get('DATABASE_USER'),
+    'password' => Env::get('DATABASE_PASSWORD'),
 
     // Used only for sqlite
     'path' => Settings::getDataPath() . '/database.sqlite',

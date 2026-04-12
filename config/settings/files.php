@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\Env;
 use App\Services\Settings;
 
 return [
@@ -11,6 +12,6 @@ return [
     ],
     'fileSystem' => [
         'type' => 'local',
-        'path' => env('FILES_PATH', Settings::getDataPath() . '/filer'),
+        'path' => Env::get('FILES_PATH', Settings::getDataPath() . '/filer'),
     ],
 ];

@@ -9,12 +9,7 @@ use Slim\Psr7\Request;
 use Slim\Psr7\Response;
 
 return static function (App $app): void {
-    $container = $app->getContainer();
-    $settings = $container->get(Settings::class);
-
     $app->get('/health', HealthController::class)->setName('health');
-
-    $settings = $app->getContainer()->get(Settings::class);
 
     // Activating all routes
     foreach (glob(Settings::getAppRoot() . '/config/routes/*.php') as $file) {

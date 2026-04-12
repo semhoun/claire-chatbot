@@ -3,15 +3,16 @@
 declare(strict_types=1);
 
 use App\Services\ComfyUIWorkflowRegistry;
+use App\Services\Env;
 
-env_required([
+Env::require([
     'SESSION_JWT_SECRET',
 ]);
 
 return [
     // JWT-specific settings
-    'jwt_secret' => env('SESSION_JWT_SECRET'),
-    'jwt_algorithm' => env('SESSION_JWT_ALGORITHM', 'HS256'),
+    'jwt_secret' => Env::get('SESSION_JWT_SECRET'),
+    'jwt_algorithm' => Env::get('SESSION_JWT_ALGORITHM', 'HS256'),
 
     // Cookie settings
     'name' => 'claire_chatbot',

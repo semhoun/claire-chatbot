@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\Env;
 use App\Services\Settings;
 
 return [
@@ -9,6 +10,6 @@ return [
     'config' => [
         'cache' => Settings::getAppRoot() . '/var/cache/twig',
         'debug' => true,
-        'auto_reload' => env('DEBUG_MODE', false),
+        'auto_reload' => Env::get('DEBUG_MODE', false),
     ],
 ];

@@ -2,26 +2,27 @@
 
 declare(strict_types=1);
 
+use App\Services\Env;
 use App\Services\Settings;
 
 // Mandatory environment variables
-env_required([
+Env::require([
     'OPENAPI_URL',
     'OPENAPI_MODEL',
 ]);
 
 return [
     'openai' => [
-        'key' => env('OPENAPI_KEY'),
-        'baseUri' => env('OPENAPI_URL'),
-        'model' => env('OPENAPI_MODEL'),
-        'modelSummary' => env('OPENAPI_MODEL_SUMMARY') ?? env('OPENAPI_MODEL'),
-        'modelEmbed' => env('OPENAPI_MODEL_EMBED'),
-        'contextWindow' => (int) env('OPENAPI_CONTEXT_WINDOW', 50000),
+        'key' => Env::get('OPENAPI_KEY'),
+        'baseUri' => Env::get('OPENAPI_URL'),
+        'model' => Env::get('OPENAPI_MODEL'),
+        'modelSummary' => Env::get('OPENAPI_MODEL_SUMMARY') ?? Env::get('OPENAPI_MODEL'),
+        'modelEmbed' => Env::get('OPENAPI_MODEL_EMBED'),
+        'contextWindow' => (int) Env::get('OPENAPI_CONTEXT_WINDOW', 50000),
     ],
     'shortMemory' => [
         'messageToKeep' => 3,
-        'maxTokens' => (int) env('OPENAPI_CONTEXT_WINDOW', 50000) / 2,
+        'maxTokens' => (int) Env::get('OPENAPI_CONTEXT_WINDOW', 50000) / 2,
     ],
     'summary' => [
         'minMessages' => 2,
@@ -31,7 +32,7 @@ return [
         'timeout' => 600,
     ],
     'tools' => [
-        'searchXngUrl' => env('SEARXNG_URL'),
+        'searchXngUrl' => Env::get('SEARXNG_URL'),
     ],
     'rag' => [
         'type' => 'file', // Could be 'file'

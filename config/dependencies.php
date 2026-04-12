@@ -114,7 +114,8 @@ return [
         $twig->addExtension(new GeneratedImageExtension());
         $twig->addExtension(new TimestampExtension());
         $twig->addRuntimeLoader(new class() implements \Twig\RuntimeLoader\RuntimeLoaderInterface {
-            public function load($class): ?MarkdownRuntime
+            /** @param class-string $class */
+            public function load(string $class): ?MarkdownRuntime
             {
                 if ($class === MarkdownRuntime::class) {
                     // Provide the Markdown runtime with a default League/CommonMark-based implementation
