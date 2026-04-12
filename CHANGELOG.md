@@ -7,6 +7,16 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Changed
+- **Queue**: Migration de l'architecture Sorted Set (ZRANGEBYSCORE) vers List (BRPOP/LPUSH) pour une exécution immédiate des jobs
+- **Queue**: Suppression du paramètre `availableAt` - tous les jobs sont exécutés dès que possible
+- **Queue**: Remplacement du polling PHP par un blocage Redis avec `BRPOP` (timeout configurable)
+- **Queue**: Option `--sleep` remplacée par `--timeout` dans `queue:work`
+- **Queue**: Le worker n'attend plus en PHP quand la queue est vide, mais bloque directement dans Redis
+
+### Removed
+- **RedisClient**: Suppression des méthodes inutilisées `eval()`, `zadd()`, `expire()`, `ping()`
+
 ## [1.4.2] - 2026-04-12
 
 ### Added

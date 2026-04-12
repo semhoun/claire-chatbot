@@ -127,6 +127,7 @@ Les paramètres sont chargés depuis `config/settings/*.php` et complétés par 
   - `REDIS_TIMEOUT` — timeout de connexion Redis en secondes (defaut: `2.0`).
   - `REDIS_READ_TIMEOUT` — timeout de lecture Redis en secondes (defaut: `5.0`). Évite les blocages indéfinis sur les opérations réseau.
   - `REDIS_PREFIX` — prefixe des cles Redis pour la queue.
+  - `queue.timeout` — timeout par défaut pour l'opération BRPOP en secondes (defaut: `5`).
 
 - Mode et logs:
   - `DEBUG_MODE` = `true|false` (active un niveau de logs plus verbeux)
@@ -456,11 +457,12 @@ Migrations Doctrine
 
 Claire inclut une queue de fond minimaliste basee sur Redis pour deleguer certains traitements hors du cycle HTTP, en particulier les updates Telegram.
 
-- Un job est retire de la queue des sa prise en charge par le worker.
-- Le contrat des jobs est `App\Queue\QueueDoer` avec `make(ContainerInterface $container)` et `handle(array $payload): void`.
-- Le contrat applicatif actuel suppose que `handle()` absorbe ses erreurs et ne leve pas d'exception.
-- **Reconnexion automatique**: Le worker détecte les déconnexions Redis via `ping()` avant chaque tentative et se reconnecte automatiquement si nécessaire. Si la reconnexion échoue, le worker s'arrête proprement.
+- **Exécution immédiate**: Les jobs sont exécutés dès qu'ils arrivent dans Redis (pas de planification différée).
+- **Blocage Redis**: Le worker utilise `BRPOP` pour attendre passivement dans Redis quand la queue est vide, sans consommer de CPU.
+- **Reconnexion automatique**: Le worker détecte les déconnexions Redis et se reconnecte automatiquement si nécessaire. Si la reconnexion échoue, le worker s'arrête proprement.
 - **Timeout de lecture**: Le `REDIS_READ_TIMEOUT` évite les blocages indéfinis sur les opérations réseau lorsque la connexion est silencieusement fermée.
+
+Le contrat des jobs est `App\Queue\QueueDoer` avec `make(ContainerInterface $container)` et `handle(array $payload): void`. Le contrat applicatif suppose que `handle()` absorbe ses erreurs et ne lève pas d'exception.
 
 Lancer le worker:
 
@@ -477,7 +479,7 @@ Traiter une queue specifique:
 Options utiles:
 
 - `--once` — traite un seul job puis quitte
-- `--sleep=1` — attente quand la queue est vide
+- `--timeout=5` — timeout en secondes pour l'opération BRPOP (défaut: 5s)
 - `--max-jobs=100` — quitte apres N jobs
 - `--max-time=3600` — quitte apres N secondes
 
@@ -486,7 +488,7 @@ Exemple:
 ```bash
 export REDIS_HOST=127.0.0.1
 export REDIS_PORT=6379
-./console queue:work --queue=telegram
+./console queue:work --queue=telegram --timeout=10
 ```
 
 ## Démarrage
@@ -1061,7 +1063,7 @@ vendor/bin/phpunit --filter testMethodName    # Méthode spécifique
 - Pas de logs: les logs sont gérés par OpenTelemetry. Pour les voir dans la console, définissez `OTEL_LOGS_EXPORTER=console` (et `OTEL_LOGS_PROCESSOR=simple` pour un affichage immédiat). En alternance, configurez un export OTLP (`OTEL_LOGS_EXPORTER=otlp`) vers un collecteur comme l'OTel Collector.
 - RAG inactif: assurez-vous que `OPENAPI_MODEL_EMBED` est défini. S'il est absent, le RAG est désactivé par conception.
 - Génération d'images non disponible: vérifiez que `COMFYUI_ENABLED=true`, qu'au moins un workflow valide existe dans `addons/comfyui/`, et que l'instance ComfyUI est accessible à l'URL définie dans `COMFYUI_URL`.
-- **Worker de queue bloqué**: Le worker vérifie automatiquement la connexion Redis avant chaque tentative et se reconnecte si nécessaire. Si vous observez des blocages, vérifiez que `REDIS_READ_TIMEOUT` est configuré (défaut: 5.0s) et que Redis est accessible. Les logs indiqueront les tentatives de reconnexion.
+- **Worker de queue bloqué**: Le worker détecte automatiquement les déconnexions Redis et tente de se reconnecter. Si vous observez des blocages, vérifiez que `REDIS_READ_TIMEOUT` est configuré (défaut: 5.0s) et que Redis est accessible. Les logs indiqueront les tentatives de reconnexion.
 
 ## Licence
 

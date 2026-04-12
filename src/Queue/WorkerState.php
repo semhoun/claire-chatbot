@@ -6,7 +6,7 @@ namespace App\Queue;
 
 final class WorkerState
 {
-    private int $startedAt;
+    private readonly int $startedAt;
 
     private int $processedJobs = 0;
 

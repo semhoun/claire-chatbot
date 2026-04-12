@@ -25,12 +25,9 @@ final readonly class RedisQueueBackend implements QueueBackendInterface
         string $jobClass,
         array $payload = [],
         string $queue = 'default',
-        ?\DateTimeImmutable $availableAt = null,
-        ?int $maxAttempts = null,
     ): string {
         $queueName = $this->normalizeQueueName($queue);
         $jobId = Uuid::uuid7()->toString();
-        $availableTimestamp = ($availableAt ?? new \DateTimeImmutable('now'))->getTimestamp();
         $encodedPayload = $this->queueSerializer->encode($payload);
 
         $jobData = [
@@ -38,7 +35,6 @@ final readonly class RedisQueueBackend implements QueueBackendInterface
             'queue_name' => $queueName,
             'job_class' => $jobClass,
             'payload' => $encodedPayload,
-            'available_at' => (string) $availableTimestamp,
         ];
 
         $this->assertRedisResult(
@@ -46,7 +42,7 @@ final readonly class RedisQueueBackend implements QueueBackendInterface
             'Unable to persist Redis queue job payload'
         );
         $this->assertRedisResult(
-            $this->redisClient->zadd($this->pendingKey($queueName), [$jobId => $availableTimestamp]),
+            $this->redisClient->lpush($this->queueKey($queueName), [$jobId]),
             'Unable to enqueue Redis queue job'
         );
 
@@ -55,46 +51,25 @@ final readonly class RedisQueueBackend implements QueueBackendInterface
 
     public function reserveNextAvailable(
         string $queueName,
+        int $timeout = 5,
     ): ?QueueMessage {
         $queueName = $this->normalizeQueueName($queueName);
-        $now = time();
+        $queueKey = $this->queueKey($queueName);
 
-        $jobId = $this->popPendingJob($queueName, $now);
-        if (! is_string($jobId) || $jobId === '') {
+        $result = $this->redisClient->brpop([$queueKey], $timeout);
+
+        if ($result === null) {
             return null;
         }
+
+        $jobId = $result[1];
 
         return $this->hydrateQueueMessage($jobId);
     }
 
     public function delete(QueueMessage $queueMessage): void
     {
-    }
-
-    private function popPendingJob(
-        string $queueName,
-        int $now,
-    ): ?string {
-        $script = <<<'LUA'
-local pendingKey = KEYS[1]
-local now = tonumber(ARGV[1])
-
-local jobs = redis.call('ZRANGEBYSCORE', pendingKey, '-inf', now, 'LIMIT', 0, 1)
-if #jobs == 0 then
-    return false
-end
-
-local jobId = jobs[1]
-redis.call('ZREM', pendingKey, jobId)
-return jobId
-LUA;
-
-        $result = $this->redisClient->eval($script, [
-            $this->pendingKey($queueName),
-            (string) $now,
-        ], 1);
-
-        return is_string($result) && $result !== '' ? $result : null;
+        $this->redisClient->del($this->jobKey($queueMessage->id));
     }
 
     private function hydrateQueueMessage(string $jobId): QueueMessage
@@ -130,19 +105,14 @@ LUA;
             : $queueName;
     }
 
-    private function pendingKey(string $queueName): string
+    private function queueKey(string $queueName): string
     {
-        return $this->settings->get('redis.prefix') . 'queue:' . $queueName . ':pending';
-    }
-
-    private function jobsPrefix(): string
-    {
-        return $this->settings->get('redis.prefix') . 'queue:job:';
+        return $this->settings->get('redis.prefix') . 'queue:' . $queueName;
     }
 
     private function jobKey(string $jobId): string
     {
-        return $this->jobsPrefix() . $jobId;
+        return $this->settings->get('redis.prefix') . 'queue:job:' . $jobId;
     }
 
     private function assertRedisResult(mixed $result, string $message): void

@@ -308,8 +308,8 @@ final readonly class BrainController
                 'mimeType' => $uploadedFile->getClientMediaType() ?? 'application/octet-stream',
                 'content' => base64_encode($stream->getContents()),
             ];
-        } catch (\Throwable $e) {
-            $this->logger->warning('Failed to extract inline upload', ['error' => $e->getMessage()]);
+        } catch (\Throwable $throwable) {
+            $this->logger->warning('Failed to extract inline upload', ['error' => $throwable->getMessage()]);
 
             return null;
         }

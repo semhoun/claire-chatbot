@@ -13,7 +13,5 @@ interface QueueDispatcherInterface
         string $jobClass,
         array $payload = [],
         string $queue = 'default',
-        ?\DateTimeImmutable $availableAt = null,
-        ?int $maxAttempts = null,
     ): string;
 }

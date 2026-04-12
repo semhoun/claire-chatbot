@@ -40,6 +40,20 @@ final class RedisQueueBackendTest extends TestCase
         $this->assertSame(['foo' => 'bar'], $message->payload);
     }
 
+    public function testDeleteRemovesJob(): void
+    {
+        $client = new InMemoryRedisClient();
+        $backend = $this->createBackend($client);
+        $jobId = $backend->dispatch('App\\Queue\\ExampleJob', ['foo' => 'bar'], 'telegram');
+
+        $message = $backend->reserveNextAvailable('telegram');
+        $this->assertNotNull($message);
+
+        $backend->delete($message);
+
+        $this->assertFalse(isset($client->hashes['claire:queue:job:' . $jobId]));
+    }
+
     private function createBackend(InMemoryRedisClient $client): RedisQueueBackend
     {
         return new RedisQueueBackend(
@@ -62,35 +76,39 @@ final class InMemoryRedisClient implements RedisClientInterface
     /** @var array<string, array<string, string>> */
     public array $hashes = [];
 
-    /** @var array<string, array<string, int>> */
-    public array $sortedSets = [];
+    /** @var array<string, array<int, string>> */
+    public array $lists = [];
 
-    public function eval(string $script, array $arguments, int $keyCount): mixed
+    public function lpush(string $key, array $values): int|false
     {
-        if (str_contains($script, 'ZRANGEBYSCORE')) {
-            $pendingKey = $arguments[0];
-
-            if (! isset($this->sortedSets[$pendingKey]) || $this->sortedSets[$pendingKey] === []) {
-                return false;
-            }
-
-            asort($this->sortedSets[$pendingKey]);
-            $jobId = (string) array_key_first($this->sortedSets[$pendingKey]);
-            unset($this->sortedSets[$pendingKey][$jobId]);
-
-            return $jobId;
+        if (! isset($this->lists[$key])) {
+            $this->lists[$key] = [];
         }
 
-        return true;
+        foreach ($values as $value) {
+            array_unshift($this->lists[$key], (string) $value);
+        }
+
+        return count($values);
     }
 
-    public function zadd(string $key, array $membersAndScores): int|false
+    /**
+     * @param array<int, string> $keys
+     * @return array{0: string, 1: string}|null
+     */
+    public function brpop(array $keys, float|int $timeout): ?array
     {
-        foreach ($membersAndScores as $member => $score) {
-            $this->sortedSets[$key][(string) $member] = (int) $score;
+        foreach ($keys as $key) {
+            if (isset($this->lists[$key]) && $this->lists[$key] !== []) {
+                $jobId = array_pop($this->lists[$key]);
+
+                if ($jobId !== null) {
+                    return [$key, $jobId];
+                }
+            }
         }
 
-        return count($membersAndScores);
+        return null;
     }
 
     public function hset(string $key, array $hash): int|false
@@ -120,11 +138,6 @@ final class InMemoryRedisClient implements RedisClientInterface
         return $count;
     }
 
-    public function expire(string $key, int $seconds): bool
-    {
-        return true;
-    }
-
     public function connect(string $host, int $port, float $timeout): bool
     {
         return true;
@@ -145,21 +158,12 @@ final class InMemoryRedisClient implements RedisClientInterface
         return 1;
     }
 
-    public function subscribe(array $channels, callable $callback): void
-    {
-    }
-
     public function subscribeWithHeartbeat(
         array $channels,
         callable $callback,
         float $heartbeatSeconds,
         callable $shouldContinue,
     ): void {
-    }
-
-    public function ping(): bool
-    {
-        return true;
     }
 
     public function close(): bool

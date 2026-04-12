@@ -29,12 +29,6 @@ final class RedisClient implements RedisClientInterface
         $this->redis = new \Redis();
     }
 
-    /** @param array<int, mixed> $arguments */
-    public function eval(string $script, array $arguments, int $keyCount): mixed
-    {
-        return $this->redis->eval($script, $arguments, $keyCount);
-    }
-
     public function publish(string $channel, string $message): int|false
     {
         return $this->redis->publish($channel, $message);
@@ -75,19 +69,6 @@ final class RedisClient implements RedisClientInterface
         }
     }
 
-    /** @param array<string, float|int> $membersAndScores */
-    public function zadd(string $key, array $membersAndScores): int|false
-    {
-        $arguments = [$key];
-
-        foreach ($membersAndScores as $member => $score) {
-            $arguments[] = $score;
-            $arguments[] = $member;
-        }
-
-        return $this->redis->zAdd(...$arguments);
-    }
-
     /** @param array<string, scalar|null> $hash */
     public function hset(string $key, array $hash): int|false
     {
@@ -105,11 +86,6 @@ final class RedisClient implements RedisClientInterface
     public function del(array|string $keys): int|false
     {
         return $this->redis->del($keys);
-    }
-
-    public function expire(string $key, int $seconds): bool
-    {
-        return $this->redis->expire($key, $seconds);
     }
 
     public function connect(string $host, int $port, float $timeout): bool
@@ -133,17 +109,6 @@ final class RedisClient implements RedisClientInterface
         $this->database = $database;
 
         return $this->redis->select($database);
-    }
-
-    public function ping(): bool
-    {
-        try {
-            $result = $this->redis->ping();
-
-            return $result === true || $result === '+PONG';
-        } catch (\RedisException) {
-            return false;
-        }
     }
 
     public function close(): bool
@@ -173,5 +138,38 @@ final class RedisClient implements RedisClientInterface
         $this->redis->select($this->database);
 
         return true;
+    }
+
+    /**
+     * @param array<int, string> $keys
+     *
+     * @return array{0: string, 1: string}|null
+     */
+    public function brpop(array $keys, float|int $timeout): ?array
+    {
+        try {
+            $result = $this->redis->brPop($keys, (int) $timeout);
+        } catch (\RedisException $e) {
+            // Timeout reached - Redis closes connection, this is normal
+            if (str_contains(strtolower($e->getMessage()), 'read error')) {
+                return null;
+            }
+
+            throw $e;
+        }
+
+        if ($result === false || ! is_array($result) || count($result) < 2) {
+            return null;
+        }
+
+        return [(string) $result[0], (string) $result[1]];
+    }
+
+    /**
+     * @param array<int, string> $values
+     */
+    public function lpush(string $key, array $values): int|false
+    {
+        return $this->redis->lPush($key, ...$values);
     }
 }

@@ -44,7 +44,7 @@ final readonly class WebChatMessageJob implements QueueDoer
     public function handle(array $payload): void
     {
         $context = $this->createJobContext($payload);
-        if ($context === null) {
+        if (! $context instanceof \App\Queue\JobContext) {
             return;
         }
 
@@ -116,10 +116,10 @@ final readonly class WebChatMessageJob implements QueueDoer
      */
     private function createInMemorySession(string $chatId, array $sessionValues): InMemorySession
     {
-        $session = new InMemorySession($sessionValues);
-        $session->set('chatId', $chatId);
+        $inMemorySession = new InMemorySession($sessionValues);
+        $inMemorySession->set('chatId', $chatId);
 
-        return $session;
+        return $inMemorySession;
     }
 
     private function resolveMessageArticleId(string $messageArticleId): string
@@ -139,159 +139,160 @@ final readonly class WebChatMessageJob implements QueueDoer
         return $userMessage;
     }
 
-    private function processChatStream(JobContext $context): void
+    private function processChatStream(JobContext $jobContext): void
     {
-        $agentHandler = $context->agent->stream($context->userMessage);
+        $agentHandler = $jobContext->agent->stream($jobContext->userMessage);
         $streamState = new StreamState();
 
         foreach ($agentHandler->events() as $chunk) {
-            $this->processChunk($chunk, $context, $streamState);
+            $this->processChunk($chunk, $jobContext, $streamState);
         }
 
-        $context->setFinalContent($agentHandler->getMessage()->getContent());
+        $jobContext->setFinalContent($agentHandler->getMessage()->getContent());
     }
 
-    private function processChunk(mixed $chunk, JobContext $context, StreamState $state): void
+    private function processChunk(mixed $chunk, JobContext $jobContext, StreamState $streamState): void
     {
         if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
-            $this->processToolChunk($chunk, $context, $state);
+            $this->processToolChunk($chunk, $jobContext, $streamState);
             return;
         }
 
         if ($chunk instanceof ReasoningChunk || $chunk instanceof TextChunk) {
-            $this->processTextChunk($chunk, $context, $state);
+            $this->processTextChunk($chunk, $jobContext, $streamState);
         }
     }
 
-    private function processToolChunk(ToolCallChunk|ToolResultChunk $chunk, JobContext $context, StreamState $state): void
+    private function processToolChunk(ToolCallChunk|ToolResultChunk $chunk, JobContext $jobContext, StreamState $streamState): void
     {
-        if (! $state->isAssistantStarted()) {
-            $this->publishAssistantStart($context, '');
-            $state->setAssistantStarted(true);
+        if (! $streamState->isAssistantStarted()) {
+            $this->publishAssistantStart($jobContext, '');
+            $streamState->setAssistantStarted(true);
         }
 
-        if ($state->getToolCallId() === null) {
-            $state->setToolCallId(uniqid('tool-', true));
-        }
-        $state->appendToolText($this->formatToolChunk($chunk));
-
-        if (! $state->isToolPlaceholderPublished()) {
-            $this->publishPlaceholder($context, $state->getToolCallId(), $state->getToolText());
-            $state->setToolPlaceholderPublished(true);
+        if ($streamState->getToolCallId() === null) {
+            $streamState->setToolCallId(uniqid('tool-', true));
         }
 
-        $this->chatStreamPublisher->publish($context->sessionId, 'tool.update', [
-            'chatId' => $context->chatId,
-            'sessionId' => $context->sessionId,
-            'messageId' => $context->messageId,
-            'messageArticleId' => $context->messageArticleId,
-            'toolCallId' => $state->getToolCallId(),
-            'html' => $state->getToolText(),
+        $streamState->appendToolText($this->formatToolChunk($chunk));
+
+        if (! $streamState->isToolPlaceholderPublished()) {
+            $this->publishPlaceholder($jobContext, $streamState->getToolCallId(), $streamState->getToolText());
+            $streamState->setToolPlaceholderPublished(true);
+        }
+
+        $this->chatStreamPublisher->publish($jobContext->sessionId, 'tool.update', [
+            'chatId' => $jobContext->chatId,
+            'sessionId' => $jobContext->sessionId,
+            'messageId' => $jobContext->messageId,
+            'messageArticleId' => $jobContext->messageArticleId,
+            'toolCallId' => $streamState->getToolCallId(),
+            'html' => $streamState->getToolText(),
         ]);
     }
 
-    private function processTextChunk(ReasoningChunk|TextChunk $chunk, JobContext $context, StreamState $state): void
+    private function processTextChunk(ReasoningChunk|TextChunk $chunk, JobContext $jobContext, StreamState $streamState): void
     {
-        if (! $state->isAssistantStarted()) {
-            $this->publishAssistantStart($context, '');
-            $state->setAssistantStarted(true);
+        if (! $streamState->isAssistantStarted()) {
+            $this->publishAssistantStart($jobContext, '');
+            $streamState->setAssistantStarted(true);
         }
 
-        $state->appendStreamedText($chunk->content);
+        $streamState->appendStreamedText($chunk->content);
         $html = $this->twig->fetch('partials/md.twig', [
-            'message' => $state->getStreamedText(),
+            'message' => $streamState->getStreamedText(),
             'streaming_placeholder_images' => true,
         ]);
 
-        $this->chatStreamPublisher->publish($context->sessionId, 'message.assistant.delta', [
-            'chatId' => $context->chatId,
-            'sessionId' => $context->sessionId,
-            'messageId' => $context->messageId,
-            'messageArticleId' => $context->messageArticleId,
+        $this->chatStreamPublisher->publish($jobContext->sessionId, 'message.assistant.delta', [
+            'chatId' => $jobContext->chatId,
+            'sessionId' => $jobContext->sessionId,
+            'messageId' => $jobContext->messageId,
+            'messageArticleId' => $jobContext->messageArticleId,
             'html' => $html,
         ]);
     }
 
-    private function publishAssistantStart(JobContext $context, string $message): void
+    private function publishAssistantStart(JobContext $jobContext, string $message): void
     {
         $placeholderHtml = $this->twig->fetch('partials/message.twig', [
             'message' => $message,
-            'time' => $context->timestamp,
+            'time' => $jobContext->timestamp,
             'sent' => false,
-            'messageArticleId' => $context->messageArticleId,
-            'streamId' => $context->messageId,
+            'messageArticleId' => $jobContext->messageArticleId,
+            'streamId' => $jobContext->messageId,
             'toolCallId' => null,
             'toolCall' => null,
         ]);
 
-        $this->chatStreamPublisher->publish($context->sessionId, 'message.assistant.start', [
-            'chatId' => $context->chatId,
-            'sessionId' => $context->sessionId,
-            'messageId' => $context->messageId,
-            'messageArticleId' => $context->messageArticleId,
+        $this->chatStreamPublisher->publish($jobContext->sessionId, 'message.assistant.start', [
+            'chatId' => $jobContext->chatId,
+            'sessionId' => $jobContext->sessionId,
+            'messageId' => $jobContext->messageId,
+            'messageArticleId' => $jobContext->messageArticleId,
         ]);
-        $this->chatStreamPublisher->publish($context->sessionId, 'message.assistant.placeholder', [
-            'chatId' => $context->chatId,
-            'sessionId' => $context->sessionId,
-            'messageId' => $context->messageId,
-            'messageArticleId' => $context->messageArticleId,
+        $this->chatStreamPublisher->publish($jobContext->sessionId, 'message.assistant.placeholder', [
+            'chatId' => $jobContext->chatId,
+            'sessionId' => $jobContext->sessionId,
+            'messageId' => $jobContext->messageId,
+            'messageArticleId' => $jobContext->messageArticleId,
             'html' => $placeholderHtml,
         ]);
     }
 
-    private function publishPlaceholder(JobContext $context, string $toolCallId, string $toolText): void
+    private function publishPlaceholder(JobContext $jobContext, string $toolCallId, string $toolText): void
     {
         $placeholderHtml = $this->twig->fetch('partials/message.twig', [
             'message' => '',
-            'time' => $context->timestamp,
+            'time' => $jobContext->timestamp,
             'sent' => false,
-            'messageArticleId' => $context->messageArticleId,
-            'streamId' => $context->messageId,
+            'messageArticleId' => $jobContext->messageArticleId,
+            'streamId' => $jobContext->messageId,
             'toolCallId' => $toolCallId,
             'toolCall' => $toolText,
         ]);
 
-        $this->chatStreamPublisher->publish($context->sessionId, 'message.assistant.placeholder', [
-            'chatId' => $context->chatId,
-            'sessionId' => $context->sessionId,
-            'messageId' => $context->messageId,
-            'messageArticleId' => $context->messageArticleId,
+        $this->chatStreamPublisher->publish($jobContext->sessionId, 'message.assistant.placeholder', [
+            'chatId' => $jobContext->chatId,
+            'sessionId' => $jobContext->sessionId,
+            'messageId' => $jobContext->messageId,
+            'messageArticleId' => $jobContext->messageArticleId,
             'html' => $placeholderHtml,
         ]);
     }
 
-    private function finalizeChat(JobContext $context): void
+    private function finalizeChat(JobContext $jobContext): void
     {
         $finalHtml = $this->twig->fetch('partials/md.twig', [
-            'message' => $context->getFinalContent(),
+            'message' => $jobContext->getFinalContent(),
             'streaming_placeholder_images' => false,
         ]);
 
-        $this->chatStreamPublisher->publish($context->sessionId, 'message.assistant.delta', [
-            'chatId' => $context->chatId,
-            'sessionId' => $context->sessionId,
-            'messageId' => $context->messageId,
-            'messageArticleId' => $context->messageArticleId,
+        $this->chatStreamPublisher->publish($jobContext->sessionId, 'message.assistant.delta', [
+            'chatId' => $jobContext->chatId,
+            'sessionId' => $jobContext->sessionId,
+            'messageId' => $jobContext->messageId,
+            'messageArticleId' => $jobContext->messageArticleId,
             'html' => $finalHtml,
         ]);
-        $this->chatStreamPublisher->publish($context->sessionId, 'message.assistant.done', [
-            'chatId' => $context->chatId,
-            'sessionId' => $context->sessionId,
-            'messageId' => $context->messageId,
-            'messageArticleId' => $context->messageArticleId,
+        $this->chatStreamPublisher->publish($jobContext->sessionId, 'message.assistant.done', [
+            'chatId' => $jobContext->chatId,
+            'sessionId' => $jobContext->sessionId,
+            'messageId' => $jobContext->messageId,
+            'messageArticleId' => $jobContext->messageArticleId,
         ]);
     }
 
-    private function handleChatError(\Throwable $throwable, JobContext $context): void
+    private function handleChatError(\Throwable $throwable, JobContext $jobContext): void
     {
         $this->logger->error('Web chat job failed', [
             'exception' => $throwable,
-            'chatId' => $context->chatId,
-            'sessionId' => $context->sessionId,
+            'chatId' => $jobContext->chatId,
+            'sessionId' => $jobContext->sessionId,
         ]);
-        $this->chatStreamPublisher->publish($context->sessionId, 'chat.error', [
-            'chatId' => $context->chatId,
-            'sessionId' => $context->sessionId,
+        $this->chatStreamPublisher->publish($jobContext->sessionId, 'chat.error', [
+            'chatId' => $jobContext->chatId,
+            'sessionId' => $jobContext->sessionId,
             'message' => 'Désolé, une erreur est survenue lors du traitement de votre message.',
         ]);
     }
@@ -301,9 +302,8 @@ final readonly class WebChatMessageJob implements QueueDoer
         $tool = $chunk->tool;
         $toolText = $this->formatToolHeader($chunk, $tool);
         $toolText .= $this->formatToolInputs($tool);
-        $toolText .= $this->formatToolResult($chunk, $tool);
 
-        return $toolText;
+        return $toolText . $this->formatToolResult($chunk, $tool);
     }
 
     private function formatToolHeader(ToolCallChunk|ToolResultChunk $chunk, mixed $tool): string
@@ -311,20 +311,18 @@ final readonly class WebChatMessageJob implements QueueDoer
         $header = $chunk instanceof ToolResultChunk
             ? '<span class="tools-done-flag" style="display:none"></span>' . "\n"
             : '';
-        $header .= "Utilisation de l'outil : " . $tool->getName() . "<br>\n";
 
-        return $header;
+        return $header . ("Utilisation de l'outil : " . $tool->getName() . "<br>\n");
     }
 
     private function formatToolInputs(mixed $tool): string
     {
         $inputs = "Paramètres : <br>\n<ul>\n";
-        foreach ($tool->getInputs() as $name => $value) {
-            $inputs .= '<li>' . $name . ' : ' . $value . "</li>\n";
+        foreach ($tool->getInputs() as $name => $input) {
+            $inputs .= '<li>' . $name . ' : ' . $input . "</li>\n";
         }
-        $inputs .= "</ul>\n";
 
-        return $inputs;
+        return $inputs . "</ul>\n";
     }
 
     private function formatToolResult(ToolCallChunk|ToolResultChunk $chunk, mixed $tool): string
@@ -392,26 +390,26 @@ final readonly class WebChatMessageJob implements QueueDoer
         $summary->generateAndPersist();
     }
 
-    private function shouldGenerateSummary(?UserChatHistory $chatHistory): bool
+    private function shouldGenerateSummary(?UserChatHistory $userChatHistory): bool
     {
-        return $chatHistory !== null
-            && $this->hasEnoughMessages($chatHistory)
-            && ! $this->hasMaxMessagesWithTitle($chatHistory);
+        return $userChatHistory instanceof \App\Brain\ChatHistory\UserChatHistory
+            && $this->hasEnoughMessages($userChatHistory)
+            && ! $this->hasMaxMessagesWithTitle($userChatHistory);
     }
 
-    private function hasEnoughMessages(UserChatHistory $chatHistory): bool
+    private function hasEnoughMessages(UserChatHistory $userChatHistory): bool
     {
-        $messages = $chatHistory->getDisplayMessages();
+        $messages = $userChatHistory->getDisplayMessages();
         $minMessages = $this->settings->get('llm.summary.minMessages');
 
         return $messages !== [] && count($messages) >= $minMessages;
     }
 
-    private function hasMaxMessagesWithTitle(UserChatHistory $chatHistory): bool
+    private function hasMaxMessagesWithTitle(UserChatHistory $userChatHistory): bool
     {
-        $messages = $chatHistory->getDisplayMessages();
+        $messages = $userChatHistory->getDisplayMessages();
         $maxMessages = $this->settings->get('llm.summary.maxMessages');
 
-        return count($messages) > $maxMessages && $chatHistory->getTitle() !== null;
+        return count($messages) > $maxMessages && $userChatHistory->getTitle() !== null;
     }
 }

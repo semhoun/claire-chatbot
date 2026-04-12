@@ -8,6 +8,7 @@ interface QueueBackendInterface extends QueueDispatcherInterface
 {
     public function reserveNextAvailable(
         string $queueName,
+        int $timeout = 5,
     ): ?QueueMessage;
 
     public function delete(QueueMessage $queueMessage): void;

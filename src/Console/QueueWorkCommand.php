@@ -33,7 +33,7 @@ final class QueueWorkCommand extends Command
     {
         $this
             ->addOption('queue', null, InputOption::VALUE_OPTIONAL, 'Queue name to process')
-            ->addOption('sleep', null, InputOption::VALUE_OPTIONAL, 'Sleep time in seconds when no job is available')
+            ->addOption('timeout', null, InputOption::VALUE_OPTIONAL, 'Timeout in seconds for BRPOP operation')
             ->addOption('once', null, InputOption::VALUE_NONE, 'Process a single job and exit')
             ->addOption('max-jobs', null, InputOption::VALUE_OPTIONAL, 'Maximum jobs to process before exiting', 100)
             ->addOption('max-time', null, InputOption::VALUE_OPTIONAL, 'Maximum runtime in seconds before exiting', 3600);
@@ -45,11 +45,11 @@ final class QueueWorkCommand extends Command
         $this->setupSignalHandlers();
 
         $workerId = $this->generateWorkerId();
-        $options = $this->createWorkerOptions($input);
+        $queueWorkerOptions = $this->createWorkerOptions($input);
 
-        $output->writeln(sprintf('<info>Starting queue worker %s on queue %s</info>', $workerId, $options->queueName));
+        $output->writeln(sprintf('<info>Starting queue worker %s on queue %s</info>', $workerId, $queueWorkerOptions->queueName));
 
-        $processedJobs = $this->queueWorker->run($options, $workerId, $output);
+        $processedJobs = $this->queueWorker->run($queueWorkerOptions, $workerId, $output);
 
         $output->writeln(sprintf('<info>Queue worker stopped after %d job(s)</info>', $processedJobs));
 
@@ -67,11 +67,11 @@ final class QueueWorkCommand extends Command
     private function createWorkerOptions(InputInterface $input): QueueWorkerOptions
     {
         $queueName = $input->getOption('queue');
-        $sleep = $input->getOption('sleep');
+        $timeout = $input->getOption('timeout');
 
         return new QueueWorkerOptions(
             queueName: $this->resolveQueueName($queueName),
-            sleep: $this->resolveSleepTime($sleep),
+            timeout: $this->resolveTimeout($timeout),
             once: (bool) $input->getOption('once'),
             maxJobs: max(0, (int) $input->getOption('max-jobs')),
             maxTime: max(0, (int) $input->getOption('max-time')),
@@ -85,9 +85,9 @@ final class QueueWorkCommand extends Command
             : (string) $this->settings->get('queue.defaultQueue');
     }
 
-    private function resolveSleepTime(mixed $sleep): int
+    private function resolveTimeout(mixed $timeout): int
     {
-        return max(1, is_numeric($sleep) ? (int) $sleep : (int) $this->settings->get('queue.sleep'));
+        return max(1, is_numeric($timeout) ? (int) $timeout : (int) $this->settings->get('queue.timeout'));
     }
 
     private function setupSignalHandlers(): void

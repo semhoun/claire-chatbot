@@ -107,12 +107,12 @@ final readonly class FileController
     {
         $file = $this->getUploadedFile($request);
 
-        if ($file === null || $file->getError() !== UPLOAD_ERR_OK) {
+        if (! $file instanceof \Psr\Http\Message\UploadedFileInterface || $file->getError() !== UPLOAD_ERR_OK) {
             return $response->withStatus(400);
         }
 
         $data = $this->readFileContent($file);
-        $entity = $this->createFileEntity($file, $data);
+        $entity = $this->createFileEntity($file);
 
         $this->filesystem->write($entity->getFileId(), $data);
         $this->entityManager->persist($entity);
@@ -189,23 +189,23 @@ final readonly class FileController
         return $uploadedFiles['file'] ?? null;
     }
 
-    private function readFileContent(UploadedFileInterface $file): string
+    private function readFileContent(UploadedFileInterface $uploadedFile): string
     {
-        $stream = $file->getStream();
+        $stream = $uploadedFile->getStream();
         $stream->rewind();
 
         return $stream->getContents();
     }
 
-    private function createFileEntity(UploadedFileInterface $file, string $data): File
+    private function createFileEntity(UploadedFileInterface $uploadedFile): File
     {
-        $entity = new File();
-        $entity->setFilename($file->getClientFilename() ?? 'fichier');
-        $entity->setMimeType($file->getClientMediaType() ?? 'application/octet-stream');
-        $entity->setFileId(Uuid::uuid7()->toString());
-        $entity->setSizeBytes((string) $file->getSize());
+        $file = new File();
+        $file->setFilename($uploadedFile->getClientFilename() ?? 'fichier');
+        $file->setMimeType($uploadedFile->getClientMediaType() ?? 'application/octet-stream');
+        $file->setFileId(Uuid::uuid7()->toString());
+        $file->setSizeBytes((string) $uploadedFile->getSize());
 
-        return $entity;
+        return $file;
     }
 
     private function convertToMarkdown(?string $mimeType, string $data): string

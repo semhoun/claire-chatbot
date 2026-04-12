@@ -115,6 +115,7 @@ final readonly class HomeController
             ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
         $userChatHistory->replaceDisplayMessages([$assistantMessage]);
         $userChatHistory->replaceMessages([]);
+
         $this->logger->debug('new messages', ['messages' => $userChatHistory->getFormattedMessages()]);
     }
 
