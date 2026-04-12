@@ -60,7 +60,7 @@ final class HistoryControllerTest extends TestCase
         $connection->method('getNativeConnection')->willReturn($pdo);
         $twig->expects($this->once())
             ->method('fetch')
-            ->with('partials/messages_list.twig', $this->isType('array'))
+            ->with('partials/messages_list.twig', $this->isArray())
             ->willReturn('<div>snapshot</div>');
         $redis = $this->createMock(\App\Services\RedisClientInterface::class);
         $redis->expects($this->once())
@@ -134,7 +134,7 @@ final class HistoryControllerTest extends TestCase
         $connection->method('getNativeConnection')->willReturn($pdo);
         $twig->expects($this->once())
             ->method('fetch')
-            ->with('partials/messages_list.twig', $this->isType('array'))
+            ->with('partials/messages_list.twig', $this->isArray())
             ->willReturn('<div>snapshot</div>');
         $redis = $this->createMock(\App\Services\RedisClientInterface::class);
         // Snapshot should be published to sessionId, not threadId

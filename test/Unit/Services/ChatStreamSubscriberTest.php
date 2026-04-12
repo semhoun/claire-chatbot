@@ -30,7 +30,7 @@ final class ChatStreamSubscriberTest extends TestCase
                     return true;
                 }),
                 15.0,
-                $this->isType('callable'),
+                $this->isCallable(),
             );
 
         $subscriber = new ChatStreamSubscriber($redis, $settings);

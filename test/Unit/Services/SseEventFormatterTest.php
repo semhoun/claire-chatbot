@@ -45,11 +45,11 @@ final class SseEventFormatterTest extends TestCase
         $this->assertSame(['js' => ['exec' => 'alert("test")']], $json);
     }
 
-    public function testLegacyFormatBuildsExpectedPayload(): void
+    public function testFormatNamedEventBuildsExpectedPayload(): void
     {
         $formatter = new SseEventFormatter();
 
-        $payload = $formatter->format('chat.snapshot', "<div>first</div>\n<div>second</div>");
+        $payload = $formatter->formatNamedEvent('chat.snapshot', "<div>first</div>\n<div>second</div>");
 
         $this->assertSame(
             "event: chat.snapshot\ndata: <div>first</div>\ndata: <div>second</div>\n\n",

@@ -20,7 +20,6 @@ final class OCFilterTest extends TestCase
     {
         $this->service = $this->createMock(TelegramService::class);
         $this->filterMethod = new ReflectionMethod(TelegramService::class, 'filterOCTags');
-        $this->filterMethod->setAccessible(true);
     }
 
     public function testFilterOCTagsSingleLine(): void

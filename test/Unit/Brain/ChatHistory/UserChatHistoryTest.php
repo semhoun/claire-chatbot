@@ -10,8 +10,10 @@ use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\UserMessage;
 use PDO;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
+#[AllowMockObjectsWithoutExpectations]
 final class UserChatHistoryTest extends TestCase
 {
     public function testRemoveLastExchangeReturnsLastUserMessageAndUpdatesBothHistories(): void

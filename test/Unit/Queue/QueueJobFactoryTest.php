@@ -8,10 +8,12 @@ use App\Queue\QueueJobFactory;
 use App\Queue\QueueMessage;
 use App\Queue\QueueDoer;
 use App\Queue\QueueSerializer;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use RuntimeException;
 
+#[AllowMockObjectsWithoutExpectations]
 final class QueueJobFactoryTest extends TestCase
 {
     public function testCreatesQueueDoerFromPayload(): void
