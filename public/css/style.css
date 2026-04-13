@@ -116,7 +116,6 @@ a:hover {
     cursor: not-allowed;
     filter: grayscale(1);
     transform: none !important;
-    box-shadow: none;
 }
 
 .app {

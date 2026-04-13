@@ -8,7 +8,7 @@ use App\Services\Settings;
 return [
     'upload' => [
         // String used directly in input[type=file] accept="..."
-        'acceptedExt' => 'image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg,.json,.txt,.csv',
+        'acceptedExt' => 'image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg,.json,.txt,.csv,.md',
     ],
     'fileSystem' => [
         'type' => 'local',

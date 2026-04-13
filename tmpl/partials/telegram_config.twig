@@ -9,39 +9,13 @@
         <div class="message message--sent" style="max-width: 100%;">
             <div class="message__bubble">{{ success }}</div>
         </div>
-        <script>
-            (function() {
-                const confirmBtn = document.getElementById('modalConfirm');
-                if (confirmBtn) {
-                    confirmBtn.onclick = null;
-                }
-
-                setTimeout(function() {
-                    const modalRoot = document.getElementById('modalRoot');
-                    const modalBackdrop = document.getElementById('modalBackdrop');
-                    if (document.activeElement && modalRoot?.contains(document.activeElement)) {
-                        document.activeElement.blur();
-                    }
-                    modalRoot?.classList.remove('is-open');
-                    modalRoot?.setAttribute('aria-hidden', 'true');
-                    modalBackdrop?.classList.remove('is-visible');
-                    document.body?.classList.remove('modal-open');
-                }, 1500);
-            })();
-        </script>
+        <script>onTelegramFormSuccess();</script>
     {% endif %}
     {% if error is defined %}
         <div class="message message--received" style="max-width: 100%;">
             <div class="message__bubble">{{ error }}</div>
         </div>
-        <script>
-            (function() {
-                const confirmBtn = document.getElementById('modalConfirm');
-                if (confirmBtn) {
-                    confirmBtn.disabled = false;
-                }
-            })();
-        </script>
+        <script>onTelegramFormError();</script>
     {% endif %}
 
     <div class="options-item" style="cursor: default; flex-direction: column; align-items: stretch; gap: 12px;">
