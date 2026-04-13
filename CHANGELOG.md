@@ -7,6 +7,15 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-04-13
+
+### Changed
+- Migration de tout le JavaScript inline vers un fichier dédié `public/js/app.js` pour une meilleure maintenabilité
+- Ajustement du ratio d'aspect des images dans les workflows ComfyUI (flux.yaml, zit.yaml)
+
+### Fixed
+- Correction mineure dans `RedisClient`
+
 ## [1.4.2] - 2026-04-12
 
 ### Added
@@ -328,7 +337,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.2...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.3...HEAD
+[1.4.3]: https://github.com/semhoun/claire-chatbot/compare/1.4.2...1.4.3
 [1.4.2]: https://github.com/semhoun/claire-chatbot/compare/1.4.1...1.4.2
 [1.4.1]: https://github.com/semhoun/claire-chatbot/compare/1.4.0...1.4.1
 [1.4.0]: https://github.com/semhoun/claire-chatbot/compare/1.3.3...1.4.0

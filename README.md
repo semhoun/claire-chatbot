@@ -2,7 +2,7 @@
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.5%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-> **Version 1.4.2** — Chatbot IA avec support multi-brain, Telegram, ComfyUI et OpenTelemetry
+> **Version 1.4.3** — Chatbot IA avec support multi-brain, Telegram, ComfyUI et OpenTelemetry
 
 Claire est une application web de chat IA construite avec Slim 4, Twig et Neuron AI. Elle fournit une interface web, un endpoint API, une integration Telegram et un runtime Docker base sur FrankenPHP/Caddy pour piloter des LLM compatibles OpenAI.
 
@@ -662,12 +662,12 @@ docker compose exec claire ./console cache:clear
 
 - `GET /health` — endpoint JSON simple pour supervision (liveness/readiness).
   - Réponse 200 (exemple):
-    ```json
-    {
-      "version": "1.4.2",
-      "date": "2026-04-08T12:34:56+00:00"
-    }
-    ```
+```json
+{
+  "version": "1.4.3",
+  "date": "2026-04-13T12:34:56+00:00"
+}
+```
   - Utilisation typique: sonde de conteneur/orchestrateur (Docker, Traefik, Kubernetes, etc.).
   - Aucun corps requis, pas d’authentification par défaut.
 
