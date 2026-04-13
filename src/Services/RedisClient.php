@@ -49,11 +49,11 @@ final class RedisClient implements RedisClientInterface
 
         while ($shouldContinue()) {
             try {
-                $this->redis->subscribe($channels, static function ($redis, string $channel, string $message) use ($callback, $shouldContinue): void {
+                $this->redis->subscribe($channels, static function ($redis, string $channel, string $message) use ($channels, $callback, $shouldContinue): void {
                     $callback($channel, $message);
 
                     if (! $shouldContinue()) {
-                        $redis->unsubscribe();
+                        $redis->unsubscribe($channels);
                     }
                 });
 
