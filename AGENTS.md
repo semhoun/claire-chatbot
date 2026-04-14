@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Claire is a PHP 8.4+ AI agent chatbot built with Slim 4, Twig, Doctrine ORM, and the Neuron AI library. It provides a web interface and API for interacting with LLMs via an OpenAI-compatible interface.
+Claire is a PHP 8.5+ AI agent chatbot built with Slim 4, Twig, Doctrine ORM, and the Neuron AI library. It provides a web interface and API for interacting with LLMs via an OpenAI-compatible interface.
 
 ## Build / Lint / Test Commands
 
@@ -42,12 +42,16 @@ vendor/bin/phpunit --filter testGetReturnsValueForValidKey  # Run single test me
 ./console telegram:webhook --info             # Show webhook status
 ./console telegram:webhook --delete           # Remove webhook
 ./console telegram:daemon                     # Run polling daemon
+./console telegram:set-commands               # Set bot commands
+
+# Queue worker
+./console queue:work                          # Process queue jobs
 ```
 
 ## Code Style Guidelines
 
 ### PHP Standards
-- **PHP Version**: 8.4+ with strict typing (`declare(strict_types=1);`)
+- **PHP Version**: 8.5+ with strict typing (`declare(strict_types=1);`)
 - **Line Length**: 80 chars soft limit, 120 chars absolute limit (comments excluded)
 - **File Ending**: Unix line endings (LF) - enforced by pre-commit
 - **Quality Gates**: min-quality 90%, min-architecture 85%, min-style 96%
@@ -112,9 +116,11 @@ use App\Entity\ChatHistory;
 - **Middleware**: PSR-15 middleware in `App\Middleware\`
 - **Session Management**: JWT-based stateless sessions via `SessionManager`
 - **Telegram Sessions**: Dedicated `TelegramSession` entity for bot user persistence
+- **Queue System**: Redis-backed job queue in `App\Queue\` with `QueueWorker`, `QueueMessage`, and job classes
+- **Observability**: OpenTelemetry integration in `App\Brain\Observability\` for metrics, traces, and structured events
 
 ### Key Project Conventions
-- Use `env()` helper for environment variables (defined in `src/helpers.php`)
+- Use `Env::get()` from `App\Services\Env` for environment variables
 - Use `Settings::get('key.subkey')` for configuration access
 - Session handling via JWT-based stateless session (`App\Session\SessionManager`)
 - Container injection via PHP-DI (autowiring enabled)
