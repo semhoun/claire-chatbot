@@ -7,6 +7,27 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-04-15
+
+### Added
+- **Mini-App Telegram** : Interface web complète embarquée dans Telegram avec authentification automatique
+  - Contrôleur `TelegramWebAppController` avec validation des données WebApp
+  - Service `TelegramWebAppValidator` pour vérifier l'intégrité des données Telegram
+  - Template `tmpl/telegram_webapp/index.twig` avec interface de chat dédiée
+  - Support de la configuration utilisateur (brain, workflow ComfyUI) dans la mini-app
+  - Endpoint API sécurisé pour la mini-app (`/telegram/webapp/*`)
+- Commande `telegram:set-menu-button` pour configurer le bouton du menu Telegram pointant vers la Mini-App
+- Support complet des données d'initialisation Telegram (user, hash, auth_date) avec validation HMAC
+
+### Changed
+- Refonte du service `TelegramService` pour supporter la Mini-App avec méthodes d'envoi de messages et gestion des erreurs améliorées
+- Mise à jour des routes Telegram pour inclure les endpoints de la Mini-App
+
+### Fixed
+- Correction dans `ComfyUIService` pour la gestion des workflows
+- Correction de la détection des workflows dans `ComfyUIWorkflowRegistry`
+- Amélioration de la gestion des erreurs Redis dans `RedisClient`
+
 ## [1.4.3] - 2026-04-13
 
 ### Changed
@@ -100,7 +121,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Added
 - Infrastructure de queue minimaliste avec worker CLI `queue:work` basee sur Redis
-- Integration du traitement Telegram en asynchrone via la queue `telegram`
+- Integration du traitement Telegram en asynchrone via la queue
 
 ### Changed
 - Simplification du modele de queue: un job est retire de la queue des sa prise en charge par le worker
@@ -337,7 +358,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.3...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.4...HEAD
+[1.4.4]: https://github.com/semhoun/claire-chatbot/compare/1.4.3...1.4.4
 [1.4.3]: https://github.com/semhoun/claire-chatbot/compare/1.4.2...1.4.3
 [1.4.2]: https://github.com/semhoun/claire-chatbot/compare/1.4.1...1.4.2
 [1.4.1]: https://github.com/semhoun/claire-chatbot/compare/1.4.0...1.4.1

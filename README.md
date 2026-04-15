@@ -2,7 +2,7 @@
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.5%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-> **Version 1.4.3** — Chatbot IA avec support multi-brain, Telegram, ComfyUI et OpenTelemetry
+> **Version 1.4.4** — Chatbot IA avec support multi-brain, Telegram, ComfyUI et OpenTelemetry
 
 Claire est une application web de chat IA construite avec Slim 4, Twig et Neuron AI. Elle fournit une interface web, un endpoint API, une integration Telegram et un runtime Docker base sur FrankenPHP/Caddy pour piloter des LLM compatibles OpenAI.
 
@@ -470,10 +470,10 @@ Lancer le worker:
 ./console queue:work
 ```
 
-Traiter une queue specifique:
+Traiter une queue specifique (par defaut: default):
 
 ```bash
-./console queue:work --queue=telegram
+./console queue:work --queue=default
 ```
 
 Options utiles:
@@ -488,7 +488,7 @@ Exemple:
 ```bash
 export REDIS_HOST=127.0.0.1
 export REDIS_PORT=6379
-./console queue:work --queue=telegram --timeout=10
+./console queue:work --timeout=10
 ```
 
 ## Démarrage
@@ -664,8 +664,8 @@ docker compose exec claire ./console cache:clear
   - Réponse 200 (exemple):
 ```json
 {
-  "version": "1.4.3",
-  "date": "2026-04-13T12:34:56+00:00"
+  "version": "1.4.4",
+  "date": "2026-04-15T12:34:56+00:00"
 }
 ```
   - Utilisation typique: sonde de conteneur/orchestrateur (Docker, Traefik, Kubernetes, etc.).
@@ -892,7 +892,7 @@ Le mode webhook permet à Telegram d'envoyer les mises à jour directement à vo
 - Endpoint webhook: `POST /webhook/telegram`
 - Doit être accessible publiquement en HTTPS
 - Vérifie le header `X-Telegram-Bot-Api-Secret-Token` (si `TELEGRAM_WEBHOOK_SECRET` est configuré)
-- Le webhook enfile l'update Telegram dans la queue `telegram`; le traitement effectif est fait par `queue:work`
+- Le webhook enfile l'update Telegram dans la queue `default`; le traitement effectif est fait par `queue:work`
 
 **Exemple Docker Compose (webhook):**
 ```yaml
@@ -935,13 +935,13 @@ services:
 Les updates Telegram recus par webhook ou par daemon ne sont plus traites directement dans le process de reception.
 
 - `TelegramService` implemente le contrat `QueueDoer`.
-- Le webhook et le daemon enfilent `TelegramService::class` dans la queue `telegram` avec un payload JSON.
+- Le webhook et le daemon enfilent `TelegramService::class` dans la queue `default` avec un payload JSON.
 - Le worker doit etre lance separement pour traiter les messages.
 
 Exemple minimal:
 
 ```bash
-./console queue:work --queue=telegram
+./console queue:work
 ```
 
 #### Fonctionnalités
@@ -995,6 +995,47 @@ Claire, peux-tu générer une image d'un chat sur la lune?
 - L'agent génère l'image via ComfyUI et l'envoie sur Telegram
 - Nécessite la configuration de ComfyUI (voir section dédiée)
 
+#### Mini-App Telegram
+
+Claire inclut une Mini-App Telegram complète qui offre une interface web embarquée directement dans l'application Telegram.
+
+**Fonctionnalités:**
+
+- Interface de chat fluide et responsive optimisée pour mobile
+- Authentification automatique via les données d'initialisation Telegram
+- Sélection du brain/personnalité directement dans la Mini-App
+- Gestion des workflows ComfyUI pour la génération d'images
+- Support des pièces jointes et de l'historique des conversations
+
+**Configuration du bouton Menu:**
+
+Pour configurer le bouton du menu Telegram pointant vers la Mini-App:
+
+```bash
+# Configurer le bouton menu avec une URL spécifique
+./console telegram:set-menu-button --url=https://votre-domaine.com/telegram/webapp
+
+# Configurer avec un type par défaut (commands, web_app)
+./console telegram:set-menu-button --type=web_app --text="Ouvrir Claire" --url=https://votre-domaine.com/telegram/webapp
+
+# Réinitialiser le bouton menu
+./console telegram:set-menu-button --type=commands
+```
+
+**Accès direct:**
+
+La Mini-App est accessible à l'URL `/telegram/webapp` et nécessite:
+- Une connexion HTTPS valide (exigence Telegram)
+- Le `TELEGRAM_BOT_TOKEN` configuré
+- Les données d'initialisation Telegram valides (transmises automatiquement par Telegram)
+
+**Sécurité:**
+
+Les données d'initialisation Telegram sont validées via HMAC-SHA256 pour garantir l'authenticité. Le service `TelegramWebAppValidator` vérifie:
+- L'intégrité du hash des données
+- La fraîcheur de la requête (auth_date)
+- La signature cryptographique
+
 ## Développement & Qualité
 
 ### Commandes Composer
@@ -1040,10 +1081,11 @@ Le fichier `./console` fournit des commandes pour la gestion du cache et des mig
   - `./console telegram:webhook --delete` — Supprime le webhook
   - `./console telegram:daemon` — Lance le daemon (polling)
   - `./console telegram:set-commands` — Configure le menu des commandes du bot Telegram (SetMyCommands)
+  - `./console telegram:set-menu-button` — Configure le bouton du menu Telegram (Mini-App)
 
 - **Queue:**
   - `./console queue:work` — Lance le worker de queue
-  - `./console queue:work --queue=telegram` — Traite la queue Telegram
+  - `./console queue:work --queue=default` — Traite la queue par defaut (Telegram utilise cette queue)
   - `./console queue:work --once` — Traite un seul job puis quitte
 
 ### Tests
