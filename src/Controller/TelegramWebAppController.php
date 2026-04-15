@@ -59,7 +59,7 @@ final readonly class TelegramWebAppController
     /**
      * API endpoint to get/update user settings.
      * If brain_avatar or comfyui_workflow provided -> update
-     * Otherwise -> get current settings
+     * Otherwise -> get current settings.
      */
     public function api(Request $request, Response $response): Response
     {

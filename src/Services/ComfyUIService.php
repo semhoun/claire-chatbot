@@ -66,9 +66,9 @@ final readonly class ComfyUIService
         $workflow = $this->resolveWorkflow($session);
         $workflow = str_replace(
             [
-            '{{PROMPT}}',
-            '{{SEED}}',
-        ],
+                '{{PROMPT}}',
+                '{{SEED}}',
+            ],
             [
                 addcslashes($prompt, '"'),
                 (string) random_int(1, PHP_INT_MAX),

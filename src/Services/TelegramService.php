@@ -37,6 +37,23 @@ class TelegramService implements QueueDoer
         'comfyui' => 'Voir ou changer le workflow ComfyUI',
     ];
 
+    private readonly TelegramSession $telegramSession;
+
+    private ?\DateTime $lastChatActionDate = null;
+
+    public function __construct(
+        private readonly Logger $logger,
+        private readonly BrainRegistry $brainRegistry,
+        private readonly EntityManager $entityManager,
+        private readonly Settings $settings,
+        private readonly ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
+        private readonly Filesystem $filesystem,
+        private readonly TelegramBotApi $telegramBotApi,
+        private readonly TelegramMarkdown $telegramMarkdown,
+    ) {
+        $this->telegramSession = new TelegramSession($entityManager);
+    }
+
     /**
      * Load session for a user and return their settings.
      *
@@ -55,7 +72,7 @@ class TelegramService implements QueueDoer
         $this->setUserParams($user);
         $this->setDefaultSessionParams();
         $this->initializeComfyUIWorkflow();
-        if (!$this->telegramSession->has('chatId')) {
+        if (! $this->telegramSession->has('chatId')) {
             $this->initializeChatId(false);
         }
 
@@ -90,7 +107,7 @@ class TelegramService implements QueueDoer
                 $brain = $this->settings->get('session.defaultParams.brain_avatar');
             }
 
-            if (!$this->brainRegistry->has($brain)) {
+            if (! $this->brainRegistry->has($brain)) {
                 return false;
             }
 
@@ -165,23 +182,6 @@ class TelegramService implements QueueDoer
 
             return false;
         }
-    }
-
-    private readonly TelegramSession $telegramSession;
-
-    private ?\DateTime $lastChatActionDate = null;
-
-    public function __construct(
-        private readonly Logger $logger,
-        private readonly BrainRegistry $brainRegistry,
-        private readonly EntityManager $entityManager,
-        private readonly Settings $settings,
-        private readonly ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
-        private readonly Filesystem $filesystem,
-        private readonly TelegramBotApi $telegramBotApi,
-        private readonly TelegramMarkdown $telegramMarkdown,
-    ) {
-        $this->telegramSession = new TelegramSession($entityManager);
     }
 
     public function processUpdate(Update $update): void
