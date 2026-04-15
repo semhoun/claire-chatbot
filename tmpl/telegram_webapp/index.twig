@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Claire - Paramètres</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-gradient-start: #667eea;
+            --bg-gradient-end: #764ba2;
+            --glass-bg: rgba(255, 255, 255, 0.15);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.8);
+            --accent: #ffd700;
+            --danger: #ff4757;
+            --success: #2ed573;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 20px 16px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Floating Header */
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            position: relative;
+        }
+
+        .header-close {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+
+        .header-close:active {
+            transform: scale(0.9);
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .user-avatar {
+            width: 160px;
+            height: 160px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 72px;
+            margin: 0 auto 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            overflow: hidden;
+            transition: transform 0.3s ease;
+        }
+
+        .user-avatar:active {
+            transform: scale(0.95);
+        }
+
+        .user-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .header-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            margin-top: 20px;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .header-subtitle {
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+
+        .user-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 10px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            overflow: hidden;
+            transition: transform 0.3s ease;
+        }
+
+        .user-avatar:active {
+            transform: scale(0.95);
+        }
+
+        .user-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .header-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 3px;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .header-subtitle {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+
+        /* Glass Cards */
+        .glass-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: var(--glass-shadow);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .glass-card:active {
+            transform: translateY(2px);
+            box-shadow: 0 4px 16px 0 rgba(31, 38, 135, 0.2);
+        }
+
+        .card-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        /* Selection Items */
+        .selection-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        .selection-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .selection-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .selection-item.active {
+            background: rgba(255, 255, 255, 0.25);
+            border-color: var(--accent);
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+        }
+
+        .selection-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-right: 15px;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+
+        .selection-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .selection-info {
+            flex: 1;
+        }
+
+        .selection-name {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 3px;
+        }
+
+        .selection-desc {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .selection-check {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--accent);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            color: #000;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .selection-item.active .selection-check {
+            display: flex;
+        }
+
+        /* Action Buttons */
+        .action-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .action-btn {
+            padding: 16px 20px;
+            border-radius: 16px;
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .action-btn:active {
+            transform: scale(0.96);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-danger {
+            background: rgba(255, 71, 87, 0.2);
+            color: var(--danger);
+            border: 1px solid rgba(255, 71, 87, 0.3);
+            grid-column: span 2;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            display: none;
+            align-items: flex-end;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background: linear-gradient(180deg, #2d2d3a 0%, #1a1a2e 100%);
+            width: 100%;
+            max-height: 80vh;
+            border-radius: 30px 30px 0 0;
+            overflow: hidden;
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.active .modal-content {
+            transform: translateY(0);
+        }
+
+        .modal-header {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-body {
+            padding: 10px 20px 30px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .option-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-bottom: 8px;
+        }
+
+        .option-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .option-item.selected {
+            background: rgba(102, 126, 234, 0.3);
+        }
+
+        .option-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            margin-right: 15px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .option-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .option-label {
+            flex: 1;
+            font-size: 15px;
+        }
+
+        .option-check {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+
+        .option-item.selected .option-check {
+            background: var(--success);
+            border-color: var(--success);
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 14px;
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 2000;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        /* Loading */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 3000;
+            transition: opacity 0.3s ease;
+        }
+
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loader {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 20px;
+            font-size: 16px;
+            color: var(--text-secondary);
+        }
+
+        ::-webkit-scrollbar {
+            width: 0;
+            height: 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loader"></div>
+        <div class="loading-text">Chargement...</div>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+        <button class="header-close" id="closeBtn">✕</button>
+        <div class="header-title">Claire</div>
+        <div class="header-subtitle">Personnalisez votre expérience</div>
+    </div>
+
+    <!-- Brain Selection -->
+    <div class="glass-card">
+        <div class="card-title">Assistant</div>
+        <div class="selection-item" id="brainSelector">
+            <div class="selection-avatar" id="brainAvatar">🤖</div>
+            <div class="selection-info">
+                <div class="selection-name" id="brainName">Chargement...</div>
+                <div class="selection-desc" id="brainDesc">Sélectionnez un assistant</div>
+            </div>
+            <div class="selection-check">✓</div>
+        </div>
+    </div>
+
+    {% if comfyui_enabled and workflows is not empty %}
+    <!-- Workflow Selection -->
+    <div class="glass-card">
+        <div class="card-title">Workflow ComfyUI</div>
+        <div class="selection-item" id="workflowSelector">
+            <div class="selection-avatar" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">🎨</div>
+            <div class="selection-info">
+                <div class="selection-name" id="workflowName">Chargement...</div>
+                <div class="selection-desc">Style de génération d'images</div>
+            </div>
+            <div class="selection-check">✓</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Actions -->
+    <div class="action-grid">
+        <button class="action-btn btn-primary" id="newChatBtn" style="grid-column: span 2;">
+            <span>💬</span> Nouvelle conversation
+        </button>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="modalTitle">Sélectionner</div>
+                <button class="modal-close" id="modalClose">×</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        const baseUrl = {{ base_url|json_encode|raw }};
+        const brains = {{ brains|json_encode|raw }};
+        const workflows = {{ workflows|json_encode|raw }};
+        const comfyuiEnabled = {{ comfyui_enabled|json_encode|raw }};
+
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        const initData = tg.initData;
+
+        // DOM elements
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const brainSelector = document.getElementById('brainSelector');
+        const brainAvatar = document.getElementById('brainAvatar');
+        const brainName = document.getElementById('brainName');
+        const brainDesc = document.getElementById('brainDesc');
+        const workflowSelector = document.getElementById('workflowSelector');
+        const workflowName = document.getElementById('workflowName');
+        const closeBtn = document.getElementById('closeBtn');
+        const newChatBtn = document.getElementById('newChatBtn');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalBody = document.getElementById('modalBody');
+        const modalClose = document.getElementById('modalClose');
+        const toast = document.getElementById('toast');
+
+        let currentSettings = {};
+
+        // Load settings
+        async function loadSettings() {
+            if (!initData) {
+                showToast('Erreur: Ouvrir via Telegram');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${baseUrl}/telegram/webapp/api`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ initData })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    currentSettings = data.settings;
+                    updateUI(data.settings);
+                    loadingOverlay.classList.add('hidden');
+                } else {
+                    showToast(data.error || 'Erreur');
+                }
+            } catch (error) {
+                showToast('Erreur de connexion');
+                console.error(error);
+            }
+        }
+
+        function updateUI(settings) {
+            const brain = brains.find(b => b.slug === settings.brain_avatar);
+            if (brain) {
+                brainName.textContent = brain.name;
+                brainDesc.textContent = brain.description || 'Assistant personnel';
+                
+                // Update avatars
+                if (brain.avatar) {
+                    const avatarHtml = getAvatarHtml(brain.avatar);
+                    brainAvatar.innerHTML = avatarHtml;
+                } else {
+                    brainAvatar.textContent = '🤖';
+                }
+                
+                brainSelector.classList.add('active');
+            }
+
+            if (comfyuiEnabled && workflows.length > 0) {
+                const workflow = workflows.find(w => w.slug === settings.comfyui_workflow);
+                workflowName.textContent = workflow ? workflow.label : 'Non défini';
+                if (workflow) workflowSelector.classList.add('active');
+            }
+        }
+
+        function getAvatarHtml(avatar) {
+            if (avatar.startsWith('http') || avatar.startsWith('/') || avatar.startsWith('data:')) {
+                return `<img src="${avatar}" alt="">`;
+            }
+            return avatar;
+        }
+
+        // Modal functions
+        function openModal(title, options, selectedValue, onSelect) {
+            modalTitle.textContent = title;
+            modalBody.innerHTML = '';
+
+            options.forEach(opt => {
+                const div = document.createElement('div');
+                div.className = 'option-item' + (opt.value === selectedValue ? ' selected' : '');
+                
+                let avatarHtml = '';
+                if (opt.avatar) {
+                    avatarHtml = `<div class="option-avatar">${getAvatarHtml(opt.avatar)}</div>`;
+                }
+
+                div.innerHTML = `
+                    ${avatarHtml}
+                    <div class="option-label">${opt.label}</div>
+                    <div class="option-check">✓</div>
+                `;
+                
+                div.onclick = () => {
+                    onSelect(opt.value);
+                    closeModal();
+                };
+                modalBody.appendChild(div);
+            });
+
+            modalOverlay.classList.add('active');
+        }
+
+        function closeModal() {
+            modalOverlay.classList.remove('active');
+        }
+
+        // Brain selection
+        brainSelector.addEventListener('click', () => {
+            const options = brains.map(b => ({ value: b.slug, label: b.name, avatar: b.avatar }));
+            openModal('Choisir un assistant', options, currentSettings.brain_avatar, async (value) => {
+                await saveSetting('brain_avatar', value);
+            });
+        });
+
+        // Workflow selection
+        if (workflowSelector) {
+            workflowSelector.addEventListener('click', () => {
+                const options = workflows.map(w => ({ 
+                    value: w.slug, 
+                    label: w.label,
+                    avatar: '🎨'
+                }));
+                openModal('Choisir un workflow', options, currentSettings.comfyui_workflow || '', async (value) => {
+                    await saveSetting('comfyui_workflow', value);
+                });
+            });
+        }
+
+        // Save setting
+        async function saveSetting(key, value) {
+            try {
+                const response = await fetch(`${baseUrl}/telegram/webapp/api`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ initData, [key]: value })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    currentSettings[key] = value;
+                    updateUI(currentSettings);
+                    showToast('Enregistré ✓');
+                    tg.HapticFeedback.notificationOccurred('success');
+                } else {
+                    showToast(data.error || 'Erreur');
+                }
+            } catch (error) {
+                showToast('Erreur de connexion');
+                console.error(error);
+            }
+        }
+
+        // New chat
+        newChatBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch(`${baseUrl}/telegram/webapp/api`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ initData, action: 'new_chat' })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showToast('Nouvelle conversation !');
+                    tg.HapticFeedback.notificationOccurred('success');
+                    setTimeout(() => tg.close(), 800);
+                } else {
+                    showToast(data.error || 'Erreur');
+                }
+            } catch (error) {
+                showToast('Erreur de connexion');
+                console.error(error);
+            }
+        });
+
+        // Close
+        closeBtn.addEventListener('click', () => tg.close());
+        modalClose.addEventListener('click', closeModal);
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) closeModal();
+        });
+
+        // Toast
+        function showToast(message) {
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Initialize
+        loadSettings();
+    </script>
+</body>
+</html>

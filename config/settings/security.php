@@ -8,5 +8,6 @@ return [
         '/logout',
         '/auth',
         '/webhook/telegram',
+        '/telegram/webapp',
     ],
 ];

@@ -80,7 +80,7 @@ final class ComfyUIWorkflowRegistry
         return is_string($firstSlug) ? $firstSlug : null;
     }
 
-    private function isEnabled(): bool
+    public function isEnabled(): bool
     {
         return $this->settings->get('comfyui.enabled') === true;
     }

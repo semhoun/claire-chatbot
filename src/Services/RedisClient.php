@@ -149,13 +149,13 @@ final class RedisClient implements RedisClientInterface
     {
         try {
             $result = $this->redis->brPop($keys, (int) $timeout);
-        } catch (\RedisException $e) {
+        } catch (\RedisException $redisException) {
             // Timeout reached - Redis closes connection, this is normal
-            if (str_contains(strtolower($e->getMessage()), 'read error')) {
+            if (str_contains(strtolower($redisException->getMessage()), 'read error')) {
                 return null;
             }
 
-            throw $e;
+            throw $redisException;
         }
 
         if ($result === false || ! is_array($result) || count($result) < 2) {
