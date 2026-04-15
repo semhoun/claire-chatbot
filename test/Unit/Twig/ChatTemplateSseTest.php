@@ -54,37 +54,19 @@ final class ChatTemplateSseTest extends TestCase
         $this->assertStringContainsString('data-chat-id="thread-42"', $html);
         $this->assertStringContainsString('data-stream-session-id="sess-abc123"', $html);
 
-        // Native EventSource handles snapshots and incremental updates
-        $this->assertStringContainsString('new EventSource', $html);
-        $this->assertStringContainsString('/brain/stream?sessionId=', $html);
-        $this->assertStringContainsString('&chatId=', $html);
-        $this->assertStringContainsString('window.chatEventSource', $html);
-        $this->assertStringContainsString("eventType === 'message.assistant.start'", $html);
-        $this->assertStringContainsString("addEventListener('chat.snapshot'", $html);
-        $this->assertStringContainsString("addEventListener('message.assistant.delta'", $html);
-        $this->assertStringContainsString('messageArticleId', $html);
-        $this->assertStringNotContainsString('hx-indicator="#typingIndicator"', $html);
-        $this->assertStringContainsString('class="typing-indicator" aria-hidden="true"', $html);
-
-        // JSON message handling for incremental updates
-        $this->assertStringContainsString('JSON.parse(event.data)', $html);
-        $this->assertStringContainsString('update.html', $html);
-        $this->assertStringContainsString('element.innerHTML = htmlContent', $html);
+        // JS is loaded from external files (not inline)
+        $this->assertStringContainsString('/js/app.js', $html);
+        $this->assertStringContainsString('/js/sse.js', $html);
 
         // Form submission includes both chatId and sessionId
         $this->assertStringContainsString('hx-post="/brain/messages"', $html);
         $this->assertStringContainsString('name="chatId" value="thread-42"', $html);
         $this->assertStringContainsString('name="sessionId" value="sess-abc123"', $html);
 
-        // Per-tab session ID stored in sessionStorage
-        $this->assertStringContainsString('sessionStorage', $html);
-        $this->assertStringContainsString('claireStreamSessionId', $html);
-        $this->assertStringContainsString('serverSessionId || window.sessionStorage.getItem(STORAGE_KEY)', $html);
+        // Session ID management
         $this->assertStringContainsString('window.claireStreamSessionId', $html);
-
-        // Reconnection handling
-        $this->assertStringContainsString('setTimeout', $html);
-        $this->assertStringContainsString('initChatEventSource(sessionId)', $html);
+        $this->assertStringContainsString('data-current-chat-id-input', $html);
+        $this->assertStringContainsString('data-stream-session-id-input', $html);
     }
 
     public function testChatTemplateReusesExistingAssistantArticleForPlaceholderUpdates(): void
@@ -121,9 +103,10 @@ final class ChatTemplateSseTest extends TestCase
             'uinfo' => ['id' => 'default'],
         ]);
 
-        $this->assertStringContainsString('const existingTarget = document.getElementById(incomingMessageId);', $html);
-        $this->assertStringContainsString('document.getElementById(update.messageArticleId)', $html);
-        $this->assertStringContainsString('existingArticle.outerHTML = htmlContent;', $html);
+        // JS logic is now in external app.js - verify the script is loaded
+        $this->assertStringContainsString('/js/app.js', $html);
+        // Verify data attributes for message handling are present
+        $this->assertStringContainsString('data-chat-messages', $html);
     }
 
     public function testLayoutLoadsHtmxSseExtension(): void
