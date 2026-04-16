@@ -7,7 +7,7 @@ use App\Console\GenerateProxies;
 use App\Console\QueueWorkCommand;
 use App\Console\TelegramDaemonCommand;
 use App\Console\TelegramSetCommandsCommand;
-use App\Console\TelegramSetMenuButtonCommand;
+use App\Console\TelegramMenuButtonCommand;
 use App\Console\TelegramWebhookCommand;
 use App\Services\Settings;
 use DI\ContainerBuilder;
@@ -56,7 +56,7 @@ $cli = new Application('Claire Chat-Bot', $settings->get('version'));
     $container->get(QueueWorkCommand::class),
     $container->get(TelegramDaemonCommand::class),
     $container->get(TelegramSetCommandsCommand::class),
-    $container->get(TelegramSetMenuButtonCommand::class),
+    $container->get(TelegramMenuButtonCommand::class),
     $container->get(TelegramWebhookCommand::class),
 ]);
 

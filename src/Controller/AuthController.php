@@ -27,11 +27,6 @@ final readonly class AuthController
     {
         $session = $this->getSession($request);
 
-        if (! $this->oidcClient->isEnabled()) {
-            $this->auth->login($session, $this->oidcClient->getDefaultUserId(), $this->oidcClient->getDefaultUserData());
-            return $response->withStatus(302)->withHeader('Location', '/');
-        }
-
         $authUrl = $this->oidcClient->getAuthorizationUrl($session);
         return $response->withHeader('Location', $authUrl)->withStatus(302);
     }

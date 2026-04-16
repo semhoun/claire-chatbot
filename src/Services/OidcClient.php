@@ -33,34 +33,12 @@ final class OidcClient
         $wellKnownUrl = $this->settings->get('oidc.well_known_url');
         $clientId = $this->settings->get('oidc.client_id');
 
-        if (empty($wellKnownUrl) || empty($clientId)) {
-            $this->enabled = false;
-            return;
-        }
-
-        $this->enabled = true;
         $this->scopes = $this->settings->get('oidc.scopes');
-        $this->redirectUri = $this->settings->get('oidc.redirect_uri_base') . '/auth/callback';
+        $this->redirectUri = $this->settings->get('base_url') . '/auth/callback';
 
         $this->discovery = $this->fetchDiscovery($wellKnownUrl);
         $this->tokenAuthMethod = $this->detectAuthMethod();
         $this->genericProvider = $this->createGenericProvider($clientId);
-    }
-
-    public function isEnabled(): bool
-    {
-        return $this->enabled;
-    }
-
-    public function getDefaultUserId(): string
-    {
-        return $this->settings->get('oidc.default_user.id');
-    }
-
-    /** @return array<string, mixed> */
-    public function getDefaultUserData(): array
-    {
-        return $this->settings->get('oidc.default_user.data');
     }
 
     public function getAuthorizationUrl(SessionInterface $session): string
