@@ -93,7 +93,7 @@ final class QueueWorkCommand extends Command
     private function setupSignalHandlers(): void
     {
         if (! function_exists('pcntl_signal')) {
-            $this->logger->debug('pcntl extension not available, signal handling disabled');
+            $this->logger->warning('pcntl extension not available, signal handling disabled');
 
             return;
         }
