@@ -44,6 +44,9 @@ final readonly class TelegramMarkdown
      */
     public function convertToMarkdownV2(string $markdown): string
     {
+        // First, unescape already-escaped characters to avoid double escaping
+        $markdown = $this->unescapeMarkdown($markdown);
+
         // Pre-process spoiler syntax (||text||) to a custom tag before parsing
         $markdown = $this->preprocessSpoilers($markdown);
 
@@ -72,6 +75,19 @@ final readonly class TelegramMarkdown
             '<tg-spoiler>$1</tg-spoiler>',
             $markdown
         );
+    }
+
+    /**
+     * Unescape already-escaped characters to avoid double escaping.
+     * LLM outputs often contain pre-escaped chars like \-, \*, etc.
+     */
+    private function unescapeMarkdown(string $markdown): string
+    {
+        // Characters that are commonly pre-escaped in LLM outputs
+        $escapedChars = ['\\_', '\\*', '\\-', '\\[', '\\]', '\\(', '\\)', '\\~', '\\`', '\\>', '\\#', '\\+', '\\=', '\\|', '\\{', '\\}', '\\.', '\\!', '\\\\'];
+        $unescapedChars = ['_', '*', '-', '[', ']', '(', ')', '~', '`', '>', '#', '+', '=', '|', '{', '}', '.', '!', '\\'];
+
+        return str_replace($escapedChars, $unescapedChars, $markdown);
     }
 
     /**

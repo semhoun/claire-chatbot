@@ -500,4 +500,30 @@ final class TelegramMarkdownTest extends TestCase
 
         $this->assertSame("Wow\! Amazing\. Really\!\n", $result);
     }
+
+    public function testPreEscapedCharacters(): void
+    {
+        // LLM outputs often contain pre-escaped chars - should not double escape
+        $markdown = 'Special chars: \_ \* \- \[ \] \( \) \~ \` \> \# \+ \= \| \{ \} \. \!';
+        $result = $this->converter->convertToMarkdownV2($markdown);
+
+        $expected = "Special chars: \_ \* \- \[ \] \( \) \~ \` \> \# \+ \= \| \{ \} \. \!\n";
+        $this->assertSame($expected, $result);
+    }
+
+    public function testPreEscapedBackslash(): void
+    {
+        $result = $this->converter->convertToMarkdownV2('Path: C:\\\\Users\\\\test');
+
+        $this->assertSame("Path: C:\\\\Users\\\\test\n", $result);
+    }
+
+    public function testMixedEscapedAndUnescaped(): void
+    {
+        $markdown = "Already escaped: \_ and not escaped: _";
+        $result = $this->converter->convertToMarkdownV2($markdown);
+
+        // Both should result in escaped underscores in the output
+        $this->assertStringContainsString('\_', $result);
+    }
 }
