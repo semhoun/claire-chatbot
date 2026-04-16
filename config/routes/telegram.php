@@ -8,7 +8,7 @@ use Slim\App;
 
 return static function (App $app): void {
     // Telegram webhook
-    $app->post('/webhook/telegram', [TelegramController::class, 'webhook'])->setName('telegram_webhook');
+    $app->post('/telegram/webhook', [TelegramController::class, 'webhook'])->setName('telegram_webhook');
 
     // Telegram WebApp
     $app->get('/telegram/webapp', [TelegramWebAppController::class, 'index'])->setName('telegram_webapp');

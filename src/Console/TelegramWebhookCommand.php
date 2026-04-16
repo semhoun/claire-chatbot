@@ -18,7 +18,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 #[AsCommand(name: 'telegram:webhook', description: 'Configure Telegram webhook URL')]
 final class TelegramWebhookCommand extends Command
 {
-    private const string WEBHOOK_PATH = '/webhook/telegram';
+    private const string WEBHOOK_PATH = '/telegram/webhook';
 
     public function __construct(
         private readonly TelegramBotApi $telegramBotApi,
