@@ -84,6 +84,6 @@ ${SITE_ADDRESS} {
 EOF
 
 # Configure queue workers count
-sed -i "s/numprocs=1/numprocs=${QUEUE_WORKERS:-1}/" /etc/supervisor/conf.d/php.conf
+sed -i "s/numprocs=1/numprocs=${QUEUE_WORKERS:-1}/" /etc/supervisor/conf.d/webserver.conf
 
 exec "$@"

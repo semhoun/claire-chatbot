@@ -7,7 +7,7 @@ composer.lock
 .idea
 .local/share/composer
 .bash_history
-compose.yml
+/compose.yml
 local_data
 /.phpunit.result.cache
 /.kilo/plans

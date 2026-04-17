@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 use App\Services\Env;
 
+Env::require([
+    'REDIS_HOST'
+]);
+
 return [
-    'host' => Env::get('REDIS_HOST', '127.0.0.1'),
+    'host' => Env::get('REDIS_HOST'),
     'port' => (int) Env::get('REDIS_PORT', 6379),
     'database' => (int) Env::get('REDIS_DATABASE', 0),
     'password' => Env::get('REDIS_PASSWORD'),

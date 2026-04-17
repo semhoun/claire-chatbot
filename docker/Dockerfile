@@ -31,7 +31,6 @@ RUN apt-get update -y \
   && apt-get install -y --no-install-recommends curl wget ca-certificates bash dos2unix git unzip gpg \
     iputils-ping iproute2 less vim \
     locales aspell-fr \
-    redis \
     supervisor \
   \
 # Dev packages \
