@@ -49,11 +49,19 @@ final class QueueWorker
         }
 
         if ($this->hasReachedRuntimeLimit($queueWorkerOptions, $workerState)) {
-            $this->logRuntimeLimitReached($workerId, $workerState);
+            $this->logger->info('Queue worker reached runtime limit', [
+                'worker_id' => $workerId,
+                'processed_jobs' => $workerState->getProcessedJobs(),
+                'loop_count' => $workerState->getLoopCount(),
+            ]);
         }
 
-        $this->logWorkerStopping($workerId, $workerState);
-
+        $this->logger->info('Queue worker stopping', [
+            'worker_id' => $workerId,
+            'processed_jobs' => $workerState->getProcessedJobs(),
+            'loop_count' => $workerState->getLoopCount(),
+            'running' => $this->running,
+        ]);
         return $workerState->getProcessedJobs();
     }
 
@@ -69,7 +77,14 @@ final class QueueWorker
             return ! $queueWorkerOptions->once;
         }
 
-        $this->processJobWithLogging($job, $workerId, $output, $workerState);
+        $this->logger->info('Processing job', [
+            'worker_id' => $workerId,
+            'job_id' => $job->id,
+            'job_class' => $job->jobClass,
+        ]);
+
+        $workerState->incrementProcessedJobs();
+        $this->processJob($job, $output);
 
         return ! $queueWorkerOptions->once;
     }
@@ -111,41 +126,6 @@ final class QueueWorker
                 'error' => $throwable->getMessage(),
             ]);
         }
-    }
-
-    private function processJobWithLogging(
-        QueueMessage $queueMessage,
-        string $workerId,
-        OutputInterface $output,
-        WorkerState $workerState,
-    ): void {
-        $this->logger->info('Processing job', [
-            'worker_id' => $workerId,
-            'job_id' => $queueMessage->id,
-            'job_class' => $queueMessage->jobClass,
-        ]);
-
-        $workerState->incrementProcessedJobs();
-        $this->processJob($queueMessage, $output);
-    }
-
-    private function logRuntimeLimitReached(string $workerId, WorkerState $workerState): void
-    {
-        $this->logger->info('Queue worker reached runtime limit', [
-            'worker_id' => $workerId,
-            'processed_jobs' => $workerState->getProcessedJobs(),
-            'loop_count' => $workerState->getLoopCount(),
-        ]);
-    }
-
-    private function logWorkerStopping(string $workerId, WorkerState $workerState): void
-    {
-        $this->logger->info('Queue worker stopping', [
-            'worker_id' => $workerId,
-            'processed_jobs' => $workerState->getProcessedJobs(),
-            'loop_count' => $workerState->getLoopCount(),
-            'running' => $this->running,
-        ]);
     }
 
     private function processJob(QueueMessage $queueMessage, OutputInterface $output): void

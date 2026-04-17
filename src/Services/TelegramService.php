@@ -495,7 +495,7 @@ class TelegramService implements QueueDoer
         $agentMessage = $agentHandler->getMessage();
         $agentMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
 
-        return $agentMessage->getContent();
+        return $agentMessage->getContent() ?? '';
     }
 
     /**

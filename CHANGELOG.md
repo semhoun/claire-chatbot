@@ -7,36 +7,28 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
-### Removed
-- **BREAKING**: Suppression du support des fichiers `.env` - l'application utilise uniquement les variables d'environnement système/Docker (retrait de la dépendance `vlucas/phpdotenv`)
-
-## [1.4.6] - 2026-04-17
+## [1.4.5] - 2026-04-17
 
 ### Added
 - Validation HMAC des données d'initialisation Telegram pour la Mini-App
+- Variable d'environnement `BASE_URL` pour définir l'URL de base de l'application (utilisée pour les URLs absolues dans les emails, webhooks, etc.)
 
 ### Changed
 - **BREAKING**: L'authentification SSO OpenID Connect est désormais obligatoire (suppression du fallback utilisateur de démonstration)
 - **BREAKING**: Suppression du mode daemon Telegram (polling) - seul le mode webhook est supporté
 - **BREAKING**: La commande `telegram:webhook` utilise maintenant `--set` (utilise `BASE_URL`) au lieu de `--domain` et `--url`
 - Mise à jour de `OidcClient` avec gestion améliorée des tokens et revocation
-
-### Fixed
-- Corrections de formatage MarkdownV2 pour Telegram
-
-## [1.4.5] - 2026-04-16
-
-### Added
-- Variable d'environnement `BASE_URL` pour définir l'URL de base de l'application (utilisée pour les URLs absolues dans les emails, webhooks, etc.)
-
-### Changed
 - Optimisation du JavaScript avec chargement différé des ressources non critiques
 - Nettoyage du code suite à l'analyse PHP Insights
 - Amélioration du rendu Markdown dans les messages Telegram
 
 ### Fixed
+- Corrections de formatage MarkdownV2 pour Telegram
 - Correction de l'URL du webhook Telegram pour utiliser la `BASE_URL` configurée
 - Corrections mineures de formatage MarkdownV2 pour Telegram
+
+### Removed
+- **BREAKING**: Suppression du support des fichiers `.env` - l'application utilise uniquement les variables d'environnement système/Docker (retrait de la dépendance `vlucas/phpdotenv`)
 
 ## [1.4.4] - 2026-04-15
 
