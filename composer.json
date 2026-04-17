@@ -66,7 +66,8 @@
     "phptg/bot-api": "^0.18",
     "lcobucci/jwt": "^5.5",
     "ramsey/uuid": "^4.9",
-    "symfony/yaml": "^8.0"
+    "symfony/yaml": "^8.0",
+    "lcobucci/clock": "^3.6"
   },
   "require-dev": {
     "roave/security-advisories": "dev-latest",

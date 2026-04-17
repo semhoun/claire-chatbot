@@ -17,6 +17,7 @@ final readonly class AuthController
     use SessionFromRequest;
 
     public function __construct(
+        private \Psr\Log\LoggerInterface $logger,
         private OidcClient $oidcClient,
         private Auth $auth,
         private Twig $twig,
@@ -57,10 +58,12 @@ final readonly class AuthController
         }
 
         if ($result['id'] === null) {
+            $this->logger->warning("No user id returned from SSO");
             return $response->withStatus(500);
         }
 
         $this->auth->login($session, $result['id'], $result['data']);
+
         return $response->withStatus(302)->withHeader('Location', '/');
     }
 

@@ -129,7 +129,6 @@ return [
         $twig->getEnvironment()->addGlobal('settings', $settings);
         return $twig;
     },
-    OidcClient::class => static fn (Settings $settings): OidcClient => new OidcClient($settings),
     Filesystem::class => static function (Settings $settings): FileSystem {
         if ($settings->get('files.fileSystem.type') === 'local') {
             $adapter = new League\Flysystem\Local\LocalFilesystemAdapter(

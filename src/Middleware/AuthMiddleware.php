@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace App\Middleware;
 
 use App\Services\Auth;
-use App\Services\OidcClient;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
-use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Server\MiddlewareInterface;
@@ -31,7 +29,6 @@ final readonly class AuthMiddleware implements MiddlewareInterface
     public function __construct(
         private Twig $twig,
         private Auth $auth,
-        private ContainerInterface $container,
         private Settings $settings,
     ) {
     }
@@ -64,7 +61,7 @@ final readonly class AuthMiddleware implements MiddlewareInterface
             return true;
         }
 
-        return $this->attemptAutoLogin($session);
+        return false;
     }
 
     private function isPublicRoute(Request $request): bool
@@ -73,19 +70,6 @@ final readonly class AuthMiddleware implements MiddlewareInterface
         $publicRoutes = $this->settings->get('security.public_routes');
 
         return array_any($publicRoutes, static fn ($prefix): bool => $path === $prefix || str_starts_with($path, rtrim((string) $prefix, '/') . '/'));
-    }
-
-    private function attemptAutoLogin(SessionInterface $session): bool
-    {
-        $oidcClient = $this->container->get(OidcClient::class);
-
-        if ($oidcClient->isEnabled()) {
-            return false;
-        }
-
-        $this->auth->login($session, $oidcClient->getDefaultUserId(), $oidcClient->getDefaultUserData());
-
-        return true;
     }
 
     private function handleUnauthorized(Request $request): Response
