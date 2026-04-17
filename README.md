@@ -2,7 +2,7 @@
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.5%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-> **Version 1.4.4** — Chatbot IA avec support multi-brain, Telegram, ComfyUI et OpenTelemetry
+> **Version 1.5.0** — Chatbot IA avec support multi-brain, Telegram, ComfyUI et OpenTelemetry
 
 Claire est une application web de chat IA construite avec Slim 4, Twig et Neuron AI. Elle fournit une interface web, un endpoint API, une integration Telegram et un runtime Docker base sur FrankenPHP/Caddy pour piloter des LLM compatibles OpenAI.
 
@@ -94,78 +94,35 @@ docker run -d -p 8080:80 \
 
 ## Configuration
 
-Les paramètres sont chargés depuis `config/settings/*.php` et complétés par des variables d’environnement. Les clés importantes:
+Les paramètres sont chargés depuis `config/settings/*.php` et complétés par des variables d'environnement.
 
-- LLM (voir `config/settings/llm.php`):
-  - `OPENAPI_KEY`   — clé d'API du fournisseur (compatible OpenAI)
-  - `OPENAPI_URL`   — base URL de l'API (ex: https://api.openai.com/v1 ou un proxy type LiteLLM)
-  - `OPENAPI_MODEL` — identifiant du modèle par défaut (ex: gpt-4o-mini, gpt-5.1, etc.)
-  - `OPENAPI_MODEL_SUMMARY` — modèle dédié aux tâches de synthèse/résumé (optionnel; si absent, `OPENAPI_MODEL` sera utilisé)
-  - `OPENAPI_MODEL_EMBED` — modèle dédié aux embeddings (optionnel; si absent, le RAG est désactivé)
-  - `OPENAPI_CONTEXT_WINDOW` — taille de fenêtre de contexte cible utilisée par l'agent (défaut: `50000`)
-  - `llm.shortMemory.messageToKeep` — nombre de messages recents conserves lors d'un resume automatique
-  - `llm.shortMemory.maxTokens` — seuil de tokens a partir duquel la memoire courte compacte l'historique
-  - `llm.summary.minMessages` / `llm.summary.maxMessages` — bornes utilisees pour declencher la generation du titre ou resume de conversation
-  - `llm.workflow.timeout` — duree maximale d'execution d'un workflow d'agent
-  - `SEARXNG_URL` — URL de l'instance SearXNG pour la recherche web (optionnel)
+### Variables obligatoires
 
-- Telegram (voir `config/settings/telegram.php`):
-  - `TELEGRAM_BOT_TOKEN` — Token de votre bot Telegram (obtenu via @BotFather).
-  - `TELEGRAM_WEBHOOK_SECRET` — secret partagé optionnel/recommandé pour sécuriser les webhooks Telegram.
+| Variable | Description |
+|----------|-------------|
+| `BASE_URL` | URL publique de l'application (ex: `https://claire.example.com`) |
+| `OPENAPI_KEY` | Clé API du fournisseur LLM (compatible OpenAI) |
+| `OPENAPI_URL` | URL de l'API (ex: `https://api.openai.com/v1`) |
+| `OPENAPI_MODEL` | Modèle par défaut (ex: `gpt-4o-mini`, `mistral-large-latest`) |
+| `OPENID_WELLKNOWN_URL` | URL de découverte OpenID Connect |
+| `OPENID_CLIENT_ID` | Identifiant client OIDC |
+| `SESSION_JWT_SECRET` | Clé secrète pour signer les sessions JWT (min 32 caractères) |
 
-- OpenID Connect / SSO (voir `config/settings/oidc.php`):
-  - `OPENID_WELLKNOWN_URL` — URL du document de découverte OpenID Connect.
-  - `OPENID_CLIENT_ID` — identifiant du client OIDC.
-  - `OPENID_CLIENT_SECRET` — secret du client OIDC.
-  - `OPENID_REDIRECT_URI_BASE` — URL publique racine de l'application; le callback effectif est `${OPENID_REDIRECT_URI_BASE}/auth/callback`.
+### Variables optionnelles principales
 
-- Queue (voir `config/settings/queue.php` et `config/settings/redis.php`):
-  - `REDIS_HOST` — hote Redis (defaut: `127.0.0.1`).
-  - `REDIS_PORT` — port Redis (defaut: `6379`).
-  - `REDIS_DATABASE` — base Redis numerique (defaut: `0`).
-  - `REDIS_PASSWORD` — mot de passe Redis (optionnel).
-  - `REDIS_TIMEOUT` — timeout de connexion Redis en secondes (defaut: `2.0`).
-  - `REDIS_READ_TIMEOUT` — timeout de lecture Redis en secondes (defaut: `5.0`). Évite les blocages indéfinis sur les opérations réseau.
-  - `REDIS_PREFIX` — prefixe des cles Redis pour la queue.
-  - `queue.timeout` — timeout par défaut pour l'opération BRPOP en secondes (defaut: `5`).
+| Variable | Description | Défaut |
+|----------|-------------|--------|
+| `OPENAPI_MODEL_SUMMARY` | Modèle pour les résumés | valeur de `OPENAPI_MODEL` |
+| `OPENAPI_MODEL_EMBED` | Modèle pour les embeddings (RAG) | désactivé |
+| `TELEGRAM_BOT_TOKEN` | Token du bot Telegram | - |
+| `TELEGRAM_WEBHOOK_SECRET` | Secret pour sécuriser le webhook | - |
+| `COMFYUI_ENABLED` | Active la génération d'images | `false` |
+| `DATABASE_KIND` | Type de base (`sqlite`, `mysql`, `postgres`) | `sqlite` |
+| `DEBUG_MODE` | Mode debug verbeux | `false` |
 
-- Mode et logs:
-  - `DEBUG_MODE` = `true|false` (active un niveau de logs plus verbeux)
-  - `ENABLE_LETSENCRYPT` = `true|false` (active HTTPS automatique via Let's Encrypt dans le conteneur FrankenPHP/Caddy)
-  - `ACME_EMAIL` — email utilisé pour l'enregistrement ACME/Let's Encrypt (optionnel)
+### Configuration complète
 
-- Stockage des fichiers et données:
-  - `DATA_PATH` — chemin racine pour les données persistantes (base de données SQLite, fichiers utilisateur, artefacts stockés; par défaut: `var/data`). Ce répertoire est prévu pour les contenus générés et les données métier persistées, mais pas pour le cache applicatif.
-  - `ADDONS_PATH` — chemin racine des extensions métier chargeables à chaud (par défaut: `var/addons`). Il contient notamment `agents/` pour les cerveaux YAML et `comfyui/` pour les workflows ComfyUI personnalisés. Si `${ADDONS_PATH}/agents` n'existe pas, le contenu de `${ADDONS_PATH}` est initialisé avec les fichiers par défaut fournis par l'application.
-  - `FILES_PATH` — chemin vers le répertoire de stockage des fichiers (par défaut: `var/filer`)
-
-- Observabilité (OpenTelemetry — requis):
-  - Journalisation OpenTelemetry: les logs de l’application sont émis via l’intégration Monolog/OpenTelemetry.
-  - Pour afficher les logs dans la console en développement, définissez `OTEL_LOGS_EXPORTER=console` (et éventuellement `OTEL_LOGS_PROCESSOR=simple`).
-  - Variables d’environnement principales (par signal):
-    - Générales
-      - `OTEL_PHP_AUTOLOAD_ENABLED` — active l’auto‑instrumentation PHP (true/false).
-      - `OTEL_SERVICE_NAME` — nom du service (utilisé par les 3 signaux).
-      - `OTEL_RESOURCE_ATTRIBUTES` — attributs ressource supplémentaires (ex: `deployment.environment=dev,service.version=1.4.1`).
-      - `OTEL_PROPAGATORS` — propagateurs de contexte (ex: `baggage,tracecontext`).
-    - Traces
-      - `OTEL_TRACES_EXPORTER` — exporteur des traces (`otlp`, `none`).
-      - `OTEL_TRACES_SAMPLER` — stratégie d’échantillonnage (ex: `parentbased_always_on`, `traceidratio`).
-      - `OTEL_TRACES_SAMPLER_ARG` — paramètre du sampler (ex: `0.1` pour 10%).
-    - Metrics
-      - `OTEL_METRICS_EXPORTER` — exporteur des métriques (`otlp`, `none`).
-    - Logs
-      - `OTEL_LOGS_EXPORTER` — exporteur des logs (`console`, `otlp`, `none`).
-      - `OTEL_LOGS_PROCESSOR` — processeur des logs (`simple` pour affichage immédiat, `batch` pour production).
-    - Export OTLP (commun, et surcharges par signal)
-      - `OTEL_EXPORTER_OTLP_PROTOCOL` — protocole (`http/protobuf` recommandé, ou `grpc`).
-      - `OTEL_EXPORTER_OTLP_ENDPOINT` — endpoint commun OTLP (optionnel, ex: `http://collector:4318`).
-      - `OTEL_EXPORTER_OTLP_HEADERS` — en‑têtes additionnels (optionnels, ex: `authorization=Bearer <token>`).
-      - `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` — endpoint traces (optionnel; surcharge de `..._ENDPOINT`).
-      - `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` — endpoint métriques (optionnel; surcharge de `..._ENDPOINT`).
-      - `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` — endpoint logs (optionnel; surcharge de `..._ENDPOINT`).
-
-  Note: les endpoints OTLP et les headers sont optionnels. Si vous ne les définissez pas, l’exporteur appliquera ses valeurs par défaut. Par exemple, pour afficher les logs uniquement en console, il suffit de définir `OTEL_LOGS_EXPORTER=console` sans renseigner d’endpoint OTLP.
+Voir [`docker/compose.yml`](docker/compose.yml) pour un exemple complet avec toutes les variables d'environnement documentées (OpenTelemetry, Redis, base de données, etc.).
 
 ### Avatars / Cerveaux (BrainRegistry)
 
@@ -378,7 +335,7 @@ Note: le workflow doit contenir les placeholders `{{PROMPT}}` (remplacé par la 
 
 ### Authentification OpenID Connect (SSO)
 
-L’application utilise une authentification SSO OpenID Connect via les routes `GET /auth/sso` et `GET /auth/callback`. Si la configuration OIDC n'est pas renseignée, elle bascule automatiquement sur un utilisateur de démonstration par défaut. La configuration est lue dans `config/settings/oidc.php` et repose sur les variables d’environnement suivantes:
+L’application utilise une authentification SSO OpenID Connect obligatoire via les routes `GET /auth/sso` et `GET /auth/callback`. La configuration est lue dans `config/settings/oidc.php` et repose sur les variables d’environnement suivantes:
 
 - `OPENID_WELLKNOWN_URL` — URL du document de découverte OpenID Connect 1.0 (ex: `https://votre-idp/.well-known/openid-configuration`).
 - `OPENID_CLIENT_ID` — identifiant du client OIDC (côté fournisseur).
@@ -388,7 +345,7 @@ L’application utilise une authentification SSO OpenID Connect via les routes `
 Autres détails:
 - Scopes utilisés par défaut: `openid email profile` (envoyés avec un séparateur espace, encodé en `+` dans l’URL d’autorisation).
 - Endpoints utilisés: `authorization_endpoint`, `token_endpoint` et `userinfo_endpoint` découverts via le document `.well-known`.
-- En cas d’échec d’authentification, l’application reste SSO‑only et ne propose pas de login/mot de passe.
+- En cas d’échec d’authentification, la configuration OIDC est absente, l.application retourne une erreur 401.
 
 Dépannage rapide:
 - Erreur `invalid_client` lors de l’échange de code: vérifiez l’ID et le secret, et surtout que la méthode d’authentification configurée pour VOTRE client au token endpoint côté IdP correspond à celle attendue (souvent `client_secret_basic` ou `client_secret_post`). Assurez‑vous également que l’URI de redirection enregistrée correspond exactement à `https://votre-domaine/auth/callback`.
@@ -430,7 +387,8 @@ Le projet inclut Doctrine ORM/DBAL et peut fonctionner avec SQLite (par défaut)
     DATABASE_PORT=3306
     DATABASE_NAME=claire
     DATABASE_USER=claire
-    DATABASE_PASSWORD=change_me
+    DATABAS
+    E_PASSWORD=change_me
     ```
 
 - PostgreSQL
@@ -518,104 +476,72 @@ docker build -t claire:latest -f docker/Dockerfile .
 
 #### Utilisation avec Docker Compose
 
-L'extrait ci‑dessous présente une configuration Docker Compose de référence. Adaptez les variables d'environnement (OPENAPI_*, OTEL_*) et, le cas échéant, les labels Traefik à votre contexte.
+Un fichier de composition de référence est disponible dans [`docker/compose.yml`](docker/compose.yml). Adaptez les variables d'environnement à votre contexte.
 
 ```yaml
 services:
   claire:
-    image: claire:latest
+    image: semhoun/claire-chatbot:latest
+    container_name: claire
+    restart: unless-stopped
     volumes:
-      - claire_data:/opt/data # Persistance des données (base SQLite, fichiers uploadés, etc.)
+      - claire-data:/opt/data
+      - claire-addons:/opt/addons
     ports:
-      - "8080:80"
+      - "80:80"
+      - "443:443"
     environment:
-      SERVER_ADMIN: webmaster@example.com
+      # === Configuration serveur ===
+      BASE_URL: https://claire.example.com
       SERVER_NAME: claire.example.com
-      DEBUG_MODE: "false"
-      ENABLE_LETSENCRYPT: "false"
-      # ACME_EMAIL: admin@example.com
+      ACME_EMAIL: admin@example.com
+      ENABLE_LETSENCRYPT: true
 
-      DATA_PATH: /opt/data
-
-      # Queue workers (optionnel, défaut: 1)
-      # QUEUE_WORKERS: 2
-
-      # Session JWT (obligatoire)
-      SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?set_me}
-
-      # OpenTelemetry (requis)
-      OTEL_PHP_AUTOLOAD_ENABLED: "true"
+      # === Observabilité (OpenTelemetry) ===
+      OTEL_PHP_AUTOLOAD_ENABLED: true
       OTEL_SERVICE_NAME: claire
       OTEL_PHP_EXCLUDED_URLS: /health
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      OTEL_EXPORTER_OTLP_HEADERS: ""
       OTEL_PROPAGATORS: baggage,tracecontext
-      OTEL_TRACES_EXPORTER: otlp
-      OTEL_METRICS_EXPORTER: otlp
-      # En développement, afficher les logs en console
+      OTEL_TRACES_EXPORTER: none
+      OTEL_METRICS_EXPORTER: none
       OTEL_LOGS_EXPORTER: console
       OTEL_LOGS_PROCESSOR: simple
-      # Optionnel: configuration OTLP commune (si vous envoyez vers un collecteur)
-      # OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-      # OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      # OTEL_EXPORTER_OTLP_HEADERS: authorization=Bearer <token>
 
-      # LLM (remplacez par vos valeurs / variables d'env)
-      OPENAPI_KEY: ${OPENAPI_KEY:?set_me}
-      OPENAPI_URL: https://api.openai.com/v1
-      OPENAPI_MODEL: gpt-5
-      # Optionnels (précisez si vous souhaitez des modèles dédiés)
-      OPENAPI_MODEL_SUMMARY: gpt-5-mini
-      OPENAPI_MODEL_EMBED: text-embedding-3-large
-      # NB: si `OPENAPI_MODEL_EMBED` est omis, le RAG est désactivé
-      # Optionnel
-      # SEARXNG_URL: http://searxng:8080
-
-      # ComfyUI (génération d'images, optionnel)
-      # COMFYUI_ENABLED: true
-      # COMFYUI_URL: http://comfyui:8188
-
-      # Telegram (optionnel)
-      # TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set_me}
-      # TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?set_me}
-
-      # OpenID Connect (SSO)
-      OPENID_WELLKNOWN_URL: https://auth.example.com/.well-known/openid-configuration
-      OPENID_CLIENT_ID: ${OPENID_CLIENT_ID:?set_me}
-      OPENID_CLIENT_SECRET: ${OPENID_CLIENT_SECRET:?set_me}
-      OPENID_REDIRECT_URI_BASE: https://claire.example.com
-
-      # Base de données
-      # Choix simple (par défaut): SQLite, aucune autre variable requise
+      # === Base de données ===
       DATABASE_KIND: sqlite
 
-      # Exemple MySQL/MariaDB (décommentez et ajustez)
-      # DATABASE_KIND: mysql
-      # DATABASE_HOST: mysql
-      # DATABASE_PORT: 3306
-      # DATABASE_NAME: claire
-      # DATABASE_USER: claire
-      # DATABASE_PASSWORD: change_me
+      # === LLM Configuration ===
+      OPENAPI_KEY: sk-xxxxxxxxxxxx
+      OPENAPI_URL: https://api.mistral.ai/v1
+      OPENAPI_MODEL: mistral-large-latest
+      OPENAPI_MODEL_SUMMARY: mistral-small-latest
+      OPENAPI_MODEL_EMBED: mistral-embed
 
-      # Exemple PostgreSQL (décommentez et ajustez)
-      # DATABASE_KIND: postgres
-      # DATABASE_HOST: postgres
-      # DATABASE_PORT: 5432
-      # DATABASE_NAME: claire
-      # DATABASE_USER: claire
-      # DATABASE_PASSWORD: change_me
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 60s
+      # === Recherche web (optionnel) ===
+      SEARXNG_URL: ""
+
+      # === Authentification OpenID (obligatoire) ===
+      OPENID_WELLKNOWN_URL: https://lastlogin.net/.well-known/openid-configuration
+      OPENID_CLIENT_ID: https://claire.example.com
+
+      # === Sécurité ===
+      SESSION_JWT_SECRET: changeme00changeme00changeme00changeme00changeme00changeme00
+
+      # === Bot Telegram (optionnel) ===
+      TELEGRAM_BOT_TOKEN: ""
+      TELEGRAM_WEBHOOK_SECRET: ""
+
+      # === Génération d'images (optionnel) ===
+      COMFYUI_ENABLED: false
+      COMFYUI_URL: http://comfyui:8188/
+      COMFYUI_DEFAULT_WORKFLOW: flux
 
 volumes:
-  claire_data:
-
-networks:
-  internal:
-    external: true
-    name: internal
+  claire-data:
+  claire-addons:
 ```
 
 Notes Docker/FrankenPHP:
@@ -636,9 +562,9 @@ Notes Docker/FrankenPHP:
 - **Extensions PHP**: SQLite3, MySQL, PostgreSQL, GD, Imagick, Redis, Memcache, etc.
 - **OpenTelemetry**: Extension pré-installée et configurée
 - **Modules Caddy**: `transform-encoder`, Mercure, Vulcain
-- **Volumes**: 
-  - `/data` — Données persistantes (base SQLite, fichiers uploadés, cache, etc.)
-  - `/www` — Code de l'application (pré-copié dans l'image, ou monté en dev)
+- **Volumes**:
+  - `/opt/data` — Données persistantes (base SQLite, fichiers uploadés, cache, etc.)
+  - `/opt/addons` — Extensions métier (agents YAML, workflows ComfyUI)
 - **Healthcheck**: Vérifie automatiquement l'endpoint `/health`
 - **Ports**: Expose `80` et `443`
 
@@ -664,8 +590,8 @@ docker compose exec claire ./console cache:clear
   - Réponse 200 (exemple):
 ```json
 {
-  "version": "1.4.4",
-  "date": "2026-04-15T12:34:56+00:00"
+  "version": "1.5.0",
+  "date": "2026-04-16T12:34:56+00:00"
 }
 ```
   - Utilisation typique: sonde de conteneur/orchestrateur (Docker, Traefik, Kubernetes, etc.).
@@ -836,7 +762,7 @@ Comportement serveur:
 
 ### Bot Telegram
 
-Claire peut être utilisée comme bot Telegram avec deux modes de fonctionnement : **webhook** (recommandé pour la production) ou **daemon** (polling, utile pour le développement local).
+Claire peut être utilisée comme bot Telegram via le mode **webhook** (HTTPS requis).
 
 #### Vue d'ensemble
 
@@ -868,23 +794,20 @@ Le mode webhook permet à Telegram d'envoyer les mises à jour directement à vo
 
 **Configuration du webhook:**
 
-1. Définissez `TELEGRAM_WEBHOOK_SECRET` dans votre fichier `.env` (générez une chaîne aléatoire sécurisée)
+1. Définissez `BASE_URL` et `TELEGRAM_WEBHOOK_SECRET` dans votre fichier `.env`
 2. Configurez le webhook puis publiez le menu des commandes du bot:
 
 ```bash
-# Option 1: Utiliser --domain (recommandé, HTTPS forcé)
-./console telegram:webhook --domain=votre-domaine.com
-
-# Option 2: Utiliser --url (URL complète personnalisée)
-./console telegram:webhook --url=https://votre-domaine.com/webhook/telegram
+# Configurer le webhook (utilise automatiquement BASE_URL)
+./console telegram:webhook --set
 
 # Vérifier le statut
 ./console telegram:webhook --info
 
-# Supprimer le webhook (revenir au mode polling manuel)
+# Supprimer le webhook
 ./console telegram:webhook --delete
 
-# Publier les commandes Telegram configurees dans le bot
+# Publier les commandes Telegram configurés dans le bot
 ./console telegram:set-commands
 ```
 
@@ -901,41 +824,12 @@ environment:
   TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?set_me}
 ```
 
-#### Mode Daemon (polling, utile pour le développement)
-
-Le mode daemon interroge périodiquement les serveurs Telegram pour récupérer les nouveaux messages.
-
-**Lancer le daemon:**
-
-```bash
-# Mode simple
-./console telegram:daemon
-
-# Avec options personnalisées
-./console telegram:daemon --timeout=60 --limit=50
-
-# Arrêt gracieux: Ctrl+C
-```
-
-**Options disponibles:**
-- `--timeout`: Timeout des requêtes long polling (défaut: 30s)
-- `--limit`: Nombre maximum de messages à récupérer par requête (défaut: 100)
-
-**Configuration Docker Compose (daemon):**
-```yaml
-services:
-  claire:
-    # ... configuration web ...
-    environment:
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set_me}
-```
-
 #### Traitement asynchrone des updates Telegram
 
-Les updates Telegram recus par webhook ou par daemon ne sont plus traites directement dans le process de reception.
+Les updates Telegram recus par webhook ne sont plus traites directement dans le process de reception.
 
 - `TelegramService` implemente le contrat `QueueDoer`.
-- Le webhook et le daemon enfilent `TelegramService::class` dans la queue `default` avec un payload JSON.
+- Le webhook enfile `TelegramService::class` dans la queue `default` avec un payload JSON.
 - Le worker doit etre lance separement pour traiter les messages.
 
 Exemple minimal:
@@ -1009,17 +903,10 @@ Claire inclut une Mini-App Telegram complète qui offre une interface web embarq
 
 **Configuration du bouton Menu:**
 
-Pour configurer le bouton du menu Telegram pointant vers la Mini-App:
-
 ```bash
-# Configurer le bouton menu avec une URL spécifique
-./console telegram:set-menu-button --url=https://votre-domaine.com/telegram/webapp
-
-# Configurer avec un type par défaut (commands, web_app)
-./console telegram:set-menu-button --type=web_app --text="Ouvrir Claire" --url=https://votre-domaine.com/telegram/webapp
-
-# Réinitialiser le bouton menu
-./console telegram:set-menu-button --type=commands
+./console telegram:menu-button --set     # Configure le bouton vers la Mini-App (utilise BASE_URL)
+./console telegram:menu-button --info    # Affiche la configuration actuelle
+./console telegram:menu-button --delete  # Réinitialise le bouton par défaut
 ```
 
 **Accès direct:**
@@ -1075,13 +962,11 @@ Le fichier `./console` fournit des commandes pour la gestion du cache et des mig
   - `./console migrations:status` — Affiche le statut des migrations
 
 - **Telegram:**
-  - `./console telegram:webhook --url=https://...` — Configure le webhook
-  - `./console telegram:webhook --domain=...` — Configure le webhook avec domaine (HTTPS forcé)
+  - `./console telegram:webhook --set` — Configure le webhook (utilise BASE_URL)
   - `./console telegram:webhook --info` — Vérifie le statut du webhook
   - `./console telegram:webhook --delete` — Supprime le webhook
-  - `./console telegram:daemon` — Lance le daemon (polling)
-  - `./console telegram:set-commands` — Configure le menu des commandes du bot Telegram (SetMyCommands)
-  - `./console telegram:set-menu-button` — Configure le bouton du menu Telegram (Mini-App)
+  - `./console telegram:set-commands` — Configure le menu des commandes du bot
+  - `./console telegram:menu-button --set` — Configure le bouton menu vers la Mini-App
 
 - **Queue:**
   - `./console queue:work` — Lance le worker de queue

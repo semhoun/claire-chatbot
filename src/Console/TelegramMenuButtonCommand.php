@@ -92,12 +92,12 @@ final class TelegramMenuButtonCommand extends Command
     private function getUsageHelp(): string
     {
         return <<<'TEXT'
-No WebApp URL or domain provided.
+No option provided.
 
 Usage examples:
-  ./console telegram:set-menu-button --set
-  ./console telegram:set-menu-button --info
-  ./console telegram:set-menu-button --delete
+  ./console telegram:menu-button --set
+  ./console telegram:menu-button --info
+  ./console telegram:menu-button --delete
 
 Options:
   --set       Set the menu button

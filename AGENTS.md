@@ -38,14 +38,22 @@ vendor/bin/phpunit --filter testGetReturnsValueForValidKey  # Run single test me
 ./console generate:proxies        # Generate Doctrine proxies
 
 # Telegram bot
-./console telegram:webhook --url=https://...  # Set webhook URL
+./console telegram:webhook --set              # Set webhook URL (uses BASE_URL)
 ./console telegram:webhook --info             # Show webhook status
 ./console telegram:webhook --delete           # Remove webhook
-./console telegram:daemon                     # Run polling daemon
 ./console telegram:set-commands               # Set bot commands
+./console telegram:menu-button --set          # Set Mini-App menu button (uses BASE_URL)
+./console telegram:menu-button --info         # Show current menu button
+./console telegram:menu-button --delete       # Reset menu button to default
 
 # Queue worker
 ./console queue:work                          # Process queue jobs
+
+# Docker Compose (production)
+docker compose up -d                          # Start the stack
+docker compose logs -f claire                 # View logs
+docker compose exec claire ./console migrations:migrate  # Run migrations
+docker compose exec claire ./console cache:clear         # Clear cache
 ```
 
 ## Code Style Guidelines

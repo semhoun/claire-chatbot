@@ -1,0 +1,89 @@
+services:
+  claire:
+    image: semhoun/claire-chatbot:latest
+    container_name: claire
+    restart: unless-stopped
+    volumes:
+      - claire-data:/opt/data
+      - claire-addons:/opt/addons
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # === Configuration serveur ===
+      BASE_URL: https://claire.example.com
+      SERVER_NAME: claire.example.com
+      ACME_EMAIL: admin@example.com
+      ENABLE_LETSENCRYPT: true
+
+      # === Observabilité (OpenTelemetry) ===
+      OTEL_PHP_AUTOLOAD_ENABLED: true
+      OTEL_SERVICE_NAME: claire
+      OTEL_PHP_EXCLUDED_URLS: /health
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      OTEL_EXPORTER_OTLP_HEADERS: ""
+      OTEL_PROPAGATORS: baggage,tracecontext
+      OTEL_TRACES_EXPORTER: none
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: console
+      OTEL_LOGS_PROCESSOR: simple
+
+      # === Base de données ===
+      DATABASE_KIND: sqlite
+
+      # Pour utiliser MariaDB, remplacer DATABASE_KIND par mysql et décommenter :
+      # DATABASE_KIND: mysql
+      # DATABASE_HOST: db
+      # DATABASE_PORT: 3306
+      # DATABASE_NAME: claire
+      # DATABASE_USER: claire
+      # DATABASE_PASSWORD: changeme
+
+      # === LLM Configuration (Mistral AI) ===
+      OPENAPI_KEY: sk-xxxxxxxxxxxx
+      OPENAPI_URL: https://api.mistral.ai/v1
+      OPENAPI_MODEL: mistral-large-latest
+      OPENAPI_MODEL_SUMMARY: mistral-small-latest
+      OPENAPI_MODEL_EMBED: mistral-embed
+
+      # === Recherche web (optionnel) ===
+      SEARXNG_URL: ""
+
+      # === Authentification OpenID (obligatoire) ===
+      # Le OPENID_CLIENT_SECRET est optionnel selon le provider
+      # Exemple avec LastLogin.net (sans secret) :
+      OPENID_WELLKNOWN_URL: https://lastlogin.net/.well-known/openid-configuration
+      OPENID_CLIENT_ID: https://claire.example.com
+      # OPENID_CLIENT_SECRET: votre_secret_ici
+
+      # === Sécurité ===
+      SESSION_JWT_SECRET: changeme00changeme00changeme00changeme00changeme00changeme00
+
+      # === Bot Telegram (optionnel) ===
+      TELEGRAM_BOT_TOKEN: ""
+      TELEGRAM_WEBHOOK_SECRET: ""
+
+      # === Génération d'images (optionnel) ===
+      COMFYUI_ENABLED: false
+      COMFYUI_URL: http://comfyui:8188/
+      COMFYUI_DEFAULT_WORKFLOW: flux
+
+  # # === Service MariaDB (optionnel) ===
+  # # Décommenter pour utiliser MariaDB au lieu de SQLite
+  # db:
+  #   image: mariadb:11
+  #   container_name: claire-db
+  #   restart: unless-stopped
+  #   environment:
+  #     MARIADB_ROOT_PASSWORD: rootpassword
+  #     MARIADB_DATABASE: claire
+  #     MARIADB_USER: claire
+  #     MARIADB_PASSWORD: changeme
+  #   volumes:
+  #     - claire-db:/var/lib/mysql
+
+volumes:
+  claire-data:
+  claire-addons:
+  # claire-db:  # Décommenter pour MariaDB
