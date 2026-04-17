@@ -148,7 +148,7 @@ TEXT;
         return Command::SUCCESS;
     }
 
-    private function setWebhook( OutputInterface $output): int
+    private function setWebhook(OutputInterface $output): int
     {
         $secretToken = $this->settings->get('telegram.webhook_secret');
         $url = $this->settings->get('base_url') . self::WEBHOOK_PATH;

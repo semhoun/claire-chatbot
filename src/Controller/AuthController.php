@@ -58,7 +58,7 @@ final readonly class AuthController
         }
 
         if ($result['id'] === null) {
-            $this->logger->warning("No user id returned from SSO");
+            $this->logger->warning('No user id returned from SSO');
             return $response->withStatus(500);
         }
 

@@ -10,7 +10,7 @@ Env::require([
 ]);
 
 return [
-    'version' => Env::get('CLAIRE_APP_VERSION',  'wip'),
+    'version' => Env::get('CLAIRE_APP_VERSION', 'wip'),
     'debug' => Env::get('DEBUG_MODE', false),
     'temporary_path' => Settings::getAppRoot() . '/var/tmp',
     'cache_dir' => Settings::getAppRoot() . '/var/cache',

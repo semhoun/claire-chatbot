@@ -8,7 +8,6 @@ use App\Services\Session\ArraySession;
 use App\Services\Settings;
 use DateTimeImmutable;
 use InvalidArgumentException;
-use Lcobucci\Clock\SystemClock;
 use Lcobucci\JWT\Encoding\ChainedFormatter;
 use Lcobucci\JWT\Encoding\JoseEncoder;
 use Lcobucci\JWT\JwtFacade;

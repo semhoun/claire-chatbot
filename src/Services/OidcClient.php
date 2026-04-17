@@ -12,14 +12,13 @@ use Lcobucci\JWT\Signer\Key\InMemory;
 use Lcobucci\JWT\Signer\Rsa\Sha256;
 use Lcobucci\JWT\Token;
 use Lcobucci\JWT\Token\Parser;
-use Lcobucci\JWT\Validation\Constraint\SignedWith;
 use Lcobucci\JWT\Validation\Constraint\LooseValidAt;
+use Lcobucci\JWT\Validation\Constraint\SignedWith;
 use Lcobucci\JWT\Validation\Validator;
 use League\OAuth2\Client\OptionProvider\HttpBasicAuthOptionProvider;
 use League\OAuth2\Client\OptionProvider\PostAuthOptionProvider;
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use League\OAuth2\Client\Provider\GenericProvider;
-use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface as Logger;
 
 final class OidcClient
@@ -95,7 +94,7 @@ final class OidcClient
             $parser = new Parser(new JoseEncoder());
             $token = $parser->parse($idToken);
 
-            if (!$this->validateToken($token)) {
+            if (! $this->validateToken($token)) {
                 return ['logged' => false];
             }
 
@@ -108,9 +107,8 @@ final class OidcClient
                 'id' => $tokenInfo['sub'] ?? null,
                 'data' => $this->normalizeUserData($tokenInfo),
             ];
-        }
-        catch (\Exception $e) {
-            $this->logger->info('Error processing OIDC callback', ['exception' => $e]);
+        } catch (\Exception $exception) {
+            $this->logger->info('Error processing OIDC callback', ['exception' => $exception]);
             return ['logged' => false];
         }
     }
@@ -170,18 +168,20 @@ final class OidcClient
         }
 
         $publicKey = $this->convertJwkToPem($keyData['n'], $keyData['e']);
-        $signer = new Sha256();
+        $sha256 = new Sha256();
         $key = InMemory::plainText($publicKey);
 
         $validator = new Validator();
-        if (!$validator->validate($token, new SignedWith($signer, $key))) {
+        if (! $validator->validate($token, new SignedWith($sha256, $key))) {
             $this->logger->info('Invalid token signature', ['token' => $token]);
             return false;
         }
-        if (!$validator->validate($token, new LooseValidAt(SystemClock::fromUTC()))) {
+
+        if (! $validator->validate($token, new LooseValidAt(SystemClock::fromUTC()))) {
             $this->logger->info('Token is not valid at current time', ['token' => $token]);
             return false;
         }
+
         return true;
     }
 
@@ -194,7 +194,7 @@ final class OidcClient
             throw new \RuntimeException('Failed to decode JWK');
         }
 
-        $buildDer = function ($type, $value) {
+        $buildDer = static function ($type, string $value): string {
             $len = strlen($value);
             if ($len < 128) {
                 $lenField = chr($len);
@@ -203,18 +203,21 @@ final class OidcClient
                 if (strlen($lenField) % 2 !== 0) {
                     $lenField = '0' . $lenField;
                 }
+
                 $lenField = pack('H*', $lenField);
                 $lenField = chr(0x80 | strlen($lenField)) . $lenField;
             }
+
             return chr($type) . $lenField . $value;
         };
 
         $n = ltrim($n, "\x00");
-        if (ord($n[0]) & 0x80) {
+        if ((ord($n[0]) & 0x80) !== 0) {
             $n = "\x00" . $n;
         }
+
         $e = ltrim($e, "\x00");
-        if (ord($e[0]) & 0x80) {
+        if ((ord($e[0]) & 0x80) !== 0) {
             $e = "\x00" . $e;
         }
 
@@ -307,7 +310,6 @@ final class OidcClient
      */
     private function normalizeUserData(array $tokenInfo): array
     {
-
         $data = [
             'firstName' => $tokenInfo['given_name'] ?? null,
             'lastName' => $tokenInfo['family_name'] ?? null,

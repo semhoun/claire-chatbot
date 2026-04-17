@@ -12,7 +12,6 @@ use Phptg\BotApi\Type\Update\Update;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Log\LoggerInterface as Logger;
-use Slim\Psr7\NonBufferedBody;
 
 final readonly class TelegramController
 {
@@ -32,6 +31,7 @@ final readonly class TelegramController
         } catch (InvalidArgumentException) {
             return $response->withStatus(401);
         }
+
         try {
             $this->queueDispatcher->dispatch(
                 TelegramService::class,

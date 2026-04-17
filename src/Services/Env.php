@@ -4,20 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use Dotenv\Dotenv;
-use Dotenv\Exception\ValidationException;
 use RuntimeException;
 
 final class Env
 {
-    private static bool $loaded = false;
-
-    private static ?Dotenv $dotenv = null;
-
     public static function get(string $key, mixed $default = null): mixed
     {
-        self::boot();
-
         if ($key === '') {
             self::require($default);
 
@@ -42,32 +34,18 @@ final class Env
     /** @param array<int, string>|string $keys */
     public static function require(array|string $keys): void
     {
-        self::boot();
+        $missing = [];
 
-        try {
-            self::$dotenv?->required((array) $keys);
-        } catch (ValidationException $validationException) {
+        foreach ((array) $keys as $key) {
+            if (getenv($key) === false) {
+                $missing[] = $key;
+            }
+        }
+
+        if ($missing !== []) {
             throw new RuntimeException(
-                $validationException->getMessage(),
-                (int) $validationException->getCode(),
-                $validationException
+                'Missing environment variables: ' . implode(', ', $missing)
             );
         }
-    }
-
-    private static function boot(): void
-    {
-        if (self::$loaded) {
-            return;
-        }
-
-        $appRoot = Settings::getAppRoot();
-        self::$dotenv = Dotenv::createUnsafeImmutable($appRoot);
-
-        if (file_exists($appRoot . '/.env')) {
-            self::$dotenv->load();
-        }
-
-        self::$loaded = true;
     }
 }

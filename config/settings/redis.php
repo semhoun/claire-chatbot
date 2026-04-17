@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Services\Env;
 
 Env::require([
-    'REDIS_HOST'
+    'REDIS_HOST',
 ]);
 
 return [

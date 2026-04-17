@@ -57,11 +57,7 @@ final readonly class AuthMiddleware implements MiddlewareInterface
             return true;
         }
 
-        if ($this->auth->isAuthenticated($session)) {
-            return true;
-        }
-
-        return false;
+        return $this->auth->isAuthenticated($session);
     }
 
     private function isPublicRoute(Request $request): bool

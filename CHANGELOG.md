@@ -7,6 +7,11 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Removed
+- **BREAKING**: Suppression du support des fichiers `.env` - l'application utilise uniquement les variables d'environnement système/Docker (retrait de la dépendance `vlucas/phpdotenv`)
+
+## [1.4.6] - 2026-04-17
+
 ### Added
 - Validation HMAC des données d'initialisation Telegram pour la Mini-App
 
