@@ -7,7 +7,6 @@ return [
         '/health',
         '/logout',
         '/auth',
-        '/webhook/telegram',
-        '/telegram/webapp',
+        '/telegram',
     ],
 ];

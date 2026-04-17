@@ -32,11 +32,6 @@ final readonly class TelegramController
         } catch (InvalidArgumentException) {
             return $response->withStatus(401);
         }
-
-        $response = $response
-            ->withBody(new NonBufferedBody())
-            ->withHeader('cache-control', 'no-cache');
-
         try {
             $this->queueDispatcher->dispatch(
                 TelegramService::class,
@@ -46,10 +41,9 @@ final readonly class TelegramController
             $this->logger->error('Telegram Webhook Error: ' . $throwable->getMessage(), [
                 'exception' => $throwable,
             ]);
-            // Return 200 to Telegram to avoid infinite retries for application bugs
         }
 
-        return $response;
+        return $response->withStatus(204);
     }
 
     private function validateSecretToken(Request $request): void
