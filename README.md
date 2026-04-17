@@ -73,6 +73,7 @@ docker run -d -p 8080:80 \
 - [OpenTelemetry](https://opentelemetry.io/docs/languages/php/) (observabilité)
 - [Symfony YAML](https://symfony.com/doc/current/components/yaml.html) (cerveaux personnalisés)
 - FrankenPHP + Caddy (runtime HTTP principal en conteneur)
+- Redis (queue de fond pour traitements asynchrones et streaming SSE multi-instance)
 - Docker (déploiement containerisé avec Supervisor)
 
 ## Prérequis
@@ -413,7 +414,9 @@ Migrations Doctrine
 
 ### Queue de fond
 
-Claire inclut une queue de fond minimaliste basee sur Redis pour deleguer certains traitements hors du cycle HTTP, en particulier les updates Telegram.
+Claire utilise Redis pour deux fonctionnalités principales :
+- **Queue de fond** : délègue les traitements hors du cycle HTTP (en particulier les updates Telegram)
+- **Streaming SSE** : permet le streaming temps réel des réponses LLM, même en multi-instance
 
 - **Exécution immédiate**: Les jobs sont exécutés dès qu'ils arrivent dans Redis (pas de planification différée).
 - **Blocage Redis**: Le worker utilise `BRPOP` pour attendre passivement dans Redis quand la queue est vide, sans consommer de CPU.
@@ -539,9 +542,22 @@ services:
       COMFYUI_URL: http://comfyui:8188/
       COMFYUI_DEFAULT_WORKFLOW: flux
 
+      # === Redis (queue de fond + streaming SSE) ===
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+  # === Service Redis (queue de fond + streaming SSE) ===
+  redis:
+    image: redis:7-alpine
+    container_name: claire-redis
+    restart: unless-stopped
+    volumes:
+      - claire-redis:/data
+
 volumes:
   claire-data:
   claire-addons:
+  claire-redis:
 ```
 
 Notes Docker/FrankenPHP:
@@ -642,6 +658,8 @@ Si vous placez l’application derrière un reverse proxy (Nginx, Traefik, Apach
 ### Architecture SSE (Server-Sent Events)
 
 **Note importante**: Depuis la version 1.4.1, l'interface web fonctionne **exclusivement en mode streaming** via SSE. Le mode chat classique (synchrone) a été supprimé.
+
+**Redis et SSE**: Redis est utilisé comme backend de messagerie pour le streaming SSE, permettant à l'application de fonctionner en mode multi-instance. Que le worker de queue et le serveur HTTP soient sur des conteneurs différents ou sur la même machine, Redis assure la diffusion des événements streaming vers le bon client.
 
 L’interface web
 

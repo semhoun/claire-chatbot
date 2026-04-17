@@ -8,6 +8,7 @@ if [ "${DEBUG_MODE}" == "true" ]; then
   cat > "${PHP_INI_DIR}/conf.d/z99-debug.ini" << 'EOF'
 display_errors = On
 display_startup_errors = On
+
 opcache.enable = Off
 opcache.enable_cli = Off
 EOF

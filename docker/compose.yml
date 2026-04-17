@@ -6,6 +6,8 @@ services:
     volumes:
       - claire-data:/opt/data
       - claire-addons:/opt/addons
+    depends_on:
+      - redis
     ports:
       - "80:80"
       - "443:443"
@@ -68,6 +70,18 @@ services:
       COMFYUI_ENABLED: false
       COMFYUI_URL: http://comfyui:8188/
       COMFYUI_DEFAULT_WORKFLOW: flux
+
+      # === Redis (queue de fond et notifications) ===
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      # REDIS_PASSWORD: ""  # Décommenter si authentification requise
+
+  # === Service Redis (queue de fond et notifications) ===
+  redis:
+    image: redis:7-alpine
+    container_name: claire-redis
+    restart: unless-stopped
 
   # # === Service MariaDB (optionnel) ===
   # # Décommenter pour utiliser MariaDB au lieu de SQLite
