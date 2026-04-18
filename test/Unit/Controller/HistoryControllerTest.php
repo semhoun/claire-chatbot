@@ -10,6 +10,7 @@ use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
+use League\Flysystem\Filesystem;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -79,8 +80,9 @@ final class HistoryControllerTest extends TestCase
             ->willReturn(1);
         $subscriber = new \App\Services\ChatStreamSubscriber($redis, $settings);
         $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber);
+        $filesystem = $this->createMock(Filesystem::class);
 
-        $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher);
+        $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher, $filesystem);
 
         $request = $this->createMock(ServerRequestInterface::class);
         $request->method('getAttribute')->willReturnCallback(fn (string $name) => match ($name) {
@@ -156,8 +158,9 @@ final class HistoryControllerTest extends TestCase
             ->willReturn(1);
         $subscriber = new \App\Services\ChatStreamSubscriber($redis, $settings);
         $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber);
+        $filesystem = $this->createMock(Filesystem::class);
 
-        $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher);
+        $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher, $filesystem);
 
         $request = $this->createMock(ServerRequestInterface::class);
         $request->method('getAttribute')->willReturnCallback(fn (string $name) => match ($name) {

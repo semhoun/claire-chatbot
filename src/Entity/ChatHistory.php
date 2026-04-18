@@ -51,6 +51,15 @@ class ChatHistory
     #[ORM\Column(name: 'updated_at', type: 'datetime_immutable', nullable: false)]
     private \DateTimeImmutable $updatedAt;
 
+    /** @var \Doctrine\Common\Collections\Collection<int, ChatHistoryFile> */
+    #[ORM\OneToMany(targetEntity: ChatHistoryFile::class, mappedBy: 'history', cascade: ['remove'])]
+    private \Doctrine\Common\Collections\Collection $files;
+
+    public function __construct()
+    {
+        $this->files = new \Doctrine\Common\Collections\ArrayCollection();
+    }
+
     #[ORM\PrePersist]
     public function onPrePersist(): void
     {
@@ -158,5 +167,19 @@ class ChatHistory
     public function setUpdatedAt(\DateTimeImmutable $updatedAt): void
     {
         $this->updatedAt = $updatedAt;
+    }
+
+    /** @return \Doctrine\Common\Collections\Collection<int, ChatHistoryFile> */
+    public function getFiles(): \Doctrine\Common\Collections\Collection
+    {
+        return $this->files;
+    }
+
+    public function addFile(ChatHistoryFile $chatHistoryFile): void
+    {
+        if (! $this->files->contains($chatHistoryFile)) {
+            $this->files->add($chatHistoryFile);
+            $chatHistoryFile->setHistory($this);
+        }
     }
 }

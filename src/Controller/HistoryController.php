@@ -12,6 +12,7 @@ use App\Services\ChatStreamPublisher;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
+use League\Flysystem\Filesystem;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -29,6 +30,7 @@ final readonly class HistoryController
         private BrainRegistry $brainRegistry,
         private Settings $settings,
         private ChatStreamPublisher $chatStreamPublisher,
+        private Filesystem $filesystem,
     ) {
     }
 
@@ -185,7 +187,7 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
-        if (! $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteThread($userId, $threadId)) {
+        if (! $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteThread($userId, $threadId, $this->filesystem)) {
             return $response->withStatus(400);
         }
 

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Entity\ChatHistoryFile;
+use App\Repository\ChatHistoryRepository;
 use App\Services\Session\SessionInterface;
+use Doctrine\ORM\EntityManagerInterface;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use League\Flysystem\Filesystem;
@@ -26,6 +29,8 @@ final readonly class ComfyUIService
         private Settings $settings,
         private Filesystem $filesystem,
         private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
+        private EntityManagerInterface $entityManager,
+        private ChatHistoryRepository $chatHistoryRepository,
     ) {
         $this->httpClient = new Client([
             'base_uri' => $this->settings->get('comfyui.url'),
@@ -40,7 +45,7 @@ final readonly class ComfyUIService
             $promptId = $this->queuePrompt($workflow);
             $imageData = $this->waitForResult($promptId);
 
-            return $this->saveImage($session, $imageData);
+            return $this->saveImage($session, $imageData, $prompt);
         } catch (GuzzleException $e) {
             throw new RuntimeException(
                 'ComfyUI API error: ' . $e->getMessage(),
@@ -263,7 +268,7 @@ final readonly class ComfyUIService
      *
      * @return string The local file path
      */
-    private function saveImage(SessionInterface $session, array $imageData): string
+    private function saveImage(SessionInterface $session, array $imageData, string $prompt): string
     {
         $imageContent = $this->downloadImage($imageData);
         $detectedExtension = pathinfo(
@@ -274,11 +279,68 @@ final readonly class ComfyUIService
             ? $detectedExtension
             : 'png';
         $filename = Uuid::uuid4() . '.' . $extension;
-        $localPath = self::FOLDER_PREFIX . '/' . $session->get(Auth::USERID) . '/' . $filename;
-        $imgId = '@@GENERATED@@' . $session->get(Auth::USERID) . self::FOLDER_SEPARATOR . $filename . '@@';
+        $userId = $session->get(Auth::USERID);
+        $localPath = self::FOLDER_PREFIX . '/' . $userId . '/' . $filename;
+        $imgId = '@@GENERATED@@' . $userId . self::FOLDER_SEPARATOR . $filename . '@@';
 
         $this->filesystem->write($localPath, $imageContent);
+        $this->saveFileReference($session, $localPath, $prompt);
 
         return $imgId;
+    }
+
+    /**
+     * Save file reference to database.
+     */
+    private function saveFileReference(SessionInterface $session, string $filePath, string $prompt): void
+    {
+        $threadId = $session->get('chatId');
+
+        if ($threadId === null) {
+            return;
+        }
+
+        $history = $this->chatHistoryRepository->findOneBy(['threadId' => $threadId]);
+
+        if ($history === null) {
+            return;
+        }
+
+        $workflowSlug = (string) $session->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
+
+        if ($workflowSlug === '' || ! $this->comfyUIWorkflowRegistry->has($workflowSlug)) {
+            $workflowSlug = $this->comfyUIWorkflowRegistry->getDefaultSlug() ?? '';
+        }
+
+        $chatHistoryFile = new ChatHistoryFile();
+        $chatHistoryFile->setHistory($history);
+        $chatHistoryFile->setUser($history->getUser());
+        $chatHistoryFile->setFileType('image');
+        $chatHistoryFile->setFilePath($filePath);
+        $chatHistoryFile->setMetadata([
+            'prompt' => $prompt,
+            'workflow' => $workflowSlug,
+        ]);
+
+        $this->entityManager->persist($chatHistoryFile);
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Extract file path from image ID.
+     */
+    public static function extractFilePathFromId(string $imageId): ?string
+    {
+        if (! preg_match(self::IMAGE_PATTERN, $imageId, $matches)) {
+            return null;
+        }
+
+        $parts = explode(self::FOLDER_SEPARATOR, $matches[1]);
+
+        if (count($parts) !== 2) {
+            return null;
+        }
+
+        return self::FOLDER_PREFIX . '/' . $parts[0] . '/' . $parts[1];
     }
 }

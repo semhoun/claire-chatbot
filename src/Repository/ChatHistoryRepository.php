@@ -7,6 +7,7 @@ namespace App\Repository;
 use App\Entity\ChatHistory;
 use App\Entity\User;
 use Doctrine\ORM\EntityRepository;
+use League\Flysystem\Filesystem;
 
 /**
  * @extends EntityRepository<ChatHistory>
@@ -79,10 +80,11 @@ class ChatHistoryRepository extends EntityRepository
      *
      * @param string $userId The ID of the user attempting to delete the thread.
      * @param string $threadId The ID of the thread to be deleted.
+     * @param Filesystem|null $filesystem Optional filesystem to delete associated files
      *
      * @return bool Returns true if the thread was successfully deleted, or false if the thread does not exist or does not belong to the user.
      */
-    public function deleteThread(string $userId, string $threadId): bool
+    public function deleteThread(string $userId, string $threadId, ?Filesystem $filesystem = null): bool
     {
         $user = $this->getUser($userId);
         if (! $user instanceof \App\Entity\User) {
@@ -100,10 +102,33 @@ class ChatHistoryRepository extends EntityRepository
             return false;
         }
 
+        // Delete physical files before removing DB entity (cascade will delete records)
+        if ($filesystem instanceof \League\Flysystem\Filesystem) {
+            $this->deleteAssociatedFiles($history, $filesystem);
+        }
+
         $this->getEntityManager()->remove($history);
         $this->getEntityManager()->flush();
 
         return true;
+    }
+
+    /**
+     * Delete files associated with a chat history.
+     */
+    private function deleteAssociatedFiles(ChatHistory $chatHistory, Filesystem $filesystem): void
+    {
+        foreach ($chatHistory->getFiles() as $file) {
+            $filePath = $file->getFilePath();
+
+            try {
+                if ($filesystem->fileExists($filePath)) {
+                    $filesystem->delete($filePath);
+                }
+            } catch (\Throwable) {
+                // Ignore file deletion errors - file may not exist
+            }
+        }
     }
 
     private function getUser(string $userId): ?User

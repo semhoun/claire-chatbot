@@ -141,7 +141,7 @@ return [
     },
     TelegramBotApi::class => static fn (Settings $settings): TelegramBotApi => new TelegramBotApi($settings->get('telegram.bot_token')),
     ComfyUIWorkflowRegistry::class => static fn (Settings $settings): ComfyUIWorkflowRegistry => new ComfyUIWorkflowRegistry($settings),
-    ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry): ComfyUIService => new ComfyUIService($settings, $filesystem, $comfyUIWorkflowRegistry),
+    ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry, EntityManagerInterface $entityManager): ComfyUIService => new ComfyUIService($settings, $filesystem, $comfyUIWorkflowRegistry, $entityManager, $entityManager->getRepository(\App\Entity\ChatHistory::class)),
     RedisClientInterface::class => static function (Settings $settings): RedisClientInterface {
         $client = new RedisClient();
         $client->connect(

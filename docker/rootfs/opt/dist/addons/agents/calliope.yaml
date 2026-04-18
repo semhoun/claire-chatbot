@@ -206,6 +206,20 @@ css_inline: |
       background: var(--accent);
       color: var(--ink);
   }
+  .global-action-indicator__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: 999px;
+    background: rgba(17, 0, 30, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 18px 40px var(--elevation-panel-dark);
+    color: var(--ink);
+    font-size: 13px;
+    letter-spacing: 0.01em;
+    backdrop-filter: blur(10px);
+  }
 
 welcomes: |
   ### **🌟 Bienvenue chez Calliopé, votre muse des histoires illustrées !**
