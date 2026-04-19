@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Queue;
+namespace App\Job;
 
 use App\Services\Session\InMemorySession;
 use NeuronAI\Chat\Messages\UserMessage;

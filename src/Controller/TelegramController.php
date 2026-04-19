@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Queue\QueueDispatcherInterface;
+use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\Settings;
 use App\Services\TelegramService;
 use InvalidArgumentException;

@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Test\Unit\Queue;
 
-use App\Queue\QueueJobFactory;
-use App\Queue\QueueMessage;
-use App\Queue\QueueDoer;
-use App\Queue\QueueSerializer;
+use App\Services\Queue\QueueDoer;
+use App\Services\Queue\QueueJobFactory;
+use App\Services\Queue\QueueMessage;
+use App\Services\Queue\QueueSerializer;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;

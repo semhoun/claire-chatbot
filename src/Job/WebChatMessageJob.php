@@ -2,12 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Queue;
+namespace App\Job;
 
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Summary;
 use App\Services\ChatStreamPublisher;
+use App\Services\Queue\QueueDoer;
 use App\Services\Session\InMemorySession;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
@@ -44,7 +45,7 @@ final readonly class WebChatMessageJob implements QueueDoer
     public function handle(array $payload): void
     {
         $context = $this->createJobContext($payload);
-        if (! $context instanceof \App\Queue\JobContext) {
+        if (! $context instanceof \App\Job\JobContext) {
             return;
         }
 

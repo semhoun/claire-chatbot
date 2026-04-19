@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console;
 
-use App\Queue\QueueWorker;
-use App\Queue\QueueWorkerOptions;
+use App\Services\Queue\QueueWorker;
+use App\Services\Queue\QueueWorkerOptions;
 use App\Services\Settings;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;

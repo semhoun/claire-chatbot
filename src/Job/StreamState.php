@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Queue;
+namespace App\Job;
 
 /**
  * Mutable state for stream processing.

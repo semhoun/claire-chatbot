@@ -6,10 +6,10 @@ namespace App\Controller;
 
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
-use App\Queue\QueueDispatcherInterface;
-use App\Queue\WebChatMessageJob;
+use App\Job\WebChatMessageJob;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
+use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use App\Services\SseEventFormatter;

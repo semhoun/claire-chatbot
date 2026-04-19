@@ -3,17 +3,16 @@
 declare(strict_types=1);
 
 use App\Exception;
-use App\Queue\QueueBackendInterface;
-use App\Queue\QueueDispatcherInterface;
-use App\Queue\QueueJobFactory;
-use App\Queue\QueueSerializer;
-use App\Queue\QueueWorker;
-use App\Queue\RedisQueueBackend;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\ComfyUIService;
 use App\Services\ComfyUIWorkflowRegistry;
-use App\Services\OidcClient;
+use App\Services\Queue\QueueBackendInterface;
+use App\Services\Queue\QueueDispatcherInterface;
+use App\Services\Queue\QueueJobFactory;
+use App\Services\Queue\QueueSerializer;
+use App\Services\Queue\QueueWorker;
+use App\Services\Queue\RedisQueueBackend;
 use App\Services\RedisClient;
 use App\Services\RedisClientInterface;
 use App\Services\Settings;

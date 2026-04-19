@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Queue;
+namespace App\Services\Queue;
 
 use App\Services\RedisClientInterface;
 use App\Services\Settings;

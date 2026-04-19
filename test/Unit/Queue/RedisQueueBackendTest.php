@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Test\Unit\Queue;
 
-use App\Queue\QueueMessage;
-use App\Queue\QueueSerializer;
-use App\Queue\RedisQueueBackend;
+use App\Services\Queue\QueueMessage;
+use App\Services\Queue\QueueSerializer;
+use App\Services\Queue\RedisQueueBackend;
 use App\Services\RedisClientInterface;
 use App\Services\Settings;
 use PHPUnit\Framework\TestCase;

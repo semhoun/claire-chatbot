@@ -9,7 +9,7 @@ use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Tools\GenerateImageTool;
 use App\Entity\User;
 use App\Enums\TelegramAction;
-use App\Queue\QueueDoer;
+use App\Services\Queue\QueueDoer;
 use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;

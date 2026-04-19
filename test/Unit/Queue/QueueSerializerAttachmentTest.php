@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Test\Unit\Queue;
 
-use App\Queue\QueueSerializer;
+use App\Services\Queue\QueueSerializer;
 use PHPUnit\Framework\TestCase;
 
 final class QueueSerializerAttachmentTest extends TestCase

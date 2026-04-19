@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Queue;
+namespace App\Services\Queue;
 
 use App\Services\RedisClientInterface;
 use Psr\Log\LoggerInterface as Logger;
@@ -73,7 +73,7 @@ final class QueueWorker
     ): bool {
         $job = $this->reserveJob($queueWorkerOptions, $workerId, $output);
 
-        if (! $job instanceof \App\Queue\QueueMessage) {
+        if (! $job instanceof \App\Services\Queue\QueueMessage) {
             return ! $queueWorkerOptions->once;
         }
 
