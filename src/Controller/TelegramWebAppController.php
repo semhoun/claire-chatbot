@@ -48,7 +48,7 @@ final readonly class TelegramWebAppController
         $workflows = $this->comfyUIWorkflowRegistry->list();
         $comfyUIEnabled = $this->comfyUIWorkflowRegistry->isEnabled();
 
-        return $this->twig->render($response, 'telegram_webapp/index.twig', [
+        return $this->twig->render($response, 'telegram/webapp.twig', [
             'brains' => $brains,
             'workflows' => $workflows,
             'comfyui_enabled' => $comfyUIEnabled,
