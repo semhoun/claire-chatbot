@@ -474,64 +474,57 @@
             if (loader) loader.remove();
         }
 
-        function handleIncrementalUpdate(eventType, update) {
-            if (update.html) {
-                Object.entries(update.html).forEach(([elementId, htmlContent]) => {
-                    const mode = update.mode || 'replace';
-                    let element = document.getElementById(elementId);
-                    if (mode === 'append' && elementId === 'messages') {
-                        element = document.getElementById('messages');
-                        if (element) {
-                            const incomingWrapper = document.createElement('div');
-                            incomingWrapper.innerHTML = htmlContent.trim();
-                            const incomingArticle = incomingWrapper.firstElementChild;
-                            const incomingMessageId = update.messageId || incomingArticle?.querySelector('[id]')?.id || null;
-                            if (incomingArticle && incomingMessageId) {
-                                const existingTarget = document.getElementById(incomingMessageId);
-                                const existingArticle = existingTarget
-                                    ? existingTarget.closest('.message')
-                                    : (update.messageArticleId ? document.getElementById(update.messageArticleId) : null);
-                                if (existingArticle) {
-                                    existingArticle.outerHTML = htmlContent;
-                                } else {
-                                    const loader = element.querySelector('[data-role="assistant-loader"]');
-                                    if (loader) loader.outerHTML = htmlContent;
-                                    else element.insertAdjacentHTML('beforeend', htmlContent);
-                                }
-                            } else {
-                                const loader = element.querySelector('[data-role="assistant-loader"]');
-                                if (loader) loader.outerHTML = htmlContent;
-                                else element.insertAdjacentHTML('beforeend', htmlContent);
-                            }
-                        }
-                    } else if (eventType === 'tool.update' && update.toolCallId) {
-                        const articleTarget = update.messageId ? document.getElementById(update.messageId) : null;
-                        if (articleTarget) {
-                            let toolNode = document.getElementById(update.toolCallId);
-                            if (!toolNode) toolNode = ensureToolNode(articleTarget, update.toolCallId);
-                            if (toolNode) toolNode.innerHTML = htmlContent;
-                        }
-                    } else if (element) {
-                        element.innerHTML = htmlContent;
-                    }
-                });
+        function handleChatUpdate(eventType, update) {
+            if (eventType === 'message') {
+                console.log('message', update);
+                return;
+            }
+            if (eventType === 'chat.assistant.start') {
+                //  removeAssistantLoader();
+                return;
+            }
+            if (eventType === 'chat.assistant.done') {
+                finalizeAssistantResponse();
+                return;
             }
 
-            if (update.js) {
-                Object.entries(update.js).forEach(([key, value]) => {
-                    if (key === 'exec') {
-                        const fn = new Function(value);
-                        fn();
-                    } else {
-                        window[key] = value;
-                    }
-                });
+            if (update.html === undefined) {
+                return;
             }
 
-            if (eventType === 'message.assistant.start') removeAssistantLoader();
-            if (eventType === 'message.assistant.done') finalizeAssistantResponse();
+            const chatStream= document.getElementById('messages');
+            if (!chatStream) {
+                console.log('chatStream not found');
+                return;
+            }
 
-            if (update.error) {
+            if (eventType === 'chat.snapshot') {
+                chatStream.innerHTML = update.html;
+                return;
+            }
+
+            if (eventType === 'chat.assistant.placeholder') {
+                const loader = chatStream.querySelector('[data-role="assistant-loader"]');
+                if (loader) loader.outerHTML = update.html;
+                else chatStream.insertAdjacentHTML('beforeend', update.html);
+                return;
+            }
+
+            if (eventType === 'chat.assistant.update') {
+                const element = document.getElementById('message_' + update.messageId);
+                if (!element) return;
+                element.innerHTML = update.html;
+                return;
+            }
+
+            if (eventType === 'chat.tool.update') {
+                const element = document.getElementById('toolscall_' + update.messageId);
+                if (!element) return;
+                element.innerHTML = update.html;
+                return;
+            }
+
+            if (eventType === 'chat.error') {
                 finalizeAssistantResponse();
                 const messages = document.getElementById('messages');
                 if (messages) {
@@ -545,17 +538,17 @@
             const handleEvent = function(eventType, event) {
                 try {
                     const update = JSON.parse(event.data);
-                    handleIncrementalUpdate(eventType, update);
+                    handleChatUpdate(eventType, update);
                 } catch (error) {}
             };
             eventSource.onmessage = function(event) { handleEvent('message', event); };
-            eventSource.addEventListener('chat.snapshot', function(event) { handleEvent('chat.snapshot', event); });
-            eventSource.addEventListener('message.assistant.start', function(event) { handleEvent('message.assistant.start', event); });
-            eventSource.addEventListener('message.assistant.placeholder', function(event) { handleEvent('message.assistant.placeholder', event); });
-            eventSource.addEventListener('message.assistant.delta', function(event) { handleEvent('message.assistant.delta', event); });
-            eventSource.addEventListener('tool.update', function(event) { handleEvent('tool.update', event); });
-            eventSource.addEventListener('message.assistant.done', function(event) { handleEvent('message.assistant.done', event); });
             eventSource.addEventListener('chat.error', function(event) { handleEvent('chat.error', event); });
+            eventSource.addEventListener('chat.snapshot', function(event) { handleEvent('chat.snapshot', event); });
+            eventSource.addEventListener('chat.assistant.start', function(event) { handleEvent('chat.assistant.start', event); });
+            eventSource.addEventListener('chat.assistant.placeholder', function(event) { handleEvent('chat.assistant.placeholder', event); });
+            eventSource.addEventListener('chat.assistant.update', function(event) { handleEvent('chat.assistant.update', event); });
+            eventSource.addEventListener('chat.assistant.done', function(event) { handleEvent('chat.assistant.done', event); });
+            eventSource.addEventListener('chat.tool.update', function(event) { handleEvent('chat.tool.update', event); });
             eventSource.onerror = function(error) {
                 eventSource.close();
                 setTimeout(function() { initChatEventSource(sessionId); }, 5000);

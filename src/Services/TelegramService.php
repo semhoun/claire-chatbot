@@ -484,7 +484,7 @@ class TelegramService implements QueueDoer
     private function generateChatResponse(int $telegramChatId, string $text): string
     {
         $currentBrain = $this->telegramSession->get('brain_avatar');
-        $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession);
+        $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession, $this->telegramSession->get('chatId'));
 
         $userMessage = new UserMessage($text);
         $userMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));

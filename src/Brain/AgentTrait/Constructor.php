@@ -21,6 +21,7 @@ trait Constructor
     public function __construct(
         protected readonly ContainerInterface $container,
         protected readonly SessionInterface $session,
+        protected ?string $threadId = null,
     ) {
         $this->settings = $this->container->get(Settings::class);
         $this->connection = $this->container->get(Connection::class);

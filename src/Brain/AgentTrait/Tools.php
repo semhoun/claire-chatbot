@@ -36,7 +36,6 @@ trait Tools
             $tools[] = WebToolkit::make($this->settings->get('llm.tools.searchXngUrl'));
         }
 
-        // TODO gérer les erreurs
         return $tools;
     }
 }

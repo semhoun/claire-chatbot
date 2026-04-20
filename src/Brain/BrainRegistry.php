@@ -89,7 +89,7 @@ final class BrainRegistry
         return isset($yamlBrains[$slug]);
     }
 
-    public function get(string $slug, SessionInterface $session): Agent
+    public function get(string $slug, SessionInterface $session, ?string $threadId = null): Agent
     {
         $brains = (array) $this->settings->get('llm.brains');
         $class = (string) ($brains[$slug] ?? '');
@@ -97,7 +97,7 @@ final class BrainRegistry
             // Vérifier si c'est un brain YAML
             $yamlBrains = $this->loadYamlBrains();
             if (isset($yamlBrains[$slug])) {
-                $instance = new YamlBrain($yamlBrains[$slug], $this->container, $session);
+                $instance = new YamlBrain($yamlBrains[$slug], $this->container, $session, $threadId);
                 assert($instance instanceof Agent);
                 return $instance;
             }
@@ -105,7 +105,7 @@ final class BrainRegistry
             throw new \InvalidArgumentException('Assistant inconnu: ' . $slug);
         }
 
-        $instance = new $class($this->container, $session);
+        $instance = new $class($this->container, $session, $threadId);
         assert($instance instanceof Agent);
         return $instance;
     }

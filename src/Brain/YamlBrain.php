@@ -23,11 +23,12 @@ final class YamlBrain extends Agent implements BrainAvatar
         private readonly array $config,
         ContainerInterface $container,
         SessionInterface $session,
+        ?string $threadId = null,
     ) {
         $this->welcomes = $config['welcomes'] ?? [];
         $this->instruction = $config['instruction'];
 
-        parent::__construct($container, $session);
+        parent::__construct($container, $session, $threadId);
     }
 
     #[\Override]

@@ -8,8 +8,10 @@ use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\History\AbstractChatHistory;
 use NeuronAI\Chat\Messages\Message;
+use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Tools\Tool;
 use PDO;
 
 /**
@@ -31,11 +33,11 @@ class UserChatHistory extends AbstractChatHistory
 
     protected string $user_id;
 
-    protected ?string $thread_id = null;
-
     protected ?string $title = null;
 
     protected ?string $summary = null;
+
+    protected ?string $thread_id = null;
 
     /**
      * @var array<Message>
@@ -45,11 +47,12 @@ class UserChatHistory extends AbstractChatHistory
     public function __construct(
         SessionInterface $session,
         protected PDO $pdo,
-        protected int $contextWindow = 50000
+        protected int $contextWindow = 50000,
+        ?string $threadId = null,
     ) {
         $this->user_id = $session->get(Auth::USERID);
+        $this->thread_id = $threadId;
 
-        $this->thread_id = $session->get('chatId');
         if ($this->thread_id !== null) {
             $this->load();
         }
@@ -118,8 +121,7 @@ class UserChatHistory extends AbstractChatHistory
             return [];
         }
 
-        $messageFormatter = new MessageFormatter();
-        return $messageFormatter->format($this->displayHistory);
+        return new MessageFormatter($this->displayHistory)->format();
     }
 
     public function validateMessageSequences(): void

@@ -1,0 +1,362 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Job\Web;
+
+use App\Brain\Agent;
+use App\Brain\BrainRegistry;
+use App\Brain\ChatHistory\UserChatHistory;
+use App\Brain\Summary;
+use App\Services\ChatStreamPublisher;
+use App\Services\Queue\QueueDoer;
+use App\Services\Session\InMemorySession;
+use App\Services\Settings;
+use DateTimeImmutable;
+use DateTimeInterface;
+use Doctrine\DBAL\Connection;
+use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
+use NeuronAI\Chat\Messages\UserMessage;
+use Psr\Container\ContainerInterface;
+use Psr\Log\LoggerInterface as Logger;
+use Slim\Views\Twig;
+
+/**
+ * Handles the processing of streaming chat messages in a web-based real-time chat system.
+ *
+ * This class is utilized to process user messages, handle chat state, stream agent responses,
+ * manage message attachments, and publish updates to a chat stream through a publisher service.
+ *
+ * Responsibilities include:
+ * - Initializing the context for chat processing with user, session, and message data.
+ * - Streaming agent responses to the user while managing asynchronous chunks of text or tools.
+ * - Handling formatting and publishing of updates for tool usage and user-facing text chunks.
+ * - Managing error states and ensuring appropriate feedback is provided to the user when issues occur.
+ * - Finalizing the chat stream once all processing is complete.
+ *
+ * Implements the `QueueDoer` interface to integrate with a queue job execution system.
+ */
+final class NewMessageJob implements QueueDoer
+{
+    private string $streamedText;
+    private bool $isStreamingStarted;
+    private string $userMessage;
+    private string $chatId;
+    private string $sessionId;
+    private string $messageId;
+    private InMemorySession $session;
+    private ?Agent $agent;
+    private ?array $attachments;
+    private array $toolsCall;
+
+    public function __construct(
+        private readonly Logger              $logger,
+        private readonly Twig                $twig,
+        private readonly BrainRegistry       $brainRegistry,
+        private readonly ChatStreamPublisher $chatStreamPublisher,
+        private readonly Connection          $connection,
+        private readonly Settings            $settings,
+    ) {
+        $this->streamedText = '';
+        $this->isStreamingStarted = false;
+        $this->attachments = null;
+        $this->toolsCall = [];
+    }
+
+    public static function make(ContainerInterface $container): self
+    {
+        return $container->get(self::class);
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function handle(array $payload): void
+    {
+        try {
+            $this->initContext($payload);
+            $this->processChatStream();
+            $this->manageSummary();
+        } catch (\Throwable $throwable) {
+            $this->handleChatError($throwable);
+        }
+    }
+
+    /**
+     * Initializes the context using the given payload.
+     *
+     * @param array<string, mixed> $payload The input data containing the required fields
+     *                                      such as 'message', 'chatId', 'sessionId',
+     *                                      'session', 'brainAvatar', and optional 'attachments'.
+     *                                      - 'message': string containing the user's message (required, non-empty).
+     *                                      - 'chatId': string identifying the chat (required, non-empty).
+     *                                      - 'sessionId': string identifying the session (required, non-empty).
+     *                                      - 'session': an array or data structure used to initialize the session.
+     *                                      - 'brainAvatar': a string used to fetch the appropriate agent.
+     *                                      - 'attachments': an array containing 'uploadedFiles' and/or 'fileIds'.
+     *
+     * @return void
+     *
+     * @throws \InvalidArgumentException If 'message', 'chatId', or 'sessionId' are missing or empty.
+     */
+    private function initContext(array $payload): void
+    {
+        $this->messageId = $params['messageId'] ?? uniqid('assistant-message-', true);
+
+        $this->userMessage = trim((string) ($payload['message'] ?? ''));
+        if ($this->userMessage === '') {
+            throw new \InvalidArgumentException('User message cannot be empty');
+        }
+        $this->chatId = (string) ($payload['chatId'] ?? '');
+        if ($this->chatId === '') {
+            throw new \InvalidArgumentException('Chat ID cannot be empty');
+        }
+        $this->sessionId = (string) ($payload['sessionId'] ?? '');
+        if ($this->sessionId === '') {
+            throw new \InvalidArgumentException('Session ID cannot be empty');
+        }
+
+        $this->session = new InMemorySession($payload['session']);
+
+        $brainAvatar = $this->session->get('brain_avatar');
+        $this->agent = $this->brainRegistry->get($brainAvatar, $this->session, $this->chatId);
+
+        if (! empty($payload['attachments'])) {
+            $this->attachments = array_merge($payload['attachments']['uploadedFiles'] ?? [], $payload['attachments']['fileIds'] ?? []);
+        }
+    }
+
+    private function processChatStream(): void
+    {
+        $userMessage = new UserMessage($this->userMessage);
+        $userMessage->addMetadata('timestamp', new DateTimeImmutable()->format(DateTimeInterface::ATOM));
+        $this->addAttachments($userMessage);
+
+        $agentHandler = $this->agent->stream($userMessage);
+
+        foreach ($agentHandler->events() as $chunk) {
+            $this->publishStartMessages();
+            $this->processChunk($chunk);
+        }
+
+        $this->finalizeChat($agentHandler->getMessage()->getContent());
+    }
+
+    private function processChunk(mixed $chunk): void
+    {
+        if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
+            $this->processToolChunk($chunk);
+            return;
+        }
+
+        if ($chunk instanceof ReasoningChunk || $chunk instanceof TextChunk) {
+            $this->processTextChunk($chunk);
+        }
+    }
+
+    private function processToolChunk(ToolCallChunk|ToolResultChunk $chunk): void
+    {
+        $tool = $chunk->tool;
+        $id = $tool->getCallId();
+        $toolData = [
+            'id' => $id,
+            'name' => $tool->getName(),
+            'inputs' => [],
+            'running' => $chunk instanceof ToolCallChunk,
+            'result' => $chunk instanceof ToolResultChunk ? $tool->getResult() : null
+        ];
+        foreach ($tool->getInputs() as $name => $val) {
+            $toolData['inputs'][] = [
+                'name' => $name,
+                'value' => $val,
+            ];
+        }
+        $this->toolsCall[$id] = $toolData;
+
+        $toolsHtml = $this->twig->fetch('partials/toolscall.twig', [
+            'toolsCall' => $this->toolsCall,
+        ]);
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.tool.update', [
+            'chatId' => $this->chatId,
+            'sessionId' => $this->sessionId,
+            'messageId' => $this->messageId,
+            'html' => $toolsHtml,
+        ]);
+    }
+
+    private function processTextChunk(ReasoningChunk|TextChunk $chunk): void
+    {
+        $this->streamedText .= $chunk->content;
+
+        $html = $this->twig->fetch('partials/md.twig', [
+            'message' => $this->streamedText,
+            'streaming_placeholder_images' => true,
+        ]);
+
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
+            'chatId' => $this->chatId,
+            'sessionId' => $this->sessionId,
+            'messageId' => $this->messageId,
+            'html' => $html,
+        ]);
+    }
+
+    private function publishStartMessages(): void
+    {
+        if ($this->isStreamingStarted) {
+            return;
+        }
+        $this->isStreamingStarted = true;
+
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.start', [
+            'chatId' => $this->chatId,
+            'sessionId' => $this->sessionId,
+            'messageId' => $this->messageId,
+        ]);
+
+        $placeholderHtml = $this->twig->fetch('partials/message.twig', [
+            'message' => ['id' => $this->messageId, 'message' => ''],
+            'time' => new DateTimeImmutable()->format(DateTimeInterface::ATOM),
+            'sent' => false,
+        ]);
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.placeholder', [
+            'chatId' => $this->chatId,
+            'sessionId' => $this->sessionId,
+            'messageId' => $this->messageId,
+            'html' => $placeholderHtml,
+        ]);
+    }
+
+    private function finalizeChat(string $content): void
+    {
+        $finalHtml = $this->twig->fetch('partials/md.twig', [
+            'message' => $content,
+            'streaming_placeholder_images' => false,
+        ]);
+
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
+            'chatId' => $this->chatId,
+            'sessionId' => $this->sessionId,
+            'messageId' => $this->messageId,
+            'html' => $finalHtml,
+        ]);
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.done', [
+            'chatId' => $this->chatId,
+            'sessionId' => $this->sessionId,
+            'messageId' => $this->messageId,
+        ]);
+    }
+
+    private function handleChatError(\Throwable $throwable): void
+    {
+        $this->logger->error('Web chat job failed', [
+            'exception' => $throwable,
+            'chatId' => $this->chatId,
+            'sessionId' => $this->sessionId,
+        ]);
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.error', [
+            'chatId' => $this->chatId,
+            'sessionId' => $this->sessionId,
+            'messageId' => $this->messageId,
+            'message' => 'Désolé, une erreur est survenue lors du traitement de votre message.',
+        ]);
+    }
+
+    private function formatToolChunk(ToolCallChunk|ToolResultChunk $chunk): string
+    {
+        $tool = $chunk->tool;
+        $toolText = $this->formatToolHeader($chunk, $tool);
+        $toolText .= $this->formatToolInputs($tool);
+
+        return $toolText . $this->formatToolResult($chunk, $tool);
+    }
+
+    private function formatToolHeader(ToolCallChunk|ToolResultChunk $chunk, mixed $tool): string
+    {
+        $header = $chunk instanceof ToolResultChunk
+            ? '<span class="tools-done-flag" style="display:none"></span>' . "\n"
+            : '';
+
+        return $header . ("Utilisation de l'outil : " . $tool->getName() . "<br>\n");
+    }
+
+    private function formatToolInputs(mixed $tool): string
+    {
+        $inputs = "Paramètres : <br>\n<ul>\n";
+        foreach ($tool->getInputs() as $name => $input) {
+            $inputs .= '<li>' . $name . ' : ' . $input . "</li>\n";
+        }
+
+        return $inputs . "</ul>\n";
+    }
+
+    private function formatToolResult(ToolCallChunk|ToolResultChunk $chunk, mixed $tool): string
+    {
+        if (! $chunk instanceof ToolResultChunk) {
+            return '';
+        }
+
+        $result = "Réponse : <br>\n";
+        if ($tool->getResult() !== '' && $tool->getResult() !== '0') {
+            $result .= '<pre class="toolcall__result">' . $tool->getResult() . "</pre>\n";
+        }
+
+        return $result;
+    }
+
+    private function addAttachments(UserMessage $userMessage): void
+    {
+        if (! is_array($this->attachments)) {
+            return;
+        }
+
+        foreach ($this->attachments as $file) {
+            if (! is_array($file)) {
+                continue;
+            }
+
+            $content = (string) ($file['content'] ?? '');
+            if ($content === '') {
+                continue;
+            }
+
+            $userMessage->addContent(new \NeuronAI\Chat\Messages\ContentBlocks\FileContent(
+                $content,
+                \NeuronAI\Chat\Enums\SourceType::BASE64,
+                (string) ($file['mimeType'] ?? 'application/octet-stream'),
+                (string) ($file['filename'] ?? 'file'),
+            ));
+        }
+    }
+
+    private function manageSummary(): void
+    {
+        $summary = new Summary($this->connection, $this->settings, $this->session, $this->chatId);
+        $chatHistory = $summary->getChatHistory();
+
+        if (!($chatHistory instanceof \App\Brain\ChatHistory\UserChatHistory)
+            || $this->hasEnoughMessages($chatHistory)
+            || $this->hasMaxMessagesWithTitle($chatHistory)) {
+            return;
+        }
+
+        $summary->generateAndPersist();
+    }
+
+    private function hasEnoughMessages(UserChatHistory $userChatHistory): bool
+    {
+        $messages = $userChatHistory->getDisplayMessages();
+        $minMessages = $this->settings->get('llm.summary.minMessages');
+
+        return $messages !== [] && count($messages) >= $minMessages;
+    }
+
+    private function hasMaxMessagesWithTitle(UserChatHistory $userChatHistory): bool
+    {
+        $messages = $userChatHistory->getDisplayMessages();
+        $maxMessages = $this->settings->get('llm.summary.maxMessages');
+
+        return count($messages) > $maxMessages && $userChatHistory->getTitle() !== null;
+    }
+}

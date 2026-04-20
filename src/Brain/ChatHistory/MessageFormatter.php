@@ -6,102 +6,119 @@ namespace App\Brain\ChatHistory;
 
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
+use NeuronAI\Tools\ToolInterface;
+
 
 final class MessageFormatter
 {
-    private ?string $toolCallId = null;
-
-    private ?string $toolText = null;
+    public function __construct(private ?array $displayHistory)
+    {
+    }
 
     /**
-     * @param array<int, mixed> $displayHistory
-     *
      * @return array<int, array<string, mixed>>
      */
-    public function format(array $displayHistory): array
+    public function format(): array
     {
         $data = [];
 
-        foreach ($displayHistory as $message) {
-            $formatted = $this->formatMessage($message);
-            if ($formatted !== null) {
-                $data[] = $formatted;
-            }
+        while (count($this->displayHistory) > 0) {
+            $message = array_shift($this->displayHistory);
+            $data[] = $this->formatMessage($message);
         }
 
         return $data;
     }
 
     /**
+     * Si c'est un message Tool, on va dépiler jusqy'a trouver une message non tool
+     *
      * @return array<string, mixed>|null
      */
-    private function formatMessage(mixed $message): ?array
+    private function formatMessage(mixed $message, ?array $formattedMessage = null): ?array
     {
+        if ($formattedMessage === null) {
+            $formattedMessage = [
+                'message' => '',
+                'time' => $message->getMetadata('timestamp') ?? '',
+                'sent' => $message->getRole() === 'user',
+                'toolRunning' => false,
+                'toolsCall' => [],
+                'running' => false
+            ];
+        }
+
+        if ($message->getContent() !== null) {
+            $formattedMessage['message'] .= $message->getContent();
+        }
+
+        if ($message instanceof ToolCallMessage || $message instanceof ToolResultMessage) {
+            $tools = $this->formatTools($message);
+            if (count($tools) > 0) {
+                $formattedMessage['toolsCall'] = array_merge($formattedMessage['toolsCall'], $tools);
+            }
+            if (count($this->displayHistory) === 0) {
+                return $formattedMessage;
+            }
+            $message = array_shift($this->displayHistory);
+            return $this->formatMessage($message, $formattedMessage);
+        }
+
+        return $formattedMessage;
+    }
+
+    private function formatTools(ToolCallMessage | ToolResultMessage $message): array
+    {
+        $tools = [];
         if ($message instanceof ToolCallMessage) {
-            $this->toolCallId = uniqid('tool-', true);
-            return null;
+            foreach ($message->getTools() as $tool) {
+                $callId = $tool->getCallId();
+
+                // On regarde si dans les réponse on a une réponse avec cette id, si c'est le cas on ne le décodera pas
+                foreach ($this->displayHistory as $toolResult) {
+                    if (!$toolResult instanceof ToolResultMessage) {
+                        continue;
+                    }
+                    foreach ($toolResult->getTools() as $toolRes) {
+                        if ($toolRes->getCallId() === $callId) {
+                            continue 3;
+                        }
+                    }
+                }
+
+                // On a pas trouvé de réponse donc c'est un tool encore en cours d'éxécution
+                $tools[] = $this->formatTool($tool, false);
+            }
+            return $tools;
         }
 
-        if ($message instanceof ToolResultMessage) {
-            $this->toolText = $this->formatToolResult($message);
-            return null;
+        foreach ($message->getTools() as $tool) {
+            $tools[] = $this->formatTool($tool, $message instanceof ToolResultMessage);
         }
-
-        return $this->formatRegularMessage($message);
+        return $tools;
     }
 
-    private function formatToolResult(ToolResultMessage $toolResultMessage): string
+    private function formatTool(ToolInterface $tool, bool $isResult): array
     {
-        $text = '<span class="tools-done-flag" style="display:none"></span>' . "\n";
-
-        foreach ($toolResultMessage->getTools() as $tool) {
-            $text .= $this->formatTool($tool);
-        }
-
-        return $text;
-    }
-
-    private function formatTool(mixed $tool): string
-    {
-        $text = "Utilisation de l'outil : " . $tool->getName() . "<br>\n";
-        $text .= "Paramètres : <br>\n";
-        $text .= "<ul>\n";
-
-        foreach ($tool->getInputs() as $name => $input) {
-            $text .= '<li>' . $name . ' : ' . $input . "</li>\n";
-        }
-
-        $text .= "</ul>\n";
-        $text .= "Réponse : <br>\n";
-
-        if ($tool->getResult() !== '' && $tool->getResult() !== '0') {
-            $text .= '<pre class="toolcall__result">' . $tool->getResult() . "</pre>\n";
-        }
-
-        return $text;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function formatRegularMessage(mixed $message): array
-    {
-        $data = [
-            'message' => $message->getContent() ?? '',
-            'time' => $message->getMetadata('timestamp') ?? '',
-            'sent' => $message->getRole() === 'user',
-            'toolCallId' => $this->toolCallId,
-            'toolText' => $this->toolText,
+        $toolData = [
+            'id' => $tool->getCallId(),
+            'name' => $tool->getName(),
+            'inputs' => [],
+            'running' => !$isResult,
+            'result' => null
         ];
 
-        $this->resetToolState();
+        foreach ($tool->getInputs() as $name => $val) {
+            $toolData['inputs'][] = [
+                'name' => $name,
+                'value' => $val,
+            ];
+        }
 
-        return $data;
-    }
+        if ($isResult) {
+            $toolData['result'] = $tool->getResult();
+        }
 
-    private function resetToolState(): void
-    {
-        $this->toolCallId = null;
-        $this->toolText = null;
+        return $toolData;
     }
 }

@@ -4,6 +4,8 @@
 
 Claire is a PHP 8.5+ AI agent chatbot built with Slim 4, Twig, Doctrine ORM, and the Neuron AI library. It provides a web interface and API for interacting with LLMs via an OpenAI-compatible interface.
 
+The project runs in Docker containers (PHP 8.5, PostgreSQL, Redis, Nginx) via Docker Compose.
+
 ## Build / Lint / Test Commands
 
 ```bash

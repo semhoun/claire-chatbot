@@ -1,10 +1,10 @@
-{# Renders a list of messages into the chat #}
+{% if messages is empty %}
+    <span class="typing-indicator"><span class="typing-indicator__dot"></span><span class="typing-indicator__dot"></span><span class="typing-indicator__dot"></span>
+    <span class="typing-indicator"><span class="typing-indicator__dot"></span><span class="typing-indicator__dot"></span><span class="typing-indicator__dot"></span>
+{% else %}
 {% for m in messages %}
     {% include 'partials/message.twig' with {
-        message: m.message,
-        time: m.time,
-        sent: m.sent,
-        toolCallId: m.toolCallId,
-        toolCall: m.toolText,
+        message: m
     } %}
 {% endfor %}
+{% endif %}

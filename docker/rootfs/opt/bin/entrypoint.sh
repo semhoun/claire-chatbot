@@ -49,6 +49,10 @@ if [ "${ENABLE_LETSENCRYPT}" = "true" ] && [ -n "${ACME_EMAIL}" ]; then
   SITE_ADDRESS="${SERVER_NAME}"
   CADDY_HTTPS_OPTIONS="  email ${ACME_EMAIL}"
 fi
+LOG_SKIP='log_skip /health'
+if [ "${DEBUG_MODE}" == "true" ]; then
+  LOG_SKIP=''
+fi
 cat > /etc/caddy/Caddyfile << EOF
 {
   frankenphp
@@ -73,7 +77,7 @@ ${SITE_ADDRESS} {
     output stdout
     format formatted "{common_log}"
   }
-  log_skip /health
+  ${LOG_SKIP}
 
   handle /* {
     ${TRACING_BLOCK}
@@ -85,6 +89,6 @@ ${SITE_ADDRESS} {
 EOF
 
 # Configure queue workers count
-sed -i "s/numprocs=1/numprocs=${QUEUE_WORKERS:-1}/" /etc/supervisor/conf.d/webserver.conf
+sed -i "s/numprocs=1/numprocs=${QUEUE_WORKERS}/" /etc/supervisor/conf.d/queue_work.conf
 
 exec "$@"

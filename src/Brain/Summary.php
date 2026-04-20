@@ -24,6 +24,7 @@ class Summary extends \NeuronAI\Agent\Agent
         protected readonly Connection $connection,
         protected readonly Settings $settings,
         protected readonly SessionInterface $session,
+        protected readonly ?string $threadId = null,
     ) {
         parent::__construct();
 

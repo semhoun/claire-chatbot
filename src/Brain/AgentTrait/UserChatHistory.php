@@ -14,7 +14,8 @@ trait UserChatHistory
         return new \App\Brain\ChatHistory\UserChatHistory(
             session: $this->session,
             pdo: $this->connection->getNativeConnection(),
-            contextWindow: $this->settings->get('llm.openai.contextWindow')
+            contextWindow: $this->settings->get('llm.openai.contextWindow'),
+            threadId: $this->threadId,
         );
     }
 }

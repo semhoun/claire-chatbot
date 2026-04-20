@@ -1,6 +1,6 @@
-<article class="message {{ sent ? 'message--sent' : 'message--received' }}"{% if messageArticleId is defined and messageArticleId %} id="{{ messageArticleId }}"{% endif %}>
+<article class="message {{ message.sent ? 'message--sent' : 'message--received' }}"{% if message.id is defined and message.id %} id="{{ message.id }}"{% endif %}>
     <div class="message__bubble">
-        {% if toolCallId  %}
+        {% if message.toolsCall is not empty or message.id is defined %}
         <div class="message__subbubble message__subbubble--toolcall">
             <details class="toolcall">
                 <summary class="toolcall__summary" aria-label="Appels d'outils" title="Appels d'outils">
@@ -32,15 +32,17 @@
                     </svg>
                     <span class="visually-hidden">Appels d'outils</span>
                 </summary>
-                    <div class="toolcall__text" id="{{ toolCallId }}">
-                    {{ toolCall | raw }}
+                <div class="toolscall_data"{% if message.id is defined and message.id %} id="toolscall_{{ message.id }}"{% endif %}>
+                {% include 'partials/toolscall.twig' with {
+                    toolsCall: message.toolsCall
+                } %}
                 </div>
             </details>
         </div>
         {% endif %}
 
-        <span class="message__text" {% if streamId  %}id="{{ streamId }}"{% endif %}>
-            {{ message|process_generated_images|markdown_to_html }}
+        <span class="message__text"{% if message.id is defined and message.id %} id="message_{{ message.id }}"{% endif %}>
+            {{ message.message|process_generated_images|markdown_to_html }}
         </span>
     </div>
     <span class="message__meta">{% if time is defined and time %}{{ time|format_timestamp }}{% endif %}{% if sent %} • Vous{% endif %}</span>

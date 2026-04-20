@@ -65,9 +65,9 @@ Voir [`docker/compose.yml`](docker/compose.yml) pour un exemple complet avec tou
 
 ### Volumes
 
-| Chemin | Usage |
-|--------|-------|
-| `/data` | Base SQLite, fichiers uploadés, données persistantes |
+| Chemin        | Usage |
+|---------------|-------|
+| `/opt/data`   | Base SQLite, fichiers uploadés, données persistantes |
 | `/opt/addons` | Agents YAML personnalisés, workflows ComfyUI |
 
 ### Commandes Docker utiles
@@ -201,7 +201,7 @@ sess-abc123
 docker run -d \
   --name claire \
   -p 8080:80 \
-  -v claire_data:/data \
+  -v claire_data:/opt/data \
   -e OPENAPI_KEY=votre-clé-api \
   -e OPENAPI_URL=https://api.openai.com/v1 \
   -e OPENAPI_MODEL=gpt-4o-mini \
@@ -231,7 +231,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - claire-data:/data
+      - claire-data:/opt/data
       - claire-addons:/opt/addons
     environment:
       # === Configuration serveur ===
@@ -261,8 +261,6 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    volumes:
-      - claire-redis:/data
 
 volumes:
   claire-data:

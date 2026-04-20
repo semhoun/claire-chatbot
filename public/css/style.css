@@ -363,6 +363,9 @@ body.compact .chat-body {
     transition: padding 0.2s ease, margin 0.2s ease, box-shadow 0.2s ease;
 }
 
+.message__subbubble--toolcall:not(:has(.toolcall__text)) {
+    display: none;
+}
 
 /* Expanded state: take full width and comfortable spacing */
 .message__subbubble--toolcall:has(.toolcall[open]) {
@@ -420,11 +423,11 @@ body.compact .chat-body {
 }
 
 /* When tools are done, swap spinner for checkmark */
-.toolcall:has(.toolcall__text .tools-done-flag) .toolcall__icon--spinner {
+.toolcall:not(:has(.tools-running-flag)) .toolcall__icon--spinner {
     display: none;
 }
 
-.toolcall:has(.toolcall__text .tools-done-flag) .toolcall__icon--done {
+.toolcall:not(:has(.tools-running-flag)) .toolcall__icon--done {
     display: inline;
     color: #34d399; /* subtle success tint */
 }

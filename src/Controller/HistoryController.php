@@ -7,8 +7,10 @@ namespace App\Controller;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
+use App\Job\Web\StartThreadJob;
 use App\Services\Auth;
 use App\Services\ChatStreamPublisher;
+use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
@@ -30,6 +32,7 @@ final readonly class HistoryController
         private BrainRegistry $brainRegistry,
         private Settings $settings,
         private ChatStreamPublisher $chatStreamPublisher,
+        private QueueDispatcherInterface $queueDispatcher,
         private Filesystem $filesystem,
     ) {
     }
@@ -43,34 +46,21 @@ final readonly class HistoryController
     public function create(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
+        $sessionId = trim((string) ($request->getParsedBody()['sessionId'] ?? $request->getQueryParams()['sessionId'] ?? ''));
 
         // Nettoyage des conversations vides de l'utilisateur
-        $userId = (string) $session->get(Auth::USERID);
-        if ($userId !== '') {
-            $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
-        }
+        $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations((string) $session->get(Auth::USERID));
 
         $currentBrain = $session->get('brain_avatar');
         // Nouveau thread
         $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
-        $session->set('chatId', $threadId);
-        $userChatHistory = new UserChatHistory(
-            session: $session,
-            pdo: $this->entityManager->getConnection()->getNativeConnection(),
-            contextWindow: $this->settings->get('llm.openai.contextWindow')
-        );
-        $userChatHistory->setThreadId($threadId);
+        $this->queueDispatcher->dispatch(StartThreadJob::class, [
+            'chatId' => $threadId,
+            'sessionId' => $sessionId,
+            'session' => $session->all(),
+        ]);
 
-        $agent = $this->brainRegistry->get($currentBrain, $session);
-        $openingMessage = $agent->getOpeningText();
-        $assistantMessage = new AssistantMessage($openingMessage)
-            ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-        $userChatHistory->replaceDisplayMessages([$assistantMessage]);
-        $userChatHistory->replaceMessages([]);
-
-        // sessionId from request (per-tab SSE binding key)
-        $sessionId = trim((string) ($request->getParsedBody()['sessionId'] ?? $request->getQueryParams()['sessionId'] ?? ''));
-        $this->publishSnapshot($threadId, $userChatHistory, $sessionId);
+        $this->publishSnapshot($threadId, null, $sessionId);
 
         $response->getBody()->write(json_encode([
             'chatId' => $threadId,
@@ -144,13 +134,12 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
-        $session->set('chatId', $threadId);
         $userChatHistory = new UserChatHistory(
             session: $session,
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
-            contextWindow: $this->settings->get('llm.openai.contextWindow')
+            contextWindow: $this->settings->get('llm.openai.contextWindow'),
+            threadId: $threadId
         );
-        $userChatHistory->setThreadId($threadId);
         $userChatHistory->validateMessageSequences();
 
         $messages = $userChatHistory->getFormattedMessages();
@@ -238,18 +227,20 @@ final readonly class HistoryController
         return $response->withHeader('Content-Type', 'application/json');
     }
 
-    private function publishSnapshot(string $threadId, UserChatHistory $userChatHistory, string $sessionId = ''): void
+    private function publishSnapshot(string $threadId, ?UserChatHistory $userChatHistory, string $sessionId): void
     {
+        $messages = null;
+        if ($userChatHistory !== null) {
+            $messages = $userChatHistory ->getFormattedMessages();
+        }
         $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-            'messages' => $userChatHistory->getFormattedMessages(),
+            'messages' => $messages
         ]);
 
-        // Publish to sessionId if provided (per-tab SSE), otherwise fallback to threadId
-        $streamKey = $sessionId !== '' ? $sessionId : $threadId;
-        $this->chatStreamPublisher->publish($streamKey, 'chat.snapshot', [
+        $this->chatStreamPublisher->publish($sessionId, 'chat.snapshot', [
             'chatId' => $threadId,
             'sessionId' => $sessionId,
-            'messagesHtml' => $messagesHtml,
+            'html' => $messagesHtml,
         ]);
     }
 }

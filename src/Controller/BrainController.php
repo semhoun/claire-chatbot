@@ -6,7 +6,7 @@ namespace App\Controller;
 
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
-use App\Job\WebChatMessageJob;
+use App\Job\Web\NewMessageJob;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\Queue\QueueDispatcherInterface;
@@ -53,7 +53,7 @@ final readonly class BrainController
             return $response->withStatus(422);
         }
 
-        $chatId = trim((string) ($data['chatId'] ?? $session->get('chatId') ?? ''));
+        $chatId = trim((string) ($data['chatId']));
         if ($chatId === '') {
             return $response->withStatus(400);
         }
@@ -64,22 +64,21 @@ final readonly class BrainController
             return $response->withStatus(400);
         }
 
-        $messageArticleId = uniqid('assistant-message-', true);
+        $messageId = uniqid('assistant-message-', true);
         $attachments = $this->extractAttachments($request, includeStoredFiles: true);
 
-        $this->queueDispatcher->dispatch(WebChatMessageJob::class, [
+        $this->queueDispatcher->dispatch(NewMessageJob::class, [
             'chatId' => $chatId,
             'sessionId' => $sessionId,
-            'messageArticleId' => $messageArticleId,
+            'messageId' => $messageId,
             'attachments' => $attachments,
-            'brainAvatar' => (string) $session->get('brain_avatar'),
             'message' => $userStr,
             'session' => $session->all(),
         ]);
 
         $response->getBody()->write(json_encode([
             'chatId' => $chatId,
-            'messageArticleId' => $messageArticleId,
+            'messageId' => $messageId,
             'accepted' => true,
         ], JSON_THROW_ON_ERROR));
 
@@ -91,7 +90,6 @@ final readonly class BrainController
     public function stream(Request $request, Response $response): Response
     {
         set_time_limit(0);
-        ignore_user_abort(true);
 
         $session = $this->getSession($request);
         $queryParams = $request->getQueryParams();
@@ -111,25 +109,23 @@ final readonly class BrainController
 
         $stream = $response->getBody();
 
-        $chatId = trim((string) ($queryParams['chatId'] ?? $session->get('chatId') ?? ''));
+        $chatId = trim((string) ($queryParams['chatId']));
         if ($chatId !== '') {
-            $session->set('chatId', $chatId);
-
             $userChatHistory = new UserChatHistory(
                 session: $session,
                 pdo: $this->entityManager->getConnection()->getNativeConnection(),
-                contextWindow: $this->settings->get('llm.openai.contextWindow')
+                contextWindow: $this->settings->get('llm.openai.contextWindow'),
+                threadId: $chatId,
             );
-            $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-                'messages' => $userChatHistory->getFormattedMessages(),
-            ]);
-
-            $stream->write($this->sseEventFormatter->formatJsonEvent([
-                'html' => [
-                    'messages' => $messagesHtml,
-                ],
-                'mode' => 'replace',
-            ], eventId: $chatId, eventName: 'chat.snapshot'));
+            $messages = $userChatHistory->getFormattedMessages();
+            if ($messages !== []) {
+                $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
+                    'messages' => $messages,
+                ]);
+                $stream->write($this->sseEventFormatter->formatJsonEvent([
+                    'html' => $messagesHtml,
+                ], eventId: $chatId, eventName: 'chat.snapshot'));
+            }
         }
 
         $stream->write($this->sseEventFormatter->keepalive());
@@ -155,49 +151,20 @@ final readonly class BrainController
                 return;
             }
 
-            if (! in_array($eventName, ['chat.snapshot', 'message.assistant.start', 'message.assistant.placeholder', 'message.assistant.delta', 'tool.update', 'message.assistant.done', 'chat.error'], true)) {
+            if (! in_array($eventName, ['chat.snapshot', 'chat.assistant.start', 'chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update', 'chat.assistant.done', 'chat.error'], true)) {
                 return;
             }
 
             $streamPayload = match ($eventName) {
                 'chat.snapshot' => [
-                    'html' => [
-                        'messages' => (string) ($payload['messagesHtml'] ?? ''),
-                    ],
-                    'mode' => 'replace',
+                    'html' => $payload['html'] ?? '',
                 ],
-                'message.assistant.start' => [
+                'chat.assistant.start', 'chat.assistant.done' => [
                     'messageId' => $payload['messageId'] ?? null,
-                    'messageArticleId' => $payload['messageArticleId'] ?? null,
                 ],
-                'message.assistant.placeholder' => [
-                    'html' => [
-                        'messages' => (string) ($payload['html'] ?? ''),
-                    ],
-                    'mode' => 'append',
+                'chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update' => [
+                    'html' => $payload['html'] ?? '',
                     'messageId' => $payload['messageId'] ?? null,
-                    'messageArticleId' => $payload['messageArticleId'] ?? null,
-                ],
-                'message.assistant.delta' => [
-                    'html' => [
-                        (string) ($payload['messageId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
-                    ],
-                    'mode' => 'replace',
-                    'messageId' => $payload['messageId'] ?? null,
-                    'messageArticleId' => $payload['messageArticleId'] ?? null,
-                ],
-                'tool.update' => [
-                    'html' => [
-                        (string) ($payload['toolCallId'] ?? 'messages') => (string) ($payload['html'] ?? ''),
-                    ],
-                    'mode' => 'replace',
-                    'messageId' => $payload['messageId'] ?? null,
-                    'messageArticleId' => $payload['messageArticleId'] ?? null,
-                    'toolCallId' => $payload['toolCallId'] ?? null,
-                ],
-                'message.assistant.done' => [
-                    'messageId' => $payload['messageId'] ?? null,
-                    'messageArticleId' => $payload['messageArticleId'] ?? null,
                 ],
                 'chat.error' => [
                     'error' => (string) ($payload['message'] ?? 'Une erreur est survenue.'),
@@ -205,10 +172,7 @@ final readonly class BrainController
                 default => [],
             };
 
-            $eventId = (string) ($payload['messageArticleId'] ?? '');
-            if ($eventId === '') {
-                $eventId = (string) ($payload['messageId'] ?? '');
-            }
+            $eventId = (string) ($payload['messageId'] ?? '');
 
             $stream->write($this->sseEventFormatter->formatJsonEvent(
                 $streamPayload,
