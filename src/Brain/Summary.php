@@ -25,8 +25,7 @@ class Summary extends \NeuronAI\Agent\Agent
         protected readonly Settings $settings,
         protected readonly SessionInterface $session,
         protected readonly ?string $threadId = null,
-    )
-    {
+    ) {
         parent::__construct();
 
         $this->observe(new \App\Brain\Observability\Observer());
@@ -82,6 +81,14 @@ EOF;
         );
     }
 
+    /**
+     * Extracts JSON content from a given string and decodes it into an associative array.
+     *
+     * @param string|null $content The input string potentially containing JSON data.
+     *                              If null, an empty array will be returned.
+     * @return array<string, mixed> The decoded JSON content as an associative array.
+     *                              Returns an empty array if the string does not contain valid JSON.
+     */
     private function extractJsonContent(?string $content): array
     {
         if ($content === null) {
@@ -97,8 +104,7 @@ EOF;
             }
 
             return json_decode($content, true, 512, JSON_THROW_ON_ERROR);
-        }
-        catch (\JsonException) {
+        } catch (\JsonException) {
             return [];
         }
     }

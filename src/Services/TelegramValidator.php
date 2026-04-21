@@ -16,8 +16,62 @@ final readonly class TelegramValidator
         private Logger $logger,
         private EntityManagerInterface $entityManager,
         private Settings $settings,
-    )
+    ) {
+    }
+
+    /**
+     * Extract telegram user ID from initData.
+     *
+     * @return string|null Returns null if user data not found or invalid
+     */
+    public function appGetTelegramUserId(string $initData): ?string
     {
+        if ($this->validateAppInitData($initData) === false) {
+            return null;
+        }
+
+        $data = [];
+        parse_str($initData, $data);
+
+        // User data is JSON-encoded in the 'user' field
+        $userJson = $data['user'] ?? '';
+        if ($userJson === '') {
+            return null;
+        }
+
+        try {
+            /** @var array<string, mixed> $userData */
+            $userData = json_decode($userJson, true, 512, JSON_THROW_ON_ERROR);
+            $userId = (string) ($userData['id'] ?? '');
+
+            if ($userId === '') {
+                return null;
+            }
+
+            $user = $this->entityManager->getRepository(User::class)->findByTelegramId($userId);
+            if ($user === null) {
+                return null;
+            }
+
+            return $userId;
+        } catch (\JsonException) {
+            return null;
+        }
+    }
+
+    public function validateSecretToken(Request $request): void
+    {
+        $expectedSecret = $this->settings->get('telegram.webhook_secret');
+
+        if (! is_string($expectedSecret) || $expectedSecret === '') {
+            return;
+        }
+
+        $headerValue = $request->getHeaderLine('X-Telegram-Bot-Api-Secret-Token');
+
+        if ($headerValue !== $expectedSecret) {
+            throw new InvalidArgumentException('Invalid webhook secret token');
+        }
     }
 
     /**
@@ -63,66 +117,11 @@ final readonly class TelegramValidator
         $dataCheckString = rtrim($dataCheckString, "\n");
 
         // Compute secret key: HMAC_SHA256(bot_token, "WebAppData")
-        $secretKey = hash_hmac('sha256', $botToken, 'WebAppData', true);
+        $secretKey = hash_hmac('sha256', (string) $botToken, 'WebAppData', true);
 
         // Compute HMAC of data-check-string
         $computedHash = hash_hmac('sha256', $dataCheckString, $secretKey);
 
         return hash_equals($computedHash, $hash);
-    }
-
-    /**
-     * Extract telegram user ID from initData.
-     *
-     * @return string|null Returns null if user data not found or invalid
-     */
-    public function appGetTelegramUserId(string $initData): ?string
-    {
-        if ($this->validateAppInitData($initData) === false) {
-            return null;
-        }
-
-        $data = [];
-        parse_str($initData, $data);
-
-        // User data is JSON-encoded in the 'user' field
-        $userJson = $data['user'] ?? '';
-        if ($userJson === '') {
-            return null;
-        }
-
-        try {
-            /** @var array<string, mixed> $userData */
-            $userData = json_decode($userJson, true, 512, JSON_THROW_ON_ERROR);
-            $userId = (string) ($userData['id'] ?? '');
-
-            if ($userId === '') {
-                return null;
-            }
-
-            $user = $this->entityManager->getRepository(User::class)->findByTelegramId($userId);
-            if ($user === null) {
-                return null;
-            }
-
-            return (string) $userId;
-        } catch (\JsonException) {
-            return null;
-        }
-    }
-
-    public function validateSecretToken(Request $request): void
-    {
-        $expectedSecret = $this->settings->get('telegram.webhook_secret');
-
-        if (! is_string($expectedSecret) || $expectedSecret === '') {
-            return;
-        }
-
-        $headerValue = $request->getHeaderLine('X-Telegram-Bot-Api-Secret-Token');
-
-        if ($headerValue !== $expectedSecret) {
-            throw new InvalidArgumentException('Invalid webhook secret token');
-        }
     }
 }

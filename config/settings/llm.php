@@ -29,7 +29,7 @@ return [
         'maxMessages' => 8,
     ],
     'workflow' => [
-        'timeout' => 600,
+        'timeout' => (int) Env::get('OPENAPI_WORKFLOW_TIMEOUT', 300),
     ],
     'tools' => [
         'searchXngUrl' => Env::get('SEARXNG_URL'),
@@ -64,7 +64,7 @@ return [
         'application/xml',
     ],
     'httpClient' => [
-        'timeout' => 300.0,
+        'timeout' => (float) Env::get('OPENAPI_REQUEST_TIMEOUT', 180.0),
         'connectTimeout' => 10.0,
     ],
 ];

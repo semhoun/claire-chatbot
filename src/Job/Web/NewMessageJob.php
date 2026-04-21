@@ -6,7 +6,6 @@ namespace App\Job\Web;
 
 use App\Brain\Agent;
 use App\Brain\BrainRegistry;
-use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Summary;
 use App\Services\ChatStreamPublisher;
 use App\Services\Queue\QueueDoer;
@@ -65,13 +64,14 @@ final class NewMessageJob implements QueueDoer
     /** @var array<string, array<string, mixed>> */
     private array $toolsCall = [];
 
-    public function __construct(private readonly Logger $logger,
-                                private readonly Twig $twig,
-                                private readonly BrainRegistry $brainRegistry,
-                                private readonly ChatStreamPublisher $chatStreamPublisher,
-                                private readonly Connection $connection,
-                                private readonly Settings $settings)
-    {
+    public function __construct(
+        private readonly Logger $logger,
+        private readonly Twig $twig,
+        private readonly BrainRegistry $brainRegistry,
+        private readonly ChatStreamPublisher $chatStreamPublisher,
+        private readonly Connection $connection,
+        private readonly Settings $settings
+    ) {
     }
 
     public static function make(ContainerInterface $container): self
@@ -227,7 +227,6 @@ final class NewMessageJob implements QueueDoer
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
         ]);
-
     }
 
     private function publishPlaceHolder(): void
@@ -248,7 +247,6 @@ final class NewMessageJob implements QueueDoer
             'html' => $placeholderHtml,
         ]);
     }
-
 
     private function finalizeChat(string $content): void
     {

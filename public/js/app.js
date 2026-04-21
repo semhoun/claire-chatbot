@@ -480,7 +480,7 @@
                 finalizeAssistantResponse();
                 const messages = document.getElementById('messages');
                 if (messages) {
-                    messages.insertAdjacentHTML('beforeend', '<article class="message message--received"><div class="message__bubble"><span class="message__text">' + update.error + '</span></div></article>');
+                    messages.insertAdjacentHTML('beforeend', '<article class="message message--received"><div class="message__bubble"><span class="message__text">' + update.message + '</span></div></article>');
                 }
             }
 

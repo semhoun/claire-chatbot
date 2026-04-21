@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Controller\TelegramController;
-use App\Controller\TelegramWebAppController;
 use Slim\App;
 use Slim\Interfaces\RouteCollectorProxyInterface as Group;
 

@@ -196,7 +196,7 @@ class TelegramService implements QueueDoer
 
         // Intitialize comfyUI workflow
         if ($this->settings->get('comfyui.enabled') === true) {
-            $workflow = (string)$this->telegramSession->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
+            $workflow = (string) $this->telegramSession->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
             if ($workflow === '' && $this->comfyUIWorkflowRegistry->has($workflow)) {
                 $defaultWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug();
                 $this->telegramSession->set(ComfyUIWorkflowRegistry::SESSION_KEY, $defaultWorkflow);
@@ -208,6 +208,12 @@ class TelegramService implements QueueDoer
         return true;
     }
 
+    /**
+     * Retrieve user settings based on the provided Telegram user ID.
+     *
+     * @param string $telegramUserId The unique identifier of the Telegram user.
+     * @return array<string, mixed>|null An associative array containing the user settings, or null if no settings are available.
+     */
     public function getUserSettings(string $telegramUserId): ?array
     {
         $this->telegramSession->ensureLoaded();
@@ -223,6 +229,35 @@ class TelegramService implements QueueDoer
         }
 
         return $settings;
+    }
+
+    /**
+     * Sends a message to a specific Telegram chat.
+     *
+     * @param int $telegramChatId The ID of the Telegram chat where the message will be sent.
+     * @param string $text The text content of the message to be sent.
+     */
+    public function sendMessage(int $telegramChatId, string $text): void
+    {
+        // Filtrer les balises [OC] et [/OC]
+        $filteredText = $this->filterOCTags($text);
+        if ($filteredText === '') {
+            return;
+        }
+
+        try {
+            $formattedText = $this->formatForTelegram($filteredText);
+            $chunks = $this->splitMessage($formattedText);
+            foreach ($chunks as $chunk) {
+                $result = $this->telegramBotApi->sendMessage(chatId: $telegramChatId, text: $chunk, parseMode: ParseMode::MARKDOWN_V2);
+                if ($result instanceof FailResult) {
+                    $this->logger->error('Failed to send message chunk', ['chatId' => $telegramChatId, 'chunk' => $chunk, 'error' => $result]);
+                }
+            }
+        } catch (\Throwable $throwable) {
+            $msg = 'Failed to send message: ' . $throwable->getMessage();
+            $this->logger->error($msg);
+        }
     }
 
     private function handleMessage(int $telegramChatId, Message $message): void
@@ -450,29 +485,6 @@ class TelegramService implements QueueDoer
         }
 
         $this->sendMessage($telegramChatId, $responseText);
-    }
-
-    public function sendMessage(int $telegramChatId, string $text): void
-    {
-        // Filtrer les balises [OC] et [/OC]
-        $filteredText = $this->filterOCTags($text);
-        if ($filteredText === '') {
-            return;
-        }
-
-        try {
-            $formattedText = $this->formatForTelegram($filteredText);
-            $chunks = $this->splitMessage($formattedText);
-            foreach ($chunks as $chunk) {
-                $result = $this->telegramBotApi->sendMessage(chatId: $telegramChatId, text: $chunk, parseMode: ParseMode::MARKDOWN_V2);
-                if ($result instanceof FailResult) {
-                    $this->logger->error('Failed to send message chunk', ['chatId' => $telegramChatId, 'chunk' => $chunk, 'error' => $result]);
-                }
-            }
-        } catch (\Throwable $throwable) {
-            $msg = 'Failed to send message: ' . $throwable->getMessage();
-            $this->logger->error($msg);
-        }
     }
 
     /**
@@ -796,7 +808,7 @@ class TelegramService implements QueueDoer
         }
 
         $telegramUserId = (string) $telegramChatId;
-        $success = $this->updateUserSetting($telegramUserId, 'comfyui_workflow', $workflow);
+        $success = $this->updateUserSetting($telegramUserId, 'comfyui_workflow');
 
         if ($success) {
             $meta = $this->comfyUIWorkflowRegistry->getMeta($workflow);

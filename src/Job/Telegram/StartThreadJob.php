@@ -24,13 +24,11 @@ use Psr\Log\LoggerInterface as Logger;
  *
  * Implements the `QueueDoer` interface to integrate with a queue job execution system.
  */
-final class StartThreadJob implements QueueDoer
+final readonly class StartThreadJob implements QueueDoer
 {
-    private string $telegramUserId;
-
     public function __construct(
-        private readonly Logger $logger,
-        private readonly TelegramService $telegramService,
+        private Logger $logger,
+        private TelegramService $telegramService,
     ) {
     }
 
@@ -42,17 +40,17 @@ final class StartThreadJob implements QueueDoer
     /** @param array<string, mixed> $payload */
     public function handle(array $payload): void
     {
-        $telegramUserId =  (string) ($payload['telegramUserId'] ?? $payload['telegramUserId'] ?? '');
+        $telegramUserId = (string) ($payload['telegramUserId'] ?? $payload['telegramUserId'] ?? '');
         try {
             if ($telegramUserId === '') {
                 throw new \InvalidArgumentException('Thread ID cannot be empty');
             }
 
             $this->telegramService->manageSession($telegramUserId);
-            $this->telegramService->startNewChat((int)$telegramUserId);
+            $this->telegramService->startNewChat((int) $telegramUserId);
         } catch (\Throwable $throwable) {
             $this->logger->error('Telegram start new thread processing error', ['throwable' => $throwable]);
-            $telegramUserId = (int)$telegramUserId;
+            $telegramUserId = (int) $telegramUserId;
             if ($telegramUserId > 0) {
                 $this->telegramService->sendMessage($telegramUserId, 'Désolé, une erreur est survenue lors du la création d\'une nouvelle conversation.');
             }

@@ -18,6 +18,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ### Changed
 - **Queue**: Refonte de l'architecture queue/jobs avec séparation des responsabilités
 - **Queue**: Déplacement des classes Queue de `src/Queue/` vers `src/Services/Queue/`
+- **Queue**: Nouvelles options de configuration pour le worker via variables d'environnement (`QUEUE_WORKER_TIMEOUT`, `QUEUE_WORKER_MAX_JOBS`, `QUEUE_WORKER_MAX_TIME`)
+- **Queue**: Les options du worker utilisent les valeurs par défaut de la configuration si non spécifiées en ligne de commande
 - **SSE**: Réécriture complète de la gestion des Server-Sent Events pour les nouveaux messages et nouvelles conversations
 - **Telegram**: Réécriture et amélioration du service Telegram
 - Renommage de `TelegramWebAppValidator` en `TelegramValidator`

@@ -52,6 +52,7 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 |----------|-------------|--------|
 | `OPENAPI_MODEL_SUMMARY` | Modèle pour les résumés | valeur de `OPENAPI_MODEL` |
 | `OPENAPI_MODEL_EMBED` | Modèle pour embeddings (RAG) | désactivé |
+| `OPENAPI_REQUEST_TIMEOUT` | Timeout des requêtes API (secondes) | `180` |
 | `SEARXNG_URL` | URL SearXNG pour recherche web | - |
 | `TELEGRAM_BOT_TOKEN` | Token du bot Telegram | - |
 | `TELEGRAM_WEBHOOK_SECRET` | Secret webhook Telegram | - |

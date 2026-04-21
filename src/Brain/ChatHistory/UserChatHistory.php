@@ -139,7 +139,7 @@ class UserChatHistory extends AbstractChatHistory
         );
         $stmt->execute([
             'user_id' => $this->session->get(Auth::USERID),
-            'thread_id' => $this->threadId
+            'thread_id' => $this->threadId,
         ]);
 
         $history = $stmt->fetchAll(PDO::FETCH_ASSOC);

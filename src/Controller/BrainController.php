@@ -124,7 +124,7 @@ final readonly class BrainController
             $stream->write($this->sseEventFormatter->formatJsonEvent([
                 'html' => $messagesHtml,
                 'threadId' => $threadId,
-            'sessionId' => $sessionId,
+                'sessionId' => $sessionId,
             ], eventId: 'thread::' . $threadId, eventName: 'chat.snapshot'));
         }
 
@@ -156,11 +156,9 @@ final readonly class BrainController
             }
 
             $eventId = match ($eventName) {
-                'chat.snapshot' =>
-                    'thread::' . $payload['threadId'],
+                'chat.snapshot' => 'thread::' . $payload['threadId'],
                 'chat.assistant.start', 'chat.assistant.done' ,
-                'chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update' =>
-                    'message::' . $payload['messageId'],
+                'chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update' => 'message::' . $payload['messageId'],
                 'chat.error' => 'error:;' . $payload['threadId'],
                 default => ''
             };

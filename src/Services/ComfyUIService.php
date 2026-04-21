@@ -61,7 +61,7 @@ final readonly class ComfyUIService
         }
     }
 
-     /**
+    /**
      * Get the workflow JSON with the prompt placeholder replaced.
      *
      * @return array<string, mixed> The workflow configuration
