@@ -298,7 +298,7 @@ final class NewMessageJob implements QueueDoer
 
         if (! ($chatHistory instanceof \App\Brain\ChatHistory\UserChatHistory)
             || $this->hasEnoughMessages($chatHistory)
-            || $this->hasMaxMessagesWithTitle($chatHistory)) {
+            || $this->hasMaxMessagesWithSummary($chatHistory)) {
             return;
         }
 
@@ -313,11 +313,11 @@ final class NewMessageJob implements QueueDoer
         return $messages !== [] && count($messages) >= $minMessages;
     }
 
-    private function hasMaxMessagesWithTitle(UserChatHistory $userChatHistory): bool
+    private function hasMaxMessagesWithSummary(UserChatHistory $userChatHistory): bool
     {
         $messages = $userChatHistory->getDisplayMessages();
         $maxMessages = $this->settings->get('llm.summary.maxMessages');
 
-        return count($messages) > $maxMessages && $userChatHistory->getTitle() !== null;
+        return count($messages) > $maxMessages && $userChatHistory->getSummary() !== null && $userChatHistory->getSummary() !== '';
     }
 }
