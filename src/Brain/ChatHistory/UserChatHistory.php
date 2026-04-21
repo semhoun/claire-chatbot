@@ -28,9 +28,6 @@ class UserChatHistory extends AbstractChatHistory
     public const string CHAT_WEB = 'web';
 
     public const string CHAT_TELEGRAM = 'telegram';
-    public ?string $thread_id = null;
-
-    protected string $user_id;
 
     protected ?string $title = null;
 
@@ -42,29 +39,25 @@ class UserChatHistory extends AbstractChatHistory
     protected array $displayHistory = [];
 
     public function __construct(
-        SessionInterface $session,
+        protected SessionInterface $session,
         protected PDO $pdo,
         protected int $contextWindow = 50000,
-        ?string $threadId = null,
+        protected ?string $threadId = null,
     ) {
-        $this->user_id = $session->get(Auth::USERID);
-
-        $this->thread_id = $threadId;
-
-        if ($this->thread_id !== null) {
+        if ($this->threadId !== null) {
             $this->load();
         }
 
         parent::__construct($contextWindow);
     }
 
-    public function setThreadId(string $thread_id): void
+    public function setThreadId(string $threadId): void
     {
-        if ($this->thread_id === $thread_id) {
+        if ($this->threadId === $threadId) {
             return;
         }
 
-        $this->thread_id = $thread_id;
+        $this->threadId = $threadId;
         $this->load();
     }
 
@@ -144,7 +137,7 @@ class UserChatHistory extends AbstractChatHistory
                 self::TABLE
             )
         );
-        $stmt->execute(['thread_id' => $this->thread_id]);
+        $stmt->execute(['thread_id' => $this->threadId]);
 
         $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if (empty($history)) {
@@ -158,8 +151,8 @@ class UserChatHistory extends AbstractChatHistory
                 )
             );
             $stmt->execute([
-                'user_id' => $this->user_id,
-                'thread_id' => $this->thread_id,
+                'user_id' => $this->session->get(Auth::USERID),
+                'thread_id' => $this->threadId,
                 self::LLM_MESSAGES_COLUMN => '[]',
                 self::DISPLAY_MESSAGES_COLUMN => '[]',
                 self::DISPLAY_MESSAGES_COUNT_COLUMN => 0,
@@ -236,9 +229,9 @@ class UserChatHistory extends AbstractChatHistory
     protected function clear(): void
     {
         $stmt = $this->pdo->prepare(
-            'DELETE FROM ' . self::TABLE . ' WHERE thread_id = :thread_id'
+            'DELETE FROM ' . self::TABLE . ' WHERE thread_id = :threadId'
         );
-        $stmt->execute(['thread_id' => $this->thread_id]);
+        $stmt->execute(['thread_id' => $this->threadId]);
 
         $this->history = [];
         $this->displayHistory = [];
@@ -262,8 +255,7 @@ class UserChatHistory extends AbstractChatHistory
             return [];
         }
 
-        $messageSequenceFixer = new MessageSequenceFixer();
-        return $messageSequenceFixer->fix($messages);
+        return new MessageSequenceFixer()->fix($messages);
     }
 
     /**
@@ -294,7 +286,7 @@ class UserChatHistory extends AbstractChatHistory
             )
         );
         $stmt->execute([
-            'thread_id' => $this->thread_id,
+            'thread_id' => $this->threadId,
             'llm_messages' => json_encode(
                 $this->serializeMessages($this->history),
                 JSON_THROW_ON_ERROR

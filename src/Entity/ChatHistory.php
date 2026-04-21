@@ -52,7 +52,7 @@ class ChatHistory
     private \DateTimeImmutable $updatedAt;
 
     /** @var \Doctrine\Common\Collections\Collection<int, ChatHistoryFile> */
-    #[ORM\OneToMany(targetEntity: ChatHistoryFile::class, mappedBy: 'history', cascade: ['remove'])]
+    #[ORM\OneToMany(targetEntity: ChatHistoryFile::class, mappedBy: 'chatHistory', cascade: ['remove'])]
     private \Doctrine\Common\Collections\Collection $files;
 
     public function __construct()

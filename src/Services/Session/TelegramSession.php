@@ -162,7 +162,7 @@ final class TelegramSession implements SessionInterface
         return $this->telegramFlash;
     }
 
-    private function ensureLoaded(): void
+    public function ensureLoaded(): void
     {
         if (! $this->loaded) {
             throw new Exception\SessionException(

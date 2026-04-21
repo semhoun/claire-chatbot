@@ -4,8 +4,22 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-final class TelegramWebAppValidator
+use App\Entity\User;
+use Doctrine\ORM\EntityManagerInterface;
+use InvalidArgumentException;
+use Psr\Http\Message\ServerRequestInterface as Request;
+use Psr\Log\LoggerInterface as Logger;
+
+final readonly class TelegramValidator
 {
+    public function __construct(
+        private Logger $logger,
+        private EntityManagerInterface $entityManager,
+        private Settings $settings,
+    )
+    {
+    }
+
     /**
      * Validate Telegram WebApp initData HMAC signature.
      *
@@ -14,9 +28,16 @@ final class TelegramWebAppValidator
      *
      * @see https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
      */
-    public function validateInitData(string $initData, string $botToken): bool
+    private function validateAppInitData(string $initData): bool
     {
-        if ($initData === '' || $botToken === '') {
+        if ($initData === '') {
+            $this->logger->warning('Empty initData or botToken');
+            return false;
+        }
+
+        $botToken = $this->settings->get('telegram.bot_token');
+        if ($botToken === '') {
+            $this->logger->error('Empty botToken');
             return false;
         }
 
@@ -51,13 +72,13 @@ final class TelegramWebAppValidator
     }
 
     /**
-     * Extract user ID from initData.
+     * Extract telegram user ID from initData.
      *
      * @return string|null Returns null if user data not found or invalid
      */
-    public function extractUserId(string $initData): ?string
+    public function appGetTelegramUserId(string $initData): ?string
     {
-        if ($initData === '') {
+        if ($this->validateAppInitData($initData) === false) {
             return null;
         }
 
@@ -73,58 +94,35 @@ final class TelegramWebAppValidator
         try {
             /** @var array<string, mixed> $userData */
             $userData = json_decode($userJson, true, 512, JSON_THROW_ON_ERROR);
-            $userId = $userData['id'] ?? null;
+            $userId = (string) ($userData['id'] ?? '');
 
-            return is_int($userId) || is_string($userId) ? (string) $userId : null;
+            if ($userId === '') {
+                return null;
+            }
+
+            $user = $this->entityManager->getRepository(User::class)->findByTelegramId($userId);
+            if ($user === null) {
+                return null;
+            }
+
+            return (string) $userId;
         } catch (\JsonException) {
             return null;
         }
     }
 
-    /**
-     * Extract user data from initData.
-     *
-     * @return array<string, mixed>|null Returns null if user data not found or invalid
-     */
-    public function extractUserData(string $initData): ?array
+    public function validateSecretToken(Request $request): void
     {
-        if ($initData === '') {
-            return null;
+        $expectedSecret = $this->settings->get('telegram.webhook_secret');
+
+        if (! is_string($expectedSecret) || $expectedSecret === '') {
+            return;
         }
 
-        $data = [];
-        parse_str($initData, $data);
+        $headerValue = $request->getHeaderLine('X-Telegram-Bot-Api-Secret-Token');
 
-        $userJson = $data['user'] ?? '';
-        if ($userJson === '') {
-            return null;
+        if ($headerValue !== $expectedSecret) {
+            throw new InvalidArgumentException('Invalid webhook secret token');
         }
-
-        try {
-            return json_decode($userJson, true, 512, JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            return null;
-        }
-    }
-
-    /**
-     * Check if initData is not expired (optional security check).
-     *
-     * @param int $maxAgeSeconds Maximum age in seconds (default: 24 hours)
-     */
-    public function isInitDataFresh(string $initData, int $maxAgeSeconds = 86400): bool
-    {
-        $data = [];
-        parse_str($initData, $data);
-
-        $authDate = $data['auth_date'] ?? 0;
-        if ($authDate === 0) {
-            return false;
-        }
-
-        $now = time();
-        $authTime = (int) $authDate;
-
-        return $now - $authTime <= $maxAgeSeconds;
     }
 }

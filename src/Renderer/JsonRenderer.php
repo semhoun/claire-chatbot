@@ -24,8 +24,11 @@ final class JsonRenderer
     public function json(
         ResponseInterface $response,
         mixed $data = [],
+        int $statusCode = 200,
     ): ResponseInterface {
-        $response = $response->withHeader('Content-Type', 'application/json');
+        $response = $response
+            ->withHeader('Content-Type', 'application/json')
+            ->withStatus($statusCode);
 
         $response->getBody()->write(
             (string) json_encode(

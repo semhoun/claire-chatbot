@@ -61,25 +61,7 @@ final readonly class ComfyUIService
         }
     }
 
-    /**
-     * Extract file path from image ID.
-     */
-    public static function extractFilePathFromId(string $imageId): ?string
-    {
-        if (! preg_match(self::IMAGE_PATTERN, $imageId, $matches)) {
-            return null;
-        }
-
-        $parts = explode(self::FOLDER_SEPARATOR, $matches[1]);
-
-        if (count($parts) !== 2) {
-            return null;
-        }
-
-        return self::FOLDER_PREFIX . '/' . $parts[0] . '/' . $parts[1];
-    }
-
-    /**
+     /**
      * Get the workflow JSON with the prompt placeholder replaced.
      *
      * @return array<string, mixed> The workflow configuration

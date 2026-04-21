@@ -4,37 +4,79 @@ declare(strict_types=1);
 
 namespace Test\Unit\Services;
 
-use App\Services\TelegramWebAppValidator;
+use App\Entity\User;
+use App\Repository\UserRepository;
+use App\Services\Settings;
+use App\Services\TelegramValidator;
+use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 
 final class TelegramWebAppValidatorTest extends TestCase
 {
-    private TelegramWebAppValidator $validator;
+    private TelegramValidator $validator;
+    private LoggerInterface&MockObject $logger;
+    private EntityManagerInterface&MockObject $entityManager;
 
     protected function setUp(): void
     {
-        $this->validator = new TelegramWebAppValidator();
+        $this->logger = $this->createMock(LoggerInterface::class);
+        $this->entityManager = $this->createMock(EntityManagerInterface::class);
     }
 
-    public function testValidateInitDataWithEmptyDataReturnsFalse(): void
+    private function createValidatorWithSettings(array $settings): TelegramValidator
     {
-        self::assertFalse($this->validator->validateInitData('', 'bot_token'));
+        return new TelegramValidator(
+            $this->logger,
+            $this->entityManager,
+            new Settings($settings),
+        );
     }
 
-    public function testValidateInitDataWithEmptyTokenReturnsFalse(): void
+    public function testAppGetTelegramUserIdWithEmptyDataReturnsNull(): void
     {
-        self::assertFalse($this->validator->validateInitData('some=data', ''));
+        $validator = $this->createValidatorWithSettings([]);
+
+        $this->logger->expects($this->once())
+            ->method('warning')
+            ->with('Empty initData or botToken');
+
+        self::assertNull($validator->appGetTelegramUserId(''));
     }
 
-    public function testValidateInitDataWithoutHashReturnsFalse(): void
+    public function testAppGetTelegramUserIdWithEmptyBotTokenReturnsNull(): void
     {
+        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => '']]);
+
+        $this->logger->expects($this->once())
+            ->method('error')
+            ->with('Empty botToken');
+
+        $initData = 'user={"id":123}&hash=abc';
+        self::assertNull($validator->appGetTelegramUserId($initData));
+    }
+
+    public function testAppGetTelegramUserIdWithoutHashReturnsNull(): void
+    {
+        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => 'test_token']]);
+
         $initData = 'user={"id":123}';
-        self::assertFalse($this->validator->validateInitData($initData, 'bot_token'));
+        self::assertNull($validator->appGetTelegramUserId($initData));
     }
 
-    public function testValidateInitDataWithValidHashReturnsTrue(): void
+    public function testAppGetTelegramUserIdWithInvalidHashReturnsNull(): void
+    {
+        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => 'test_token']]);
+
+        $initData = 'user={"id":123}&auth_date=1234567890&hash=invalid_hash';
+        self::assertNull($validator->appGetTelegramUserId($initData));
+    }
+
+    public function testAppGetTelegramUserIdWithValidHashButNoUserInDbReturnsNull(): void
     {
         $botToken = 'test_token_12345';
+        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => $botToken]]);
 
         // Build valid init data
         $data = [
@@ -54,103 +96,149 @@ final class TelegramWebAppValidatorTest extends TestCase
         $hash = hash_hmac('sha256', $dataCheckString, $secretKey);
 
         $data['hash'] = $hash;
-        $initData = http_build_query($data);
-        // http_build_query encodes, we need to decode for our test
-        $initData = urldecode($initData);
+        $initData = urldecode(http_build_query($data));
 
-        self::assertTrue($this->validator->validateInitData($initData, $botToken));
+        // User not found in database
+        $userRepository = $this->createMock(UserRepository::class);
+        $userRepository->method('findByTelegramId')
+            ->with('123')
+            ->willReturn(null);
+
+        $this->entityManager->method('getRepository')
+            ->with(User::class)
+            ->willReturn($userRepository);
+
+        self::assertNull($validator->appGetTelegramUserId($initData));
     }
 
-    public function testValidateInitDataWithInvalidHashReturnsFalse(): void
+    public function testAppGetTelegramUserIdWithValidHashAndUserInDbReturnsUserId(): void
     {
-        $initData = 'user={"id":123}&auth_date=1234567890&hash=invalid_hash';
-        self::assertFalse($this->validator->validateInitData($initData, 'bot_token'));
+        $botToken = 'test_token_12345';
+        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => $botToken]]);
+
+        // Build valid init data
+        $data = [
+            'user' => '{"id":123,"first_name":"Test"}',
+            'auth_date' => '1234567890',
+            'query_id' => 'test_query',
+        ];
+        ksort($data);
+
+        $dataCheckString = '';
+        foreach ($data as $key => $value) {
+            $dataCheckString .= $key . '=' . $value . "\n";
+        }
+        $dataCheckString = rtrim($dataCheckString, "\n");
+
+        $secretKey = hash_hmac('sha256', $botToken, 'WebAppData', true);
+        $hash = hash_hmac('sha256', $dataCheckString, $secretKey);
+
+        $data['hash'] = $hash;
+        $initData = urldecode(http_build_query($data));
+
+        // User found in database
+        $user = $this->createMock(User::class);
+        $userRepository = $this->createMock(UserRepository::class);
+        $userRepository->method('findByTelegramId')
+            ->with('123')
+            ->willReturn($user);
+
+        $this->entityManager->method('getRepository')
+            ->with(User::class)
+            ->willReturn($userRepository);
+
+        self::assertSame('123', $validator->appGetTelegramUserId($initData));
     }
 
-    public function testExtractUserIdWithValidUserData(): void
+    public function testAppGetTelegramUserIdWithoutUserFieldReturnsNull(): void
     {
-        $userData = '{"id":123456,"first_name":"John"}';
-        $initData = 'user=' . urlencode($userData) . '&auth_date=1234567890';
+        $botToken = 'test_token_12345';
+        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => $botToken]]);
 
-        self::assertSame('123456', $this->validator->extractUserId($initData));
+        // Build valid init data without user field
+        $data = [
+            'auth_date' => '1234567890',
+            'query_id' => 'test_query',
+        ];
+        ksort($data);
+
+        $dataCheckString = '';
+        foreach ($data as $key => $value) {
+            $dataCheckString .= $key . '=' . $value . "\n";
+        }
+        $dataCheckString = rtrim($dataCheckString, "\n");
+
+        $secretKey = hash_hmac('sha256', $botToken, 'WebAppData', true);
+        $hash = hash_hmac('sha256', $dataCheckString, $secretKey);
+
+        $data['hash'] = $hash;
+        $initData = urldecode(http_build_query($data));
+
+        self::assertNull($validator->appGetTelegramUserId($initData));
     }
 
-    public function testExtractUserIdWithStringId(): void
+    public function testAppGetTelegramUserIdWithInvalidJsonReturnsNull(): void
     {
-        $userData = '{"id":"987654321","first_name":"Jane"}';
-        $initData = 'user=' . urlencode($userData);
+        $botToken = 'test_token_12345';
+        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => $botToken]]);
 
-        self::assertSame('987654321', $this->validator->extractUserId($initData));
+        // Build valid init data with invalid user JSON
+        $data = [
+            'user' => 'invalid_json',
+            'auth_date' => '1234567890',
+        ];
+        ksort($data);
+
+        $dataCheckString = '';
+        foreach ($data as $key => $value) {
+            $dataCheckString .= $key . '=' . $value . "\n";
+        }
+        $dataCheckString = rtrim($dataCheckString, "\n");
+
+        $secretKey = hash_hmac('sha256', $botToken, 'WebAppData', true);
+        $hash = hash_hmac('sha256', $dataCheckString, $secretKey);
+
+        $data['hash'] = $hash;
+        $initData = urldecode(http_build_query($data));
+
+        self::assertNull($validator->appGetTelegramUserId($initData));
     }
 
-    public function testExtractUserIdWithEmptyDataReturnsNull(): void
+    public function testAppGetTelegramUserIdWithStringId(): void
     {
-        self::assertNull($this->validator->extractUserId(''));
-    }
+        $botToken = 'test_token_12345';
+        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => $botToken]]);
 
-    public function testExtractUserIdWithoutUserFieldReturnsNull(): void
-    {
-        self::assertNull($this->validator->extractUserId('auth_date=1234567890'));
-    }
+        // Build valid init data with string user ID
+        $data = [
+            'user' => '{"id":"987654321","first_name":"Jane"}',
+            'auth_date' => '1234567890',
+        ];
+        ksort($data);
 
-    public function testExtractUserIdWithInvalidJsonReturnsNull(): void
-    {
-        $initData = 'user=invalid_json&auth_date=1234567890';
-        self::assertNull($this->validator->extractUserId($initData));
-    }
+        $dataCheckString = '';
+        foreach ($data as $key => $value) {
+            $dataCheckString .= $key . '=' . $value . "\n";
+        }
+        $dataCheckString = rtrim($dataCheckString, "\n");
 
-    public function testExtractUserDataWithValidData(): void
-    {
-        $userData = '{"id":123,"first_name":"John","last_name":"Doe"}';
-        $initData = 'user=' . urlencode($userData);
+        $secretKey = hash_hmac('sha256', $botToken, 'WebAppData', true);
+        $hash = hash_hmac('sha256', $dataCheckString, $secretKey);
 
-        $result = $this->validator->extractUserData($initData);
+        $data['hash'] = $hash;
+        $initData = urldecode(http_build_query($data));
 
-        self::assertIsArray($result);
-        self::assertSame(123, $result['id']);
-        self::assertSame('John', $result['first_name']);
-        self::assertSame('Doe', $result['last_name']);
-    }
+        // User found in database
+        $user = $this->createMock(User::class);
+        $userRepository = $this->createMock(UserRepository::class);
+        $userRepository->method('findByTelegramId')
+            ->with('987654321')
+            ->willReturn($user);
 
-    public function testExtractUserDataWithEmptyDataReturnsNull(): void
-    {
-        self::assertNull($this->validator->extractUserData(''));
-    }
+        $this->entityManager->method('getRepository')
+            ->with(User::class)
+            ->willReturn($userRepository);
 
-    public function testExtractUserDataWithInvalidJsonReturnsNull(): void
-    {
-        $initData = 'user=invalid_json';
-        self::assertNull($this->validator->extractUserData($initData));
-    }
-
-    public function testIsInitDataFreshWithRecentAuthDate(): void
-    {
-        $authDate = (string) time();
-        $initData = 'user={"id":123}&auth_date=' . $authDate;
-
-        self::assertTrue($this->validator->isInitDataFresh($initData));
-    }
-
-    public function testIsInitDataFreshWithOldAuthDate(): void
-    {
-        $oldAuthDate = (string) (time() - 100000); // More than 24 hours ago
-        $initData = 'user={"id":123}&auth_date=' . $oldAuthDate;
-
-        self::assertFalse($this->validator->isInitDataFresh($initData));
-    }
-
-    public function testIsInitDataFreshWithoutAuthDate(): void
-    {
-        $initData = 'user={"id":123}';
-        self::assertFalse($this->validator->isInitDataFresh($initData));
-    }
-
-    public function testIsInitDataFreshWithCustomMaxAge(): void
-    {
-        $recentAuthDate = (string) (time() - 30); // 30 seconds ago
-        $initData = 'user={"id":123}&auth_date=' . $recentAuthDate;
-
-        self::assertTrue($this->validator->isInitDataFresh($initData, 60)); // 60 seconds max
-        self::assertFalse($this->validator->isInitDataFresh($initData, 10)); // 10 seconds max
+        self::assertSame('987654321', $validator->appGetTelegramUserId($initData));
     }
 }

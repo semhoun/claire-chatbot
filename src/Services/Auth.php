@@ -102,41 +102,25 @@ class Auth
      */
     private function initializeUserSession(SessionInterface $session, User $user, string $userId, array $data): void
     {
-        $this->loadUserParams($session, $user);
-        $this->loadDefaultParams($session);
-        $this->initializeBrainAvatar($session);
-        $this->setAuthSession($session, $userId, $data);
-    }
-
-    private function loadUserParams(SessionInterface $session, User $user): void
-    {
+        //load user params
         foreach ($user->getParams() ?? [] as $key => $value) {
             $session->set($key, $value);
         }
-    }
 
-    private function loadDefaultParams(SessionInterface $session): void
-    {
+        // load default params
         foreach ($this->settings->get('session.defaultParams') as $key => $value) {
             if (! $session->has($key)) {
                 $session->set($key, $value);
             }
         }
-    }
 
-    private function initializeBrainAvatar(SessionInterface $session): void
-    {
+        // Initialize brain avatar
         $brain = $session->get('brain_avatar');
         if ($brain === null || $brain === '' || ! $this->brainRegistry->has($brain)) {
             $session->set('brain_avatar', $this->settings->get('session.defaultParams.brain_avatar'));
         }
-    }
 
-    /**
-     * @param array<string, mixed> $data
-     */
-    private function setAuthSession(SessionInterface $session, string $userId, array $data): void
-    {
+        // setAuthSession
         $session->set(self::AUTHENTICATED, true);
         $session->set(self::USERID, $userId);
         $session->set(self::USERINFO, [
