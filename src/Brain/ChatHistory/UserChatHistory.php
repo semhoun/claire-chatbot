@@ -131,13 +131,16 @@ class UserChatHistory extends AbstractChatHistory
     {
         $stmt = $this->pdo->prepare(
             sprintf(
-                'SELECT %s, %s, title, summary FROM %s WHERE thread_id = :thread_id',
+                'SELECT %s, %s, title, summary FROM %s WHERE user_id = :user_id AND thread_id = :thread_id',
                 self::LLM_MESSAGES_COLUMN,
                 self::DISPLAY_MESSAGES_COLUMN,
                 self::TABLE
             )
         );
-        $stmt->execute(['thread_id' => $this->threadId]);
+        $stmt->execute([
+            'user_id' => $this->session->get(Auth::USERID),
+            'thread_id' => $this->threadId
+        ]);
 
         $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if (empty($history)) {

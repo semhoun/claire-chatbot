@@ -63,7 +63,12 @@ final class NewMessageJob implements QueueDoer
     /** @var array<string, array<string, mixed>> */
     private array $toolsCall = [];
 
-    public function __construct(private readonly Logger $logger, private readonly Twig $twig, private readonly BrainRegistry $brainRegistry, private readonly ChatStreamPublisher $chatStreamPublisher, private readonly Connection $connection, private readonly Settings $settings)
+    public function __construct(private readonly Logger $logger,
+                                private readonly Twig $twig,
+                                private readonly BrainRegistry $brainRegistry,
+                                private readonly ChatStreamPublisher $chatStreamPublisher,
+                                private readonly Connection $connection,
+                                private readonly Settings $settings)
     {
     }
 
@@ -108,7 +113,7 @@ final class NewMessageJob implements QueueDoer
             throw new \InvalidArgumentException('User message cannot be empty');
         }
 
-        $this->threadId = (string) ($payload['threadId'] ?? $payload['threadId'] ?? '');
+        $this->threadId = (string) ($payload['threadId'] ?? '');
         if ($this->threadId === '') {
             throw new \InvalidArgumentException('Thread ID cannot be empty');
         }
@@ -296,28 +301,20 @@ final class NewMessageJob implements QueueDoer
         $summary = new Summary($this->connection, $this->settings, $this->inMemorySession, $this->threadId);
         $chatHistory = $summary->getChatHistory();
 
-        if (! ($chatHistory instanceof \App\Brain\ChatHistory\UserChatHistory)
-            || $this->hasEnoughMessages($chatHistory)
-            || $this->hasMaxMessagesWithSummary($chatHistory)) {
+        if (! ($chatHistory instanceof \App\Brain\ChatHistory\UserChatHistory)) {
+            $this->logger->error('Summary not available for non-user chat history');
             return;
         }
 
+        $messages = $chatHistory->getDisplayMessages();
+        if ($messages !== [] && count($messages) >= $this->settings->get('llm.summary.minMessages')
+            && count($messages) <= $this->settings->get('llm.summary.maxMessages')
+            && $chatHistory->getSummary() !== null && $chatHistory->getSummary() !== '') {
+            error_log('Summary already generated');
+            return;
+        }
+
+        error_log('Generating summary');
         $summary->generateAndPersist();
-    }
-
-    private function hasEnoughMessages(UserChatHistory $userChatHistory): bool
-    {
-        $messages = $userChatHistory->getDisplayMessages();
-        $minMessages = $this->settings->get('llm.summary.minMessages');
-
-        return $messages !== [] && count($messages) >= $minMessages;
-    }
-
-    private function hasMaxMessagesWithSummary(UserChatHistory $userChatHistory): bool
-    {
-        $messages = $userChatHistory->getDisplayMessages();
-        $maxMessages = $this->settings->get('llm.summary.maxMessages');
-
-        return count($messages) > $maxMessages && $userChatHistory->getSummary() !== null && $userChatHistory->getSummary() !== '';
     }
 }

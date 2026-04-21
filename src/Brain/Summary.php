@@ -25,66 +25,26 @@ class Summary extends \NeuronAI\Agent\Agent
         protected readonly Settings $settings,
         protected readonly SessionInterface $session,
         protected readonly ?string $threadId = null,
-    ) {
+    )
+    {
         parent::__construct();
 
         $this->observe(new \App\Brain\Observability\Observer());
     }
 
-    /**
-     * Generates a title and summary based on the processed content.
-     *
-     * @return array<string, string> An associative array containing the following keys:
-     *               - 'title': The generated title or a default value if generation fails.
-     *               - 'summary': The generated summary or an empty string if generation fails.
-     */
-    public function generate(): array
+    public function generateAndPersist(): void
     {
         $userMessage = new UserMessage("Génère 'title' et 'summary'.");
         $message = $this->chat($userMessage)->getMessage();
-
         $jsonContent = $this->extractJsonContent($message->getContent());
 
-        return $this->parseGeneratedData($jsonContent);
-    }
-
-    /**
-     * Persist title/summary into chat_history for current session thread and user.
-     * No-op if session is missing identifiers.
-     *
-     * @param array{title?:string|null, summary?:string|null} $data
-     */
-    public function persist(array $data): void
-    {
-        $userId = (string) ($this->session->get(Auth::USERID) ?? '');
-        $threadId = (string) ($this->session->get('threadId') ?? '');
-
-        if ($userId === '' || $threadId === '') {
-            return;
-        }
-
-        $fields = $this->extractFields($data);
-
-        if ($fields === []) {
-            return;
-        }
-
-        $this->connection->update(UserChatHistory::TABLE, $fields, [
-            'user_id' => $userId,
-            'thread_id' => $threadId,
+        $this->connection->update(UserChatHistory::TABLE, [
+            'title' => $jsonContent['title'] ?? 'Nouvelle conversation',
+            'summary' => $jsonContent['summary'] ?? null,
+        ], [
+            'user_id' => $this->session->get(Auth::USERID),
+            'thread_id' => $this->threadId,
         ]);
-    }
-
-    /**
-     * Generates data, persists it, and returns the generated data.
-     *
-     * @return array<string, mixed> The generated data after being persisted.
-     */
-    public function generateAndPersist(): array
-    {
-        $result = $this->generate();
-        $this->persist($result);
-        return $result;
     }
 
     #[\Override]
@@ -92,7 +52,9 @@ class Summary extends \NeuronAI\Agent\Agent
     {
         return new SummaryChatHistory(
             session: $this->session,
-            pdo: $this->connection->getNativeConnection()
+            pdo: $this->connection->getNativeConnection(),
+            contextWindow: $this->settings->get('llm.openai.contextWindow'),
+            threadId: $this->threadId,
         );
     }
 
@@ -120,72 +82,24 @@ EOF;
         );
     }
 
-    private function extractJsonContent(?string $content): string
+    private function extractJsonContent(?string $content): array
     {
         if ($content === null) {
-            return '';
+            return [];
         }
-
-        $startPos = strpos($content, '{');
-        $endPos = strrpos($content, '}');
-
-        if ($startPos !== false && $endPos !== false && $endPos >= $startPos) {
-            return substr($content, $startPos, $endPos - $startPos + 1);
-        }
-
-        return $content;
-    }
-
-    /**
-     * @return array{title: string, summary: string}
-     */
-    private function parseGeneratedData(string $jsonContent): array
-    {
-        $defaultTitle = 'Nouvelle conversation';
-        $defaultSummary = '';
 
         try {
-            $decoded = json_decode($jsonContent, true, 512, JSON_THROW_ON_ERROR);
+            $startPos = strpos($content, '{');
+            $endPos = strrpos($content, '}');
 
-            return [
-                'title' => $this->extractStringValue($decoded, 'title', $defaultTitle),
-                'summary' => $this->extractStringValue($decoded, 'summary', $defaultSummary),
-            ];
-        } catch (\JsonException) {
-            return [
-                'title' => $defaultTitle,
-                'summary' => $defaultSummary,
-            ];
+            if ($startPos !== false && $endPos !== false && $endPos >= $startPos) {
+                return json_decode(substr($content, $startPos, $endPos - $startPos + 1), true, 512, JSON_THROW_ON_ERROR);
+            }
+
+            return json_decode($content, true, 512, JSON_THROW_ON_ERROR);
         }
-    }
-
-    /**
-     * @param array<string, mixed> $decoded
-     */
-    private function extractStringValue(array $decoded, string $key, string $default): string
-    {
-        $value = (string) ($decoded[$key] ?? '');
-
-        return $value !== '' ? $value : $default;
-    }
-
-    /**
-     * @param array{title?:string|null, summary?:string|null} $data
-     *
-     * @return array<string, mixed>
-     */
-    private function extractFields(array $data): array
-    {
-        $fields = [];
-
-        if (array_key_exists('title', $data)) {
-            $fields['title'] = $data['title'];
+        catch (\JsonException) {
+            return [];
         }
-
-        if (array_key_exists('summary', $data)) {
-            $fields['summary'] = $data['summary'];
-        }
-
-        return $fields;
     }
 }

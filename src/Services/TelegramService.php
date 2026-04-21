@@ -122,7 +122,6 @@ class TelegramService implements QueueDoer
         $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession, $threadId);
         $openingText = $agent->getOpeningText();
         $chatHistory = $agent->getChatHistory();
-        $chatHistory->replaceMessages([]);
         $chatHistory->replaceDisplayMessages([]);
 
         // Handle images in welcome message

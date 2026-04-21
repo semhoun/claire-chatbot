@@ -66,7 +66,6 @@ final class StartThreadJob implements QueueDoer
             ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
         $chatHistory = $this->agent->getChatHistory();
 
-        $chatHistory->replaceMessages([]);
         $chatHistory->replaceDisplayMessages([$assistantMessage]);
 
         $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [

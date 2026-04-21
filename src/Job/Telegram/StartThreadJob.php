@@ -4,16 +4,10 @@ declare(strict_types=1);
 
 namespace App\Job\Telegram;
 
-use App\Brain\Agent;
-use App\Brain\BrainRegistry;
-use App\Services\ChatStreamPublisher;
 use App\Services\Queue\QueueDoer;
-use App\Services\Session\InMemorySession;
 use App\Services\TelegramService;
-use NeuronAI\Chat\Messages\AssistantMessage;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
-use Slim\Views\Twig;
 
 /**
  * Handles the processing of streaming chat messages in a web-based real-time chat system.
