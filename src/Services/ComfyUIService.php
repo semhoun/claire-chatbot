@@ -62,6 +62,24 @@ final readonly class ComfyUIService
     }
 
     /**
+     * Extract file path from image ID.
+     */
+    public static function extractFilePathFromId(string $imageId): ?string
+    {
+        if (! preg_match(self::IMAGE_PATTERN, $imageId, $matches)) {
+            return null;
+        }
+
+        $parts = explode(self::FOLDER_SEPARATOR, $matches[1]);
+
+        if (count($parts) !== 2) {
+            return null;
+        }
+
+        return self::FOLDER_PREFIX . '/' . $parts[0] . '/' . $parts[1];
+    }
+
+    /**
      * Get the workflow JSON with the prompt placeholder replaced.
      *
      * @return array<string, mixed> The workflow configuration
@@ -294,7 +312,7 @@ final readonly class ComfyUIService
      */
     private function saveFileReference(SessionInterface $session, string $filePath, string $prompt): void
     {
-        $threadId = $session->get('chatId');
+        $threadId = $session->get('threadId');
 
         if ($threadId === null) {
             return;
@@ -324,23 +342,5 @@ final readonly class ComfyUIService
 
         $this->entityManager->persist($chatHistoryFile);
         $this->entityManager->flush();
-    }
-
-    /**
-     * Extract file path from image ID.
-     */
-    public static function extractFilePathFromId(string $imageId): ?string
-    {
-        if (! preg_match(self::IMAGE_PATTERN, $imageId, $matches)) {
-            return null;
-        }
-
-        $parts = explode(self::FOLDER_SEPARATOR, $matches[1]);
-
-        if (count($parts) !== 2) {
-            return null;
-        }
-
-        return self::FOLDER_PREFIX . '/' . $parts[0] . '/' . $parts[1];
     }
 }

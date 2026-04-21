@@ -27,7 +27,7 @@ final class UserChatHistoryTest extends TestCase
         $session = $this->createMock(SessionInterface::class);
         $session->method('get')->willReturnMap([
             [Auth::USERID, 'user-1'],
-            ['chatId', 'thread-1'],
+            ['threadId', 'thread-1'],
         ]);
 
         $history = new UserChatHistory($session, $pdo);
@@ -83,10 +83,10 @@ final class UserChatHistoryTest extends TestCase
         $session = $this->createMock(SessionInterface::class);
         $session->method('get')->willReturnMap([
             [Auth::USERID, 'user-1'],
-            ['chatId', 'thread-1'],
+            ['threadId', 'thread-1'],
         ]);
 
-        $history = new UserChatHistory($session, $pdo);
+        $history = new UserChatHistory($session, $pdo, 50000, 'thread-1');
 
         self::assertSame('Titre de test', $history->getTitle());
         self::assertSame('Resume de test', $history->getSummary());

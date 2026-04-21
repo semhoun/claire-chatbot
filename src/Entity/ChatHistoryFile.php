@@ -21,7 +21,7 @@ class ChatHistoryFile
 
     #[ORM\ManyToOne(targetEntity: ChatHistory::class, inversedBy: 'files')]
     #[ORM\JoinColumn(name: 'history_id', referencedColumnName: 'id', nullable: false, onDelete: 'CASCADE')]
-    private ChatHistory $history;
+    private ChatHistory $chatHistory;
 
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(name: 'user_id', referencedColumnName: 'id', nullable: false)]
@@ -53,12 +53,12 @@ class ChatHistoryFile
 
     public function getHistory(): ChatHistory
     {
-        return $this->history;
+        return $this->chatHistory;
     }
 
-    public function setHistory(ChatHistory $history): void
+    public function setHistory(ChatHistory $chatHistory): void
     {
-        $this->history = $history;
+        $this->chatHistory = $chatHistory;
     }
 
     public function getUser(): User

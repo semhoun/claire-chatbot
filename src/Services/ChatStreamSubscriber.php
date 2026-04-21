@@ -17,10 +17,10 @@ final readonly class ChatStreamSubscriber
     /**
      * @param callable(string): void $onMessage
      */
-    public function subscribe(string $chatId, callable $onMessage): void
+    public function subscribe(string $threadId, callable $onMessage): void
     {
         $this->redisClient->subscribeWithHeartbeat(
-            [$this->channel($chatId)],
+            [$this->channel($threadId)],
             static function (string $channel, string $message) use ($onMessage): void {
                 $onMessage($message);
             },
@@ -29,8 +29,8 @@ final readonly class ChatStreamSubscriber
         );
     }
 
-    public function channel(string $chatId): string
+    public function channel(string $threadId): string
     {
-        return $this->settings->get('redis.prefix') . 'sse:chat:' . $chatId;
+        return $this->settings->get('redis.prefix') . 'sse:chat:' . $threadId;
     }
 }

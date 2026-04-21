@@ -15,7 +15,6 @@ use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
-use NeuronAI\Chat\Messages\AssistantMessage;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Log\LoggerInterface as Logger;
@@ -40,7 +39,7 @@ final readonly class HistoryController
     /**
      * Crée une nouvelle conversation :
      * - génère un nouveau threadId
-     * - le place dans la session sous `chatId`
+     * - le place dans la session sous `threadId`
      * - retourne un fragment HTML vide pour remplacer la zone #messages
      */
     public function create(Request $request, Response $response): Response
@@ -51,11 +50,11 @@ final readonly class HistoryController
         // Nettoyage des conversations vides de l'utilisateur
         $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations((string) $session->get(Auth::USERID));
 
-        $currentBrain = $session->get('brain_avatar');
+        $session->get('brain_avatar');
         // Nouveau thread
         $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
         $this->queueDispatcher->dispatch(StartThreadJob::class, [
-            'chatId' => $threadId,
+            'threadId' => $threadId,
             'sessionId' => $sessionId,
             'session' => $session->all(),
         ]);
@@ -63,7 +62,7 @@ final readonly class HistoryController
         $this->publishSnapshot($threadId, null, $sessionId);
 
         $response->getBody()->write(json_encode([
-            'chatId' => $threadId,
+            'threadId' => $threadId,
         ], JSON_THROW_ON_ERROR));
 
         return $response->withHeader('Content-Type', 'application/json');
@@ -114,7 +113,7 @@ final readonly class HistoryController
     /**
      * Ouvre une conversation de l'historique et remplace la conversation courante.
      * - Vérifie que l'historique appartient à l'utilisateur en session
-     * - Met à jour la session `chatId` avec le `thread_id` sélectionné
+     * - Met à jour la session `threadId` avec le `thread_id` sélectionné
      * - Retourne le HTML des messages pour remplacer le conteneur #messages (HTMX).
      */
     public function open(Request $request, Response $response): Response
@@ -134,6 +133,8 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
+        $session->set('threadId', $threadId);
+
         $userChatHistory = new UserChatHistory(
             session: $session,
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
@@ -152,7 +153,7 @@ final readonly class HistoryController
         $this->publishSnapshot($threadId, $userChatHistory, $sessionId);
 
         $response->getBody()->write(json_encode([
-            'chatId' => $threadId,
+            'threadId' => $threadId,
         ], JSON_THROW_ON_ERROR));
 
         return $response->withHeader('Content-Type', 'application/json');
@@ -198,7 +199,7 @@ final readonly class HistoryController
             return $response->withStatus(403);
         }
 
-        $threadId = (string) $session->get('chatId');
+        $threadId = (string) $session->get('threadId');
         if ($threadId === '') {
             return $response->withStatus(400);
         }
@@ -220,7 +221,7 @@ final readonly class HistoryController
         $this->publishSnapshot($threadId, $userChatHistory, $sessionId);
 
         $response->getBody()->write(json_encode([
-            'chatId' => $threadId,
+            'threadId' => $threadId,
             'removedMessage' => $removedMessage,
         ], JSON_THROW_ON_ERROR));
 
@@ -230,15 +231,18 @@ final readonly class HistoryController
     private function publishSnapshot(string $threadId, ?UserChatHistory $userChatHistory, string $sessionId): void
     {
         $messages = null;
-        if ($userChatHistory !== null) {
-            $messages = $userChatHistory ->getFormattedMessages();
+        if ($userChatHistory instanceof \App\Brain\ChatHistory\UserChatHistory) {
+            $messages = $userChatHistory->getFormattedMessages();
         }
+
         $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-            'messages' => $messages
+            'messages' => $messages,
         ]);
 
-        $this->chatStreamPublisher->publish($sessionId, 'chat.snapshot', [
-            'chatId' => $threadId,
+        // Use sessionId as channel if provided, otherwise fall back to threadId
+        $channelId = $sessionId !== '' ? $sessionId : $threadId;
+        $this->chatStreamPublisher->publish($channelId, 'chat.snapshot', [
+            'threadId' => $threadId,
             'sessionId' => $sessionId,
             'html' => $messagesHtml,
         ]);

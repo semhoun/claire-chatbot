@@ -57,7 +57,7 @@ class Summary extends \NeuronAI\Agent\Agent
     public function persist(array $data): void
     {
         $userId = (string) ($this->session->get(Auth::USERID) ?? '');
-        $threadId = (string) ($this->session->get('chatId') ?? '');
+        $threadId = (string) ($this->session->get('threadId') ?? '');
 
         if ($userId === '' || $threadId === '') {
             return;

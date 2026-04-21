@@ -557,8 +557,8 @@
 
         function initChatEventSource(sessionId) {
             if (window.chatEventSource) window.chatEventSource.close();
-            const chatId = $('[data-current-chat-id-input]')?.value || '';
-            const sseUrl = baseUrl + '/brain/stream?sessionId=' + encodeURIComponent(sessionId) + '&chatId=' + encodeURIComponent(chatId);
+            const threadId = $('[data-current-thread-id-input]')?.value || '';
+            const sseUrl = baseUrl + '/brain/stream?sessionId=' + encodeURIComponent(sessionId) + '&threadId=' + encodeURIComponent(threadId);
             bindChatEventSource(sessionId, new EventSource(sseUrl));
         }
 
@@ -614,15 +614,15 @@
             updateComposerToggleState(input);
         };
 
-        window.updatePersistentChatStream = function updatePersistentChatStream(chatId) {
+        window.updatePersistentChatStream = function updatePersistentChatStream(threadId) {
             const chatStreamContainer = document.getElementById('chatStream');
             const messagesContainer = document.getElementById('messages');
-            const chatIdInput = $('[data-current-chat-id-input]');
+            const threadIdInput = $('[data-current-thread-id-input]');
             const sessionId = window.claireStreamSessionId;
-            if (!chatStreamContainer || !chatId || !sessionId) return;
-            chatStreamContainer.setAttribute('data-chat-id', chatId);
-            if (messagesContainer) messagesContainer.setAttribute('data-chat-id', chatId);
-            if (chatIdInput) chatIdInput.value = chatId;
+            if (!chatStreamContainer || !threadId || !sessionId) return;
+            chatStreamContainer.setAttribute('data-thread-id', threadId);
+            if (messagesContainer) messagesContainer.setAttribute('data-thread-id', threadId);
+            if (threadIdInput) threadIdInput.value = threadId;
             initChatEventSource(sessionId);
         };
 
@@ -652,7 +652,7 @@
             if (!detail.successful) { setComposerBusyState(false); return; }
             try {
                 const payload = JSON.parse(detail.xhr.responseText || '{}');
-                if (payload.chatId && window.updatePersistentChatStream) window.updatePersistentChatStream(payload.chatId);
+                if (payload.threadId && window.updatePersistentChatStream) window.updatePersistentChatStream(payload.threadId);
             } catch (e) {}
             scrollChatToBottom();
             setComposerBusyState(false);

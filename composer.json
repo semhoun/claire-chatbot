@@ -82,6 +82,7 @@
     "pre-commit-line-endings": "find . \\( -name '*.php' -o -name '*.css' -o -name '*.js' -o -name '*.twig' \\) ! -path './vendor/*' ! -path './var/*' -print0 | xargs -0 dos2unix -l -k -q -s",
     "pre-commit-permissions-files": "git ls-files | grep -v '^console$' | grep -v 'docker' | xargs -I {} sh -c 'chmod 664 \"{}\"'",
     "pre-commit-permissions-dirs": "find . -type d ! -path './.git/*' ! -path './vendor/*' ! -path './var/*' -print0 | xargs -0 -I {} sh -c 'git check-ignore -q \"{}\" 2>/dev/null || chmod 775 \"{}\"'",
+    "test": "phpunit",
     "pre-commit": [
       "@pre-commit-line-endings",
       "@pre-commit-permissions-files",

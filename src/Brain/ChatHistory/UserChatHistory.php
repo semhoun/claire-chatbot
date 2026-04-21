@@ -8,10 +8,8 @@ use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\History\AbstractChatHistory;
 use NeuronAI\Chat\Messages\Message;
-use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Tools\Tool;
 use PDO;
 
 /**
@@ -30,14 +28,13 @@ class UserChatHistory extends AbstractChatHistory
     public const string CHAT_WEB = 'web';
 
     public const string CHAT_TELEGRAM = 'telegram';
+    public ?string $thread_id = null;
 
     protected string $user_id;
 
     protected ?string $title = null;
 
     protected ?string $summary = null;
-
-    protected ?string $thread_id = null;
 
     /**
      * @var array<Message>
@@ -51,6 +48,7 @@ class UserChatHistory extends AbstractChatHistory
         ?string $threadId = null,
     ) {
         $this->user_id = $session->get(Auth::USERID);
+
         $this->thread_id = $threadId;
 
         if ($this->thread_id !== null) {

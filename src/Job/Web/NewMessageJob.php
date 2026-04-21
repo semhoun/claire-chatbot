@@ -41,29 +41,30 @@ use Slim\Views\Twig;
  */
 final class NewMessageJob implements QueueDoer
 {
-    private string $streamedText;
-    private bool $isStreamingStarted;
-    private string $userMessage;
-    private string $chatId;
-    private string $sessionId;
-    private string $messageId;
-    private InMemorySession $session;
-    private ?Agent $agent;
-    private ?array $attachments;
-    private array $toolsCall;
+    private string $streamedText = '';
 
-    public function __construct(
-        private readonly Logger              $logger,
-        private readonly Twig                $twig,
-        private readonly BrainRegistry       $brainRegistry,
-        private readonly ChatStreamPublisher $chatStreamPublisher,
-        private readonly Connection          $connection,
-        private readonly Settings            $settings,
-    ) {
-        $this->streamedText = '';
-        $this->isStreamingStarted = false;
-        $this->attachments = null;
-        $this->toolsCall = [];
+    private bool $isStreamingStarted = false;
+
+    private string $userMessage;
+
+    private string $threadId;
+
+    private string $sessionId;
+
+    private string $messageId;
+
+    private InMemorySession $inMemorySession;
+
+    private ?Agent $agent = null;
+
+    /** @var array<int, string>|null */
+    private ?array $attachments = null;
+
+    /** @var array<string, array<string, mixed>> */
+    private array $toolsCall = [];
+
+    public function __construct(private readonly Logger $logger, private readonly Twig $twig, private readonly BrainRegistry $brainRegistry, private readonly ChatStreamPublisher $chatStreamPublisher, private readonly Connection $connection, private readonly Settings $settings)
+    {
     }
 
     public static function make(ContainerInterface $container): self
@@ -87,18 +88,16 @@ final class NewMessageJob implements QueueDoer
      * Initializes the context using the given payload.
      *
      * @param array<string, mixed> $payload The input data containing the required fields
-     *                                      such as 'message', 'chatId', 'sessionId',
+     *                                      such as 'message', 'threadId', 'sessionId',
      *                                      'session', 'brainAvatar', and optional 'attachments'.
      *                                      - 'message': string containing the user's message (required, non-empty).
-     *                                      - 'chatId': string identifying the chat (required, non-empty).
+     *                                      - 'threadId': string identifying the chat (required, non-empty).
      *                                      - 'sessionId': string identifying the session (required, non-empty).
      *                                      - 'session': an array or data structure used to initialize the session.
      *                                      - 'brainAvatar': a string used to fetch the appropriate agent.
      *                                      - 'attachments': an array containing 'uploadedFiles' and/or 'fileIds'.
      *
-     * @return void
-     *
-     * @throws \InvalidArgumentException If 'message', 'chatId', or 'sessionId' are missing or empty.
+     * @throws \InvalidArgumentException If 'message', 'threadId', or 'sessionId' are missing or empty.
      */
     private function initContext(array $payload): void
     {
@@ -108,19 +107,21 @@ final class NewMessageJob implements QueueDoer
         if ($this->userMessage === '') {
             throw new \InvalidArgumentException('User message cannot be empty');
         }
-        $this->chatId = (string) ($payload['chatId'] ?? '');
-        if ($this->chatId === '') {
-            throw new \InvalidArgumentException('Chat ID cannot be empty');
+
+        $this->threadId = (string) ($payload['threadId'] ?? $payload['threadId'] ?? '');
+        if ($this->threadId === '') {
+            throw new \InvalidArgumentException('Thread ID cannot be empty');
         }
+
         $this->sessionId = (string) ($payload['sessionId'] ?? '');
         if ($this->sessionId === '') {
             throw new \InvalidArgumentException('Session ID cannot be empty');
         }
 
-        $this->session = new InMemorySession($payload['session']);
+        $this->inMemorySession = new InMemorySession($payload['session']);
 
-        $brainAvatar = $this->session->get('brain_avatar');
-        $this->agent = $this->brainRegistry->get($brainAvatar, $this->session, $this->chatId);
+        $brainAvatar = $this->inMemorySession->get('brain_avatar');
+        $this->agent = $this->brainRegistry->get($brainAvatar, $this->inMemorySession, $this->threadId);
 
         if (! empty($payload['attachments'])) {
             $this->attachments = array_merge($payload['attachments']['uploadedFiles'] ?? [], $payload['attachments']['fileIds'] ?? []);
@@ -164,7 +165,7 @@ final class NewMessageJob implements QueueDoer
             'name' => $tool->getName(),
             'inputs' => [],
             'running' => $chunk instanceof ToolCallChunk,
-            'result' => $chunk instanceof ToolResultChunk ? $tool->getResult() : null
+            'result' => $chunk instanceof ToolResultChunk ? $tool->getResult() : null,
         ];
         foreach ($tool->getInputs() as $name => $val) {
             $toolData['inputs'][] = [
@@ -172,13 +173,14 @@ final class NewMessageJob implements QueueDoer
                 'value' => $val,
             ];
         }
+
         $this->toolsCall[$id] = $toolData;
 
         $toolsHtml = $this->twig->fetch('partials/toolscall.twig', [
             'toolsCall' => $this->toolsCall,
         ]);
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.tool.update', [
-            'chatId' => $this->chatId,
+            'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
             'html' => $toolsHtml,
@@ -195,7 +197,7 @@ final class NewMessageJob implements QueueDoer
         ]);
 
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
-            'chatId' => $this->chatId,
+            'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
             'html' => $html,
@@ -207,10 +209,11 @@ final class NewMessageJob implements QueueDoer
         if ($this->isStreamingStarted) {
             return;
         }
+
         $this->isStreamingStarted = true;
 
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.start', [
-            'chatId' => $this->chatId,
+            'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
         ]);
@@ -221,7 +224,7 @@ final class NewMessageJob implements QueueDoer
             'sent' => false,
         ]);
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.placeholder', [
-            'chatId' => $this->chatId,
+            'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
             'html' => $placeholderHtml,
@@ -236,13 +239,13 @@ final class NewMessageJob implements QueueDoer
         ]);
 
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
-            'chatId' => $this->chatId,
+            'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
             'html' => $finalHtml,
         ]);
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.done', [
-            'chatId' => $this->chatId,
+            'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
         ]);
@@ -252,57 +255,15 @@ final class NewMessageJob implements QueueDoer
     {
         $this->logger->error('Web chat job failed', [
             'exception' => $throwable,
-            'chatId' => $this->chatId,
+            'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
         ]);
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.error', [
-            'chatId' => $this->chatId,
+            'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
             'message' => 'Désolé, une erreur est survenue lors du traitement de votre message.',
         ]);
-    }
-
-    private function formatToolChunk(ToolCallChunk|ToolResultChunk $chunk): string
-    {
-        $tool = $chunk->tool;
-        $toolText = $this->formatToolHeader($chunk, $tool);
-        $toolText .= $this->formatToolInputs($tool);
-
-        return $toolText . $this->formatToolResult($chunk, $tool);
-    }
-
-    private function formatToolHeader(ToolCallChunk|ToolResultChunk $chunk, mixed $tool): string
-    {
-        $header = $chunk instanceof ToolResultChunk
-            ? '<span class="tools-done-flag" style="display:none"></span>' . "\n"
-            : '';
-
-        return $header . ("Utilisation de l'outil : " . $tool->getName() . "<br>\n");
-    }
-
-    private function formatToolInputs(mixed $tool): string
-    {
-        $inputs = "Paramètres : <br>\n<ul>\n";
-        foreach ($tool->getInputs() as $name => $input) {
-            $inputs .= '<li>' . $name . ' : ' . $input . "</li>\n";
-        }
-
-        return $inputs . "</ul>\n";
-    }
-
-    private function formatToolResult(ToolCallChunk|ToolResultChunk $chunk, mixed $tool): string
-    {
-        if (! $chunk instanceof ToolResultChunk) {
-            return '';
-        }
-
-        $result = "Réponse : <br>\n";
-        if ($tool->getResult() !== '' && $tool->getResult() !== '0') {
-            $result .= '<pre class="toolcall__result">' . $tool->getResult() . "</pre>\n";
-        }
-
-        return $result;
     }
 
     private function addAttachments(UserMessage $userMessage): void
@@ -311,12 +272,12 @@ final class NewMessageJob implements QueueDoer
             return;
         }
 
-        foreach ($this->attachments as $file) {
-            if (! is_array($file)) {
+        foreach ($this->attachments as $attachment) {
+            if (! is_array($attachment)) {
                 continue;
             }
 
-            $content = (string) ($file['content'] ?? '');
+            $content = (string) ($attachment['content'] ?? '');
             if ($content === '') {
                 continue;
             }
@@ -324,18 +285,18 @@ final class NewMessageJob implements QueueDoer
             $userMessage->addContent(new \NeuronAI\Chat\Messages\ContentBlocks\FileContent(
                 $content,
                 \NeuronAI\Chat\Enums\SourceType::BASE64,
-                (string) ($file['mimeType'] ?? 'application/octet-stream'),
-                (string) ($file['filename'] ?? 'file'),
+                (string) ($attachment['mimeType'] ?? 'application/octet-stream'),
+                (string) ($attachment['filename'] ?? 'file'),
             ));
         }
     }
 
     private function manageSummary(): void
     {
-        $summary = new Summary($this->connection, $this->settings, $this->session, $this->chatId);
+        $summary = new Summary($this->connection, $this->settings, $this->inMemorySession, $this->threadId);
         $chatHistory = $summary->getChatHistory();
 
-        if (!($chatHistory instanceof \App\Brain\ChatHistory\UserChatHistory)
+        if (! ($chatHistory instanceof \App\Brain\ChatHistory\UserChatHistory)
             || $this->hasEnoughMessages($chatHistory)
             || $this->hasMaxMessagesWithTitle($chatHistory)) {
             return;

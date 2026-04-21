@@ -54,8 +54,8 @@
                      if (event.detail.successful) {
                          try {
                              const payload = JSON.parse(event.detail.xhr.responseText || '{}');
-                             if (payload.chatId && window.updatePersistentChatStream) {
-                                 window.updatePersistentChatStream(payload.chatId);
+                             if (payload.threadId && window.updatePersistentChatStream) {
+                                 window.updatePersistentChatStream(payload.threadId);
                              }
                          } catch (e) {}
                          // Ferme le panneau d'options

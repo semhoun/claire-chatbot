@@ -51,11 +51,11 @@ final class HistoryControllerTest extends TestCase
         $session->method('get')->willReturnCallback(static function (string $key) {
             return match ($key) {
                 Auth::USERID => 'user-1',
-                'chatId' => 'thread-1',
+                'threadId' => 'thread-1',
                 default => null,
             };
         });
-        $session->expects($this->once())->method('set')->with('chatId', 'thread-1');
+        $session->expects($this->once())->method('set')->with('threadId', 'thread-1');
 
         $entityManager->method('getConnection')->willReturn($connection);
         $connection->method('getNativeConnection')->willReturn($pdo);
@@ -73,16 +73,17 @@ final class HistoryControllerTest extends TestCase
 
                     return is_array($data)
                         && $data['event'] === 'chat.snapshot'
-                        && $data['chatId'] === 'thread-1'
-                        && $data['payload']['messagesHtml'] === '<div>snapshot</div>';
+                        && $data['threadId'] === 'thread-1'
+                        && $data['payload']['html'] === '<div>snapshot</div>';
                 })
             )
             ->willReturn(1);
         $subscriber = new \App\Services\ChatStreamSubscriber($redis, $settings);
         $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber);
         $filesystem = $this->createMock(Filesystem::class);
+        $queueDispatcher = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);
 
-        $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher, $filesystem);
+        $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher, $queueDispatcher, $filesystem);
 
         $request = $this->createMock(ServerRequestInterface::class);
         $request->method('getAttribute')->willReturnCallback(fn (string $name) => match ($name) {
@@ -95,7 +96,7 @@ final class HistoryControllerTest extends TestCase
         $result = $controller->open($request, $response);
 
         $this->assertSame('application/json', $result->getHeaderLine('Content-Type'));
-        $this->assertSame('{"chatId":"thread-1"}', (string) $result->getBody());
+        $this->assertSame('{"threadId":"thread-1"}', (string) $result->getBody());
     }
 
     public function testOpenPublishesSnapshotToSessionIdWhenProvided(): void
@@ -127,7 +128,7 @@ final class HistoryControllerTest extends TestCase
         $session->method('get')->willReturnCallback(static function (string $key) {
             return match ($key) {
                 Auth::USERID => 'user-1',
-                'chatId' => 'thread-1',
+                'threadId' => 'thread-1',
                 default => null,
             };
         });
@@ -149,18 +150,19 @@ final class HistoryControllerTest extends TestCase
 
                     return is_array($data)
                         && $data['event'] === 'chat.snapshot'
-                        && $data['chatId'] === 'sess-abc123'
-                        && $data['payload']['chatId'] === 'thread-1'
+                        && $data['threadId'] === 'sess-abc123'
+                        && $data['payload']['threadId'] === 'thread-1'
                         && $data['payload']['sessionId'] === 'sess-abc123'
-                        && $data['payload']['messagesHtml'] === '<div>snapshot</div>';
+                        && $data['payload']['html'] === '<div>snapshot</div>';
                 })
             )
             ->willReturn(1);
         $subscriber = new \App\Services\ChatStreamSubscriber($redis, $settings);
         $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber);
         $filesystem = $this->createMock(Filesystem::class);
+        $queueDispatcher = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);
 
-        $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher, $filesystem);
+        $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher, $queueDispatcher, $filesystem);
 
         $request = $this->createMock(ServerRequestInterface::class);
         $request->method('getAttribute')->willReturnCallback(fn (string $name) => match ($name) {
@@ -175,6 +177,6 @@ final class HistoryControllerTest extends TestCase
         $result = $controller->open($request, $response);
 
         $this->assertSame('application/json', $result->getHeaderLine('Content-Type'));
-        $this->assertSame('{"chatId":"thread-1"}', (string) $result->getBody());
+        $this->assertSame('{"threadId":"thread-1"}', (string) $result->getBody());
     }
 }

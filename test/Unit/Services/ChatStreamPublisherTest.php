@@ -32,7 +32,7 @@ final class ChatStreamPublisherTest extends TestCase
                     return is_array($data)
                         && $data['version'] === 1
                         && $data['event'] === 'chat.snapshot'
-                        && $data['chatId'] === 'thread-1'
+                        && $data['threadId'] === 'thread-1'
                         && $data['payload']['messagesHtml'] === '<div>ok</div>';
                 })
             )
@@ -40,6 +40,7 @@ final class ChatStreamPublisherTest extends TestCase
 
         $publisher = new ChatStreamPublisher($redis, $subscriber);
         $publisher->publish('thread-1', 'chat.snapshot', [
+            'threadId' => 'thread-1',
             'messagesHtml' => '<div>ok</div>',
         ]);
     }

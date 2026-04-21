@@ -4,20 +4,16 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Brain\Agent;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
-use App\Job\Web\NewMessageJob;
 use App\Job\Web\StartThreadJob;
 use App\Services\Auth;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Queue\QueueDispatcherInterface;
-use App\Services\Session\SessionInterface;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
-use NeuronAI\Chat\Messages\AssistantMessage;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Log\LoggerInterface as Logger;
@@ -42,11 +38,11 @@ final readonly class HomeController
     {
         $session = $this->getSession($request);
         $sessionId = uniqid('sess-', true);
-        $chatId = uniqid(UserChatHistory::CHAT_WEB, true);
+        $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
 
         $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations((string) $session->get(Auth::USERID));
         $this->queueDispatcher->dispatch(StartThreadJob::class, [
-            'chatId' => $chatId,
+            'threadId' => $threadId,
             'sessionId' => $sessionId,
             'session' => $session->all(),
         ]);
@@ -63,7 +59,7 @@ final readonly class HomeController
 
         return $this->twig->render($response, 'chat.twig', [
             'time' => new \DateTime()->format('H:i'),
-            'current_chat_id' => $chatId,
+            'current_thread_id' => $threadId,
             'stream_session_id' => $sessionId,
             'uinfo' => $session->get(Auth::USERINFO),
             'layout_mode' => $session->get('layout_mode'),

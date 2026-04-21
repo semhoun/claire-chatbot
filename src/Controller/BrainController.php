@@ -53,8 +53,8 @@ final readonly class BrainController
             return $response->withStatus(422);
         }
 
-        $chatId = trim((string) ($data['chatId']));
-        if ($chatId === '') {
+        $threadId = trim((string) ($data['threadId']));
+        if ($threadId === '') {
             return $response->withStatus(400);
         }
 
@@ -68,7 +68,7 @@ final readonly class BrainController
         $attachments = $this->extractAttachments($request, includeStoredFiles: true);
 
         $this->queueDispatcher->dispatch(NewMessageJob::class, [
-            'chatId' => $chatId,
+            'threadId' => $threadId,
             'sessionId' => $sessionId,
             'messageId' => $messageId,
             'attachments' => $attachments,
@@ -77,7 +77,7 @@ final readonly class BrainController
         ]);
 
         $response->getBody()->write(json_encode([
-            'chatId' => $chatId,
+            'threadId' => $threadId,
             'messageId' => $messageId,
             'accepted' => true,
         ], JSON_THROW_ON_ERROR));
@@ -109,13 +109,13 @@ final readonly class BrainController
 
         $stream = $response->getBody();
 
-        $chatId = trim((string) ($queryParams['chatId']));
-        if ($chatId !== '') {
+        $threadId = trim((string) ($queryParams['threadId']));
+        if ($threadId !== '') {
             $userChatHistory = new UserChatHistory(
                 session: $session,
                 pdo: $this->entityManager->getConnection()->getNativeConnection(),
                 contextWindow: $this->settings->get('llm.openai.contextWindow'),
-                threadId: $chatId,
+                threadId: $threadId,
             );
             $messages = $userChatHistory->getFormattedMessages();
             if ($messages !== []) {
@@ -124,7 +124,7 @@ final readonly class BrainController
                 ]);
                 $stream->write($this->sseEventFormatter->formatJsonEvent([
                     'html' => $messagesHtml,
-                ], eventId: $chatId, eventName: 'chat.snapshot'));
+                ], eventId: $threadId, eventName: 'chat.snapshot'));
             }
         }
 
@@ -140,7 +140,7 @@ final readonly class BrainController
                 return;
             }
 
-            $eventSessionId = (string) ($event['payload']['sessionId'] ?? $event['chatId'] ?? '');
+            $eventSessionId = (string) ($event['payload']['sessionId'] ?? $event['threadId'] ?? '');
             if ($eventSessionId !== $sessionId) {
                 return;
             }

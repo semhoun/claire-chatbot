@@ -126,7 +126,6 @@ class ChatHistoryRepository extends EntityRepository
                     $filesystem->delete($filePath);
                 }
             } catch (\Throwable) {
-                // Ignore file deletion errors - file may not exist
             }
         }
     }

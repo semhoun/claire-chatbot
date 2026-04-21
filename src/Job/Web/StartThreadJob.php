@@ -6,23 +6,11 @@ namespace App\Job\Web;
 
 use App\Brain\Agent;
 use App\Brain\BrainRegistry;
-use App\Brain\ChatHistory\UserChatHistory;
-use App\Brain\Summary;
 use App\Services\ChatStreamPublisher;
 use App\Services\Queue\QueueDoer;
 use App\Services\Session\InMemorySession;
-use App\Services\Settings;
-use DateTimeImmutable;
-use DateTimeInterface;
-use Doctrine\DBAL\Connection;
 use NeuronAI\Chat\Messages\AssistantMessage;
-use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
-use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
-use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
-use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
-use NeuronAI\Chat\Messages\UserMessage;
 use Psr\Container\ContainerInterface;
-use Psr\Log\LoggerInterface as Logger;
 use Slim\Views\Twig;
 
 /**
@@ -42,14 +30,15 @@ use Slim\Views\Twig;
  */
 final class StartThreadJob implements QueueDoer
 {
-    private string $chatId;
+    private string $threadId;
+
     private string $sessionId;
-    private ?Agent $agent;
+
+    private ?Agent $agent = null;
 
     public function __construct(
-        private readonly Logger              $logger,
-        private readonly Twig                $twig,
-        private readonly BrainRegistry       $brainRegistry,
+        private readonly Twig $twig,
+        private readonly BrainRegistry $brainRegistry,
         private readonly ChatStreamPublisher $chatStreamPublisher,
     ) {
     }
@@ -70,22 +59,6 @@ final class StartThreadJob implements QueueDoer
         }
     }
 
-    private function initContext(array $payload): void
-    {
-        $this->chatId = (string) ($payload['chatId'] ?? '');
-        if ($this->chatId === '') {
-            throw new \InvalidArgumentException('Chat ID cannot be empty');
-        }
-        $this->sessionId = (string) ($payload['sessionId'] ?? '');
-        if ($this->sessionId === '') {
-            throw new \InvalidArgumentException('Session ID cannot be empty');
-        }
-
-        $session = new InMemorySession($payload['session']);
-        $brainAvatar = $session->get('brain_avatar');
-        $this->agent = $this->brainRegistry->get($brainAvatar,  $session, $this->chatId);
-    }
-
     public function startNewStream(): void
     {
         $openingMessage = $this->agent->getOpeningText();
@@ -100,9 +73,27 @@ final class StartThreadJob implements QueueDoer
             'messages' => $chatHistory->getFormattedMessages(),
         ]);
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.snapshot', [
-            'chatId' => $this->chatId,
+            'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'html' => $messagesHtml,
         ]);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function initContext(array $payload): void
+    {
+        $this->threadId = (string) ($payload['threadId'] ?? $payload['threadId'] ?? '');
+        if ($this->threadId === '') {
+            throw new \InvalidArgumentException('Thread ID cannot be empty');
+        }
+
+        $this->sessionId = (string) ($payload['sessionId'] ?? '');
+        if ($this->sessionId === '') {
+            throw new \InvalidArgumentException('Session ID cannot be empty');
+        }
+
+        $inMemorySession = new InMemorySession($payload['session']);
+        $brainAvatar = $inMemorySession->get('brain_avatar');
+        $this->agent = $this->brainRegistry->get($brainAvatar, $inMemorySession, $this->threadId);
     }
 }

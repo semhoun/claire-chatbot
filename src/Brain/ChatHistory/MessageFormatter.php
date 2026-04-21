@@ -8,7 +8,6 @@ use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Tools\ToolInterface;
 
-
 final class MessageFormatter
 {
     public function __construct(private ?array $displayHistory)
@@ -31,7 +30,7 @@ final class MessageFormatter
     }
 
     /**
-     * Si c'est un message Tool, on va dépiler jusqy'a trouver une message non tool
+     * Si c'est un message Tool, on va dépiler jusqy'a trouver une message non tool.
      *
      * @return array<string, mixed>|null
      */
@@ -44,7 +43,7 @@ final class MessageFormatter
                 'sent' => $message->getRole() === 'user',
                 'toolRunning' => false,
                 'toolsCall' => [],
-                'running' => false
+                'running' => false,
             ];
         }
 
@@ -54,12 +53,14 @@ final class MessageFormatter
 
         if ($message instanceof ToolCallMessage || $message instanceof ToolResultMessage) {
             $tools = $this->formatTools($message);
-            if (count($tools) > 0) {
+            if ($tools !== []) {
                 $formattedMessage['toolsCall'] = array_merge($formattedMessage['toolsCall'], $tools);
             }
+
             if (count($this->displayHistory) === 0) {
                 return $formattedMessage;
             }
+
             $message = array_shift($this->displayHistory);
             return $this->formatMessage($message, $formattedMessage);
         }
@@ -67,6 +68,7 @@ final class MessageFormatter
         return $formattedMessage;
     }
 
+    /** @return array<int, array<string, mixed>> */
     private function formatTools(ToolCallMessage | ToolResultMessage $message): array
     {
         $tools = [];
@@ -76,9 +78,10 @@ final class MessageFormatter
 
                 // On regarde si dans les réponse on a une réponse avec cette id, si c'est le cas on ne le décodera pas
                 foreach ($this->displayHistory as $toolResult) {
-                    if (!$toolResult instanceof ToolResultMessage) {
+                    if (! $toolResult instanceof ToolResultMessage) {
                         continue;
                     }
+
                     foreach ($toolResult->getTools() as $toolRes) {
                         if ($toolRes->getCallId() === $callId) {
                             continue 3;
@@ -89,23 +92,26 @@ final class MessageFormatter
                 // On a pas trouvé de réponse donc c'est un tool encore en cours d'éxécution
                 $tools[] = $this->formatTool($tool, false);
             }
+
             return $tools;
         }
 
         foreach ($message->getTools() as $tool) {
             $tools[] = $this->formatTool($tool, $message instanceof ToolResultMessage);
         }
+
         return $tools;
     }
 
+    /** @return array<string, mixed> */
     private function formatTool(ToolInterface $tool, bool $isResult): array
     {
         $toolData = [
             'id' => $tool->getCallId(),
             'name' => $tool->getName(),
             'inputs' => [],
-            'running' => !$isResult,
-            'result' => null
+            'running' => ! $isResult,
+            'result' => null,
         ];
 
         foreach ($tool->getInputs() as $name => $val) {

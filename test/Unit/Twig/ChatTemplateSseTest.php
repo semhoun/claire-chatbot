@@ -39,7 +39,7 @@ final class ChatTemplateSseTest extends TestCase
                     };
                 }
             },
-            'current_chat_id' => 'thread-42',
+            'current_thread_id' => 'thread-42',
             'stream_session_id' => 'sess-abc123',
             'layout_mode' => 'full',
             'brains' => [],
@@ -50,22 +50,22 @@ final class ChatTemplateSseTest extends TestCase
             'uinfo' => ['id' => 'default'],
         ]);
 
-        // Single EventSource uses sessionId and current chatId
-        $this->assertStringContainsString('data-chat-id="thread-42"', $html);
+        // Single EventSource uses sessionId and current threadId
+        $this->assertStringContainsString('data-thread-id="thread-42"', $html);
         $this->assertStringContainsString('data-stream-session-id="sess-abc123"', $html);
 
         // JS is loaded from external files (not inline)
         $this->assertStringContainsString('/js/app.js', $html);
         $this->assertStringContainsString('/js/sse.js', $html);
 
-        // Form submission includes both chatId and sessionId
+        // Form submission includes both threadId and sessionId
         $this->assertStringContainsString('hx-post="/brain/messages"', $html);
-        $this->assertStringContainsString('name="chatId" value="thread-42"', $html);
+        $this->assertStringContainsString('name="threadId" value="thread-42"', $html);
         $this->assertStringContainsString('name="sessionId" value="sess-abc123"', $html);
 
         // Session ID management
         $this->assertStringContainsString('window.claireStreamSessionId', $html);
-        $this->assertStringContainsString('data-current-chat-id-input', $html);
+        $this->assertStringContainsString('data-current-thread-id-input', $html);
         $this->assertStringContainsString('data-stream-session-id-input', $html);
     }
 
@@ -92,7 +92,7 @@ final class ChatTemplateSseTest extends TestCase
                     };
                 }
             },
-            'current_chat_id' => 'thread-42',
+            'current_thread_id' => 'thread-42',
             'stream_session_id' => 'sess-abc123',
             'layout_mode' => 'full',
             'brains' => [],
@@ -143,7 +143,7 @@ final class ChatTemplateSseTest extends TestCase
 
     private function createTwig(): Environment
     {
-        $twig = new Environment(new FilesystemLoader('/home/nathanael/www/claire/tmpl'));
+        $twig = new Environment(new FilesystemLoader(__DIR__ . '/../../../tmpl'));
         $twig->addExtension(new MarkdownExtension());
         $twig->addExtension(new FilesizeExtension());
         $twig->addExtension(new GeneratedImageExtension());

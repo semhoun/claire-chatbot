@@ -192,7 +192,7 @@ class TelegramService implements QueueDoer
         }
 
         $telegramChatId = $message->chat->id ?? null;
-        if ($telegramChatId === '') {
+        if ($telegramChatId === 0) {
             return;
         }
 
