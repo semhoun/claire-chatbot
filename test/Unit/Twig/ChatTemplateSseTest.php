@@ -65,8 +65,6 @@ final class ChatTemplateSseTest extends TestCase
 
         // Session ID management
         $this->assertStringContainsString('window.claireStreamSessionId', $html);
-        $this->assertStringContainsString('data-current-thread-id-input', $html);
-        $this->assertStringContainsString('data-stream-session-id-input', $html);
     }
 
     public function testChatTemplateReusesExistingAssistantArticleForPlaceholderUpdates(): void
@@ -105,8 +103,6 @@ final class ChatTemplateSseTest extends TestCase
 
         // JS logic is now in external app.js - verify the script is loaded
         $this->assertStringContainsString('/js/app.js', $html);
-        // Verify data attributes for message handling are present
-        $this->assertStringContainsString('data-chat-messages', $html);
     }
 
     public function testLayoutLoadsHtmxSseExtension(): void

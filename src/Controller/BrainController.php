@@ -118,14 +118,14 @@ final readonly class BrainController
                 threadId: $threadId,
             );
             $messages = $userChatHistory->getFormattedMessages();
-            if ($messages !== []) {
-                $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-                    'messages' => $messages,
-                ]);
-                $stream->write($this->sseEventFormatter->formatJsonEvent([
-                    'html' => $messagesHtml,
-                ], eventId: $threadId, eventName: 'chat.snapshot'));
-            }
+            $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
+                'messages' => $messages,
+            ]);
+            $stream->write($this->sseEventFormatter->formatJsonEvent([
+                'html' => $messagesHtml,
+                'threadId' => $threadId,
+            'sessionId' => $sessionId,
+            ], eventId: 'thread::' . $threadId, eventName: 'chat.snapshot'));
         }
 
         $stream->write($this->sseEventFormatter->keepalive());
@@ -155,28 +155,19 @@ final readonly class BrainController
                 return;
             }
 
-            $streamPayload = match ($eventName) {
-                'chat.snapshot' => [
-                    'html' => $payload['html'] ?? '',
-                ],
-                'chat.assistant.start', 'chat.assistant.done' => [
-                    'messageId' => $payload['messageId'] ?? null,
-                ],
-                'chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update' => [
-                    'html' => $payload['html'] ?? '',
-                    'messageId' => $payload['messageId'] ?? null,
-                ],
-                'chat.error' => [
-                    'error' => (string) ($payload['message'] ?? 'Une erreur est survenue.'),
-                ],
-                default => [],
+            $eventId = match ($eventName) {
+                'chat.snapshot' =>
+                    'thread::' . $payload['threadId'],
+                'chat.assistant.start', 'chat.assistant.done' ,
+                'chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update' =>
+                    'message::' . $payload['messageId'],
+                'chat.error' => 'error:;' . $payload['threadId'],
+                default => ''
             };
 
-            $eventId = (string) ($payload['messageId'] ?? '');
-
             $stream->write($this->sseEventFormatter->formatJsonEvent(
-                $streamPayload,
-                $eventId !== '' ? $eventId : null,
+                $payload,
+                $eventId,
                 $eventName,
             ));
         });

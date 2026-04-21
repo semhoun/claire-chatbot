@@ -9,49 +9,43 @@ use App\Repository\UserRepository;
 use App\Services\Settings;
 use App\Services\TelegramValidator;
 use Doctrine\ORM\EntityManagerInterface;
-use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 final class TelegramWebAppValidatorTest extends TestCase
 {
-    private TelegramValidator $validator;
-    private LoggerInterface&MockObject $logger;
-    private EntityManagerInterface&MockObject $entityManager;
-
-    protected function setUp(): void
-    {
-        $this->logger = $this->createMock(LoggerInterface::class);
-        $this->entityManager = $this->createMock(EntityManagerInterface::class);
-    }
-
-    private function createValidatorWithSettings(array $settings): TelegramValidator
-    {
+    private function createValidatorWithSettings(
+        array $settings,
+        ?LoggerInterface $logger = null,
+        ?EntityManagerInterface $entityManager = null,
+    ): TelegramValidator {
         return new TelegramValidator(
-            $this->logger,
-            $this->entityManager,
+            $logger ?? $this->createStub(LoggerInterface::class),
+            $entityManager ?? $this->createStub(EntityManagerInterface::class),
             new Settings($settings),
         );
     }
 
     public function testAppGetTelegramUserIdWithEmptyDataReturnsNull(): void
     {
-        $validator = $this->createValidatorWithSettings([]);
-
-        $this->logger->expects($this->once())
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
             ->method('warning')
             ->with('Empty initData or botToken');
+
+        $validator = $this->createValidatorWithSettings([], $logger);
 
         self::assertNull($validator->appGetTelegramUserId(''));
     }
 
     public function testAppGetTelegramUserIdWithEmptyBotTokenReturnsNull(): void
     {
-        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => '']]);
-
-        $this->logger->expects($this->once())
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
             ->method('error')
             ->with('Empty botToken');
+
+        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => '']], $logger);
 
         $initData = 'user={"id":123}&hash=abc';
         self::assertNull($validator->appGetTelegramUserId($initData));
@@ -76,7 +70,6 @@ final class TelegramWebAppValidatorTest extends TestCase
     public function testAppGetTelegramUserIdWithValidHashButNoUserInDbReturnsNull(): void
     {
         $botToken = 'test_token_12345';
-        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => $botToken]]);
 
         // Build valid init data
         $data = [
@@ -104,9 +97,16 @@ final class TelegramWebAppValidatorTest extends TestCase
             ->with('123')
             ->willReturn(null);
 
-        $this->entityManager->method('getRepository')
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('getRepository')
             ->with(User::class)
             ->willReturn($userRepository);
+
+        $validator = $this->createValidatorWithSettings(
+            ['telegram' => ['bot_token' => $botToken]],
+            null,
+            $entityManager,
+        );
 
         self::assertNull($validator->appGetTelegramUserId($initData));
     }
@@ -114,7 +114,6 @@ final class TelegramWebAppValidatorTest extends TestCase
     public function testAppGetTelegramUserIdWithValidHashAndUserInDbReturnsUserId(): void
     {
         $botToken = 'test_token_12345';
-        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => $botToken]]);
 
         // Build valid init data
         $data = [
@@ -137,15 +136,22 @@ final class TelegramWebAppValidatorTest extends TestCase
         $initData = urldecode(http_build_query($data));
 
         // User found in database
-        $user = $this->createMock(User::class);
+        $user = $this->createStub(User::class);
         $userRepository = $this->createMock(UserRepository::class);
         $userRepository->method('findByTelegramId')
             ->with('123')
             ->willReturn($user);
 
-        $this->entityManager->method('getRepository')
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('getRepository')
             ->with(User::class)
             ->willReturn($userRepository);
+
+        $validator = $this->createValidatorWithSettings(
+            ['telegram' => ['bot_token' => $botToken]],
+            null,
+            $entityManager,
+        );
 
         self::assertSame('123', $validator->appGetTelegramUserId($initData));
     }
@@ -207,7 +213,6 @@ final class TelegramWebAppValidatorTest extends TestCase
     public function testAppGetTelegramUserIdWithStringId(): void
     {
         $botToken = 'test_token_12345';
-        $validator = $this->createValidatorWithSettings(['telegram' => ['bot_token' => $botToken]]);
 
         // Build valid init data with string user ID
         $data = [
@@ -229,15 +234,22 @@ final class TelegramWebAppValidatorTest extends TestCase
         $initData = urldecode(http_build_query($data));
 
         // User found in database
-        $user = $this->createMock(User::class);
+        $user = $this->createStub(User::class);
         $userRepository = $this->createMock(UserRepository::class);
         $userRepository->method('findByTelegramId')
             ->with('987654321')
             ->willReturn($user);
 
-        $this->entityManager->method('getRepository')
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('getRepository')
             ->with(User::class)
             ->willReturn($userRepository);
+
+        $validator = $this->createValidatorWithSettings(
+            ['telegram' => ['bot_token' => $botToken]],
+            null,
+            $entityManager,
+        );
 
         self::assertSame('987654321', $validator->appGetTelegramUserId($initData));
     }

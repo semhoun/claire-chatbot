@@ -421,7 +421,7 @@
         }
     };
 
-    // --- Chat Logic ---
+    // --- Chat/SSE Logic ---
     (function () {
         const chatStreamContainer = document.getElementById('chatStream');
         if (!chatStreamContainer) return;
@@ -467,32 +467,34 @@
             setComposerBusyState(false);
         }
 
-        function removeAssistantLoader() {
-            const messages = document.getElementById('messages');
-            if (!messages) return;
-            const loader = messages.querySelector('[data-role="assistant-loader"]');
-            if (loader) loader.remove();
-        }
-
         function handleChatUpdate(eventType, update) {
             if (eventType === 'message') {
                 console.log('message', update);
                 return;
             }
             if (eventType === 'chat.assistant.start') {
-                //  removeAssistantLoader();
                 return;
             }
-            if (eventType === 'chat.assistant.done') {
+
+            if (eventType === 'chat.error') {
                 finalizeAssistantResponse();
-                return;
+                const messages = document.getElementById('messages');
+                if (messages) {
+                    messages.insertAdjacentHTML('beforeend', '<article class="message message--received"><div class="message__bubble"><span class="message__text">' + update.error + '</span></div></article>');
+                }
             }
 
             if (update.html === undefined) {
                 return;
             }
 
-            const chatStream= document.getElementById('messages');
+            // On est dans des updates de chat, on vérifie donc que ce qu'on reçoit est bien pour le thread courant
+            const threadId = $('#chatStream').getAttribute('data-thread-id');
+            if (threadId !== update.threadId) {
+                return;
+            }
+
+            const chatStream= $('#messages');
             if (!chatStream) {
                 console.log('chatStream not found');
                 return;
@@ -500,10 +502,14 @@
 
             if (eventType === 'chat.snapshot') {
                 chatStream.innerHTML = update.html;
+                finalizeAssistantResponse();
                 return;
             }
 
             if (eventType === 'chat.assistant.placeholder') {
+                const element = document.getElementById(update.messageId);
+                if (element) return;
+
                 const loader = chatStream.querySelector('[data-role="assistant-loader"]');
                 if (loader) loader.outerHTML = update.html;
                 else chatStream.insertAdjacentHTML('beforeend', update.html);
@@ -524,12 +530,9 @@
                 return;
             }
 
-            if (eventType === 'chat.error') {
+            if (eventType === 'chat.assistant.done') {
                 finalizeAssistantResponse();
-                const messages = document.getElementById('messages');
-                if (messages) {
-                    messages.insertAdjacentHTML('beforeend', '<article class="message message--received"><div class="message__bubble"><span class="message__text">' + update.error + '</span></div></article>');
-                }
+                return;
             }
         }
 
@@ -557,7 +560,7 @@
 
         function initChatEventSource(sessionId) {
             if (window.chatEventSource) window.chatEventSource.close();
-            const threadId = $('[data-current-thread-id-input]')?.value || '';
+            const threadId = $('#chatStream').getAttribute('data-thread-id');
             const sseUrl = baseUrl + '/brain/stream?sessionId=' + encodeURIComponent(sessionId) + '&threadId=' + encodeURIComponent(threadId);
             bindChatEventSource(sessionId, new EventSource(sseUrl));
         }
@@ -615,45 +618,19 @@
         };
 
         window.updatePersistentChatStream = function updatePersistentChatStream(threadId) {
-            const chatStreamContainer = document.getElementById('chatStream');
-            const messagesContainer = document.getElementById('messages');
-            const threadIdInput = $('[data-current-thread-id-input]');
-            const sessionId = window.claireStreamSessionId;
-            if (!chatStreamContainer || !threadId || !sessionId) return;
+            const chatStreamContainer =$('#chatStream');
+            const streamSessionId = window.claireStreamSessionId;
+            if (!chatStreamContainer || !threadId || !streamSessionId) return;
             chatStreamContainer.setAttribute('data-thread-id', threadId);
-            if (messagesContainer) messagesContainer.setAttribute('data-thread-id', threadId);
-            if (threadIdInput) threadIdInput.value = threadId;
-            initChatEventSource(sessionId);
+            chatStreamContainer.setAttribute('data-stream-session-id', streamSessionId);
+            $('#thread-id-input').value = threadId;
+            $('#session-id-input').value = streamSessionId;
+            initChatEventSource(streamSessionId);
         };
-
-        function ensureToolNode(articleTarget, toolCallId) {
-            const existing = document.getElementById(toolCallId);
-            if (existing) return existing;
-            const bubble = articleTarget.closest('.message')?.querySelector('.message__bubble') || articleTarget.parentElement;
-            if (!bubble) return null;
-            const placeholderHtml = '<div class="message__subbubble message__subbubble--toolcall">'
-                + '<details class="toolcall">'
-                + '<summary class="toolcall__summary" aria-label="Appels d\'outils" title="Appels d\'outils">'
-                + '<svg class="toolcall__icon toolcall__icon--tool" width="18" height="18" viewBox="0 0 128 128" role="img" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M114 15.25H14A9.761 9.761 0 0 0 4.25 25v77A10.762 10.762 0 0 0 15 112.75h98A10.762 10.762 0 0 0 123.75 102V25a9.761 9.761 0 0 0-9.75-9.75zm6.25 9.75v11.683H52.888L61.37 18.75H114a6.257 6.257 0 0 1 6.25 6.25zM14 18.75h43.5l-8.484 17.933H7.75V25A6.257 6.257 0 0 1 14 18.75zm76.1 90.5-22.287-22.3a1.75 1.75 0 0 0-2.476 2.475l19.809 19.825h-8.871L58.627 91.593a1.762 1.762 0 0 0-1.908-.571 18.762 18.762 0 0 1-23.447-22.754l12.991 12.989a1.753 1.753 0 0 0 1.18.512c.368.021 3.7-.014 8.193-4.51s4.516-7.825 4.5-8.192a1.747 1.747 0 0 0-.512-1.174L46.637 54.9a18.751 18.751 0 0 1 22.745 23.49 1.743 1.743 0 0 0 .563 1.838l29.02 29.02zm22.905 0h-9.085l-30.9-30.9a22.248 22.248 0 0 0-30.281-25.8 1.749 1.749 0 0 0-.554 2.848l14.339 14.341a12.036 12.036 0 0 1-3.362 5.043 12.231 12.231 0 0 1-5.051 3.374L33.767 63.813a1.75 1.75 0 0 0-2.849.554 22.258 22.258 0 0 0 25.811 30.278l14.6 14.605H15A7.258 7.258 0 0 1 7.75 102V40.183h112.5V102a7.258 7.258 0 0 1-7.25 7.25z"/><path d="M21.57 33.466a5.75 5.75 0 1 0-5.75-5.75 5.756 5.756 0 0 0 5.75 5.75zm0-8a2.25 2.25 0 1 1-2.25 2.25 2.253 2.253 0 0 1 2.25-2.25zM37.626 33.466a5.75 5.75 0 1 0-5.75-5.75 5.756 5.756 0 0 0 5.75 5.75zm0-8a2.25 2.25 0 1 1-2.25 2.25 2.253 2.253 0 0 1 2.25-2.25zM67.522 29.466h44.745a1.75 1.75 0 0 0 0-3.5H67.522a1.75 1.75 0 0 0 0 3.5z"/></g></svg>'
-                + '<svg class="toolcall__icon toolcall__icon--spinner" width="18" height="18" viewBox="0 0 24 24" role="img" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" opacity="0.25" /><path d="M21 12a9 9 0 0 0-9-9" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" /></path></g></svg>'
-                + '<svg class="toolcall__icon toolcall__icon--done" width="18" height="18" viewBox="0 0 24 24" role="img" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" opacity="0.25" /><path d="M8 12l2.5 2.5L16 9" /></g></svg>'
-                + '<svg class="toolcall__chevron" width="14" height="14" viewBox="0 0 24 24" role="img" aria-hidden="true"><path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-                + '<span class="visually-hidden">Appels d\'outils</span>'
-                + '</summary>'
-                + '<div class="toolcall__text" id="' + toolCallId + '"></div>'
-                + '</details>'
-                + '</div>';
-            bubble.insertAdjacentHTML('afterbegin', placeholderHtml);
-            return document.getElementById(toolCallId);
-        }
 
         window.handleLastExchangeResponse = function handleLastExchangeResponse(event) {
             const detail = event.detail || {};
             if (!detail.successful) { setComposerBusyState(false); return; }
-            try {
-                const payload = JSON.parse(detail.xhr.responseText || '{}');
-                if (payload.threadId && window.updatePersistentChatStream) window.updatePersistentChatStream(payload.threadId);
-            } catch (e) {}
             scrollChatToBottom();
             setComposerBusyState(false);
         };

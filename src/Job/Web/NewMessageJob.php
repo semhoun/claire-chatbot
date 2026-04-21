@@ -45,6 +45,8 @@ final class NewMessageJob implements QueueDoer
 
     private bool $isStreamingStarted = false;
 
+    private int $nbPublishedChunks = 0;
+
     private string $userMessage;
 
     private string $threadId;
@@ -135,6 +137,8 @@ final class NewMessageJob implements QueueDoer
 
     private function processChatStream(): void
     {
+        $this->publishStartMessages();
+
         $userMessage = new UserMessage($this->userMessage);
         $userMessage->addMetadata('timestamp', new DateTimeImmutable()->format(DateTimeInterface::ATOM));
         $this->addAttachments($userMessage);
@@ -142,8 +146,9 @@ final class NewMessageJob implements QueueDoer
         $agentHandler = $this->agent->stream($userMessage);
 
         foreach ($agentHandler->events() as $chunk) {
-            $this->publishStartMessages();
+            $this->publishPlaceHolder();
             $this->processChunk($chunk);
+            $this->nbPublishedChunks++;
         }
 
         $this->finalizeChat($agentHandler->getMessage()->getContent());
@@ -223,6 +228,14 @@ final class NewMessageJob implements QueueDoer
             'messageId' => $this->messageId,
         ]);
 
+    }
+
+    private function publishPlaceHolder(): void
+    {
+        if ($this->nbPublishedChunks % 10 !== 0) {
+            return;
+        }
+
         $placeholderHtml = $this->twig->fetch('partials/message.twig', [
             'message' => ['id' => $this->messageId, 'message' => ''],
             'time' => new DateTimeImmutable()->format(DateTimeInterface::ATOM),
@@ -235,6 +248,7 @@ final class NewMessageJob implements QueueDoer
             'html' => $placeholderHtml,
         ]);
     }
+
 
     private function finalizeChat(string $content): void
     {
