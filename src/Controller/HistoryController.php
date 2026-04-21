@@ -53,11 +53,15 @@ final readonly class HistoryController
         $session->get('brain_avatar');
         // Nouveau thread
         $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
-        $this->queueDispatcher->dispatch(StartThreadJob::class, [
-            'threadId' => $threadId,
-            'sessionId' => $sessionId,
-            'session' => $session->all(),
-        ]);
+        $this->queueDispatcher->dispatch(
+            StartThreadJob::class,
+            [
+                'threadId' => $threadId,
+                'sessionId' => $sessionId,
+                'session' => $session->all(),
+            ],
+            $this->settings->get('queue.defaultQueue')
+        );
 
         $this->publishSnapshot($threadId, null, $sessionId);
 

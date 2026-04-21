@@ -67,14 +67,18 @@ final readonly class BrainController
         $messageId = uniqid('assistant-message-', true);
         $attachments = $this->extractAttachments($request, includeStoredFiles: true);
 
-        $this->queueDispatcher->dispatch(NewMessageJob::class, [
-            'threadId' => $threadId,
-            'sessionId' => $sessionId,
-            'messageId' => $messageId,
-            'attachments' => $attachments,
-            'message' => $userStr,
-            'session' => $session->all(),
-        ]);
+        $this->queueDispatcher->dispatch(
+            NewMessageJob::class,
+            [
+                'threadId' => $threadId,
+                'sessionId' => $sessionId,
+                'messageId' => $messageId,
+                'attachments' => $attachments,
+                'message' => $userStr,
+                'session' => $session->all(),
+            ],
+            $this->settings->get('queue.defaultQueue')
+        );
 
         $response->getBody()->write(json_encode([
             'threadId' => $threadId,

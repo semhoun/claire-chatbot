@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace App\Test\Unit\Queue;
 
 use App\Services\Queue\QueueMessage;
-use App\Services\Queue\QueueSerializer;
 use App\Services\Queue\RedisQueueBackend;
-use App\Services\RedisClientInterface;
+use App\Services\RedisClient;
 use App\Services\Settings;
 use PHPUnit\Framework\TestCase;
 
@@ -54,14 +53,33 @@ final class RedisQueueBackendTest extends TestCase
         $this->assertFalse(isset($client->hashes['claire:queue:job:' . $jobId]));
     }
 
+    public function testReleaseMakesJobAvailableAgain(): void
+    {
+        $client = new InMemoryRedisClient();
+        $backend = $this->createBackend($client);
+        $jobId = $backend->dispatch('App\\Queue\\ExampleJob', ['foo' => 'bar'], 'telegram');
+
+        $message = $backend->reserveNextAvailable('telegram');
+        $this->assertNotNull($message);
+        $this->assertSame($jobId, $message->id);
+
+        // Release the job back to queue
+        $backend->release($message);
+
+        // Job should be available again
+        $reReserved = $backend->reserveNextAvailable('telegram');
+        $this->assertNotNull($reReserved);
+        $this->assertSame($jobId, $reReserved->id);
+    }
+
     private function createBackend(InMemoryRedisClient $client): RedisQueueBackend
     {
         return new RedisQueueBackend(
             $client,
-            new QueueSerializer(),
             new Settings([
                 'queue' => [
                     'default' => 'redis',
+                    'expireAfter' => 3600,
                 ],
                 'redis' => [
                     'prefix' => 'claire:',
@@ -71,13 +89,18 @@ final class RedisQueueBackendTest extends TestCase
     }
 }
 
-final class InMemoryRedisClient implements RedisClientInterface
+final class InMemoryRedisClient extends RedisClient
 {
     /** @var array<string, array<string, string>> */
     public array $hashes = [];
 
     /** @var array<string, array<int, string>> */
     public array $lists = [];
+
+    public function __construct()
+    {
+        // Skip parent constructor to avoid Redis extension check
+    }
 
     public function lpush(string $key, array $values): int|false
     {
@@ -111,9 +134,15 @@ final class InMemoryRedisClient implements RedisClientInterface
         return null;
     }
 
-    public function hset(string $key, array $hash): int|false
-    {
-        $this->hashes[$key] = array_map(static fn (mixed $value): string => (string) $value, $hash);
+    public function hset(
+        string $key,
+        array $hash,
+        ?int $expireSeconds = null,
+    ): int|false {
+        $this->hashes[$key] = array_map(
+            static fn (mixed $value): string => (string) $value,
+            $hash,
+        );
 
         return 1;
     }

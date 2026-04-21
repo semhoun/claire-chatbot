@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Test\Unit\Services;
 
 use App\Services\ChatStreamSubscriber;
-use App\Services\RedisClientInterface;
+use App\Services\RedisClient;
 use App\Services\Settings;
 use PHPUnit\Framework\TestCase;
 
@@ -18,7 +18,7 @@ final class ChatStreamSubscriberTest extends TestCase
                 'prefix' => 'claire:',
             ],
         ]);
-        $redis = $this->createMock(RedisClientInterface::class);
+        $redis = $this->createMock(RedisClient::class);
 
         $redis->expects($this->once())
             ->method('subscribeWithHeartbeat')

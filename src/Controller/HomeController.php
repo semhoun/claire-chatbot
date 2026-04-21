@@ -41,11 +41,15 @@ final readonly class HomeController
         $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
 
         $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations((string) $session->get(Auth::USERID));
-        $this->queueDispatcher->dispatch(StartThreadJob::class, [
-            'threadId' => $threadId,
-            'sessionId' => $sessionId,
-            'session' => $session->all(),
-        ]);
+        $this->queueDispatcher->dispatch(
+            StartThreadJob::class,
+            [
+                'threadId' => $threadId,
+                'sessionId' => $sessionId,
+                'session' => $session->all(),
+            ],
+            $this->settings->get('queue.defaultQueue')
+        );
 
         $comfyuiEnabled = $this->settings->get('comfyui.enabled') === true;
         $currentComfyuiWorkflow = '';

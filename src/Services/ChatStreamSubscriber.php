@@ -9,7 +9,7 @@ final readonly class ChatStreamSubscriber
     private const float HEARTBEAT_SECONDS = 15.0;
 
     public function __construct(
-        private RedisClientInterface $redisClient,
+        private RedisClient $redisClient,
         private Settings $settings,
     ) {
     }

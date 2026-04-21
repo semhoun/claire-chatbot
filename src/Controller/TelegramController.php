@@ -9,6 +9,7 @@ use App\Job\Telegram\StartThreadJob;
 use App\Renderer\JsonRenderer;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Queue\QueueDispatcherInterface;
+use App\Services\Settings;
 use App\Services\TelegramService;
 use App\Services\TelegramValidator;
 use InvalidArgumentException;
@@ -29,6 +30,7 @@ final readonly class TelegramController
         private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
         private TelegramService $telegramService,
         private QueueDispatcherInterface $queueDispatcher,
+        private Settings $settings,
     ) {
     }
 
@@ -46,6 +48,7 @@ final readonly class TelegramController
             $this->queueDispatcher->dispatch(
                 TelegramService::class,
                 ['update_json' => $rawBody],
+                $this->settings['queue.defaultQueue']
             );
         } catch (\Throwable $throwable) {
             $this->logger->error('Telegram Webhook Error: ' . $throwable->getMessage(), [
@@ -107,9 +110,13 @@ final readonly class TelegramController
 
             if ($isNewChat) {
                 // In private chats, chatId equals userId
-                $this->queueDispatcher->dispatch(StartThreadJob::class, [
-                    'telegramUserId' => $telegramUserId,
-                ]);
+                $this->queueDispatcher->dispatch(
+                    StartThreadJob::class,
+                    [
+                        'telegramUserId' => $telegramUserId,
+                    ],
+                    $this->settings->get('queue.defaultQueue')
+                );
                 return $this->jsonRenderer->json($response, ['success' => true]);
             }
 

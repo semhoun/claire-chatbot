@@ -63,7 +63,7 @@ final class HistoryControllerTest extends TestCase
             ->method('fetch')
             ->with('partials/messages_list.twig', $this->isArray())
             ->willReturn('<div>snapshot</div>');
-        $redis = $this->createMock(\App\Services\RedisClientInterface::class);
+        $redis = $this->createMock(\App\Services\RedisClient::class);
         $redis->expects($this->once())
             ->method('publish')
             ->with(
@@ -139,7 +139,7 @@ final class HistoryControllerTest extends TestCase
             ->method('fetch')
             ->with('partials/messages_list.twig', $this->isArray())
             ->willReturn('<div>snapshot</div>');
-        $redis = $this->createMock(\App\Services\RedisClientInterface::class);
+        $redis = $this->createMock(\App\Services\RedisClient::class);
         // Snapshot should be published to sessionId, not threadId
         $redis->expects($this->once())
             ->method('publish')

@@ -3,20 +3,13 @@
 declare(strict_types=1);
 
 use App\Exception;
-use App\Services\ChatStreamPublisher;
-use App\Services\ChatStreamSubscriber;
 use App\Services\ComfyUIService;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Queue\QueueBackendInterface;
 use App\Services\Queue\QueueDispatcherInterface;
-use App\Services\Queue\QueueJobFactory;
-use App\Services\Queue\QueueSerializer;
-use App\Services\Queue\QueueWorker;
 use App\Services\Queue\RedisQueueBackend;
 use App\Services\RedisClient;
-use App\Services\RedisClientInterface;
 use App\Services\Settings;
-use App\Services\SseEventFormatter;
 use App\Services\Twig\GeneratedImageExtension;
 use App\Services\Twig\TimestampExtension;
 use Doctrine\DBAL\Connection;
@@ -141,7 +134,7 @@ return [
     TelegramBotApi::class => static fn (Settings $settings): TelegramBotApi => new TelegramBotApi($settings->get('telegram.bot_token')),
     ComfyUIWorkflowRegistry::class => static fn (Settings $settings): ComfyUIWorkflowRegistry => new ComfyUIWorkflowRegistry($settings),
     ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry, EntityManagerInterface $entityManager): ComfyUIService => new ComfyUIService($settings, $filesystem, $comfyUIWorkflowRegistry, $entityManager, $entityManager->getRepository(\App\Entity\ChatHistory::class)),
-    RedisClientInterface::class => static function (Settings $settings): RedisClientInterface {
+    RedisClient::class => static function (Settings $settings): RedisClient {
         $client = new RedisClient();
         $client->connect(
             (string) $settings->get('redis.host'),
@@ -160,13 +153,6 @@ return [
 
         return $client;
     },
-    ChatStreamSubscriber::class => DI\autowire(),
-    ChatStreamPublisher::class => DI\autowire(),
-    SseEventFormatter::class => DI\autowire(),
-    RedisQueueBackend::class => DI\autowire(),
     QueueBackendInterface::class => DI\get(RedisQueueBackend::class),
     QueueDispatcherInterface::class => DI\get(QueueBackendInterface::class),
-    QueueJobFactory::class => DI\autowire(),
-    QueueSerializer::class => DI\autowire(),
-    QueueWorker::class => DI\autowire(),
 ];

@@ -11,7 +11,7 @@ interface QueueDispatcherInterface
      */
     public function dispatch(
         string $jobClass,
-        array $payload = [],
-        string $queue = 'default',
+        array $payload,
+        string $queue,
     ): string;
 }

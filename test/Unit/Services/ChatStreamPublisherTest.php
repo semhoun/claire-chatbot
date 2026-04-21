@@ -6,7 +6,7 @@ namespace App\Test\Unit\Services;
 
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
-use App\Services\RedisClientInterface;
+use App\Services\RedisClient;
 use App\Services\Settings;
 use PHPUnit\Framework\TestCase;
 
@@ -19,7 +19,7 @@ final class ChatStreamPublisherTest extends TestCase
                 'prefix' => 'claire:',
             ],
         ]);
-        $redis = $this->createMock(RedisClientInterface::class);
+        $redis = $this->createMock(RedisClient::class);
         $subscriber = new ChatStreamSubscriber($redis, $settings);
 
         $redis->expects($this->once())

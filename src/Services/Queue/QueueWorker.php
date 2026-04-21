@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Queue;
 
-use App\Services\RedisClientInterface;
+use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
+use RuntimeException;
 use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
@@ -13,12 +14,18 @@ final class QueueWorker
 {
     private bool $running = true;
 
+    private int $startedAt;
+
+    private int $processedJobs = 0;
+
+    private int $loopCount = 0;
+
     public function __construct(
         private readonly QueueBackendInterface $queueBackend,
-        private readonly QueueJobFactory $queueJobFactory,
-        private readonly RedisClientInterface $redisClient,
+        private readonly ContainerInterface $container,
         private readonly Logger $logger,
     ) {
+        $this->startedAt = time();
     }
 
     public function requestStop(): void
@@ -31,62 +38,71 @@ final class QueueWorker
         string $workerId,
         OutputInterface $output,
     ): int {
-        $workerState = new WorkerState();
 
         $this->logger->info('Queue worker started', [
             'worker_id' => $workerId,
             'queue' => $queueWorkerOptions->queueName,
+            'timeout' => $queueWorkerOptions->timeout,
+            'max_jobs' => $queueWorkerOptions->maxJobs,
+            'max_time' => $queueWorkerOptions->maxTime,
+            'started_at' => $this->startedAt,
         ]);
 
-        while ($this->running && ! $this->hasReachedRuntimeLimit($queueWorkerOptions, $workerState)) {
-            $workerState->incrementLoopCount();
+        while ($this->running && ! $this->hasReachedRuntimeLimit($queueWorkerOptions)) {
+            $this->loopCount++;
 
-            if (! $this->executeWorkCycle($queueWorkerOptions, $workerId, $output, $workerState)) {
-                break;
-            }
+            $this->executeWorkCycle($queueWorkerOptions, $workerId, $output);
 
             pcntl_signal_dispatch();
         }
 
-        if ($this->hasReachedRuntimeLimit($queueWorkerOptions, $workerState)) {
+        if ($this->hasReachedRuntimeLimit($queueWorkerOptions)) {
             $this->logger->info('Queue worker reached runtime limit', [
                 'worker_id' => $workerId,
-                'processed_jobs' => $workerState->getProcessedJobs(),
-                'loop_count' => $workerState->getLoopCount(),
+                'processed_jobs' => $this->processedJobs,
+                'loop_count' => $this->loopCount,
+
             ]);
         }
 
         $this->logger->info('Queue worker stopping', [
             'worker_id' => $workerId,
-            'processed_jobs' => $workerState->getProcessedJobs(),
-            'loop_count' => $workerState->getLoopCount(),
+            'processed_jobs' => $this->processedJobs,
+            'loop_count' => $this->loopCount,
             'running' => $this->running,
         ]);
-        return $workerState->getProcessedJobs();
+        return $this->processedJobs;
     }
 
     private function executeWorkCycle(
         QueueWorkerOptions $queueWorkerOptions,
         string $workerId,
         OutputInterface $output,
-        WorkerState $workerState,
-    ): bool {
+    ): void {
         $job = $this->reserveJob($queueWorkerOptions, $workerId, $output);
 
         if (! $job instanceof \App\Services\Queue\QueueMessage) {
-            return ! $queueWorkerOptions->once;
+            return;
         }
 
-        $this->logger->info('Processing job', [
-            'worker_id' => $workerId,
-            'job_id' => $job->id,
-            'job_class' => $job->jobClass,
-        ]);
+        try {
+            $this->logger->info('Processing job', [
+                'worker_id' => $workerId,
+                'job_id' => $job->id,
+                'job_class' => $job->jobClass,
+            ]);
 
-        $workerState->incrementProcessedJobs();
-        $this->processJob($job, $output);
-
-        return ! $queueWorkerOptions->once;
+            $this->processedJobs++;
+            $this->processJob($job, $output);
+        } catch (Throwable $throwable) {
+            $this->logger->error('Failed to execute job', [
+                'worker_id' => $workerId,
+                'error' => $throwable,
+                'job_id' => $job->id,
+                'job_class' => $job->jobClass,
+            ]);
+        }
+        $this->queueBackend->delete($job);
     }
 
     private function reserveJob(
@@ -97,43 +113,19 @@ final class QueueWorker
         try {
             return $this->queueBackend->reserveNextAvailable($queueWorkerOptions->queueName, $queueWorkerOptions->timeout);
         } catch (Throwable $throwable) {
-            $this->handleReserveError($throwable, $workerId, $output);
-
-            return null;
-        }
-    }
-
-    private function handleReserveError(Throwable $throwable, string $workerId, OutputInterface $output): void
-    {
-        $this->logger->error('Failed to reserve job', [
-            'worker_id' => $workerId,
-            'error' => $throwable->getMessage(),
-            'class' => $throwable::class,
-        ]);
-        $output->writeln(sprintf('<error>Reserve error: %s</error>', $throwable->getMessage()));
-        $this->attemptRedisReconnection($workerId);
-    }
-
-    private function attemptRedisReconnection(string $workerId): void
-    {
-        try {
-            $this->logger->info('Attempting Redis reconnection after error', ['worker_id' => $workerId]);
-            $this->redisClient->reconnect();
-            $this->logger->info('Redis reconnection successful', ['worker_id' => $workerId]);
-        } catch (Throwable $throwable) {
-            $this->logger->error('Redis reconnection failed', [
+            $this->logger->error('Failed to reserve job', [
                 'worker_id' => $workerId,
                 'error' => $throwable->getMessage(),
+                'class' => $throwable::class,
             ]);
+            return null;
         }
     }
 
     private function processJob(QueueMessage $queueMessage, OutputInterface $output): void
     {
-        $queueDoer = $this->queueJobFactory->createQueueDoer($queueMessage);
+        $queueDoer = $this->createQueueDoer($queueMessage);
         $queueDoer->handle($queueMessage->payload);
-
-        $this->queueBackend->delete($queueMessage);
 
         $this->logger->info('Queue job processed', [
             'job_id' => $queueMessage->id,
@@ -143,13 +135,30 @@ final class QueueWorker
     }
 
     private function hasReachedRuntimeLimit(
-        QueueWorkerOptions $queueWorkerOptions,
-        WorkerState $workerState,
+        QueueWorkerOptions $queueWorkerOptions
     ): bool {
-        if ($queueWorkerOptions->maxJobs > 0 && $workerState->getProcessedJobs() >= $queueWorkerOptions->maxJobs) {
+        if ($queueWorkerOptions->maxJobs > 0 && $this->processedJobs >= $queueWorkerOptions->maxJobs) {
             return true;
         }
+        return $queueWorkerOptions->maxTime > 0 && (time() - $this->startedAt) >= $queueWorkerOptions->maxTime;
+    }
 
-        return $queueWorkerOptions->maxTime > 0 && (time() - $workerState->getStartedAt()) >= $queueWorkerOptions->maxTime;
+    public function createQueueDoer(QueueMessage $queueMessage): QueueDoer
+    {
+        $jobClass = $queueMessage->jobClass;
+
+        if (! class_exists($jobClass)) {
+            throw new RuntimeException(sprintf('Queue job class "%s" does not exist', $jobClass));
+        }
+
+        if (! is_a($jobClass, QueueDoer::class, true)) {
+            throw new RuntimeException(sprintf('Queue job class "%s" must implement %s', $jobClass, QueueDoer::class));
+        }
+
+        if (! method_exists($jobClass, 'make')) {
+            throw new RuntimeException(sprintf('Queue job class "%s" must define static make()', $jobClass));
+        }
+
+        return $jobClass::make($this->container);
     }
 }

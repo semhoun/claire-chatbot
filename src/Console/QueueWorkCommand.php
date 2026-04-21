@@ -34,7 +34,6 @@ final class QueueWorkCommand extends Command
         $this
             ->addOption('queue', null, InputOption::VALUE_OPTIONAL, 'Queue name to process', $this->settings->get('queue.defaultQueue'))
             ->addOption('timeout', null, InputOption::VALUE_OPTIONAL, 'Timeout in seconds for BRPOP operation', $this->settings->get('queue.worker.timeout'))
-            ->addOption('once', null, InputOption::VALUE_NONE, 'Process a single job and exit')
             ->addOption('max-jobs', null, InputOption::VALUE_OPTIONAL, 'Maximum jobs to process before exiting', $this->settings->get('queue.worker.maxJobs'))
             ->addOption('max-time', null, InputOption::VALUE_OPTIONAL, 'Maximum runtime in seconds before exiting', $this->settings->get('queue.worker.maxTime'));
     }
@@ -69,7 +68,6 @@ final class QueueWorkCommand extends Command
         return new QueueWorkerOptions(
             queueName: (string) $input->getOption('queue'),
             timeout: (int) $input->getOption('timeout'),
-            once: (bool) $input->getOption('once'),
             maxJobs: (int) $input->getOption('max-jobs'),
             maxTime: (int) $input->getOption('max-time'),
         );

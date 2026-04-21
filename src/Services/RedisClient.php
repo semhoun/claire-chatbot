@@ -6,7 +6,7 @@ namespace App\Services;
 
 use RuntimeException;
 
-final class RedisClient implements RedisClientInterface
+class RedisClient
 {
     private readonly \Redis $redis;
 
@@ -69,10 +69,19 @@ final class RedisClient implements RedisClientInterface
         }
     }
 
-    /** @param array<string, scalar|null> $hash */
-    public function hset(string $key, array $hash): int|false
-    {
+    /**
+     * @param array<string, scalar|null> $hash
+     */
+    public function hset(
+        string $key,
+        array $hash,
+        ?int $expireSeconds = null,
+    ): int|false {
         $result = $this->redis->hMSet($key, $hash);
+
+        if ($result && $expireSeconds !== null) {
+            $this->redis->expire($key, $expireSeconds);
+        }
 
         return $result ? 1 : false;
     }
@@ -114,6 +123,11 @@ final class RedisClient implements RedisClientInterface
     public function close(): bool
     {
         return $this->redis->close();
+    }
+
+    public function expire(string $key, int $seconds): bool
+    {
+        return $this->redis->expire($key, $seconds);
     }
 
     public function setReadTimeout(float $timeout): bool

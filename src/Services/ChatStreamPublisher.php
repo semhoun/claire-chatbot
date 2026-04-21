@@ -9,7 +9,7 @@ use RuntimeException;
 readonly class ChatStreamPublisher
 {
     public function __construct(
-        private RedisClientInterface $redisClient,
+        private RedisClient $redisClient,
         private ChatStreamSubscriber $chatStreamSubscriber,
     ) {
     }
