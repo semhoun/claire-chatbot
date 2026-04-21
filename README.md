@@ -59,7 +59,7 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 | `COMFYUI_URL` | URL de l'instance ComfyUI | `http://localhost:8188` |
 | `DATABASE_KIND` | Type de base (`sqlite`, `mysql`, `postgres`) | `sqlite` |
 | `DEBUG_MODE` | Mode debug | `false` |
-| `QUEUE_WORKERS` | Nombre de workers de queue | `1` |
+| `QUEUE_WORKERS` | Nombre de workers de queue | `8` |
 
 Voir [`docker/compose.yml`](docker/compose.yml) pour un exemple complet avec toutes les variables.
 
@@ -83,6 +83,7 @@ docker compose logs -f claire
 docker compose exec claire ./console migrations:migrate
 docker compose exec claire ./console cache:clear
 docker compose exec claire ./console telegram:set-commands
+docker compose exec claire ./console telegram:webhook --set
 
 # Lancer le worker de queue
 docker compose exec claire ./console queue:work

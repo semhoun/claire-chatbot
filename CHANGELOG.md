@@ -7,6 +7,36 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.4.6] - 2026-04-21
+
+### Added
+- Nouvelle entité `ChatHistoryFile` pour lier les fichiers générés aux conversations (suppression en cascade)
+- Migration de base de données pour la table `chat_history_file`
+- Architecture de jobs séparés : `StartThreadJob` et `NewMessageJob` pour web et Telegram
+- Template `tmpl/partials/toolscall.twig` pour l'affichage des appels d'outils
+
+### Changed
+- **Queue**: Refonte de l'architecture queue/jobs avec séparation des responsabilités
+- **Queue**: Déplacement des classes Queue de `src/Queue/` vers `src/Services/Queue/`
+- **SSE**: Réécriture complète de la gestion des Server-Sent Events pour les nouveaux messages et nouvelles conversations
+- **Telegram**: Réécriture et amélioration du service Telegram
+- Renommage de `TelegramWebAppValidator` en `TelegramValidator`
+- Remplacement de `chatId` par `threadId` pour plus de cohérence
+- Simplification du JavaScript (réduction de 1100+ lignes)
+- Amélioration de `ChatHistory/UserChatHistory` et suppression de `SummaryChatHistory`
+- Mise à jour de la bibliothèque `phptg/bot-api` et suppression du patch
+
+### Fixed
+- Correction de la logique de résumé (vérifie le résumé et non le titre)
+- Correction de la génération des résumés de conversation
+
+### Removed
+- Suppression du patch `phptg-curl-close.patch`
+- Suppression de `TelegramWebAppController` (fonctionnalité intégrée au contrôleur principal)
+- Suppression de `WebChatMessageJob` (remplacé par les nouveaux jobs)
+- Suppression de `SummaryChatHistory`, `JobContext` et `StreamState`
+- Suppression de la gestion Redis interne dans le worker
+
 ## [1.4.5] - 2026-04-17
 
 ### Added
@@ -381,8 +411,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.5.0...HEAD
-[1.5.0]: https://github.com/semhoun/claire-chatbot/compare/1.4.5...1.5.0
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.6...HEAD
+[1.4.6]: https://github.com/semhoun/claire-chatbot/compare/1.4.5...1.4.6
 [1.4.5]: https://github.com/semhoun/claire-chatbot/compare/1.4.4...1.4.5
 [1.4.4]: https://github.com/semhoun/claire-chatbot/compare/1.4.3...1.4.4
 [1.4.3]: https://github.com/semhoun/claire-chatbot/compare/1.4.2...1.4.3
