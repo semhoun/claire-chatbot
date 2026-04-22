@@ -42,6 +42,8 @@ final class NewMessageJob implements QueueDoer
 {
     private string $streamedText = '';
 
+    private string $toolText = '';
+
     private bool $isStreamingStarted = false;
 
     private int $nbPublishedChunks = 0;
@@ -151,17 +153,24 @@ final class NewMessageJob implements QueueDoer
             $this->nbPublishedChunks++;
         }
 
-        $this->finalizeChat($agentHandler->getMessage()->getContent());
+        $finalText = $this->toolText . $agentHandler->getMessage()->getContent();
+        $this->finalizeChat($finalText);
     }
 
     private function processChunk(mixed $chunk): void
     {
         if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
             $this->processToolChunk($chunk);
+            // Le tesxte déjà récupéré ne seras pas de le dernier TextChunk
+            $this->toolText = $this->streamedText;
             return;
         }
 
-        if ($chunk instanceof ReasoningChunk || $chunk instanceof TextChunk) {
+        if ($chunk instanceof ReasoningChunk) {
+            return;
+        }
+
+        if ($chunk instanceof TextChunk) {
             $this->processTextChunk($chunk);
         }
     }
@@ -322,11 +331,9 @@ final class NewMessageJob implements QueueDoer
         if ($messages !== [] && count($messages) >= $this->settings->get('llm.summary.minMessages')
             && count($messages) <= $this->settings->get('llm.summary.maxMessages')
             && $chatHistory->getSummary() !== null && $chatHistory->getSummary() !== '') {
-            error_log('Summary already generated');
             return;
         }
 
-        error_log('Generating summary');
         $summary->generateAndPersist();
     }
 }
