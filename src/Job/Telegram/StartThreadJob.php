@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Job\Telegram;
 
 use App\Services\Queue\QueueDoer;
+use App\Services\Settings;
 use App\Services\TelegramService;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
@@ -34,7 +35,7 @@ final readonly class StartThreadJob implements QueueDoer
 
     public static function make(ContainerInterface $container): self
     {
-        return $container->get(self::class);
+        return new StartThreadJob($container->get(Logger::class), $container->get(TelegramService::class));
     }
 
     /** @param array<string, mixed> $payload */

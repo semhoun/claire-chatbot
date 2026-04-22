@@ -132,6 +132,7 @@ class TelegramService implements QueueDoer
         }
 
         $this->sendMessage($telegramChatId, $openingText);
+        $this->telegramSession->flush();
     }
 
     public function processUpdate(Update $update): void
@@ -816,19 +817,6 @@ class TelegramService implements QueueDoer
         } else {
             $this->sendMessage($telegramChatId, 'Erreur : impossible de changer le workflow.');
         }
-    }
-
-    private function persistWorkflowToUser(string $workflow): void
-    {
-        $user = $this->entityManager->getRepository(User::class)->find($this->telegramSession->get(Auth::USERID));
-        if (! $user instanceof User) {
-            return;
-        }
-
-        $params = $user->getParams() ?? [];
-        $params[ComfyUIWorkflowRegistry::SESSION_KEY] = $workflow;
-        $user->setParams($params);
-        $this->entityManager->flush();
     }
 
     /**

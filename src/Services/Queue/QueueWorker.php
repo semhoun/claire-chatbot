@@ -131,7 +131,12 @@ final class QueueWorker
             'job_id' => $queueMessage->id,
             'job_class' => $queueMessage->jobClass,
         ]);
-        $output->writeln(sprintf('<info>Processed queue job %s</info>', $queueMessage->id));
+
+        // Comme on est dans un worker on force le flush des logs
+        $loggerProvider = \OpenTelemetry\API\Globals::loggerProvider();
+        if (method_exists($loggerProvider, 'forceFlush')) {
+            $loggerProvider->forceFlush();
+        }
     }
 
     private function hasReachedRuntimeLimit(
