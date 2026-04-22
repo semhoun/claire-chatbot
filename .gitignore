@@ -2,12 +2,13 @@
 vendor/
 var/*
 composer.lock
-.cache/composer
-.config/composer
+.cache
+.config
 .idea
-.local/share/composer
+.local
 .bash_history
 /compose.yml
 /local_data
 /.phpunit.result.cache
 /.kilo
+/.junie
