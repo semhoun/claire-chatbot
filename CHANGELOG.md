@@ -7,7 +7,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
-## [1.4.6] - 2026-04-21
+## [1.4.6] - 2026-04-22
 
 ### Added
 - Nouvelle entité `ChatHistoryFile` pour lier les fichiers générés aux conversations (suppression en cascade)
@@ -16,6 +16,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Template `tmpl/partials/toolscall.twig` pour l'affichage des appels d'outils
 
 ### Changed
+- Optimisation du filtrage des messages OutOfContext (OC) pour éviter les messages vides ou mal formatés
 - **Queue**: Refonte de l'architecture queue/jobs avec séparation des responsabilités
 - **Queue**: Déplacement des classes Queue de `src/Queue/` vers `src/Services/Queue/`
 - **Queue**: Nouvelles options de configuration pour le worker via variables d'environnement (`QUEUE_WORKER_TIMEOUT`, `QUEUE_WORKER_MAX_JOBS`, `QUEUE_WORKER_MAX_TIME`)
