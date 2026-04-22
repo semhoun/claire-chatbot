@@ -48,7 +48,7 @@ final readonly class TelegramController
             $this->queueDispatcher->dispatch(
                 TelegramService::class,
                 ['update_json' => $rawBody],
-                $this->settings['queue.defaultQueue']
+                $this->settings->get('queue.defaultQueue')
             );
         } catch (\Throwable $throwable) {
             $this->logger->error('Telegram Webhook Error: ' . $throwable->getMessage(), [
