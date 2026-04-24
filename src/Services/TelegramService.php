@@ -213,6 +213,7 @@ class TelegramService implements QueueDoer
      * Retrieve user settings based on the provided Telegram user ID.
      *
      * @param string $telegramUserId The unique identifier of the Telegram user.
+     *
      * @return array<string, mixed>|null An associative array containing the user settings, or null if no settings are available.
      */
     public function getUserSettings(string $telegramUserId): ?array
@@ -538,7 +539,7 @@ class TelegramService implements QueueDoer
      */
     private function extractImageIds(string $content): array
     {
-        if (preg_match_all(ComfyUIService::IMAGE_PATTERN, $content, $matches, PREG_SET_ORDER) === false) {
+        if (preg_match_all(GeneratedFileService::GENERATED_FILE_PATTERN, $content, $matches, PREG_SET_ORDER) === false) {
             return [];
         }
 
@@ -556,7 +557,7 @@ class TelegramService implements QueueDoer
     private function handleImageResponse(int $telegramChatId, string $responseText, array $imageIds): void
     {
         // Remove image paths from text to create caption
-        $caption = preg_replace(ComfyUIService::IMAGE_PATTERN, '', $responseText);
+        $caption = preg_replace(GeneratedFileService::GENERATED_FILE_PATTERN, '', $responseText);
         // Filter OC tags
         $caption = $this->filterOCTags((string) $caption);
 
@@ -575,7 +576,7 @@ class TelegramService implements QueueDoer
      */
     private function sendPhoto(int $telegramChatId, string $imageId, ?string $caption = null): void
     {
-        $imagePath = ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $imageId);
+        $imagePath = GeneratedFileService::FOLDER_PREFIX . '/' . str_replace(GeneratedFileService::FOLDER_SEPARATOR, '/', $imageId);
 
         try {
             $this->sendChatAction($telegramChatId, TelegramAction::PHOTO);

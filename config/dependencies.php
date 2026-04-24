@@ -5,12 +5,13 @@ declare(strict_types=1);
 use App\Exception;
 use App\Services\ComfyUIService;
 use App\Services\ComfyUIWorkflowRegistry;
+use App\Services\PdfGeneratorService;
 use App\Services\Queue\QueueBackendInterface;
 use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\Queue\RedisQueueBackend;
 use App\Services\RedisClient;
 use App\Services\Settings;
-use App\Services\Twig\GeneratedImageExtension;
+use App\Services\Twig\GeneratedFileExtension;
 use App\Services\Twig\TimestampExtension;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
@@ -103,7 +104,7 @@ return [
 
         $twig->addExtension(new MarkdownExtension());
         $twig->addExtension(new FilesizeExtension());
-        $twig->addExtension(new GeneratedImageExtension());
+        $twig->addExtension(new GeneratedFileExtension());
         $twig->addExtension(new TimestampExtension());
         $twig->addRuntimeLoader(new class() implements \Twig\RuntimeLoader\RuntimeLoaderInterface {
             /** @param class-string $class */
@@ -134,6 +135,7 @@ return [
     TelegramBotApi::class => static fn (Settings $settings): TelegramBotApi => new TelegramBotApi($settings->get('telegram.bot_token')),
     ComfyUIWorkflowRegistry::class => static fn (Settings $settings): ComfyUIWorkflowRegistry => new ComfyUIWorkflowRegistry($settings),
     ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry, EntityManagerInterface $entityManager): ComfyUIService => new ComfyUIService($settings, $filesystem, $comfyUIWorkflowRegistry, $entityManager, $entityManager->getRepository(\App\Entity\ChatHistory::class)),
+    PdfGeneratorService::class => static fn (Settings $settings, Filesystem $filesystem, EntityManagerInterface $entityManager, \App\Services\Markdown $markdown): PdfGeneratorService => new PdfGeneratorService($settings, $filesystem, $entityManager, $entityManager->getRepository(\App\Entity\ChatHistory::class), $markdown),
     RedisClient::class => static function (Settings $settings): RedisClient {
         $client = new RedisClient();
         $client->connect(

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Job\Telegram;
 
 use App\Services\Queue\QueueDoer;
-use App\Services\Settings;
 use App\Services\TelegramService;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;

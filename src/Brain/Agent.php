@@ -37,9 +37,9 @@ PROMPT
     {
         $instructions = parent::resolveInstructions();
 
-        if (!str_contains($instructions, '[OC] Date et heure actuelles')) {
+        if (! str_contains($instructions, '[OC] Date et heure actuelles')) {
             $dateLine = sprintf(
-                "[OC] Date et heure actuelles : %s[/OC]",
+                '[OC] Date et heure actuelles : %s[/OC]',
                 new \DateTimeImmutable()->format('Y-m-d H:i:s')
             );
             $instructions =

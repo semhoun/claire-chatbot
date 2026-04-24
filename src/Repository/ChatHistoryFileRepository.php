@@ -23,4 +23,22 @@ class ChatHistoryFileRepository extends EntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    public function findOneByFilePath(string $filePath): ?ChatHistoryFile
+    {
+        return $this->findOneBy(['filePath' => $filePath]);
+    }
+
+    public function findDisplayNameByFilePath(string $filePath): ?string
+    {
+        $chatHistoryFile = $this->findOneByFilePath($filePath);
+
+        if (! $chatHistoryFile instanceof \App\Entity\ChatHistoryFile) {
+            return null;
+        }
+
+        $metadata = $chatHistoryFile->getMetadata();
+
+        return $metadata['displayName'] ?? null;
+    }
 }

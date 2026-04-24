@@ -31,9 +31,6 @@ return [
     'workflow' => [
         'timeout' => (int) Env::get('OPENAPI_WORKFLOW_TIMEOUT', 300),
     ],
-    'tools' => [
-        'searchXngUrl' => Env::get('SEARXNG_URL'),
-    ],
     'rag' => [
         'type' => 'file', // Could be 'file'
 

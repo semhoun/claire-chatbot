@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\ChatHistoryFile;
 use App\Entity\File;
 use App\Entity\User;
 use App\Services\Auth;
-use App\Services\ComfyUIService;
+use App\Services\GeneratedFileService;
 use App\Services\Markdown;
 use App\Services\Session\Trait\SessionFromRequest;
 use Doctrine\ORM\EntityManagerInterface;
@@ -154,9 +155,9 @@ final readonly class FileController
     }
 
     /**
-     * Serve a file from the filesystem (for generated images, etc.).
+     * Serve a generated file from the filesystem.
      */
-    public function imageServe(Request $request, Response $response): Response
+    public function serve(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
 
@@ -166,7 +167,7 @@ final readonly class FileController
         }
 
         $id = (string) $request->getAttribute('id');
-        $path = ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $id);
+        $path = GeneratedFileService::FOLDER_PREFIX . '/' . str_replace(GeneratedFileService::FOLDER_SEPARATOR, '/', $id);
 
         if (! $this->filesystem->fileExists($path)) {
             return $response->withStatus(404);
@@ -177,9 +178,18 @@ final readonly class FileController
 
         $response->getBody()->write($content);
 
-        return $response
+        $response = $response
             ->withHeader('Content-Type', $mimeType)
             ->withHeader('Content-Length', (string) strlen($content));
+
+        if (GeneratedFileService::isPdf($id)) {
+            $displayName = $this->entityManager->getRepository(ChatHistoryFile::class)
+                ->findDisplayNameByFilePath($path);
+            $downloadName = $displayName !== null ? $displayName . '.pdf' : basename($path);
+            $response = $response->withHeader('Content-Disposition', 'inline; filename="' . addcslashes($downloadName, '"\\') . '"');
+        }
+
+        return $response;
     }
 
     private function getUploadedFile(Request $request): ?UploadedFileInterface

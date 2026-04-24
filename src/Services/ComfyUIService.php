@@ -17,12 +17,6 @@ use RuntimeException;
 
 final readonly class ComfyUIService
 {
-    public const string IMAGE_PATTERN = '/@@GENERATED@@([a-zA-Z0-9_\-@]+\.(?:png|jpg|jpeg|gif|webp))@@/i';
-
-    public const string FOLDER_PREFIX = 'generated';
-
-    public const string FOLDER_SEPARATOR = '@';
-
     private Client $httpClient;
 
     public function __construct(
@@ -280,8 +274,8 @@ final readonly class ComfyUIService
             : 'png';
         $filename = Uuid::uuid4() . '.' . $extension;
         $userId = $session->get(Auth::USERID);
-        $localPath = self::FOLDER_PREFIX . '/' . $userId . '/' . $filename;
-        $imgId = '@@GENERATED@@' . $userId . self::FOLDER_SEPARATOR . $filename . '@@';
+        $localPath = GeneratedFileService::FOLDER_PREFIX . '/' . $userId . '/' . $filename;
+        $imgId = '@@GENERATED@@' . $userId . GeneratedFileService::FOLDER_SEPARATOR . $filename . '@@';
 
         $this->filesystem->write($localPath, $imageContent);
         $this->saveFileReference($session, $localPath, $prompt);

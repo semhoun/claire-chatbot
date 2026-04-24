@@ -86,6 +86,7 @@ EOF;
      *
      * @param string|null $content The input string potentially containing JSON data.
      *                              If null, an empty array will be returned.
+     *
      * @return array<string, mixed> The decoded JSON content as an associative array.
      *                              Returns an empty array if the string does not contain valid JSON.
      */

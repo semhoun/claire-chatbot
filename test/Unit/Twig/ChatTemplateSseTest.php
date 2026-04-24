@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Test\Unit\Twig;
 
 use App\Services\Markdown;
-use App\Services\Twig\GeneratedImageExtension;
+use App\Services\Twig\GeneratedFileExtension;
 use App\Services\Twig\TimestampExtension;
 use OneToMany\Twig\FilesizeExtension;
 use PHPUnit\Framework\TestCase;
@@ -142,7 +142,7 @@ final class ChatTemplateSseTest extends TestCase
         $twig = new Environment(new FilesystemLoader(__DIR__ . '/../../../tmpl'));
         $twig->addExtension(new MarkdownExtension());
         $twig->addExtension(new FilesizeExtension());
-        $twig->addExtension(new GeneratedImageExtension());
+        $twig->addExtension(new GeneratedFileExtension());
         $twig->addExtension(new TimestampExtension());
         $twig->addRuntimeLoader(new class() implements \Twig\RuntimeLoader\RuntimeLoaderInterface {
             public function load($class): ?MarkdownRuntime
