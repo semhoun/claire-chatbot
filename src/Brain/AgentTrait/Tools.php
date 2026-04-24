@@ -25,7 +25,7 @@ trait Tools
             CalendarToolkit::make(),
         ];
 
-        if ($this->settings->get('comfyui.enabled') === true) {
+        if ($this->settings->get('tools.comfyui.enabled') === true) {
             $tools[] = GenerateImageTool::make(
                 $this->container->get(ComfyUIService::class),
                 $this->container->get(Settings::class),
@@ -38,7 +38,7 @@ trait Tools
             $tools[] = WebToolkit::make($this->settings->get('tools.searXNG.url'));
         }
 
-        if ($this->settings->get('pdf.enabled') === true) {
+        if ($this->settings->get('tools.pdf.enabled') === true) {
             $tools[] = PdfGeneratorTool::make(
                 $this->container->get(PdfGeneratorService::class),
                 $this->container->get(Settings::class),

@@ -69,7 +69,7 @@ final class ComfyUIWorkflowRegistry
         }
 
         $workflows = $this->loadWorkflows();
-        $configuredDefault = trim((string) $this->settings->get('comfyui.default_workflow'));
+        $configuredDefault = trim((string) $this->settings->get('tools.comfyui.default_workflow'));
 
         if ($configuredDefault !== '' && isset($workflows[$configuredDefault])) {
             return $configuredDefault;
@@ -82,7 +82,7 @@ final class ComfyUIWorkflowRegistry
 
     public function isEnabled(): bool
     {
-        return $this->settings->get('comfyui.enabled') === true;
+        return $this->settings->get('tools.comfyui.enabled') === true;
     }
 
     /**
@@ -113,7 +113,7 @@ final class ComfyUIWorkflowRegistry
      */
     private function findWorkflowFiles(): array
     {
-        $path = (string) $this->settings->get('comfyui.workflows_path');
+        $path = (string) $this->settings->get('tools.comfyui.workflows_path');
 
         if (! is_dir($path)) {
             return [];

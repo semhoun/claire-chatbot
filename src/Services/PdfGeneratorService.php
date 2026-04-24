@@ -35,9 +35,9 @@ final readonly class PdfGeneratorService
     public function generatePdf(SessionInterface $session, string $threadId, array $params): string
     {
         $content = $params['content'] ?? '';
-        $format = $params['format'] ?? $this->settings->get('pdf.defaultFormat');
+        $format = $params['format'] ?? $this->settings->get('tools.pdf.defaultFormat');
         $displayName = $params['filename'] ?? null;
-        $pageSize = $params['pageSize'] ?? $this->settings->get('pdf.defaultPageSize');
+        $pageSize = $params['pageSize'] ?? $this->settings->get('tools.pdf.defaultPageSize');
         $orientation = $params['orientation'] ?? 'portrait';
         $margins = $params['margins'] ?? [];
 
@@ -95,7 +95,7 @@ final readonly class PdfGeneratorService
             'mode' => 'utf-8',
             'format' => $pageSize,
             'orientation' => $mpdfOrientation,
-            'tempDir' => $this->settings->get('pdf.tempDir'),
+            'tempDir' => $this->settings->get('tools.pdf.tempDir'),
             'margin_top' => $margins['top'] ?? 15,
             'margin_bottom' => $margins['bottom'] ?? 15,
             'margin_left' => $margins['left'] ?? 15,

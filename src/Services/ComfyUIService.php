@@ -27,8 +27,8 @@ final readonly class ComfyUIService
         private ChatHistoryRepository $chatHistoryRepository,
     ) {
         $this->httpClient = new Client([
-            'base_uri' => $this->settings->get('comfyui.url'),
-            'timeout' => $this->settings->get('comfyui.timeout') ?? 300.0,
+            'base_uri' => $this->settings->get('tools.comfyui.url'),
+            'timeout' => $this->settings->get('tools.comfyui.timeout') ?? 300.0,
         ]);
     }
 
@@ -138,7 +138,7 @@ final readonly class ComfyUIService
      */
     private function waitForResult(string $promptId): array
     {
-        $timeout = (int) ($this->settings->get('comfyui.timeout') ?? 300);
+        $timeout = (int) ($this->settings->get('tools.comfyui.timeout') ?? 300);
         $startTime = time();
         $pollInterval = 2;
 

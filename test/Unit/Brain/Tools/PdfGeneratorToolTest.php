@@ -16,7 +16,7 @@ final class PdfGeneratorToolTest extends TestCase
 {
     public function testInvokeReturnsErrorWhenDisabled(): void
     {
-        $settings = new Settings(['pdf' => ['enabled' => false, 'defaultFormat' => 'html', 'defaultPageSize' => 'A4']]);
+        $settings = new Settings(['tools' => ['pdf' => ['enabled' => false, 'defaultFormat' => 'html', 'defaultPageSize' => 'A4']]]);
         $session = $this->createMock(SessionInterface::class);
         $service = $this->createPdfGeneratorService($settings);
 
@@ -31,7 +31,7 @@ final class PdfGeneratorToolTest extends TestCase
 
     public function testInvokeReturnsErrorWhenNoThreadId(): void
     {
-        $settings = new Settings(['pdf' => ['enabled' => true, 'defaultFormat' => 'html', 'defaultPageSize' => 'A4']]);
+        $settings = new Settings(['tools' => ['pdf' => ['enabled' => true, 'defaultFormat' => 'html', 'defaultPageSize' => 'A4']]]);
         $session = $this->createMock(SessionInterface::class);
         $session->method('get')->willReturnMap([
             ['threadId', null],
@@ -59,7 +59,7 @@ final class PdfGeneratorToolTest extends TestCase
 
     public function testToolPropertiesIncludeContent(): void
     {
-        $settings = new Settings(['pdf' => ['enabled' => false, 'defaultFormat' => 'html', 'defaultPageSize' => 'A4']]);
+        $settings = new Settings(['tools' => ['pdf' => ['enabled' => false, 'defaultFormat' => 'html', 'defaultPageSize' => 'A4']]]);
         $session = $this->createMock(SessionInterface::class);
         $service = $this->createPdfGeneratorService($settings);
 

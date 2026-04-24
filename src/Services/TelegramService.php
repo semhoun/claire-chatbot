@@ -196,7 +196,7 @@ class TelegramService implements QueueDoer
         }
 
         // Intitialize comfyUI workflow
-        if ($this->settings->get('comfyui.enabled') === true) {
+        if ($this->settings->get('tools.comfyui.enabled') === true) {
             $workflow = (string) $this->telegramSession->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
             if ($workflow === '' && $this->comfyUIWorkflowRegistry->has($workflow)) {
                 $defaultWorkflow = $this->comfyUIWorkflowRegistry->getDefaultSlug();
@@ -769,7 +769,7 @@ class TelegramService implements QueueDoer
 
     private function isComfyUIEnabled(): bool
     {
-        return $this->settings->get('comfyui.enabled') === true;
+        return $this->settings->get('tools.comfyui.enabled') === true;
     }
 
     /**

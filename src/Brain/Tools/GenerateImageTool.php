@@ -38,7 +38,7 @@ EOT;
         string $prompt
     ): string {
         try {
-            $enabled = $this->settings->get('comfyui.enabled');
+            $enabled = $this->settings->get('tools.comfyui.enabled');
 
             if (! $enabled) {
                 return 'Error: Image generation is not enabled. ComfyUI is disabled in the configuration.';

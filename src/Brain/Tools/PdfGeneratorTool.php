@@ -62,7 +62,7 @@ EOT;
         int $margin_right = 15,
     ): string {
         try {
-            $enabled = $this->settings->get('pdf.enabled');
+            $enabled = $this->settings->get('tools.pdf.enabled');
 
             if (! $enabled) {
                 return json_encode([
