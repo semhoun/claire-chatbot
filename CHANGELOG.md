@@ -7,6 +7,25 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Added
+- **Génération de PDF** : Nouveau outil `generate_pdf` pour créer des documents PDF depuis du HTML ou du Markdown
+  - Service `PdfGeneratorService` basé sur mPDF avec support des marges, orientation et formats de page (A4, Letter, A3, A5)
+  - Tool `PdfGeneratorTool` intégré aux agents IA avec post-processing automatique des messages
+  - Entité `ChatHistoryFile` et repository associé pour lier les fichiers générés aux conversations
+  - Extension Twig `GeneratedFileExtension` (remplace `GeneratedImageExtension`) pour l'affichage des fichiers générés (images et PDF)
+  - Variables d'environnement : `PDF_ENABLED`, `PDF_DEFAULT_FORMAT`, `PDF_DEFAULT_PAGE_SIZE`, `PDF_TEMP_DIR`
+  - Service `GeneratedFileService` pour la gestion centralisée des fichiers générés
+- Tests unitaires pour `PdfGeneratorTool` et `GeneratedFileExtension`
+
+### Changed
+- **Configuration** : Consolidation des settings d'outils dans `config/settings/tools.php` (searXNG, ComfyUI, PDF)
+- **Queue** : Force flush des logs OpenTelemetry après chaque traitement de job worker
+- **Docker** : Suppression des modules Caddy Mercure et Vulcain du Dockerfile
+- Remplacement de `GeneratedImageExtension` par `GeneratedFileExtension` pour supporter les images et les PDF
+
+### Removed
+- Suppression du fichier de configuration `config/settings/comfyui.php` (fusionné dans `tools.php`)
+
 ## [1.4.6] - 2026-04-22
 
 ### Added

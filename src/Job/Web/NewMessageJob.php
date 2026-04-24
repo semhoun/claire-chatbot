@@ -44,8 +44,6 @@ final class NewMessageJob implements QueueDoer
 
     private string $toolText = '';
 
-    private bool $isStreamingStarted = false;
-
     private int $nbPublishedChunks = 0;
 
     private string $userMessage;
@@ -154,7 +152,9 @@ final class NewMessageJob implements QueueDoer
         }
 
         $finalText = $this->toolText . $agentHandler->getMessage()->getContent();
-        $this->finalizeChat($finalText);
+        $this->publishContent($finalText);
+
+        $this->publishStopMessages();
     }
 
     private function processChunk(mixed $chunk): void
@@ -171,7 +171,8 @@ final class NewMessageJob implements QueueDoer
         }
 
         if ($chunk instanceof TextChunk) {
-            $this->processTextChunk($chunk);
+            $this->streamedText .= $chunk->content;
+            $this->publishContent($this->streamedText);
         }
     }
 
@@ -206,32 +207,18 @@ final class NewMessageJob implements QueueDoer
         ]);
     }
 
-    private function processTextChunk(ReasoningChunk|TextChunk $chunk): void
+    private function publishStartMessages(): void
     {
-        $this->streamedText .= $chunk->content;
-
-        $html = $this->twig->fetch('partials/md.twig', [
-            'message' => $this->streamedText,
-            'streaming_placeholder_images' => true,
-        ]);
-
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.start', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
-            'html' => $html,
         ]);
     }
 
-    private function publishStartMessages(): void
+    private function publishStopMessages(): void
     {
-        if ($this->isStreamingStarted) {
-            return;
-        }
-
-        $this->isStreamingStarted = true;
-
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.start', [
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.stop', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
@@ -257,9 +244,9 @@ final class NewMessageJob implements QueueDoer
         ]);
     }
 
-    private function finalizeChat(string $content): void
+    private function publishContent(string $content): void
     {
-        $finalHtml = $this->twig->fetch('partials/md.twig', [
+        $html = $this->twig->fetch('partials/md.twig', [
             'message' => $content,
             'streaming_placeholder_images' => false,
         ]);
@@ -268,12 +255,7 @@ final class NewMessageJob implements QueueDoer
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
-            'html' => $finalHtml,
-        ]);
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.done', [
-            'threadId' => $this->threadId,
-            'sessionId' => $this->sessionId,
-            'messageId' => $this->messageId,
+            'html' => $html,
         ]);
     }
 
