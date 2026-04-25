@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Twig;
 
-use App\Services\GeneratedFileService;
+use App\Entity\File;
 use Twig\Extension\AbstractExtension;
 use Twig\TwigFilter;
 use Twig\TwigFunction;
@@ -52,10 +52,10 @@ HTML;
 
     public function processGeneratedFiles(string $content): string
     {
-        return preg_replace_callback(GeneratedFileService::GENERATED_FILE_PATTERN, static function (array $matches): string {
+        return preg_replace_callback(File::GENERATED_FILE_PATTERN, static function (array $matches): string {
             $fileId = $matches[1];
 
-            if (GeneratedFileService::isPdf($fileId)) {
+            if (str_ends_with(strtolower($fileId), '.pdf')) {
                 return sprintf(
                     self::PDF_TAG_TEMPLATE,
                     htmlspecialchars($fileId, ENT_QUOTES, 'UTF-8')
@@ -71,10 +71,10 @@ HTML;
 
     public function processGeneratedFilesPlaceholder(string $content): string
     {
-        return preg_replace_callback(GeneratedFileService::GENERATED_FILE_PATTERN, static function (array $matches): string {
+        return preg_replace_callback(File::GENERATED_FILE_PATTERN, static function (array $matches): string {
             $fileId = htmlspecialchars($matches[1], ENT_QUOTES, 'UTF-8');
 
-            if (GeneratedFileService::isPdf($matches[1])) {
+            if (str_ends_with(strtolower($matches[1]), '.pdf')) {
                 return sprintf(
                     self::PDF_PLACEHOLDER_TEMPLATE,
                     $fileId
@@ -94,7 +94,7 @@ HTML;
     public function extractGeneratedFiles(string $content): array
     {
         $matched = preg_match_all(
-            GeneratedFileService::GENERATED_FILE_PATTERN,
+            File::GENERATED_FILE_PATTERN,
             $content,
             $matches,
             PREG_SET_ORDER

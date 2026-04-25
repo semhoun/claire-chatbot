@@ -31,6 +31,8 @@ IMPORTANT: The tool returns two fields:
 - "name": The human-readable display name of the file. This is shown to the user when they download the PDF.
 
 Always use the "id" value (the @@GENERATED@@...@@ pattern) in your message, NOT the name.
+
+You can embed previously generated images in the PDF content by including their @@GENERATED@@<user_id@uuid.png>@@ tokens in the HTML/Markdown. These will be automatically resolved and embedded as images in the PDF.
 EOT;
 
         parent::__construct(

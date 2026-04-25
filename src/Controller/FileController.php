@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Entity\ChatHistoryFile;
 use App\Entity\File;
 use App\Entity\User;
 use App\Services\Auth;
-use App\Services\GeneratedFileService;
 use App\Services\Markdown;
 use App\Services\Session\Trait\SessionFromRequest;
 use Doctrine\ORM\EntityManagerInterface;
@@ -88,14 +86,20 @@ final readonly class FileController
 
         $user = $this->entityManager->getReference(User::class, $userId);
 
+        $fileId = Uuid::uuid7()->toString();
+        $extension = pathinfo($file->getClientFilename() ?? '', PATHINFO_EXTENSION);
+        $diskFilename = $fileId . ($extension !== '' ? '.' . $extension : '');
+        $localPath = 'uploads/' . $userId . '/' . $diskFilename;
+
         $entity = new File();
         $entity->setUser($user);
         $entity->setFilename($file->getClientFilename() ?? 'fichier');
         $entity->setMimeType($file->getClientMediaType() ?? 'application/octet-stream');
-        $entity->setFileId(Uuid::uuid7()->toString());
+        $entity->setFileId($fileId);
+        $entity->setFilePath($localPath);
         $entity->setSizeBytes((string) $file->getSize());
 
-        $this->filesystem->write($entity->getFileId(), $contentStream->getContents());
+        $this->filesystem->write($localPath, $contentStream->getContents());
 
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
@@ -106,6 +110,13 @@ final readonly class FileController
 
     public function uploadRag(Request $request, Response $response): Response
     {
+        $session = $this->getSession($request);
+
+        $userId = (string) $session->get(Auth::USERID);
+        if ($userId === '') {
+            return $response->withStatus(403);
+        }
+
         $file = $this->getUploadedFile($request);
 
         if (! $file instanceof \Psr\Http\Message\UploadedFileInterface || $file->getError() !== UPLOAD_ERR_OK) {
@@ -113,9 +124,9 @@ final readonly class FileController
         }
 
         $data = $this->readFileContent($file);
-        $entity = $this->createFileEntity($file);
+        $entity = $this->createFileEntity($file, $userId);
 
-        $this->filesystem->write($entity->getFileId(), $data);
+        $this->filesystem->write($entity->getFilePath() ?? $entity->getFileId(), $data);
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
 
@@ -136,7 +147,17 @@ final readonly class FileController
 
         $id = (string) $request->getAttribute('id');
 
-        $file = $this->entityManager->getRepository(File::class)->find($id);
+        $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $id]);
+        if ($file === null) {
+            // Try with token format
+            $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => '@@GENERATED@@' . $id . '@@']);
+        }
+
+        if ($file === null) {
+            // Fallback for direct DB ID
+            $file = $this->entityManager->getRepository(File::class)->find($id);
+        }
+
         if ($file === null) {
             return $response->withStatus(404);
         }
@@ -145,7 +166,10 @@ final readonly class FileController
             return $response->withStatus(403);
         }
 
-        $this->filesystem->delete($file->getFileId());
+        $path = $file->getFilePath() ?? $file->getFileId();
+        if ($this->filesystem->fileExists($path)) {
+            $this->filesystem->delete($path);
+        }
 
         $this->entityManager->remove($file);
         $this->entityManager->flush();
@@ -167,7 +191,22 @@ final readonly class FileController
         }
 
         $id = (string) $request->getAttribute('id');
-        $path = GeneratedFileService::FOLDER_PREFIX . '/' . str_replace(GeneratedFileService::FOLDER_SEPARATOR, '/', $id);
+
+        /** @var File|null $file */
+        $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $id]);
+
+        if ($file === null) {
+            // Try with token format if not found directly
+            $token = '@@GENERATED@@' . $id . '@@';
+            $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $token]);
+        }
+
+        if ($file !== null && $file->getFilePath() !== null) {
+            $path = $file->getFilePath();
+        } else {
+            // Fallback to legacy path construction
+            $path = File::GENERATED_FOLDER_PREFIX . '/' . str_replace(File::GENERATED_FOLDER_SEPARATOR, '/', $id);
+        }
 
         if (! $this->filesystem->fileExists($path)) {
             return $response->withStatus(404);
@@ -182,8 +221,11 @@ final readonly class FileController
             ->withHeader('Content-Type', $mimeType)
             ->withHeader('Content-Length', (string) strlen($content));
 
-        if (GeneratedFileService::isPdf($id)) {
-            $displayName = $this->entityManager->getRepository(ChatHistoryFile::class)
+        $isPdf = $file?->fileType() === File::FILE_TYPE_PDF
+            || str_ends_with(strtolower($id), '.pdf');
+
+        if ($isPdf) {
+            $displayName = $this->entityManager->getRepository(File::class)
                 ->findDisplayNameByFilePath($path);
             $downloadName = $displayName !== null ? $displayName . '.pdf' : basename($path);
             $response = $response->withHeader('Content-Disposition', 'inline; filename="' . addcslashes($downloadName, '"\\') . '"');
@@ -207,12 +249,20 @@ final readonly class FileController
         return $stream->getContents();
     }
 
-    private function createFileEntity(UploadedFileInterface $uploadedFile): File
+    private function createFileEntity(UploadedFileInterface $uploadedFile, string $userId): File
     {
+        $user = $this->entityManager->getReference(User::class, $userId);
+        $fileId = Uuid::uuid7()->toString();
+        $extension = pathinfo($uploadedFile->getClientFilename() ?? '', PATHINFO_EXTENSION);
+        $diskFilename = $fileId . ($extension !== '' ? '.' . $extension : '');
+        $localPath = 'uploads/' . $userId . '/' . $diskFilename;
+
         $file = new File();
+        $file->setUser($user);
         $file->setFilename($uploadedFile->getClientFilename() ?? 'fichier');
         $file->setMimeType($uploadedFile->getClientMediaType() ?? 'application/octet-stream');
-        $file->setFileId(Uuid::uuid7()->toString());
+        $file->setFileId($fileId);
+        $file->setFilePath($localPath);
         $file->setSizeBytes((string) $uploadedFile->getSize());
 
         return $file;

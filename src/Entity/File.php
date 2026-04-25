@@ -14,6 +14,18 @@ use Ramsey\Uuid\Uuid;
 #[ORM\HasLifecycleCallbacks]
 class File
 {
+    public const string GENERATED_FILE_PATTERN = '/@@GENERATED@@([a-zA-Z0-9_\-@]+\.(?:png|jpg|jpeg|gif|webp|pdf))@@/i';
+
+    public const string GENERATED_FOLDER_PREFIX = 'generated';
+
+    public const string GENERATED_FOLDER_SEPARATOR = '@';
+
+    public const string FILE_TYPE_IMAGE = 'image';
+
+    public const string FILE_TYPE_PDF = 'pdf';
+
+    public const string FILE_TYPE_UNKNOWN = 'unknown';
+
     #[ORM\Id]
     #[ORM\Column(name: 'id', type: 'bigint', nullable: false)]
     #[ORM\GeneratedValue(strategy: 'AUTO')]
@@ -22,6 +34,10 @@ class File
     #[ORM\ManyToOne(targetEntity: User::class)]
     #[ORM\JoinColumn(name: 'user_id', referencedColumnName: 'id', nullable: false)]
     private ?User $user = null;
+
+    #[ORM\ManyToOne(targetEntity: ChatHistory::class, inversedBy: 'files')]
+    #[ORM\JoinColumn(name: 'history_id', referencedColumnName: 'id', nullable: true, onDelete: 'CASCADE')]
+    private ?ChatHistory $chatHistory = null;
 
     #[ORM\Column(name: 'filename', type: 'string', length: 255, nullable: false)]
     private string $filename;
@@ -32,8 +48,18 @@ class File
     #[ORM\Column(name: 'size_bytes', type: 'bigint', nullable: false)]
     private string $sizeBytes = '0';
 
-    #[ORM\Column(name: 'file_id', type: 'string', length: 36, nullable: false)]
+    #[ORM\Column(name: 'file_id', type: 'string', length: 255, nullable: false)]
     private string $fileId;
+
+    #[ORM\Column(name: 'file_type', type: 'string', length: 32, nullable: true)]
+    private ?string $fileType = null;
+
+    #[ORM\Column(name: 'file_path', type: 'string', length: 512, nullable: true)]
+    private ?string $filePath = null;
+
+    /** @var array<string, mixed> */
+    #[ORM\Column(name: 'metadata', type: 'json', nullable: false)]
+    private array $metadata = [];
 
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable', nullable: false)]
     private \DateTimeImmutable $createdAt;
@@ -103,8 +129,63 @@ class File
         $this->fileId = $fileId;
     }
 
+    public function getChatHistory(): ?ChatHistory
+    {
+        return $this->chatHistory;
+    }
+
+    public function setChatHistory(?ChatHistory $chatHistory): void
+    {
+        $this->chatHistory = $chatHistory;
+    }
+
+    public function getFileType(): ?string
+    {
+        return $this->fileType;
+    }
+
+    public function setFileType(?string $fileType): void
+    {
+        $this->fileType = $fileType;
+    }
+
+    public function getFilePath(): ?string
+    {
+        return $this->filePath;
+    }
+
+    public function setFilePath(?string $filePath): void
+    {
+        $this->filePath = $filePath;
+    }
+
+    /** @return array<string, mixed> */
+    public function getMetadata(): array
+    {
+        return $this->metadata;
+    }
+
+    /** @param array<string, mixed> $metadata */
+    public function setMetadata(array $metadata): void
+    {
+        $this->metadata = $metadata;
+    }
+
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    public function fileType(): string
+    {
+        if (str_starts_with($this->mimeType, 'image/')) {
+            return self::FILE_TYPE_IMAGE;
+        }
+
+        if ($this->mimeType === 'application/pdf') {
+            return self::FILE_TYPE_PDF;
+        }
+
+        return self::FILE_TYPE_UNKNOWN;
     }
 }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Test\Unit\Twig;
 
-use App\Services\GeneratedFileService;
+use App\Entity\File;
 use App\Services\Twig\GeneratedFileExtension;
 use PHPUnit\Framework\TestCase;
 
@@ -67,17 +67,17 @@ final class GeneratedFileExtensionTest extends TestCase
 
     public function testGeneratedFilePatternMatchesPdfExtension(): void
     {
-        $this->assertSame(1, preg_match(GeneratedFileService::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.pdf@@'));
+        $this->assertSame(1, preg_match(File::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.pdf@@'));
     }
 
     public function testGeneratedFilePatternMatchesPngExtension(): void
     {
-        $this->assertSame(1, preg_match(GeneratedFileService::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.png@@'));
+        $this->assertSame(1, preg_match(File::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.png@@'));
     }
 
     public function testGeneratedFilePatternDoesNotMatchTxtExtension(): void
     {
-        $this->assertSame(0, preg_match(GeneratedFileService::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.txt@@'));
+        $this->assertSame(0, preg_match(File::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.txt@@'));
     }
 
     public function testMixedContentWithImagesAndPdfs(): void

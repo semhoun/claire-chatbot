@@ -51,8 +51,8 @@ class ChatHistory
     #[ORM\Column(name: 'updated_at', type: 'datetime_immutable', nullable: false)]
     private \DateTimeImmutable $updatedAt;
 
-    /** @var \Doctrine\Common\Collections\Collection<int, ChatHistoryFile> */
-    #[ORM\OneToMany(targetEntity: ChatHistoryFile::class, mappedBy: 'chatHistory', cascade: ['remove'])]
+    /** @var \Doctrine\Common\Collections\Collection<int, File> */
+    #[ORM\OneToMany(targetEntity: File::class, mappedBy: 'chatHistory', cascade: ['remove'])]
     private \Doctrine\Common\Collections\Collection $files;
 
     public function __construct()
@@ -169,17 +169,17 @@ class ChatHistory
         $this->updatedAt = $updatedAt;
     }
 
-    /** @return \Doctrine\Common\Collections\Collection<int, ChatHistoryFile> */
+    /** @return \Doctrine\Common\Collections\Collection<int, File> */
     public function getFiles(): \Doctrine\Common\Collections\Collection
     {
         return $this->files;
     }
 
-    public function addFile(ChatHistoryFile $chatHistoryFile): void
+    public function addFile(File $file): void
     {
-        if (! $this->files->contains($chatHistoryFile)) {
-            $this->files->add($chatHistoryFile);
-            $chatHistoryFile->setHistory($this);
+        if (! $this->files->contains($file)) {
+            $this->files->add($file);
+            $file->setChatHistory($this);
         }
     }
 }

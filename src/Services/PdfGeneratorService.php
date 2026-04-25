@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Entity\ChatHistoryFile;
+use App\Entity\File;
 use App\Repository\ChatHistoryRepository;
 use App\Services\Session\SessionInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -45,18 +45,25 @@ final readonly class PdfGeneratorService
             throw new RuntimeException('PDF content exceeds maximum allowed size');
         }
 
+        $userId = (string) $session->get(Auth::USERID);
+
         $html = $format === 'markdown'
             ? $this->markdown->convert($content)
             : $content;
 
-        $pdfContent = $this->renderPdf($html, $pageSize, $orientation, $margins);
+        [$html, $tempFiles] = $this->resolveGeneratedImages($html, $userId);
 
-        $userId = (string) $session->get(Auth::USERID);
+        try {
+            $pdfContent = $this->renderPdf($html, $pageSize, $orientation, $margins);
+        } finally {
+            $this->cleanupTempFiles($tempFiles);
+        }
+
         $uuid = Uuid::uuid4()->toString();
         $diskFilename = $uuid . '.pdf';
 
-        $localPath = GeneratedFileService::FOLDER_PREFIX . '/' . $userId . '/' . $diskFilename;
-        $fileId = '@@GENERATED@@' . $userId . GeneratedFileService::FOLDER_SEPARATOR . $diskFilename . '@@';
+        $localPath = File::GENERATED_FOLDER_PREFIX . '/' . $userId . '/' . $diskFilename;
+        $fileId = '@@GENERATED@@' . $userId . File::GENERATED_FOLDER_SEPARATOR . $diskFilename . '@@';
 
         try {
             $this->filesystem->write($localPath, $pdfContent);
@@ -77,7 +84,7 @@ final readonly class PdfGeneratorService
             'format' => $format,
             'pageSize' => $pageSize,
             'orientation' => $orientation === 'portrait' ? 'P' : 'L',
-        ]);
+        ], $fileId);
 
         return $fileId;
     }
@@ -110,7 +117,7 @@ final readonly class PdfGeneratorService
     /**
      * @param array<string, mixed> $metadata
      */
-    private function saveFileReference(string $threadId, string $filePath, array $metadata): void
+    private function saveFileReference(string $threadId, string $filePath, array $metadata, string $fileId): void
     {
         $history = $this->chatHistoryRepository->findOneBy(['threadId' => $threadId]);
 
@@ -118,14 +125,17 @@ final readonly class PdfGeneratorService
             return;
         }
 
-        $chatHistoryFile = new ChatHistoryFile();
-        $chatHistoryFile->setHistory($history);
-        $chatHistoryFile->setUser($history->getUser());
-        $chatHistoryFile->setFileType('pdf');
-        $chatHistoryFile->setFilePath($filePath);
-        $chatHistoryFile->setMetadata($metadata);
+        $file = new File();
+        $file->setFileId($fileId);
+        $file->setChatHistory($history);
+        $file->setUser($history->getUser());
+        $file->setFileType('pdf');
+        $file->setFilePath($filePath);
+        $file->setFilename(basename($filePath));
+        $file->setMimeType('application/pdf');
+        $file->setMetadata($metadata);
 
-        $this->entityManager->persist($chatHistoryFile);
+        $this->entityManager->persist($file);
         $this->entityManager->flush();
     }
 
@@ -138,5 +148,114 @@ final readonly class PdfGeneratorService
         $sanitized = preg_replace('/[^a-zA-Z0-9_\-\s]/', '', $filename);
 
         return $sanitized !== null ? substr(trim($sanitized), 0, 100) : null;
+    }
+
+    /**
+     * Resolve @@GENERATED@@ image tokens to temporary file <img> tags.
+     * Uses file paths instead of base64 to avoid pcre.backtrack_limit issues.
+     *
+     * @return array{string, list<string>} HTML with resolved images and list of temp files
+     */
+    private function resolveGeneratedImages(string $html, string $userId): array
+    {
+        $tempFiles = [];
+
+        $resolvedHtml = preg_replace_callback(
+            File::GENERATED_FILE_PATTERN,
+            function (array $matches) use ($userId, &$tempFiles): string {
+                $fileId = $matches[1];
+
+                // Skip PDF tokens - only process images
+                if (str_ends_with(strtolower($fileId), '.pdf')) {
+                    return $matches[0];
+                }
+
+                // Extract userId from token (format: userId@uuid.ext)
+                $separatorPos = strpos($fileId, File::GENERATED_FOLDER_SEPARATOR);
+                if ($separatorPos === false) {
+                    return $matches[0];
+                }
+
+                $tokenUserId = substr($fileId, 0, $separatorPos);
+
+                // Security check: only embed images belonging to current user
+                if ($tokenUserId !== $userId) {
+                    return $matches[0];
+                }
+
+                // Resolve filesystem path
+                $token = '@@GENERATED@@' . $fileId . '@@';
+                /** @var File|null $file */
+                $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $token]);
+
+                if ($file !== null && $file->getFilePath() !== null) {
+                    $filePath = $file->getFilePath();
+                } else {
+                    $filePath = File::GENERATED_FOLDER_PREFIX . '/'
+                        . str_replace(File::GENERATED_FOLDER_SEPARATOR, '/', $fileId);
+                }
+
+                try {
+                    $imageData = $this->filesystem->read($filePath);
+                } catch (FilesystemException) {
+                    // Leave token as-is if file not found
+                    return $matches[0];
+                }
+
+                // Write to temp file instead of base64 to avoid pcre.backtrack_limit
+                $tempFile = $this->writeImageToTempFile($fileId, $imageData);
+                if ($tempFile === null) {
+                    return $matches[0];
+                }
+
+                $tempFiles[] = $tempFile;
+
+                return '<img src="' . $tempFile . '" style="max-width:100%;height:auto;">';
+            },
+            $html
+        ) ?? $html;
+
+        return [$resolvedHtml, $tempFiles];
+    }
+
+    /**
+     * Write image data to a temporary file and return the path.
+     * Uses the configured PDF temp directory.
+     */
+    private function writeImageToTempFile(string $fileId, string $imageData): ?string
+    {
+        $extension = strtolower(pathinfo($fileId, PATHINFO_EXTENSION));
+        $tempDir = $this->settings->get('tools.pdf.tempDir') . '/images';
+
+        if (! is_dir($tempDir) && ! @mkdir($tempDir, 0o750, true)) {
+            return null;
+        }
+
+        // Extract uuid from fileId (userId@uuid.ext -> uuid)
+        $separatorPos = strpos($fileId, File::GENERATED_FOLDER_SEPARATOR);
+        $uuidPart = substr($fileId, $separatorPos !== false ? $separatorPos + 1 : 0);
+        $uuid = pathinfo($uuidPart, PATHINFO_FILENAME);
+
+        $tempFile = $tempDir . '/' . $uuid . '.' . $extension;
+
+        if (file_put_contents($tempFile, $imageData) === false) {
+            return null;
+        }
+
+        return $tempFile;
+    }
+
+    /**
+     * Clean up temporary image files.
+     *
+     * @param list<string> $tempFiles
+     */
+    private function cleanupTempFiles(array $tempFiles): void
+    {
+        foreach ($tempFiles as $tempFile) {
+            if (file_exists($tempFile)) {
+                @unlink($tempFile);
+            }
+        }
     }
 }

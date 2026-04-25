@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Entity\ChatHistoryFile;
+use App\Entity\File;
 use App\Repository\ChatHistoryRepository;
 use App\Services\Session\SessionInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -274,11 +274,11 @@ final readonly class ComfyUIService
             : 'png';
         $filename = Uuid::uuid4() . '.' . $extension;
         $userId = $session->get(Auth::USERID);
-        $localPath = GeneratedFileService::FOLDER_PREFIX . '/' . $userId . '/' . $filename;
-        $imgId = '@@GENERATED@@' . $userId . GeneratedFileService::FOLDER_SEPARATOR . $filename . '@@';
+        $localPath = File::GENERATED_FOLDER_PREFIX . '/' . $userId . '/' . $filename;
+        $imgId = '@@GENERATED@@' . $userId . File::GENERATED_FOLDER_SEPARATOR . $filename . '@@';
 
         $this->filesystem->write($localPath, $imageContent);
-        $this->saveFileReference($session, $localPath, $prompt);
+        $this->saveFileReference($session, $localPath, $prompt, $imgId);
 
         return $imgId;
     }
@@ -286,7 +286,7 @@ final readonly class ComfyUIService
     /**
      * Save file reference to database.
      */
-    private function saveFileReference(SessionInterface $session, string $filePath, string $prompt): void
+    private function saveFileReference(SessionInterface $session, string $filePath, string $prompt, string $fileId): void
     {
         $threadId = $session->get('threadId');
 
@@ -306,17 +306,20 @@ final readonly class ComfyUIService
             $workflowSlug = $this->comfyUIWorkflowRegistry->getDefaultSlug() ?? '';
         }
 
-        $chatHistoryFile = new ChatHistoryFile();
-        $chatHistoryFile->setHistory($history);
-        $chatHistoryFile->setUser($history->getUser());
-        $chatHistoryFile->setFileType('image');
-        $chatHistoryFile->setFilePath($filePath);
-        $chatHistoryFile->setMetadata([
+        $file = new File();
+        $file->setFileId($fileId);
+        $file->setChatHistory($history);
+        $file->setUser($history->getUser());
+        $file->setFileType('image');
+        $file->setFilePath($filePath);
+        $file->setFilename(basename($filePath));
+        $file->setMimeType('image/' . pathinfo($filePath, PATHINFO_EXTENSION));
+        $file->setMetadata([
             'prompt' => $prompt,
             'workflow' => $workflowSlug,
         ]);
 
-        $this->entityManager->persist($chatHistoryFile);
+        $this->entityManager->persist($file);
         $this->entityManager->flush();
     }
 }

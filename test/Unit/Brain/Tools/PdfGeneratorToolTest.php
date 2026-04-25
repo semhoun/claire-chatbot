@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Test\Unit\Brain\Tools;
 
 use App\Brain\Tools\PdfGeneratorTool;
-use App\Services\GeneratedFileService;
+use App\Entity\File;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use NeuronAI\Chat\Enums\MessageRole;
@@ -49,12 +49,12 @@ final class PdfGeneratorToolTest extends TestCase
 
     public function testGeneratedPatternMatchesPdfIds(): void
     {
-        $this->assertSame(1, preg_match(GeneratedFileService::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.pdf@@'));
+        $this->assertSame(1, preg_match(File::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.pdf@@'));
     }
 
     public function testGeneratedPatternMatchesImageIds(): void
     {
-        $this->assertSame(1, preg_match(GeneratedFileService::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.png@@'));
+        $this->assertSame(1, preg_match(File::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.png@@'));
     }
 
     public function testToolPropertiesIncludeContent(): void

@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Tools\GenerateImageTool;
+use App\Entity\File;
 use App\Entity\User;
 use App\Enums\TelegramAction;
 use App\Services\Queue\QueueDoer;
@@ -539,7 +540,7 @@ class TelegramService implements QueueDoer
      */
     private function extractImageIds(string $content): array
     {
-        if (preg_match_all(GeneratedFileService::GENERATED_FILE_PATTERN, $content, $matches, PREG_SET_ORDER) === false) {
+        if (preg_match_all(File::GENERATED_FILE_PATTERN, $content, $matches, PREG_SET_ORDER) === false) {
             return [];
         }
 
@@ -557,7 +558,7 @@ class TelegramService implements QueueDoer
     private function handleImageResponse(int $telegramChatId, string $responseText, array $imageIds): void
     {
         // Remove image paths from text to create caption
-        $caption = preg_replace(GeneratedFileService::GENERATED_FILE_PATTERN, '', $responseText);
+        $caption = preg_replace(File::GENERATED_FILE_PATTERN, '', $responseText);
         // Filter OC tags
         $caption = $this->filterOCTags((string) $caption);
 
@@ -576,7 +577,7 @@ class TelegramService implements QueueDoer
      */
     private function sendPhoto(int $telegramChatId, string $imageId, ?string $caption = null): void
     {
-        $imagePath = GeneratedFileService::FOLDER_PREFIX . '/' . str_replace(GeneratedFileService::FOLDER_SEPARATOR, '/', $imageId);
+        $imagePath = File::GENERATED_FOLDER_PREFIX . '/' . str_replace(File::GENERATED_FOLDER_SEPARATOR, '/', $imageId);
 
         try {
             $this->sendChatAction($telegramChatId, TelegramAction::PHOTO);
