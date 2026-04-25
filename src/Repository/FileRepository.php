@@ -56,12 +56,6 @@ class FileRepository extends EntityRepository
     {
         $file = $this->findOneByFilePath($filePath);
 
-        if (! $file instanceof \App\Entity\File) {
-            return null;
-        }
-
-        $metadata = $file->getMetadata();
-
-        return $metadata['displayName'] ?? null;
+        return $file?->getFilename();
     }
 }

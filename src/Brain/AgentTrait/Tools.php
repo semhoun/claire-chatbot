@@ -30,7 +30,7 @@ trait Tools
                 $this->container->get(ComfyUIService::class),
                 $this->container->get(Settings::class),
                 $this->session,
-                $this->container->get(ComfyUIWorkflowRegistry::class),
+                $this->threadId,
             );
         }
 
@@ -43,6 +43,7 @@ trait Tools
                 $this->container->get(PdfGeneratorService::class),
                 $this->container->get(Settings::class),
                 $this->session,
+                $this->threadId,
             );
         }
 

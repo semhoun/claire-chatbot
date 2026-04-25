@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Repository;
 
 use App\Entity\User;
+use App\Services\Auth;
+use App\Services\Session\SessionInterface;
 use Doctrine\ORM\EntityRepository;
 
 /**
@@ -28,5 +30,19 @@ class UserRepository extends EntityRepository
         $user->setParams($params);
 
         $this->getEntityManager()->flush();
+    }
+
+    public function getCurrentUser(SessionInterface $session): ?User
+    {
+        $userId = (string) $session->get(Auth::USERID);
+        if ($userId === '') {
+            return null;
+        }
+        $user = $this->find($userId);
+        if (!$user) {
+            return null;
+        }
+
+        return $user;
     }
 }

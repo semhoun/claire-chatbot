@@ -142,7 +142,10 @@ final class ChatTemplateSseTest extends TestCase
         $twig = new Environment(new FilesystemLoader(__DIR__ . '/../../../tmpl'));
         $twig->addExtension(new MarkdownExtension());
         $twig->addExtension(new FilesizeExtension());
-        $twig->addExtension(new GeneratedFileExtension());
+        $twig->addExtension(new GeneratedFileExtension(
+            new \App\Services\Settings([]),
+            $this->createMock(\Doctrine\ORM\EntityManagerInterface::class)
+        ));
         $twig->addExtension(new TimestampExtension());
         $twig->addRuntimeLoader(new class() implements \Twig\RuntimeLoader\RuntimeLoaderInterface {
             public function load($class): ?MarkdownRuntime

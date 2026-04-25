@@ -545,7 +545,7 @@ class TelegramService implements QueueDoer
         }
 
         return array_map(
-            static fn (array $match): string => $match[1],
+            static fn (array $match): string => $match[2],
             $matches
         );
     }
@@ -577,7 +577,9 @@ class TelegramService implements QueueDoer
      */
     private function sendPhoto(int $telegramChatId, string $imageId, ?string $caption = null): void
     {
-        $imagePath = File::GENERATED_FOLDER_PREFIX . '/' . str_replace(File::GENERATED_FOLDER_SEPARATOR, '/', $imageId);
+        $fileId = File::GENERATED_PREFIX . $imageId . File::GENERATED_SUFFIX;
+        $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $fileId]);
+        $imagePath = $file?->getFilePath() ?? '';
 
         try {
             $this->sendChatAction($telegramChatId, TelegramAction::PHOTO);

@@ -42,7 +42,7 @@
         {% endif %}
 
         <span class="message__text"{% if message.id is defined and message.id %} id="message_{{ message.id }}"{% endif %}>
-            {{ message.message|process_generated_files|markdown_to_html }}
+            {{ message.message|markdown_to_html|process_generated_files }}
         </span>
     </div>
     <span class="message__meta">{% if time is defined and time %}{{ time|format_timestamp }}{% endif %}{% if sent %} • Vous{% endif %}</span>

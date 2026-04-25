@@ -285,7 +285,7 @@ final readonly class BrainController
         return [
             'filename' => $fileDB->getFilename(),
             'mimeType' => $fileDB->getMimeType(),
-            'content' => base64_encode($this->filesystem->read($fileDB->getFileId())),
+            'content' => base64_encode($this->filesystem->read($fileDB->getFilePath())),
         ];
     }
 }

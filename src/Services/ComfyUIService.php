@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Entity\ChatHistory;
 use App\Entity\File;
+use App\Entity\User;
 use App\Repository\ChatHistoryRepository;
 use App\Services\Session\SessionInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -24,7 +26,6 @@ final readonly class ComfyUIService
         private Filesystem $filesystem,
         private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
         private EntityManagerInterface $entityManager,
-        private ChatHistoryRepository $chatHistoryRepository,
     ) {
         $this->httpClient = new Client([
             'base_uri' => $this->settings->get('tools.comfyui.url'),
@@ -32,14 +33,14 @@ final readonly class ComfyUIService
         ]);
     }
 
-    public function generateImage(SessionInterface $session, string $prompt): string
+    public function generateImage(SessionInterface $session, string $threadId, string $prompt): string
     {
         try {
             $workflow = $this->getWorkflow($session, $prompt);
             $promptId = $this->queuePrompt($workflow);
             $imageData = $this->waitForResult($promptId);
 
-            return $this->saveImage($session, $imageData, $prompt);
+            return $this->saveImage($session, $threadId, $imageData, $prompt);
         } catch (GuzzleException $e) {
             throw new RuntimeException(
                 'ComfyUI API error: ' . $e->getMessage(),
@@ -262,7 +263,7 @@ final readonly class ComfyUIService
      *
      * @return string The local file path
      */
-    private function saveImage(SessionInterface $session, array $imageData, string $prompt): string
+    private function saveImage(SessionInterface $session, string $threadId, array $imageData, string $prompt): string
     {
         $imageContent = $this->downloadImage($imageData);
         $detectedExtension = pathinfo(
@@ -272,54 +273,48 @@ final readonly class ComfyUIService
         $extension = is_string($detectedExtension) && $detectedExtension !== ''
             ? $detectedExtension
             : 'png';
-        $filename = Uuid::uuid4() . '.' . $extension;
-        $userId = $session->get(Auth::USERID);
-        $localPath = File::GENERATED_FOLDER_PREFIX . '/' . $userId . '/' . $filename;
-        $imgId = '@@GENERATED@@' . $userId . File::GENERATED_FOLDER_SEPARATOR . $filename . '@@';
+        $displayName = pathinfo(
+            (string) $imageData['filename'],
+            PATHINFO_FILENAME
+        );
 
-        $this->filesystem->write($localPath, $imageContent);
-        $this->saveFileReference($session, $localPath, $prompt, $imgId);
-
-        return $imgId;
-    }
-
-    /**
-     * Save file reference to database.
-     */
-    private function saveFileReference(SessionInterface $session, string $filePath, string $prompt, string $fileId): void
-    {
-        $threadId = $session->get('threadId');
-
-        if ($threadId === null) {
-            return;
-        }
-
-        $history = $this->chatHistoryRepository->findOneBy(['threadId' => $threadId]);
-
+        $history = $this->entityManager->getRepository(ChatHistory::class)->getCurrentUserChatHistory($session, $threadId);
         if ($history === null) {
-            return;
+            throw new RuntimeException('Cannot generate PDF for non-existent chat history');
         }
 
         $workflowSlug = (string) $session->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');
-
         if ($workflowSlug === '' || ! $this->comfyUIWorkflowRegistry->has($workflowSlug)) {
             $workflowSlug = $this->comfyUIWorkflowRegistry->getDefaultSlug() ?? '';
         }
 
         $file = new File();
-        $file->setFileId($fileId);
-        $file->setChatHistory($history);
-        $file->setUser($history->getUser());
-        $file->setFileType('image');
-        $file->setFilePath($filePath);
-        $file->setFilename(basename($filePath));
-        $file->setMimeType('image/' . pathinfo($filePath, PATHINFO_EXTENSION));
-        $file->setMetadata([
-            'prompt' => $prompt,
-            'workflow' => $workflowSlug,
-        ]);
+        $file->setGeneratedFileData(
+            $history,
+            $displayName,
+            'pdf',
+            strlen($imageContent),
+            [
+                'prompt' => $prompt,
+                'workflow' => $workflowSlug,
+            ]
+        );
+
+        try {
+            $this->filesystem->write($file->getFilePath(), $imageContent);
+        } catch (FilesystemException $filesystemException) {
+            throw new RuntimeException(
+                'Failed to save generated Image: ' . $filesystemException->getMessage(),
+                (int) $filesystemException->getCode(),
+                $filesystemException
+            );
+        }
+
+        $fileId = $file->getFileId();
 
         $this->entityManager->persist($file);
         $this->entityManager->flush();
+
+        return $fileId;
     }
 }

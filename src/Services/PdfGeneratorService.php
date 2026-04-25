@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Entity\ChatHistory;
 use App\Entity\File;
-use App\Repository\ChatHistoryRepository;
+use App\Entity\User;
 use App\Services\Session\SessionInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
@@ -13,7 +14,6 @@ use League\Flysystem\FilesystemException;
 use Mpdf\Mpdf;
 use Mpdf\MpdfException;
 use Mpdf\Output\Destination;
-use Ramsey\Uuid\Uuid;
 use RuntimeException;
 
 final readonly class PdfGeneratorService
@@ -24,7 +24,6 @@ final readonly class PdfGeneratorService
         private Settings $settings,
         private Filesystem $filesystem,
         private EntityManagerInterface $entityManager,
-        private ChatHistoryRepository $chatHistoryRepository,
         private Markdown $markdown,
     ) {
     }
@@ -45,13 +44,21 @@ final readonly class PdfGeneratorService
             throw new RuntimeException('PDF content exceeds maximum allowed size');
         }
 
-        $userId = (string) $session->get(Auth::USERID);
+        $user = $this->entityManager->getRepository(User::class)->getCurrentUser($session);
+        if (!$user) {
+            throw new RuntimeException('User not found for PDF generation');
+        }
+
+        $history = $this->entityManager->getRepository(ChatHistory::class)->getCurrentUserChatHistory($session, $threadId);
+        if ($history === null) {
+            throw new RuntimeException('Cannot generate PDF for non-existent chat history');
+        }
 
         $html = $format === 'markdown'
             ? $this->markdown->convert($content)
             : $content;
 
-        [$html, $tempFiles] = $this->resolveGeneratedImages($html, $userId);
+        [$html, $tempFiles] = $this->resolveGeneratedImages($html, $user);
 
         try {
             $pdfContent = $this->renderPdf($html, $pageSize, $orientation, $margins);
@@ -59,14 +66,21 @@ final readonly class PdfGeneratorService
             $this->cleanupTempFiles($tempFiles);
         }
 
-        $uuid = Uuid::uuid4()->toString();
-        $diskFilename = $uuid . '.pdf';
-
-        $localPath = File::GENERATED_FOLDER_PREFIX . '/' . $userId . '/' . $diskFilename;
-        $fileId = '@@GENERATED@@' . $userId . File::GENERATED_FOLDER_SEPARATOR . $diskFilename . '@@';
+        $file = new File();
+        $file->setGeneratedFileData(
+            $history,
+            $displayName,
+            'pdf',
+            strlen($pdfContent),
+            [
+                'format' => $format,
+                'pageSize' => $pageSize,
+                'orientation' => $orientation === 'portrait' ? 'P' : 'L',
+            ]
+        );
 
         try {
-            $this->filesystem->write($localPath, $pdfContent);
+            $this->filesystem->write($file->getFilePath(), $pdfContent);
         } catch (FilesystemException $filesystemException) {
             throw new RuntimeException(
                 'Failed to save generated PDF: ' . $filesystemException->getMessage(),
@@ -75,16 +89,10 @@ final readonly class PdfGeneratorService
             );
         }
 
-        $safeDisplayName = $displayName !== null && $displayName !== ''
-            ? $this->sanitizeFilename($displayName)
-            : null;
+        $fileId = $file->getFileId();
 
-        $this->saveFileReference($threadId, $localPath, [
-            'displayName' => $safeDisplayName,
-            'format' => $format,
-            'pageSize' => $pageSize,
-            'orientation' => $orientation === 'portrait' ? 'P' : 'L',
-        ], $fileId);
+        $this->entityManager->persist($file);
+        $this->entityManager->flush();
 
         return $fileId;
     }
@@ -114,96 +122,28 @@ final readonly class PdfGeneratorService
         return $mpdf->Output('', Destination::STRING_RETURN);
     }
 
-    /**
-     * @param array<string, mixed> $metadata
-     */
-    private function saveFileReference(string $threadId, string $filePath, array $metadata, string $fileId): void
-    {
-        $history = $this->chatHistoryRepository->findOneBy(['threadId' => $threadId]);
-
-        if ($history === null) {
-            return;
-        }
-
-        $file = new File();
-        $file->setFileId($fileId);
-        $file->setChatHistory($history);
-        $file->setUser($history->getUser());
-        $file->setFileType('pdf');
-        $file->setFilePath($filePath);
-        $file->setFilename(basename($filePath));
-        $file->setMimeType('application/pdf');
-        $file->setMetadata($metadata);
-
-        $this->entityManager->persist($file);
-        $this->entityManager->flush();
-    }
-
-    private function sanitizeFilename(?string $filename): ?string
-    {
-        if ($filename === null || $filename === '') {
-            return null;
-        }
-
-        $sanitized = preg_replace('/[^a-zA-Z0-9_\-\s]/', '', $filename);
-
-        return $sanitized !== null ? substr(trim($sanitized), 0, 100) : null;
-    }
-
-    /**
+      /**
      * Resolve @@GENERATED@@ image tokens to temporary file <img> tags.
      * Uses file paths instead of base64 to avoid pcre.backtrack_limit issues.
      *
      * @return array{string, list<string>} HTML with resolved images and list of temp files
      */
-    private function resolveGeneratedImages(string $html, string $userId): array
+    private function resolveGeneratedImages(string $html, User $user): array
     {
         $tempFiles = [];
 
         $resolvedHtml = preg_replace_callback(
             File::GENERATED_FILE_PATTERN,
-            function (array $matches) use ($userId, &$tempFiles): string {
-                $fileId = $matches[1];
+            function (array $matches) use ($user, &$tempFiles): string {
+                $fileId = str_replace(['"', "'"], ['', ''], $matches[2]);
 
-                // Skip PDF tokens - only process images
-                if (str_ends_with(strtolower($fileId), '.pdf')) {
-                    return $matches[0];
-                }
-
-                // Extract userId from token (format: userId@uuid.ext)
-                $separatorPos = strpos($fileId, File::GENERATED_FOLDER_SEPARATOR);
-                if ($separatorPos === false) {
-                    return $matches[0];
-                }
-
-                $tokenUserId = substr($fileId, 0, $separatorPos);
-
-                // Security check: only embed images belonging to current user
-                if ($tokenUserId !== $userId) {
-                    return $matches[0];
-                }
-
-                // Resolve filesystem path
-                $token = '@@GENERATED@@' . $fileId . '@@';
-                /** @var File|null $file */
-                $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $token]);
-
-                if ($file !== null && $file->getFilePath() !== null) {
-                    $filePath = $file->getFilePath();
-                } else {
-                    $filePath = File::GENERATED_FOLDER_PREFIX . '/'
-                        . str_replace(File::GENERATED_FOLDER_SEPARATOR, '/', $fileId);
-                }
-
-                try {
-                    $imageData = $this->filesystem->read($filePath);
-                } catch (FilesystemException) {
-                    // Leave token as-is if file not found
+                $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $fileId, 'user' => $user]);
+                if ($file === null || $file->fileType() !== File::FILE_TYPE_IMAGE) {
                     return $matches[0];
                 }
 
                 // Write to temp file instead of base64 to avoid pcre.backtrack_limit
-                $tempFile = $this->writeImageToTempFile($fileId, $imageData);
+                $tempFile = $this->writeImageToTempFile($file);
                 if ($tempFile === null) {
                     return $matches[0];
                 }
@@ -222,21 +162,22 @@ final readonly class PdfGeneratorService
      * Write image data to a temporary file and return the path.
      * Uses the configured PDF temp directory.
      */
-    private function writeImageToTempFile(string $fileId, string $imageData): ?string
+    private function writeImageToTempFile(File $file): ?string
     {
-        $extension = strtolower(pathinfo($fileId, PATHINFO_EXTENSION));
-        $tempDir = $this->settings->get('tools.pdf.tempDir') . '/images';
-
-        if (! is_dir($tempDir) && ! @mkdir($tempDir, 0o750, true)) {
+        $filePath = $file?->getFilePath();
+        if ($filePath === null) {
             return null;
         }
 
-        // Extract uuid from fileId (userId@uuid.ext -> uuid)
-        $separatorPos = strpos($fileId, File::GENERATED_FOLDER_SEPARATOR);
-        $uuidPart = substr($fileId, $separatorPos !== false ? $separatorPos + 1 : 0);
-        $uuid = pathinfo($uuidPart, PATHINFO_FILENAME);
+        try {
+            $imageData = $this->filesystem->read($filePath);
+        } catch (FilesystemException) {
+            // Leave token as-is if file not found
+            return null;
+        }
 
-        $tempFile = $tempDir . '/' . $uuid . '.' . $extension;
+        $tempDir = $this->settings->get('tools.pdf.tempDir');
+        $tempFile = $tempDir . '/' . $file->getFilename();
 
         if (file_put_contents($tempFile, $imageData) === false) {
             return null;

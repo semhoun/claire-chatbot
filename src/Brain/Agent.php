@@ -43,7 +43,10 @@ PROMPT
                 new \DateTimeImmutable()->format('Y-m-d H:i:s')
             );
             $instructions =
-                '[OC]Tout ce qui est encadré par [OC] et [/OC] est une instruction système ou une métadonnée hors contexte.[OC]'
+                '[OC]' . "\n"
+                . 'Tout ce qui est encadré par [OC] et [/OC] est une instruction système ou une métadonnée hors contexte.'. "\n"
+                . 'IMPORTANT: Ne jamais inventer ou halluciner d\'identifiants de fichiers ou d\'images (format @@GENERATED@@...@@). N\'utilise que des identifiants qui t\'ont été explicitement fournis par un outil (ex: generate_image, generate_pdf) au cours de cette conversation. N\'invente jamais d\'identifiants fictifs comme @@GENERATED@@placeholder@@.' . "\n"
+                . '[/OC]' . "\n"
                 . "\n"
                 . $instructions
                 . "\n"

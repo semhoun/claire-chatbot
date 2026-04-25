@@ -10,6 +10,7 @@ use App\Services\Queue\QueueBackendInterface;
 use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\Queue\RedisQueueBackend;
 use App\Services\RedisClient;
+use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use App\Services\Twig\GeneratedFileExtension;
 use App\Services\Twig\TimestampExtension;
@@ -94,7 +95,7 @@ return [
 
         return $logger;
     },
-    Twig::class => static function (Settings $settings, Profile $profile): Twig {
+    Twig::class => static function (Settings $settings, Profile $profile, EntityManager $entityManager): Twig {
         $twig = Twig::create($settings->get('twig.template_path'), $settings->get('twig.config'));
         if ($settings->get('debug')) {
             // Add extensions
@@ -104,7 +105,7 @@ return [
 
         $twig->addExtension(new MarkdownExtension());
         $twig->addExtension(new FilesizeExtension());
-        $twig->addExtension(new GeneratedFileExtension());
+        $twig->addExtension(new GeneratedFileExtension($settings, $entityManager));
         $twig->addExtension(new TimestampExtension());
         $twig->addRuntimeLoader(new class() implements \Twig\RuntimeLoader\RuntimeLoaderInterface {
             /** @param class-string $class */
@@ -134,8 +135,8 @@ return [
     },
     TelegramBotApi::class => static fn (Settings $settings): TelegramBotApi => new TelegramBotApi($settings->get('telegram.bot_token')),
     ComfyUIWorkflowRegistry::class => static fn (Settings $settings): ComfyUIWorkflowRegistry => new ComfyUIWorkflowRegistry($settings),
-    ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry, EntityManagerInterface $entityManager): ComfyUIService => new ComfyUIService($settings, $filesystem, $comfyUIWorkflowRegistry, $entityManager, $entityManager->getRepository(\App\Entity\ChatHistory::class)),
-    PdfGeneratorService::class => static fn (Settings $settings, Filesystem $filesystem, EntityManagerInterface $entityManager, \App\Services\Markdown $markdown): PdfGeneratorService => new PdfGeneratorService($settings, $filesystem, $entityManager, $entityManager->getRepository(\App\Entity\ChatHistory::class), $markdown),
+    ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry, EntityManagerInterface $entityManager): ComfyUIService => new ComfyUIService($settings, $filesystem, $comfyUIWorkflowRegistry, $entityManager),
+    PdfGeneratorService::class => static fn (Settings $settings, Filesystem $filesystem, EntityManagerInterface $entityManager, \App\Services\Markdown $markdown): PdfGeneratorService => new PdfGeneratorService($settings, $filesystem, $entityManager, $markdown),
     RedisClient::class => static function (Settings $settings): RedisClient {
         $client = new RedisClient();
         $client->connect(

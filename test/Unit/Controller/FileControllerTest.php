@@ -54,6 +54,14 @@ final class FileControllerTest extends TestCase
             $this->entityManager,
             $this->filesystem,
             $this->container,
+            new \App\Services\Settings([
+                'files' => [
+                    'upload' => [
+                        'path' => '/tmp',
+                        'acceptedExt' => '.txt',
+                    ],
+                ],
+            ]),
         );
     }
 
@@ -237,6 +245,35 @@ final class FileControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('image/png', $response->getHeaderLine('Content-Type'));
         $this->assertSame('binary data', (string) $response->getBody());
+    }
+
+    public function testServeReturnsPdfWithDisplayName(): void
+    {
+        $userId = 'user-123';
+        $id = 'file-uuid.pdf';
+        $path = 'generated/user-123/file-uuid.pdf';
+        $file = $this->createMock(File::class);
+        $repository = $this->createMock(\App\Repository\FileRepository::class);
+
+        $this->session->method('get')->with(Auth::USERID)->willReturn($userId);
+
+        $file->method('getFilePath')->willReturn($path);
+        $file->method('getFilename')->willReturn('mon-rapport.pdf');
+        $file->method('fileType')->willReturn(File::FILE_TYPE_PDF);
+
+        $repository->method('findOneBy')->with(['fileId' => $id])->willReturn($file);
+
+        $this->entityManager->method('getRepository')->with(File::class)->willReturn($repository);
+        $this->filesystem->method('fileExists')->with($path)->willReturn(true);
+        $this->filesystem->method('mimeType')->with($path)->willReturn('application/pdf');
+        $this->filesystem->method('read')->with($path)->willReturn('pdf data');
+
+        $request = $this->createRequestWithSession(attributeId: $id);
+        $response = $this->controller->serve($request, $this->responseFactory->createResponse());
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('application/pdf', $response->getHeaderLine('Content-Type'));
+        $this->assertStringContainsString('inline; filename="mon-rapport.pdf"', $response->getHeaderLine('Content-Disposition'));
     }
 
     public function testUploadRagSavesFileAndAddsToVectorStore(): void

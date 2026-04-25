@@ -12,7 +12,7 @@ use RuntimeException;
 
 final class RedisQueueBackend implements QueueBackendInterface
 {
-    protected bool $mustReconnect = false;
+    private bool $mustReconnect = false;
 
     public function __construct(
         private readonly RedisClient $redisClient,
@@ -72,8 +72,7 @@ final class RedisQueueBackend implements QueueBackendInterface
             if ($result === null) {
                 return null;
             }
-        }
-        catch (\Throwable $throwable) {
+        } catch (\Throwable $throwable) {
             $this->mustReconnect = true;
             throw $throwable;
         }
@@ -94,6 +93,33 @@ final class RedisQueueBackend implements QueueBackendInterface
             $this->redisClient->lpush($this->queueKey($queueMessage->queueName), [$queueMessage->id]),
             'Unable to release job back to queue'
         );
+    }
+
+    public function serialize(array $payload): string
+    {
+        try {
+            return json_encode($payload, JSON_THROW_ON_ERROR);
+        } catch (JsonException $jsonException) {
+            throw new RuntimeException('Unable to encode queue payload', 0, $jsonException);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function deserialize(string $payload): array
+    {
+        try {
+            $decoded = json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException $jsonException) {
+            throw new RuntimeException('Unable to decode queue payload', 0, $jsonException);
+        }
+
+        if (! is_array($decoded)) {
+            throw new RuntimeException('Queue payload must decode to an array');
+        }
+
+        return $decoded;
     }
 
     private function hydrateQueueMessage(string $jobId): QueueMessage
@@ -137,32 +163,5 @@ final class RedisQueueBackend implements QueueBackendInterface
             $this->mustReconnect = true;
             throw new RuntimeException($message);
         }
-    }
-
-    public function serialize(array $payload): string
-    {
-        try {
-            return json_encode($payload, JSON_THROW_ON_ERROR);
-        } catch (JsonException $jsonException) {
-            throw new RuntimeException('Unable to encode queue payload', 0, $jsonException);
-        }
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function deserialize(string $payload): array
-    {
-        try {
-            $decoded = json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException $jsonException) {
-            throw new RuntimeException('Unable to decode queue payload', 0, $jsonException);
-        }
-
-        if (! is_array($decoded)) {
-            throw new RuntimeException('Queue payload must decode to an array');
-        }
-
-        return $decoded;
     }
 }

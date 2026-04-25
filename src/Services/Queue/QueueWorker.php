@@ -38,7 +38,6 @@ final class QueueWorker
         string $workerId,
         OutputInterface $output,
     ): int {
-
         $this->logger->info('Queue worker started', [
             'worker_id' => $workerId,
             'queue' => $queueWorkerOptions->queueName,
@@ -72,6 +71,25 @@ final class QueueWorker
             'running' => $this->running,
         ]);
         return $this->processedJobs;
+    }
+
+    public function createQueueDoer(QueueMessage $queueMessage): QueueDoer
+    {
+        $jobClass = $queueMessage->jobClass;
+
+        if (! class_exists($jobClass)) {
+            throw new RuntimeException(sprintf('Queue job class "%s" does not exist', $jobClass));
+        }
+
+        if (! is_a($jobClass, QueueDoer::class, true)) {
+            throw new RuntimeException(sprintf('Queue job class "%s" must implement %s', $jobClass, QueueDoer::class));
+        }
+
+        if (! method_exists($jobClass, 'make')) {
+            throw new RuntimeException(sprintf('Queue job class "%s" must define static make()', $jobClass));
+        }
+
+        return $jobClass::make($this->container);
     }
 
     private function executeWorkCycle(
@@ -146,24 +164,5 @@ final class QueueWorker
             return true;
         }
         return $queueWorkerOptions->maxTime > 0 && (time() - $this->startedAt) >= $queueWorkerOptions->maxTime;
-    }
-
-    public function createQueueDoer(QueueMessage $queueMessage): QueueDoer
-    {
-        $jobClass = $queueMessage->jobClass;
-
-        if (! class_exists($jobClass)) {
-            throw new RuntimeException(sprintf('Queue job class "%s" does not exist', $jobClass));
-        }
-
-        if (! is_a($jobClass, QueueDoer::class, true)) {
-            throw new RuntimeException(sprintf('Queue job class "%s" must implement %s', $jobClass, QueueDoer::class));
-        }
-
-        if (! method_exists($jobClass, 'make')) {
-            throw new RuntimeException(sprintf('Queue job class "%s" must define static make()', $jobClass));
-        }
-
-        return $jobClass::make($this->container);
     }
 }

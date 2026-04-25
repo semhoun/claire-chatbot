@@ -14,11 +14,13 @@ use Ramsey\Uuid\Uuid;
 #[ORM\HasLifecycleCallbacks]
 class File
 {
-    public const string GENERATED_FILE_PATTERN = '/@@GENERATED@@([a-zA-Z0-9_\-@]+\.(?:png|jpg|jpeg|gif|webp|pdf))@@/i';
+    public const string GENERATED_FILE_PATTERN = "/(<(?:a|img)\b[^>]*?(?:href|src)=)?(['\"]?@@GENERATED@@[a-zA-Z0-9_@\-.]*@@['\"]?)((?(1)[^>]*>|))/i";
+
+    public const string GENERATED_PREFIX = '@@GENERATED@@';
+
+    public const string GENERATED_SUFFIX = '@@';
 
     public const string GENERATED_FOLDER_PREFIX = 'generated';
-
-    public const string GENERATED_FOLDER_SEPARATOR = '@';
 
     public const string FILE_TYPE_IMAGE = 'image';
 
@@ -46,16 +48,13 @@ class File
     private string $mimeType;
 
     #[ORM\Column(name: 'size_bytes', type: 'bigint', nullable: false)]
-    private string $sizeBytes = '0';
+    private int $sizeBytes = 0;
 
     #[ORM\Column(name: 'file_id', type: 'string', length: 255, nullable: false)]
     private string $fileId;
 
-    #[ORM\Column(name: 'file_type', type: 'string', length: 32, nullable: true)]
-    private ?string $fileType = null;
-
-    #[ORM\Column(name: 'file_path', type: 'string', length: 512, nullable: true)]
-    private ?string $filePath = null;
+    #[ORM\Column(name: 'file_path', type: 'string', length: 512, nullable: false)]
+    private string $filePath;
 
     /** @var array<string, mixed> */
     #[ORM\Column(name: 'metadata', type: 'json', nullable: false)]
@@ -109,12 +108,12 @@ class File
         $this->mimeType = $mimeType;
     }
 
-    public function getSizeBytes(): string
+    public function getSizeBytes(): int
     {
         return $this->sizeBytes;
     }
 
-    public function setSizeBytes(string $size): void
+    public function setSizeBytes(int $size): void
     {
         $this->sizeBytes = $size;
     }
@@ -139,22 +138,12 @@ class File
         $this->chatHistory = $chatHistory;
     }
 
-    public function getFileType(): ?string
-    {
-        return $this->fileType;
-    }
-
-    public function setFileType(?string $fileType): void
-    {
-        $this->fileType = $fileType;
-    }
-
-    public function getFilePath(): ?string
+    public function getFilePath(): string
     {
         return $this->filePath;
     }
 
-    public function setFilePath(?string $filePath): void
+    public function setFilePath(string $filePath): void
     {
         $this->filePath = $filePath;
     }
@@ -187,5 +176,33 @@ class File
         }
 
         return self::FILE_TYPE_UNKNOWN;
+    }
+
+    public function setGeneratedFileData(ChatHistory $history, $filename, string $extension, $fileSize = 0, $metadata = []): void
+    {
+        $fileUuid = Uuid::uuid4()->toString();
+
+        match ($extension) {
+            'png', 'jpg', 'jpeg', 'gif', 'webp' => $this->mimeType = 'image/' . $extension,
+            'pdf' => $this->mimeType = 'application/pdf',
+            default => throw new \InvalidArgumentException('Unsupported file extension: ' . $extension),
+        };
+
+        $this->chatHistory = $history;
+        $this->user = $history->getUser();
+        $this->filename = $this->sanitizeFilename($filename) . '.' . $extension;
+        $this->fileId = self::GENERATED_PREFIX . $fileUuid . self::GENERATED_SUFFIX;
+        $this->filePath = self::GENERATED_FOLDER_PREFIX . '/' . $this->user->getId() . '/' . $fileUuid . '.' . $extension;
+        $this->sizeBytes = $fileSize;
+        $this->metadata = $metadata;
+    }
+
+    private function sanitizeFilename(string $filename): string
+    {
+        $sanitized = preg_replace('/[^a-zA-Z0-9_\-\s]/', '', $filename);
+        if ($sanitized === '') {
+            return 'claire_generated_file';
+        }
+        return $sanitized !== null ? substr(trim($sanitized), 0, 100) : '';
     }
 }

@@ -20,6 +20,7 @@ class PdfGeneratorTool extends Tool implements MessagePostProcessorInterface
         private readonly PdfGeneratorService $pdfGeneratorService,
         private readonly Settings $settings,
         private readonly SessionInterface $session,
+        private readonly string $threadId,
     ) {
         $description = <<<'EOT'
 Generates a PDF document from HTML or Markdown content. The generated PDF will be sent to the user.
@@ -27,12 +28,13 @@ Use this tool whenever the user requests or needs a PDF document, report, or pri
 The content can be provided as HTML or Markdown (specify the format using the 'format' parameter).
 
 IMPORTANT: The tool returns two fields:
-- "id": The file identifier in the format @@GENERATED@@<user_id@uuid.pdf>@@. This ID must be used in the message text to reference the PDF. Do NOT use <a> tags or markdown links.
+- "id": The file identifier in the format @@GENERATED@@<uuid>@@. This ID must be used in the message text to reference the PDF.
 - "name": The human-readable display name of the file. This is shown to the user when they download the PDF.
 
-Always use the "id" value (the @@GENERATED@@...@@ pattern) in your message, NOT the name.
+Always use the "id" value (the @@GENERATED@@...@@ pattern) in your message, use it with or without the <a> tag or markdown link.
 
-You can embed previously generated images in the PDF content by including their @@GENERATED@@<user_id@uuid.png>@@ tokens in the HTML/Markdown. These will be automatically resolved and embedded as images in the PDF.
+You can embed images in the PDF content by including their @@GENERATED@@<uuid>@@ tokens in the HTML/Markdown. These will be automatically resolved and embedded as images in the PDF.
+IMPORTANT: Use ONLY image IDs that have been explicitly provided by the generate_image tool in the current conversation. NEVER invent, placeholder, or hallucinate image IDs (like @@GENERATED@@placeholder@@). If you haven't called the tool yet, you don't have an ID to use.
 EOT;
 
         parent::__construct(
@@ -73,16 +75,7 @@ EOT;
                 ], JSON_THROW_ON_ERROR);
             }
 
-            $threadId = $this->session->get('threadId');
-
-            if ($threadId === null) {
-                return json_encode([
-                    'status' => 'error',
-                    'message' => 'No active conversation thread.',
-                ], JSON_THROW_ON_ERROR);
-            }
-
-            $pdfId = $this->pdfGeneratorService->generatePdf($this->session, $threadId, [
+            $pdfId = $this->pdfGeneratorService->generatePdf($this->session, $this->threadId, [
                 'content' => $content,
                 'format' => $format,
                 'filename' => $filename,

@@ -5,27 +5,18 @@ declare(strict_types=1);
 namespace App\Services\Twig;
 
 use App\Entity\File;
+use App\Services\Settings;
+use Doctrine\ORM\EntityManagerInterface;
 use Twig\Extension\AbstractExtension;
 use Twig\TwigFilter;
-use Twig\TwigFunction;
 
 class GeneratedFileExtension extends AbstractExtension
 {
-    private const string IMAGE_TAG_TEMPLATE = <<<'HTML'
-<img src="/files/serve/%s" alt="Generated image" class="generated-image">
-HTML;
-
-    private const string PDF_TAG_TEMPLATE = <<<'HTML'
-<a href="/files/serve/%s" class="generated-pdf" target="_blank" download>&#128196; PDF</a>
-HTML;
-
-    private const string PLACEHOLDER_TEMPLATE = <<<'HTML'
-<span class="generated-image-placeholder" data-generated-image="%s" role="img" aria-label="Image generee">&#128247;</span>
-HTML;
-
-    private const string PDF_PLACEHOLDER_TEMPLATE = <<<'HTML'
-<span class="generated-pdf-placeholder" data-generated-pdf="%s" role="link" aria-label="PDF genere">&#128196;</span>
-HTML;
+    public function __construct(
+        protected readonly Settings $settings,
+        protected readonly EntityManagerInterface $entityManager,
+    ) {
+    }
 
     /**
      * @return array<TwigFilter>
@@ -39,74 +30,47 @@ HTML;
         ];
     }
 
-    /**
-     * @return array<TwigFunction>
-     */
-    #[\Override]
-    public function getFunctions(): array
-    {
-        return [
-            new TwigFunction('extract_generated_files', $this->extractGeneratedFiles(...)),
-        ];
-    }
-
     public function processGeneratedFiles(string $content): string
     {
-        return preg_replace_callback(File::GENERATED_FILE_PATTERN, static function (array $matches): string {
-            $fileId = $matches[1];
+        $fileDB = $this->entityManager->getRepository(File::class);
+        $baseUrl = $this->settings->get('base_url');
 
-            if (str_ends_with(strtolower($fileId), '.pdf')) {
-                return sprintf(
-                    self::PDF_TAG_TEMPLATE,
-                    htmlspecialchars($fileId, ENT_QUOTES, 'UTF-8')
-                );
+        return preg_replace_callback(File::GENERATED_FILE_PATTERN, static function (array $matches) use ($baseUrl, $fileDB): string {
+            $prefix = $matches[1] ?? '';
+            $suffix = $matches[3] ?? '';
+
+            $fileId = str_replace(['"', "'"], ['', ''], $matches[2]);
+            $file = $fileDB->findOneBy(['fileId' => $fileId]);
+            if ($file === null) {
+                return $matches[0];
             }
 
-            return sprintf(
-                self::IMAGE_TAG_TEMPLATE,
-                htmlspecialchars($fileId, ENT_QUOTES, 'UTF-8')
-            );
+            $fileUrl = $baseUrl . '/files/serve/' . $file->getFileId();
+
+            if ($prefix !== '') {
+                if ($file->fileType() === File::FILE_TYPE_IMAGE) {
+                    return $prefix . '"' . $fileUrl . '"  class="generated-image"' . $suffix;
+                }
+                return $prefix . '"' . $fileUrl . '"  class="generated-file"' . $suffix;
+            }
+
+            if ($file->fileType() === File::FILE_TYPE_IMAGE) {
+                return '<img src="' . $fileUrl . '" alt="Generated image" class="generated-image">';
+            }
+
+            return '<a href="' . $fileUrl . '" class="generated-file" target="_blank">' . $file->getFilename() . '</a>';
         }, $content);
     }
 
     public function processGeneratedFilesPlaceholder(string $content): string
     {
         return preg_replace_callback(File::GENERATED_FILE_PATTERN, static function (array $matches): string {
-            $fileId = htmlspecialchars($matches[1], ENT_QUOTES, 'UTF-8');
-
-            if (str_ends_with(strtolower($matches[1]), '.pdf')) {
-                return sprintf(
-                    self::PDF_PLACEHOLDER_TEMPLATE,
-                    $fileId
-                );
+            $prefix = $matches[1] ?? '';
+            if ($prefix === '' || !str_starts_with($prefix, '<a')) {
+                return '<span class="generated-image-placeholder" aria-label="Fichier géneré">&#128247;</span>';
             }
 
-            return sprintf(
-                self::PLACEHOLDER_TEMPLATE,
-                $fileId
-            );
+            return $matches[0];
         }, $content);
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    public function extractGeneratedFiles(string $content): array
-    {
-        $matched = preg_match_all(
-            File::GENERATED_FILE_PATTERN,
-            $content,
-            $matches,
-            PREG_SET_ORDER
-        );
-
-        if ($matched === false) {
-            return [];
-        }
-
-        return array_map(
-            static fn (array $match): string => $match[0],
-            $matches
-        );
     }
 }

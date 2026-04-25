@@ -20,7 +20,7 @@ final class PdfGeneratorToolTest extends TestCase
         $session = $this->createMock(SessionInterface::class);
         $service = $this->createPdfGeneratorService($settings);
 
-        $tool = new PdfGeneratorTool($service, $settings, $session);
+        $tool = new PdfGeneratorTool($service, $settings, $session, 'thread-123');
 
         $result = $tool('Test content');
         $data = json_decode($result, true, 512, JSON_THROW_ON_ERROR);
@@ -29,7 +29,7 @@ final class PdfGeneratorToolTest extends TestCase
         $this->assertStringContainsString('not enabled', $data['message']);
     }
 
-    public function testInvokeReturnsErrorWhenNoThreadId(): void
+    public function testInvokeReturnsErrorWhenUserNotFound(): void
     {
         $settings = new Settings(['tools' => ['pdf' => ['enabled' => true, 'defaultFormat' => 'html', 'defaultPageSize' => 'A4']]]);
         $session = $this->createMock(SessionInterface::class);
@@ -38,13 +38,13 @@ final class PdfGeneratorToolTest extends TestCase
         ]);
         $service = $this->createPdfGeneratorService($settings);
 
-        $tool = new PdfGeneratorTool($service, $settings, $session);
+        $tool = new PdfGeneratorTool($service, $settings, $session, 'thread-123');
 
         $result = $tool('Test content');
         $data = json_decode($result, true, 512, JSON_THROW_ON_ERROR);
 
         $this->assertSame('error', $data['status']);
-        $this->assertStringContainsString('No active conversation', $data['message']);
+        $this->assertStringContainsString('User not found', $data['message']);
     }
 
     public function testGeneratedPatternMatchesPdfIds(): void
@@ -63,7 +63,7 @@ final class PdfGeneratorToolTest extends TestCase
         $session = $this->createMock(SessionInterface::class);
         $service = $this->createPdfGeneratorService($settings);
 
-        $tool = new PdfGeneratorTool($service, $settings, $session);
+        $tool = new PdfGeneratorTool($service, $settings, $session, 'thread-123');
 
         $reflection = new \ReflectionClass($tool);
         $method = $reflection->getMethod('properties');
@@ -88,7 +88,6 @@ final class PdfGeneratorToolTest extends TestCase
             $settings,
             $filesystem,
             $entityManager,
-            $chatHistoryRepository,
             $markdown,
         );
     }

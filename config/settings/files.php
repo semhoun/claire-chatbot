@@ -9,6 +9,7 @@ return [
     'upload' => [
         // String used directly in input[type=file] accept="..."
         'acceptedExt' => 'image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg,.json,.txt,.csv,.md',
+        'path' => 'uploads',
     ],
     'fileSystem' => [
         'type' => 'local',
