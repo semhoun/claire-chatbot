@@ -113,6 +113,16 @@ class ChatHistoryRepository extends EntityRepository
         return true;
     }
 
+    public function getCurrentUserChatHistory($session, string $threadId): ?ChatHistory
+    {
+        $user = $this->getEntityManager()->getRepository(User::class)->getCurrentUser($session);
+        if ($user === null) {
+            return null;
+        }
+
+        return $this->findOneBy(['threadId' => $threadId, 'user' => $user]);
+    }
+
     /**
      * Delete files associated with a chat history.
      */
@@ -133,14 +143,5 @@ class ChatHistoryRepository extends EntityRepository
     private function getUser(string $userId): ?User
     {
         return $this->getEntityManager()->getRepository(User::class)->find($userId);
-    }
-
-    public function getCurrentUserChatHistory($session, string $threadId): ?ChatHistory
-    {
-        $user = $this->getEntityManager()->getRepository(User::class)->getCurrentUser($session);
-        if ($user === null) {
-            return null;
-        }
-        return $this->findOneBy(['threadId' => $threadId, 'user' => $user]);
     }
 }

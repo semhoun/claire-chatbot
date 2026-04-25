@@ -38,11 +38,7 @@ class UserRepository extends EntityRepository
         if ($userId === '') {
             return null;
         }
-        $user = $this->find($userId);
-        if (!$user) {
-            return null;
-        }
 
-        return $user;
+        return $this->find($userId);
     }
 }

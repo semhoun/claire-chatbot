@@ -113,6 +113,8 @@ final readonly class BrainController
 
         $stream = $response->getBody();
 
+        $this->chatStreamSubscriber->clearQueue($sessionId);
+
         $threadId = trim((string) ($queryParams['threadId']));
         if ($threadId !== '') {
             $userChatHistory = new UserChatHistory(
@@ -134,7 +136,7 @@ final readonly class BrainController
 
         $stream->write($this->sseEventFormatter->keepalive());
 
-        $this->chatStreamSubscriber->subscribe($sessionId, function (string $message) use ($sessionId, $stream): void {
+        $onMessage = function (string $message) use ($sessionId, $stream): void {
             if (connection_aborted() !== 0) {
                 return;
             }
@@ -144,7 +146,7 @@ final readonly class BrainController
                 return;
             }
 
-            $eventSessionId = (string) ($event['payload']['sessionId'] ?? $event['threadId'] ?? '');
+            $eventSessionId = (string) ($event['payload']['sessionId']);
             if ($eventSessionId !== $sessionId) {
                 return;
             }
@@ -156,6 +158,7 @@ final readonly class BrainController
             }
 
             if (! in_array($eventName, ['chat.snapshot', 'chat.assistant.start', 'chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update', 'chat.assistant.done', 'chat.error'], true)) {
+                $this->logger->warning('Invalid SSE event', ['event' => $eventName]);
                 return;
             }
 
@@ -172,7 +175,16 @@ final readonly class BrainController
                 $eventId,
                 $eventName,
             ));
-        });
+        };
+
+        while (connection_aborted() === 0) {
+            $message = $this->chatStreamSubscriber->popMessage($sessionId, $this->settings->get('sse.pop_timeout'));
+            if ($message !== null) {
+                $onMessage($message);
+            } else {
+                $stream->write($this->sseEventFormatter->keepalive());
+            }
+        }
 
         return $response;
     }

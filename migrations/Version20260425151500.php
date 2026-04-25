@@ -37,7 +37,6 @@ final class Version20260425151500 extends BaseMigration
             $this->addSql('UPDATE file SET file_path = file_id WHERE file_path IS NULL');
             $this->addSql('ALTER TABLE file CHANGE file_path file_path VARCHAR(512) NOT NULL;');
 
-
             return;
         }
 

@@ -42,8 +42,6 @@ final class NewMessageJob implements QueueDoer
 {
     private string $streamedText = '';
 
-    private string $toolText = '';
-
     private int $nbPublishedChunks = 0;
 
     private string $userMessage;
@@ -108,7 +106,7 @@ final class NewMessageJob implements QueueDoer
      */
     private function initContext(array $payload): void
     {
-        $this->messageId = $params['messageId'] ?? uniqid('assistant-message-', true);
+        $this->messageId = $payload['messageId'] ?? uniqid('assistant-message-', true);
 
         $this->userMessage = trim((string) ($payload['message'] ?? ''));
         if ($this->userMessage === '') {
@@ -151,18 +149,24 @@ final class NewMessageJob implements QueueDoer
             $this->nbPublishedChunks++;
         }
 
-        $finalText = $this->toolText . $agentHandler->getMessage()->getContent();
-        $this->publishContent($finalText);
+        $finalText = $agentHandler->getMessage()->getContent();
+        if ($finalText !== '' && $finalText !== null) {
+            $this->publishContent($finalText);
+        } else {
+            $this->publishContent($this->streamedText);
+        }
 
-        $this->publishStopMessages();
+        $this->publishDoneMessages();
     }
 
     private function processChunk(mixed $chunk): void
     {
+        if ($chunk === null) {
+            return;
+        }
+
         if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
             $this->processToolChunk($chunk);
-            // Le tesxte déjà récupéré ne seras pas de le dernier TextChunk
-            $this->toolText = $this->streamedText;
             return;
         }
 
@@ -171,9 +175,11 @@ final class NewMessageJob implements QueueDoer
         }
 
         if ($chunk instanceof TextChunk) {
-            $this->streamedText .= $chunk->content;
-            $this->publishContent($this->streamedText);
+            $this->processTextChunk($chunk);
+            return;
         }
+
+        $this->logger->debug('Chunk type not handled: ' . $chunk::class);
     }
 
     private function processToolChunk(ToolCallChunk|ToolResultChunk $chunk): void
@@ -207,6 +213,27 @@ final class NewMessageJob implements QueueDoer
         ]);
     }
 
+    private function processTextChunk(ReasoningChunk|TextChunk $chunk): void
+    {
+        if ($chunk->content === '') {
+            return;
+        }
+
+        $this->streamedText .= $chunk->content;
+
+        $html = $this->twig->fetch('partials/md.twig', [
+            'message' => $this->streamedText,
+            'streaming_placeholder_images' => true,
+        ]);
+
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
+            'threadId' => $this->threadId,
+            'sessionId' => $this->sessionId,
+            'messageId' => $this->messageId,
+            'html' => $html,
+        ]);
+    }
+
     private function publishStartMessages(): void
     {
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.start', [
@@ -216,9 +243,9 @@ final class NewMessageJob implements QueueDoer
         ]);
     }
 
-    private function publishStopMessages(): void
+    private function publishDoneMessages(): void
     {
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.stop', [
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.done', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,

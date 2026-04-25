@@ -32,15 +32,15 @@ class GeneratedFileExtension extends AbstractExtension
 
     public function processGeneratedFiles(string $content): string
     {
-        $fileDB = $this->entityManager->getRepository(File::class);
+        $entityRepository = $this->entityManager->getRepository(File::class);
         $baseUrl = $this->settings->get('base_url');
 
-        return preg_replace_callback(File::GENERATED_FILE_PATTERN, static function (array $matches) use ($baseUrl, $fileDB): string {
+        return preg_replace_callback(File::GENERATED_FILE_PATTERN, static function (array $matches) use ($baseUrl, $entityRepository): string {
             $prefix = $matches[1] ?? '';
             $suffix = $matches[3] ?? '';
 
             $fileId = str_replace(['"', "'"], ['', ''], $matches[2]);
-            $file = $fileDB->findOneBy(['fileId' => $fileId]);
+            $file = $entityRepository->findOneBy(['fileId' => $fileId]);
             if ($file === null) {
                 return $matches[0];
             }
@@ -51,6 +51,7 @@ class GeneratedFileExtension extends AbstractExtension
                 if ($file->fileType() === File::FILE_TYPE_IMAGE) {
                     return $prefix . '"' . $fileUrl . '"  class="generated-image"' . $suffix;
                 }
+
                 return $prefix . '"' . $fileUrl . '"  class="generated-file"' . $suffix;
             }
 
@@ -66,8 +67,8 @@ class GeneratedFileExtension extends AbstractExtension
     {
         return preg_replace_callback(File::GENERATED_FILE_PATTERN, static function (array $matches): string {
             $prefix = $matches[1] ?? '';
-            if ($prefix === '' || !str_starts_with($prefix, '<a')) {
-                return '<span class="generated-image-placeholder" aria-label="Fichier géneré">&#128247;</span>';
+            if ($prefix === '' || str_starts_with($prefix, '<img')) {
+                return '<span class="generated-image-placeholder" aria-label="Image géneré">&#128247;</span>';
             }
 
             return $matches[0];

@@ -67,6 +67,8 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 | `DATABASE_KIND` | Type de base (`sqlite`, `mysql`, `postgres`) | `sqlite` |
 | `DEBUG_MODE` | Mode debug | `false` |
 | `QUEUE_WORKERS` | Nombre de workers de queue | `8` |
+| `SSE_QUEUE_TTL` | Durée de vie des messages SSE en file d'attente (secondes) | `60` |
+| `SSE_POP_TIMEOUT` | Timeout de lecture bloquante SSE (secondes) | `15` |
 
 Voir [`docker/compose.yml`](docker/compose.yml) pour un exemple complet avec toutes les variables.
 

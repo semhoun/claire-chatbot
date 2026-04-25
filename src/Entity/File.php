@@ -178,7 +178,7 @@ class File
         return self::FILE_TYPE_UNKNOWN;
     }
 
-    public function setGeneratedFileData(ChatHistory $history, $filename, string $extension, $fileSize = 0, $metadata = []): void
+    public function setGeneratedFileData(ChatHistory $chatHistory, string $filename, string $extension, int $fileSize = 0, array $metadata = []): void
     {
         $fileUuid = Uuid::uuid4()->toString();
 
@@ -188,8 +188,8 @@ class File
             default => throw new \InvalidArgumentException('Unsupported file extension: ' . $extension),
         };
 
-        $this->chatHistory = $history;
-        $this->user = $history->getUser();
+        $this->chatHistory = $chatHistory;
+        $this->user = $chatHistory->getUser();
         $this->filename = $this->sanitizeFilename($filename) . '.' . $extension;
         $this->fileId = self::GENERATED_PREFIX . $fileUuid . self::GENERATED_SUFFIX;
         $this->filePath = self::GENERATED_FOLDER_PREFIX . '/' . $this->user->getId() . '/' . $fileUuid . '.' . $extension;
@@ -203,6 +203,7 @@ class File
         if ($sanitized === '') {
             return 'claire_generated_file';
         }
+
         return $sanitized !== null ? substr(trim($sanitized), 0, 100) : '';
     }
 }

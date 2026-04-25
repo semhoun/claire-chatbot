@@ -8,7 +8,6 @@ use App\Brain\Tools\GenerateImageTool;
 use App\Brain\Tools\PdfGeneratorTool;
 use App\Brain\Tools\WebToolkit;
 use App\Services\ComfyUIService;
-use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\PdfGeneratorService;
 use App\Services\Settings;
 use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;

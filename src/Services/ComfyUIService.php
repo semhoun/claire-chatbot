@@ -6,15 +6,12 @@ namespace App\Services;
 
 use App\Entity\ChatHistory;
 use App\Entity\File;
-use App\Entity\User;
-use App\Repository\ChatHistoryRepository;
 use App\Services\Session\SessionInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
-use Ramsey\Uuid\Uuid;
 use RuntimeException;
 
 final readonly class ComfyUIService
@@ -292,7 +289,7 @@ final readonly class ComfyUIService
         $file->setGeneratedFileData(
             $history,
             $displayName,
-            'pdf',
+            $extension,
             strlen($imageContent),
             [
                 'prompt' => $prompt,

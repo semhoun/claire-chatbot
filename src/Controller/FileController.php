@@ -76,6 +76,7 @@ final readonly class FileController
         if ($userId === '') {
             return $response->withStatus(403);
         }
+
         $user = $this->entityManager->getReference(User::class, $userId);
         if ($user === null) {
             return $response->withStatus(403);
@@ -106,6 +107,7 @@ final readonly class FileController
         if ($userId === '') {
             return $response->withStatus(403);
         }
+
         $user = $this->entityManager->getReference(User::class, $userId);
 
         $file = $this->getUploadedFile($request);
@@ -134,6 +136,7 @@ final readonly class FileController
         if ($userId === '') {
             return $response->withStatus(403);
         }
+
         $user = $this->entityManager->getRepository(User::class)->find($userId);
         if ($user === null) {
             return $response->withStatus(403);
@@ -169,6 +172,7 @@ final readonly class FileController
         if ($userId === '') {
             return $response->withStatus(403);
         }
+
         $user = $this->entityManager->getRepository(User::class)->find($userId);
         if ($user === null) {
             return $response->withStatus(403);
@@ -199,7 +203,7 @@ final readonly class FileController
             ->withHeader('Content-Length', (string) strlen($content));
 
         if ($file->fileType() !== File::FILE_TYPE_IMAGE) {
-            $response = $response->withHeader('Content-Disposition', 'inline; filename="' . addcslashes($file->getFilename(), '"\\') . '"');
+            return $response->withHeader('Content-Disposition', 'inline; filename="' . addcslashes($file->getFilename(), '"\\') . '"');
         }
 
         return $response;

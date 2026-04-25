@@ -47,10 +47,6 @@ final class MessageFormatter
             ];
         }
 
-        if ($message->getContent() !== null) {
-            $formattedMessage['message'] .= $message->getContent();
-        }
-
         if ($message instanceof ToolCallMessage || $message instanceof ToolResultMessage) {
             $tools = $this->formatTools($message);
             if ($tools !== []) {
@@ -64,6 +60,8 @@ final class MessageFormatter
             $message = array_shift($this->displayHistory);
             return $this->formatMessage($message, $formattedMessage);
         }
+
+        $formattedMessage['message'] = $message->getContent();
 
         return $formattedMessage;
     }

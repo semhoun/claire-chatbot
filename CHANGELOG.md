@@ -8,6 +8,10 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [Unreleased]
 
 ### Changed
+- **SSE** : Refonte complète du flux Server-Sent Events utilisant une file d'attente Redis bloquante (`BRPOP`) pour une livraison plus fiable des messages (modèle wait/notify)
+- **SSE** : Suppression du mécanisme de tampon (buffer) et des numéros de séquence (`seq`), la file d'attente Redis garantissant désormais l'ordre et la persistance temporaire
+- **SSE** : Centralisation des réglages dans `config/settings/sse.php` (nouvelles variables `SSE_QUEUE_TTL` et `SSE_POP_TIMEOUT`)
+- **SSE** : Nettoyage automatique de la file d'attente de session à l'ouverture du flux pour éviter les messages résiduels
 - Fusion des entités `File` et `ChatHistoryFile` pour unifier la gestion des fichiers
 
 ### Added

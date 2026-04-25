@@ -45,7 +45,7 @@ final readonly class PdfGeneratorService
         }
 
         $user = $this->entityManager->getRepository(User::class)->getCurrentUser($session);
-        if (!$user) {
+        if (! $user) {
             throw new RuntimeException('User not found for PDF generation');
         }
 
@@ -122,7 +122,7 @@ final readonly class PdfGeneratorService
         return $mpdf->Output('', Destination::STRING_RETURN);
     }
 
-      /**
+    /**
      * Resolve @@GENERATED@@ image tokens to temporary file <img> tags.
      * Uses file paths instead of base64 to avoid pcre.backtrack_limit issues.
      *
@@ -138,7 +138,11 @@ final readonly class PdfGeneratorService
                 $fileId = str_replace(['"', "'"], ['', ''], $matches[2]);
 
                 $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $fileId, 'user' => $user]);
-                if ($file === null || $file->fileType() !== File::FILE_TYPE_IMAGE) {
+                if ($file === null) {
+                    throw new RuntimeException(sprintf('Image ID %s not found. Use only IDs from previous generate_image calls.', $fileId));
+                }
+
+                if ($file->fileType() !== File::FILE_TYPE_IMAGE) {
                     return $matches[0];
                 }
 

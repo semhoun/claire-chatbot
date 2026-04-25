@@ -35,6 +35,7 @@ Always use the "id" value (the @@GENERATED@@...@@ pattern) in your message, use 
 
 You can embed images in the PDF content by including their @@GENERATED@@<uuid>@@ tokens in the HTML/Markdown. These will be automatically resolved and embedded as images in the PDF.
 IMPORTANT: Use ONLY image IDs that have been explicitly provided by the generate_image tool in the current conversation. NEVER invent, placeholder, or hallucinate image IDs (like @@GENERATED@@placeholder@@). If you haven't called the tool yet, you don't have an ID to use.
+If you need to include an image that hasn't been generated yet, you MUST call generate_image FIRST, wait for the response to get the ID, and ONLY THEN call generate_pdf. NEVER call both tools in parallel if one depends on the other.
 EOT;
 
         parent::__construct(

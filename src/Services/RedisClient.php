@@ -186,4 +186,28 @@ class RedisClient
     {
         return $this->redis->lPush($key, ...$values);
     }
+
+    /**
+     * @param array<int, string> $values
+     */
+    public function rpush(string $key, array $values): int|false
+    {
+        return $this->redis->rPush($key, ...$values);
+    }
+
+    public function incr(string $key): int
+    {
+        return $this->redis->incr($key);
+    }
+
+    public function ltrim(string $key, int $start, int $stop): bool
+    {
+        return $this->redis->lTrim($key, $start, $stop);
+    }
+
+    /** @return array<int, string>|false */
+    public function lrange(string $key, int $start, int $stop): array|false
+    {
+        return $this->redis->lRange($key, $start, $stop);
+    }
 }

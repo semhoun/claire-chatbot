@@ -94,7 +94,7 @@ final class PdfGeneratorServiceTest extends TestCase
         @unlink($tempFiles[0]);
     }
 
-    public function testResolveGeneratedImagesLeavesTokenForDifferentUser(): void
+    public function testResolveGeneratedImagesThrowsExceptionForDifferentUser(): void
     {
         $settings = new Settings([
             'tools' => [
@@ -106,8 +106,11 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $filesystem = $this->createMock(Filesystem::class);
         $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $chatHistoryRepository = $this->createMock(\App\Repository\ChatHistoryRepository::class);
+        $fileRepository = $this->createMock(\App\Repository\FileRepository::class);
         $markdown = $this->createMock(\App\Services\Markdown::class);
+
+        $fileRepository->method('findOneBy')->willReturn(null);
+        $entityManager->method('getRepository')->with(File::class)->willReturn($fileRepository);
 
         $service = new PdfGeneratorService(
             $settings,
@@ -126,11 +129,11 @@ final class PdfGeneratorServiceTest extends TestCase
         $user = new User();
         $user->setId('user-123');
         $html = '<p>@@GENERATED@@other-user@image-uuid.png@@</p>';
-        [$result, $tempFiles] = $method->invoke($service, $html, $user);
 
-        // Token should be left as-is, no temp files created
-        $this->assertSame($html, $result);
-        $this->assertCount(0, $tempFiles);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Image ID @@GENERATED@@other-user@image-uuid.png@@ not found');
+
+        $method->invoke($service, $html, $user);
     }
 
     public function testResolveGeneratedImagesLeavesPdfTokensUnchanged(): void
@@ -145,8 +148,13 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $filesystem = $this->createMock(Filesystem::class);
         $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $chatHistoryRepository = $this->createMock(\App\Repository\ChatHistoryRepository::class);
+        $fileRepository = $this->createMock(\App\Repository\FileRepository::class);
         $markdown = $this->createMock(\App\Services\Markdown::class);
+
+        $file = $this->createMock(File::class);
+        $file->method('fileType')->willReturn(File::FILE_TYPE_PDF);
+        $fileRepository->method('findOneBy')->willReturn($file);
+        $entityManager->method('getRepository')->with(File::class)->willReturn($fileRepository);
 
         $service = new PdfGeneratorService(
             $settings,
@@ -172,7 +180,7 @@ final class PdfGeneratorServiceTest extends TestCase
         $this->assertCount(0, $tempFiles);
     }
 
-    public function testResolveGeneratedImagesLeavesTokenWhenFileNotFound(): void
+    public function testResolveGeneratedImagesThrowsExceptionWhenFileNotFound(): void
     {
         $settings = new Settings([
             'tools' => [
@@ -185,13 +193,9 @@ final class PdfGeneratorServiceTest extends TestCase
         $filesystem = $this->createMock(Filesystem::class);
         $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
         $fileRepository = $this->createMock(\App\Repository\FileRepository::class);
-        $chatHistoryRepository = $this->createMock(\App\Repository\ChatHistoryRepository::class);
         $markdown = $this->createMock(\App\Services\Markdown::class);
 
-        $file = $this->createMock(File::class);
-        $file->method('getFilePath')->willReturn('generated/user-123/missing-uuid.png');
-        $file->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
-        $fileRepository->method('findOneBy')->willReturn($file);
+        $fileRepository->method('findOneBy')->willReturn(null);
         $entityManager->method('getRepository')->with(File::class)->willReturn($fileRepository);
 
         $service = new PdfGeneratorService(
@@ -201,10 +205,6 @@ final class PdfGeneratorServiceTest extends TestCase
             $markdown,
         );
 
-        $filesystem->expects($this->once())
-            ->method('read')
-            ->willThrowException(new class extends \Exception implements FilesystemException {});
-
         $reflection = new \ReflectionClass($service);
         $method = $reflection->getMethod('resolveGeneratedImages');
         $method->setAccessible(true);
@@ -212,11 +212,11 @@ final class PdfGeneratorServiceTest extends TestCase
         $user = new User();
         $user->setId('user-123');
         $html = '<p>@@GENERATED@@user-123@missing-uuid.png@@</p>';
-        [$result, $tempFiles] = $method->invoke($service, $html, $user);
 
-        // Token should be left as-is when file not found
-        $this->assertSame($html, $result);
-        $this->assertCount(0, $tempFiles);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Image ID @@GENERATED@@user-123@missing-uuid.png@@ not found');
+
+        $method->invoke($service, $html, $user);
     }
 
     public function testResolveGeneratedImagesHandlesMultipleTokens(): void
