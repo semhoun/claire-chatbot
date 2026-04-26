@@ -125,10 +125,10 @@ class TelegramService implements QueueDoer
         $chatHistory = $agent->getChatHistory();
         $chatHistory->replaceDisplayMessages([]);
 
-        // Handle images in welcome message
-        $imageIds = $this->extractImageIds($openingText);
-        if ($imageIds !== []) {
-            $this->handleImageResponse($telegramChatId, $openingText, $imageIds);
+        // Handle files in welcome message
+        $fileIds = $this->extractFileIds($openingText);
+        if ($fileIds !== []) {
+            $this->handleFileResponse($telegramChatId, $openingText, $fileIds);
             return;
         }
 
@@ -481,9 +481,9 @@ class TelegramService implements QueueDoer
 
     private function sendChatResponse(int $telegramChatId, string $responseText): void
     {
-        $imageIds = $this->extractImageIds($responseText);
-        if ($imageIds !== []) {
-            $this->handleImageResponse($telegramChatId, $responseText, $imageIds);
+        $fileIds = $this->extractFileIds($responseText);
+        if ($fileIds !== []) {
+            $this->handleFileResponse($telegramChatId, $responseText, $fileIds);
             return;
         }
 
@@ -534,84 +534,124 @@ class TelegramService implements QueueDoer
     }
 
     /**
-     * Extract image ids from text matching pattern.
+     * Extract file ids from text matching pattern.
      *
      * @return array<int, string>
      */
-    private function extractImageIds(string $content): array
+    private function extractFileIds(string $content): array
     {
         if (preg_match_all(File::GENERATED_FILE_PATTERN, $content, $matches, PREG_SET_ORDER) === false) {
             return [];
         }
 
         return array_map(
-            static fn (array $match): string => $match[2],
+            static fn (array $match): string => str_replace(['"', "'"], ['', ''], $match[2]),
             $matches
         );
     }
 
     /**
-     * Handle response containing images by sending them with captions.
+     * Handle response containing files by sending them with captions.
      *
-     * @param array<int, string> $imageIds
+     * @param array<int, string> $fileIds
      */
-    private function handleImageResponse(int $telegramChatId, string $responseText, array $imageIds): void
+    private function handleFileResponse(int $telegramChatId, string $responseText, array $fileIds): void
     {
-        // Remove image paths from text to create caption
+        // Remove file paths from text to create caption
         $caption = preg_replace(File::GENERATED_FILE_PATTERN, '', $responseText);
         // Filter OC tags
         $caption = $this->filterOCTags((string) $caption);
 
-        // Send each image
-        $imageCount = count($imageIds);
-        foreach ($imageIds as $index => $imageId) {
-            $isLast = $index === $imageCount - 1;
-            // Only add caption to the last image, or if there's only one image
-            $imageCaption = $isLast || $imageCount === 1 ? $caption : null;
-            $this->sendPhoto($telegramChatId, $imageId, $imageCaption);
+        // Send each file
+        $fileCount = count($fileIds);
+        foreach ($fileIds as $index => $fileId) {
+            $isLast = $index === $fileCount - 1;
+            // Only add caption to the last file, or if there's only one file
+            $fileCaption = $isLast || $fileCount === 1 ? $caption : null;
+
+            $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $fileId]);
+            if ($file === null) {
+                $this->logger->error('File not found for ID: ' . $fileId);
+                $this->sendMessage($telegramChatId, "Désolé j'ai un soucis pour trouver le fichier à envoyer.");
+                continue;
+            }
+            if ($file->fileType() === File::FILE_TYPE_IMAGE) {
+                $this->sendPhoto($telegramChatId, $file, $fileCaption);
+            } else {
+                $this->sendDocument($telegramChatId, $file, $fileCaption);
+            }
+        }
+    }
+
+    /**
+     * Send a document to Telegram chat.
+     */
+    private function sendDocument(int $telegramChatId, File $file, ?string $caption = null): void
+    {
+       try {
+            $this->sendChatAction($telegramChatId, TelegramAction::DOCUMENT);
+            $tempFile = $this->prepareTempFile($telegramChatId,  $file->getFilePath(), 'document');
+            if ($tempFile === null) {
+                return;
+            }
+
+            $formattedCaption = $this->formatCaption($caption);
+            $inputFile = new InputFile($tempFile, $file->getFilename());
+
+            if ($this->shouldSendWithCaption($formattedCaption)) {
+                $result = $this->telegramBotApi->sendDocument(
+                    chatId: $telegramChatId,
+                    document: $inputFile,
+                    caption: $formattedCaption,
+                    parseMode: ParseMode::MARKDOWN_V2
+                );
+                $formattedCaption = null;
+            } else {
+                $result = $this->telegramBotApi->sendDocument(
+                    chatId: $telegramChatId,
+                    document: $inputFile
+                );
+            }
+
+            $this->handleFileSendResult($result, $telegramChatId, $file->getFilePath(), $formattedCaption, 'document');
+        } catch (\Throwable $throwable) {
+            $this->handleFileSendError($throwable, $telegramChatId, $file->getFilePath(), 'document');
+        } finally {
+            $this->cleanupTempFile($tempFile ?? null);
         }
     }
 
     /**
      * Send a photo to Telegram chat.
      */
-    private function sendPhoto(int $telegramChatId, string $imageId, ?string $caption = null): void
+    private function sendPhoto(int $telegramChatId, File $file, ?string $caption = null): void
     {
-        $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $imageId]);
-        $imagePath = $file?->getFilePath() ?? '';
-
-        if ($file === null) {
-            $this->handlePhotoSendError(new \Exception("File not found for image ID: $imageId"), $telegramChatId, $imagePath);
-            $this->logger->error("File not found for image ID: $imageId");
-            return;
-        }
-
         try {
             $this->sendChatAction($telegramChatId, TelegramAction::PHOTO);
-            $tempFile = $this->prepareImageFile($telegramChatId, $imagePath);
+            $tempFile = $this->prepareTempFile($telegramChatId, $file->getFilePath(), 'image');
             if ($tempFile === null) {
                 return;
             }
 
             $formattedCaption = $this->formatCaption($caption);
-            $this->sendPhotoWithInputFile($telegramChatId, $tempFile, $imagePath, $formattedCaption);
+            $this->sendPhotoWithInputFile($telegramChatId, $tempFile, $file->getFilePath(), $formattedCaption);
         } catch (\Throwable $throwable) {
-            $this->handlePhotoSendError($throwable, $telegramChatId, $imagePath);
+            $this->handleFileSendError($throwable, $telegramChatId, $file->getFilePath(), 'image');
         } finally {
             $this->cleanupTempFile($tempFile ?? null);
         }
     }
 
-    private function prepareImageFile(int $telegramChatId, string $imagePath): ?string
+    private function prepareTempFile(int $telegramChatId, string $filePath, string $type = 'fichier'): ?string
     {
-        if (! $this->filesystem->fileExists($imagePath)) {
-            $this->logger->error('Image file not found', ['path' => $imagePath]);
-            $this->sendMessage($telegramChatId, 'Désolé, l\'image générée n\'a pas pu être trouvée.');
+        if (! $this->filesystem->fileExists($filePath)) {
+            $this->logger->error($type . ' file not found', ['path' => $filePath]);
+            $this->sendMessage($telegramChatId, sprintf("Désolé, le %s généré n'a pas pu être trouvé.", $type));
 
             return null;
         }
 
-        $fileContent = $this->filesystem->read($imagePath);
+        $fileContent = $this->filesystem->read($filePath);
         $tempFile = tempnam(sys_get_temp_dir(), 'telegram_');
         if ($tempFile === false) {
             throw new \RuntimeException('Failed to create temporary file');
@@ -655,7 +695,7 @@ class TelegramService implements QueueDoer
             );
         }
 
-        $this->handlePhotoSendResult($result, $telegramChatId, $imagePath, $formattedCaption);
+        $this->handleFileSendResult($result, $telegramChatId, $imagePath, $formattedCaption, 'image');
     }
 
     private function shouldSendWithCaption(?string $formattedCaption): bool
@@ -663,16 +703,16 @@ class TelegramService implements QueueDoer
         return $formattedCaption !== null && strlen($formattedCaption) <= 1024;
     }
 
-    private function handlePhotoSendResult(mixed $result, int $telegramChatId, string $imagePath, ?string $remainingCaption): void
+    private function handleFileSendResult(mixed $result, int $telegramChatId, string $filePath, ?string $remainingCaption, string $type = 'fichier'): void
     {
         if ($result instanceof FailResult) {
-            $this->logger->error('Failed to send photo', [
+            $this->logger->error('Failed to send ' . $type, [
                 'chatId' => $telegramChatId,
-                'path' => $imagePath,
+                'path' => $filePath,
                 'error' => $result,
                 'caption' => $remainingCaption,
             ]);
-            $this->sendMessage($telegramChatId, 'Désolé, je n\'ai pas pu envoyer l\'image.');
+            $this->sendMessage($telegramChatId, sprintf("Désolé, je n'ai pas pu envoyer le %s.", $type));
         }
 
         if ($remainingCaption !== null) {
@@ -680,14 +720,14 @@ class TelegramService implements QueueDoer
         }
     }
 
-    private function handlePhotoSendError(\Throwable $throwable, int $telegramChatId, string $imagePath): void
+    private function handleFileSendError(\Throwable $throwable, int $telegramChatId, string $filePath, string $type = 'fichier'): void
     {
         $message = $throwable instanceof FilesystemException
-            ? 'Filesystem error sending photo: ' . $throwable->getMessage()
-            : 'Error sending photo: ' . $throwable->getMessage();
+            ? sprintf('Filesystem error sending %s: ', $type) . $throwable->getMessage()
+            : sprintf('Error sending %s: ', $type) . $throwable->getMessage();
 
-        $this->logger->error($message, ['path' => $imagePath]);
-        $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors de l\'envoi de l\'image.');
+        $this->logger->error($message, ['path' => $filePath]);
+        $this->sendMessage($telegramChatId, sprintf("Désolé, une erreur est survenue lors de l'envoi du %s.", $type));
     }
 
     private function cleanupTempFile(?string $tempFile): void

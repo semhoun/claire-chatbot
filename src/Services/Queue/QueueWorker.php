@@ -142,6 +142,11 @@ final class QueueWorker
 
     private function processJob(QueueMessage $queueMessage): void
     {
+        // Clear EntityManager to avoid memory leaks and stale data in workers
+        if ($this->container->has(\Doctrine\ORM\EntityManagerInterface::class)) {
+            $this->container->get(\Doctrine\ORM\EntityManagerInterface::class)->clear();
+        }
+
         $queueDoer = $this->createQueueDoer($queueMessage);
         $queueDoer->handle($queueMessage->payload);
 
