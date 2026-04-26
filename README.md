@@ -67,6 +67,9 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 | `DATABASE_KIND` | Type de base (`sqlite`, `mysql`, `postgres`) | `sqlite` |
 | `DEBUG_MODE` | Mode debug | `false` |
 | `QUEUE_WORKERS` | Nombre de workers de queue | `8` |
+| `QUEUE_WORKER_TIMEOUT` | Timeout BRPOP du worker (secondes) | `5` |
+| `QUEUE_WORKER_MAX_JOBS` | Nombre max de jobs par worker | `0` (illimité) |
+| `QUEUE_WORKER_MAX_TIME` | Durée de vie max d'un worker (secondes) | `0` (illimité) |
 | `SSE_QUEUE_TTL` | Durée de vie des messages SSE en file d'attente (secondes) | `60` |
 | `SSE_POP_TIMEOUT` | Timeout de lecture bloquante SSE (secondes) | `15` |
 
@@ -207,7 +210,7 @@ sess-abc123
 - `GET /files/count`, `GET /files/list`
 - `POST /files/upload`, `POST /files/upload_rag`
 - `DELETE /files/delete/{id}`
-- `GET /files/img_serve/{id}`
+- `GET /files/img_serve/{id}` (images et PDF générés)
 
 ### Historique
 
