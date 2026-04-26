@@ -14,7 +14,7 @@ final class QueueWorker
 {
     private bool $running = true;
 
-    private int $startedAt;
+    private readonly int $startedAt;
 
     private int $processedJobs = 0;
 
@@ -38,7 +38,6 @@ final class QueueWorker
         string $workerId,
         OutputInterface $output,
     ): int {
-
         $this->logger->info('Queue worker started', [
             'worker_id' => $workerId,
             'queue' => $queueWorkerOptions->queueName,
@@ -74,12 +73,31 @@ final class QueueWorker
         return $this->processedJobs;
     }
 
+    public function createQueueDoer(QueueMessage $queueMessage): QueueDoer
+    {
+        $jobClass = $queueMessage->jobClass;
+
+        if (! class_exists($jobClass)) {
+            throw new RuntimeException(sprintf('Queue job class "%s" does not exist', $jobClass));
+        }
+
+        if (! is_a($jobClass, QueueDoer::class, true)) {
+            throw new RuntimeException(sprintf('Queue job class "%s" must implement %s', $jobClass, QueueDoer::class));
+        }
+
+        if (! method_exists($jobClass, 'make')) {
+            throw new RuntimeException(sprintf('Queue job class "%s" must define static make()', $jobClass));
+        }
+
+        return $jobClass::make($this->container);
+    }
+
     private function executeWorkCycle(
         QueueWorkerOptions $queueWorkerOptions,
         string $workerId,
         OutputInterface $output,
     ): void {
-        $job = $this->reserveJob($queueWorkerOptions, $workerId, $output);
+        $job = $this->reserveJob($queueWorkerOptions, $workerId);
 
         if (! $job instanceof \App\Services\Queue\QueueMessage) {
             return;
@@ -93,7 +111,7 @@ final class QueueWorker
             ]);
 
             $this->processedJobs++;
-            $this->processJob($job, $output);
+            $this->processJob($job);
         } catch (Throwable $throwable) {
             $this->logger->error('Failed to execute job', [
                 'worker_id' => $workerId,
@@ -102,13 +120,13 @@ final class QueueWorker
                 'job_class' => $job->jobClass,
             ]);
         }
+
         $this->queueBackend->delete($job);
     }
 
     private function reserveJob(
         QueueWorkerOptions $queueWorkerOptions,
         string $workerId,
-        OutputInterface $output,
     ): ?QueueMessage {
         try {
             return $this->queueBackend->reserveNextAvailable($queueWorkerOptions->queueName, $queueWorkerOptions->timeout);
@@ -122,8 +140,13 @@ final class QueueWorker
         }
     }
 
-    private function processJob(QueueMessage $queueMessage, OutputInterface $output): void
+    private function processJob(QueueMessage $queueMessage): void
     {
+        // Clear EntityManager to avoid memory leaks and stale data in workers
+        if ($this->container->has(\Doctrine\ORM\EntityManagerInterface::class)) {
+            $this->container->get(\Doctrine\ORM\EntityManagerInterface::class)->clear();
+        }
+
         $queueDoer = $this->createQueueDoer($queueMessage);
         $queueDoer->handle($queueMessage->payload);
 
@@ -145,25 +168,7 @@ final class QueueWorker
         if ($queueWorkerOptions->maxJobs > 0 && $this->processedJobs >= $queueWorkerOptions->maxJobs) {
             return true;
         }
+
         return $queueWorkerOptions->maxTime > 0 && (time() - $this->startedAt) >= $queueWorkerOptions->maxTime;
-    }
-
-    public function createQueueDoer(QueueMessage $queueMessage): QueueDoer
-    {
-        $jobClass = $queueMessage->jobClass;
-
-        if (! class_exists($jobClass)) {
-            throw new RuntimeException(sprintf('Queue job class "%s" does not exist', $jobClass));
-        }
-
-        if (! is_a($jobClass, QueueDoer::class, true)) {
-            throw new RuntimeException(sprintf('Queue job class "%s" must implement %s', $jobClass, QueueDoer::class));
-        }
-
-        if (! method_exists($jobClass, 'make')) {
-            throw new RuntimeException(sprintf('Queue job class "%s" must define static make()', $jobClass));
-        }
-
-        return $jobClass::make($this->container);
     }
 }

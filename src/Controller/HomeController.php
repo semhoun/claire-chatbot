@@ -51,7 +51,7 @@ final readonly class HomeController
             $this->settings->get('queue.defaultQueue')
         );
 
-        $comfyuiEnabled = $this->settings->get('comfyui.enabled') === true;
+        $comfyuiEnabled = $this->settings->get('tools.comfyui.enabled') === true;
         $currentComfyuiWorkflow = '';
         if ($comfyuiEnabled) {
             $currentComfyuiWorkflow = (string) $session->get(ComfyUIWorkflowRegistry::SESSION_KEY, '');

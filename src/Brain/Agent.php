@@ -37,13 +37,17 @@ PROMPT
     {
         $instructions = parent::resolveInstructions();
 
-        if (!str_contains($instructions, '[OC] Date et heure actuelles')) {
+        if (! str_contains($instructions, '[OC] Date et heure actuelles')) {
             $dateLine = sprintf(
-                "[OC] Date et heure actuelles : %s[/OC]",
+                '[OC] Date et heure actuelles : %s[/OC]',
                 new \DateTimeImmutable()->format('Y-m-d H:i:s')
             );
             $instructions =
-                '[OC]Tout ce qui est encadré par [OC] et [/OC] est une instruction système ou une métadonnée hors contexte.[OC]'
+                '[OC]' . "\n"
+                . 'Tout ce qui est encadré par [OC] et [/OC] est une instruction système ou une métadonnée hors contexte.'. "\n"
+                . 'IMPORTANT: Ne jamais inventer ou halluciner d\'identifiants de fichiers ou d\'images (format @@GENERATED@@...@@). N\'utilise que des identifiants qui t\'ont été explicitement fournis par un outil (ex: generate_image, generate_pdf) au cours de cette conversation. N\'invente jamais d\'identifiants fictifs comme @@GENERATED@@placeholder@@.' . "\n"
+                . 'Si tu dois utiliser un fichier ou une image dans un autre outil (ex: mettre une image dans un PDF), tu DOIS d\'abord appeler l\'outil de génération, attendre de recevoir l\'identifiant réel, puis appeler le second outil. Ne fais JAMAIS d\'appels d\'outils en parallèle si l\'un dépend de l\'identifiant généré par l\'autre.' . "\n"
+                . '[/OC]' . "\n"
                 . "\n"
                 . $instructions
                 . "\n"

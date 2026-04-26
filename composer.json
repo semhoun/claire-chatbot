@@ -65,7 +65,8 @@
     "lcobucci/jwt": "^5.5",
     "ramsey/uuid": "^4.9",
     "symfony/yaml": "^8.0",
-    "lcobucci/clock": "^3.6"
+    "lcobucci/clock": "^3.6",
+    "mpdf/mpdf": "^8.3"
   },
   "require-dev": {
     "roave/security-advisories": "dev-latest",

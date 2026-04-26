@@ -1586,6 +1586,39 @@ body.modal-open {
     box-shadow: 0 12px 32px var(--image-shadow-hover);
 }
 
+/* Generated documents (PDF) in chat messages */
+.generated-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    text-decoration: none;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    margin: 8px 0;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.generated-file::before {
+    content: "📄";
+    font-size: 1.2em;
+}
+
+.generated-file:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+body.dark .generated-file:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
 /* Image lightbox modal */
 .image-lightbox {
     position: fixed;

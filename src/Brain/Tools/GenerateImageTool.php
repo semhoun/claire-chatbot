@@ -20,12 +20,14 @@ class GenerateImageTool extends Tool implements MessagePostProcessorInterface
         private readonly ComfyUIService $comfyUIService,
         private readonly Settings $settings,
         private readonly SessionInterface $session,
+        private readonly string $threadId,
     ) {
         $description = <<<EOT
-Generates an image from a text description using ComfyUI. The generated image will be sent to the user.
+Generates an image from a text description. The generated image will be sent to the user.
 IMPORTANT: Use this tool whenever the user requests or needs an image, photo, drawing, illustration, or any other visual output.
 The prompt must be written in natural English, using complete sentences and enough visual detail to clearly describe the scene. Do not use specific character names; use only generic character types such as rabbit, man, woman, child, thief, or robot.
-To insert a generated image into the text, provide only its ID (for example: @@GENERATED@@<dae5bb85-1b5d-4311-9d88-e512d1aad88b@81fb5e49-5c65-4e28-affe-bd42cf2b4a8d.png>@@) and do not use an <img> tag.
+To insert a generated image into the text, provide only its ID (for example: @@GENERATED@@<uuid>@@) with or without use of <img> tag.
+IMPORTANT: Use ONLY image IDs that have been explicitly provided by the generate_image tool in the current conversation. NEVER invent, placeholder, or hallucinate image IDs (like @@GENERATED@@placeholder@@). If you haven't called the tool yet, you don't have an ID to use.
 EOT;
 
         parent::__construct(
@@ -38,13 +40,16 @@ EOT;
         string $prompt
     ): string {
         try {
-            $enabled = $this->settings->get('comfyui.enabled');
+            $enabled = $this->settings->get('tools.comfyui.enabled');
 
             if (! $enabled) {
-                return 'Error: Image generation is not enabled. ComfyUI is disabled in the configuration.';
+                return json_encode([
+                    'status' => 'error',
+                    'message' => 'Image generation is not enabled.',
+                ], JSON_THROW_ON_ERROR);
             }
 
-            $imgId = $this->comfyUIService->generateImage($this->session, $prompt);
+            $imgId = $this->comfyUIService->generateImage($this->session, $this->threadId, $prompt);
 
             return json_encode([
                 'status' => 'success',
@@ -119,7 +124,10 @@ EOT;
 
     private function isImageIdInMessage(Message $message, string $imageId): bool
     {
-        $messageContent = $message->getContent() ?? '';
+        $messageContent = $message->getContent();
+        if ($messageContent === null) {
+            return true;
+        }
 
         return str_contains($messageContent, $imageId);
     }

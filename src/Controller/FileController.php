@@ -7,9 +7,9 @@ namespace App\Controller;
 use App\Entity\File;
 use App\Entity\User;
 use App\Services\Auth;
-use App\Services\ComfyUIService;
 use App\Services\Markdown;
 use App\Services\Session\Trait\SessionFromRequest;
+use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use NeuronAI\RAG\DataLoader\StringDataLoader;
@@ -32,6 +32,7 @@ final readonly class FileController
         private EntityManagerInterface $entityManager,
         private Filesystem $filesystem,
         private ContainerInterface $container,
+        private Settings $settings,
     ) {
     }
 
@@ -76,26 +77,21 @@ final readonly class FileController
             return $response->withStatus(403);
         }
 
+        $user = $this->entityManager->getReference(User::class, $userId);
+        if ($user === null) {
+            return $response->withStatus(403);
+        }
+
         $uploadedFiles = $request->getUploadedFiles();
         $file = $uploadedFiles['file'] ?? null;
         if ($file === null || $file->getError() !== UPLOAD_ERR_OK) {
             return $response->withStatus(400);
         }
 
-        $contentStream = $file->getStream();
-        $contentStream->rewind();
+        $entity = $this->createFileEntity($file, $user);
 
-        $user = $this->entityManager->getReference(User::class, $userId);
-
-        $entity = new File();
-        $entity->setUser($user);
-        $entity->setFilename($file->getClientFilename() ?? 'fichier');
-        $entity->setMimeType($file->getClientMediaType() ?? 'application/octet-stream');
-        $entity->setFileId(Uuid::uuid7()->toString());
-        $entity->setSizeBytes((string) $file->getSize());
-
-        $this->filesystem->write($entity->getFileId(), $contentStream->getContents());
-
+        $data = $this->readFileContent($file);
+        $this->filesystem->write($entity->getFilePath() ?? $entity->getFileId(), $data);
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
 
@@ -105,16 +101,24 @@ final readonly class FileController
 
     public function uploadRag(Request $request, Response $response): Response
     {
-        $file = $this->getUploadedFile($request);
+        $session = $this->getSession($request);
 
+        $userId = (string) $session->get(Auth::USERID);
+        if ($userId === '') {
+            return $response->withStatus(403);
+        }
+
+        $user = $this->entityManager->getReference(User::class, $userId);
+
+        $file = $this->getUploadedFile($request);
         if (! $file instanceof \Psr\Http\Message\UploadedFileInterface || $file->getError() !== UPLOAD_ERR_OK) {
             return $response->withStatus(400);
         }
 
-        $data = $this->readFileContent($file);
-        $entity = $this->createFileEntity($file);
+        $entity = $this->createFileEntity($file, $user);
 
-        $this->filesystem->write($entity->getFileId(), $data);
+        $data = $this->readFileContent($file);
+        $this->filesystem->write($entity->getFilePath() ?? $entity->getFileId(), $data);
         $this->entityManager->persist($entity);
         $this->entityManager->flush();
 
@@ -133,18 +137,22 @@ final readonly class FileController
             return $response->withStatus(403);
         }
 
+        $user = $this->entityManager->getRepository(User::class)->find($userId);
+        if ($user === null) {
+            return $response->withStatus(403);
+        }
+
         $id = (string) $request->getAttribute('id');
 
-        $file = $this->entityManager->getRepository(File::class)->find($id);
+        $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $id, 'user' => $user]);
         if ($file === null) {
             return $response->withStatus(404);
         }
 
-        if ($file->getUser()->getId() !== $userId) {
-            return $response->withStatus(403);
+        $path = $file->getFilePath() ?? $file->getFileId();
+        if ($this->filesystem->fileExists($path)) {
+            $this->filesystem->delete($path);
         }
-
-        $this->filesystem->delete($file->getFileId());
 
         $this->entityManager->remove($file);
         $this->entityManager->flush();
@@ -154,9 +162,9 @@ final readonly class FileController
     }
 
     /**
-     * Serve a file from the filesystem (for generated images, etc.).
+     * Serve a generated file from the filesystem.
      */
-    public function imageServe(Request $request, Response $response): Response
+    public function serve(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
 
@@ -165,10 +173,23 @@ final readonly class FileController
             return $response->withStatus(403);
         }
 
-        $id = (string) $request->getAttribute('id');
-        $path = ComfyUIService::FOLDER_PREFIX . '/' . str_replace(ComfyUIService::FOLDER_SEPARATOR, '/', $id);
+        $user = $this->entityManager->getRepository(User::class)->find($userId);
+        if ($user === null) {
+            return $response->withStatus(403);
+        }
 
-        if (! $this->filesystem->fileExists($path)) {
+        $id = (string) $request->getAttribute('id');
+
+        /** @var File|null $file */
+        $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $id, 'user' => $user]);
+
+        if ($file === null) {
+            return $response->withStatus(404);
+        }
+
+        $path = $file?->getFilePath();
+
+        if ($path === null || ! $this->filesystem->fileExists($path)) {
             return $response->withStatus(404);
         }
 
@@ -177,9 +198,15 @@ final readonly class FileController
 
         $response->getBody()->write($content);
 
-        return $response
+        $response = $response
             ->withHeader('Content-Type', $mimeType)
             ->withHeader('Content-Length', (string) strlen($content));
+
+        if ($file->fileType() !== File::FILE_TYPE_IMAGE) {
+            return $response->withHeader('Content-Disposition', 'inline; filename="' . addcslashes($file->getFilename(), '"\\') . '"');
+        }
+
+        return $response;
     }
 
     private function getUploadedFile(Request $request): ?UploadedFileInterface
@@ -197,13 +224,20 @@ final readonly class FileController
         return $stream->getContents();
     }
 
-    private function createFileEntity(UploadedFileInterface $uploadedFile): File
+    private function createFileEntity(UploadedFileInterface $uploadedFile, User $user): File
     {
+        $fileId = Uuid::uuid4()->toString();
+        $extension = pathinfo($uploadedFile->getClientFilename() ?? '', PATHINFO_EXTENSION);
+        $diskFilename = $fileId . ($extension !== '' ? '.' . $extension : '');
+        $localPath = $this->settings->get('files.upload.path') . '/' . $user->getId() . '/' . $diskFilename;
+
         $file = new File();
+        $file->setUser($user);
         $file->setFilename($uploadedFile->getClientFilename() ?? 'fichier');
         $file->setMimeType($uploadedFile->getClientMediaType() ?? 'application/octet-stream');
-        $file->setFileId(Uuid::uuid7()->toString());
-        $file->setSizeBytes((string) $uploadedFile->getSize());
+        $file->setFileId($fileId);
+        $file->setFilePath($localPath);
+        $file->setSizeBytes($uploadedFile->getSize());
 
         return $file;
     }

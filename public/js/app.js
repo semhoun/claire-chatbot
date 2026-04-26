@@ -484,14 +484,20 @@
                 }
             }
 
-            if (update.html === undefined) {
-                return;
-            }
-
             // On est dans des updates de chat, on vérifie donc que ce qu'on reçoit est bien pour le thread courant
             const threadId = $('#chatStream').getAttribute('data-thread-id');
             if (threadId !== update.threadId) {
                 return;
+            }
+
+            if (eventType === 'chat.assistant.done') {
+                finalizeAssistantResponse();
+                return;
+            }
+
+            let html = update.html;
+            if (html === undefined) {
+                html = '';
             }
 
             const chatStream= $('#messages');
@@ -501,7 +507,7 @@
             }
 
             if (eventType === 'chat.snapshot') {
-                chatStream.innerHTML = update.html;
+                chatStream.innerHTML = html;
                 finalizeAssistantResponse();
                 return;
             }
@@ -511,27 +517,22 @@
                 if (element) return;
 
                 const loader = chatStream.querySelector('[data-role="assistant-loader"]');
-                if (loader) loader.outerHTML = update.html;
-                else chatStream.insertAdjacentHTML('beforeend', update.html);
+                if (loader) loader.outerHTML = html;
+                else chatStream.insertAdjacentHTML('beforeend', html);
                 return;
             }
 
             if (eventType === 'chat.assistant.update') {
                 const element = document.getElementById('message_' + update.messageId);
                 if (!element) return;
-                element.innerHTML = update.html;
+                element.innerHTML = html;
                 return;
             }
 
             if (eventType === 'chat.tool.update') {
                 const element = document.getElementById('toolscall_' + update.messageId);
                 if (!element) return;
-                element.innerHTML = update.html;
-                return;
-            }
-
-            if (eventType === 'chat.assistant.done') {
-                finalizeAssistantResponse();
+                element.innerHTML = html;
                 return;
             }
         }

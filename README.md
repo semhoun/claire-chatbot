@@ -2,7 +2,7 @@
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.5%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-> **Claire** — Chatbot IA multi-brain avec Telegram, ComfyUI et OpenTelemetry
+> **Claire** — Chatbot IA multi-brain avec Telegram, ComfyUI, PDF et OpenTelemetry
 
 Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI. Elle s'exécute dans un conteneur Docker basé sur FrankenPHP/Caddy et fournit une interface web, une API REST, une intégration Telegram et une observabilité complète via OpenTelemetry.
 
@@ -16,6 +16,7 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 - Mémoire courte avec résumé automatique de l'historique
 - Recherche web via SearXNG et RAG fichier via embeddings
 - Génération d'images avec ComfyUI (workflows multiples)
+- Génération de documents PDF depuis HTML ou Markdown
 - Intégration Telegram complète (messages, photos, documents, Mini-App)
 - Queue de fond Redis pour traitements asynchrones
 - Observabilité OpenTelemetry (traces, métriques, logs)
@@ -30,6 +31,7 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 - **LLM** : Neuron AI avec support OpenAI-compatible
 - **Queue** : Redis (BRPOP/LPUSH)
 - **Observabilité** : OpenTelemetry SDK + auto-instrumentation
+- **PDF** : mPDF (génération de documents)
 - **Bot** : phptg/bot-api (Telegram)
 
 ## Configuration
@@ -58,9 +60,18 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 | `TELEGRAM_WEBHOOK_SECRET` | Secret webhook Telegram | - |
 | `COMFYUI_ENABLED` | Active la génération d'images | `false` |
 | `COMFYUI_URL` | URL de l'instance ComfyUI | `http://localhost:8188` |
+| `PDF_ENABLED` | Active la génération de PDF | `true` |
+| `PDF_DEFAULT_FORMAT` | Format d'entrée par défaut (`html`, `markdown`) | `html` |
+| `PDF_DEFAULT_PAGE_SIZE` | Format de page par défaut (`A4`, `Letter`, `A3`, `A5`) | `A4` |
+| `PDF_TEMP_DIR` | Répertoire temporaire pour la génération PDF | `<app>/var/tmp` |
 | `DATABASE_KIND` | Type de base (`sqlite`, `mysql`, `postgres`) | `sqlite` |
 | `DEBUG_MODE` | Mode debug | `false` |
 | `QUEUE_WORKERS` | Nombre de workers de queue | `8` |
+| `QUEUE_WORKER_TIMEOUT` | Timeout BRPOP du worker (secondes) | `5` |
+| `QUEUE_WORKER_MAX_JOBS` | Nombre max de jobs par worker | `0` (illimité) |
+| `QUEUE_WORKER_MAX_TIME` | Durée de vie max d'un worker (secondes) | `0` (illimité) |
+| `SSE_QUEUE_TTL` | Durée de vie des messages SSE en file d'attente (secondes) | `60` |
+| `SSE_POP_TIMEOUT` | Timeout de lecture bloquante SSE (secondes) | `15` |
 
 Voir [`docker/compose.yml`](docker/compose.yml) pour un exemple complet avec toutes les variables.
 
@@ -121,6 +132,17 @@ workflow: |
     "6": { "inputs": { "text": "{{PROMPT}}" }, "class_type": "CLIPTextEncode" }
   }
 ```
+
+## Génération de PDF
+
+Activez par défaut (`PDF_ENABLED=true`). Les agents peuvent générer des documents PDF depuis du HTML ou du Markdown via l'outil `generate_pdf` :
+
+- Formats supportés : HTML, Markdown
+- Formats de page : A4, Letter, A3, A5
+- Orientations : portrait, paysage
+- Marges configurables
+
+Les fichiers générés sont liés à la conversation et accessibles dans l'historique de chat.
 
 ## Telegram Bot
 
@@ -188,7 +210,7 @@ sess-abc123
 - `GET /files/count`, `GET /files/list`
 - `POST /files/upload`, `POST /files/upload_rag`
 - `DELETE /files/delete/{id}`
-- `GET /files/img_serve/{id}`
+- `GET /files/img_serve/{id}` (images et PDF générés)
 
 ### Historique
 

@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use RuntimeException;
-
 readonly class ChatStreamPublisher
 {
     public function __construct(
         private RedisClient $redisClient,
         private ChatStreamSubscriber $chatStreamSubscriber,
+        private Settings $settings,
     ) {
     }
 
     /** @param array<string, mixed> $payload */
     public function publish(string $threadId, string $event, array $payload): void
     {
+        $channel = $this->chatStreamSubscriber->channel($threadId);
+
         $message = json_encode([
             'version' => 1,
             'event' => $event,
@@ -24,9 +25,9 @@ readonly class ChatStreamPublisher
             'payload' => $payload,
         ], JSON_THROW_ON_ERROR);
 
-        $result = $this->redisClient->publish($this->chatStreamSubscriber->channel($threadId), $message);
-        if ($result === false) {
-            throw new RuntimeException('Unable to publish chat stream event');
-        }
+        // Push to a session-specific queue for reliable delivery (wait/notify pattern)
+        $queueKey = $channel . ':queue';
+        $this->redisClient->rpush($queueKey, [$message]);
+        $this->redisClient->expire($queueKey, $this->settings->get('sse.queue_ttl')); // TTL from settings
     }
 }

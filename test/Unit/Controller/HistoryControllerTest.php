@@ -65,10 +65,11 @@ final class HistoryControllerTest extends TestCase
             ->willReturn('<div>snapshot</div>');
         $redis = $this->createMock(\App\Services\RedisClient::class);
         $redis->expects($this->once())
-            ->method('publish')
+            ->method('rpush')
             ->with(
-                'claire:sse:chat:thread-1',
-                $this->callback(static function (string $payload): bool {
+                'claire:sse:chat:thread-1:queue',
+                $this->callback(static function (array $payloadArr): bool {
+                    $payload = $payloadArr[0];
                     $data = json_decode($payload, true);
 
                     return is_array($data)
@@ -140,12 +141,13 @@ final class HistoryControllerTest extends TestCase
             ->with('partials/messages_list.twig', $this->isArray())
             ->willReturn('<div>snapshot</div>');
         $redis = $this->createMock(\App\Services\RedisClient::class);
-        // Snapshot should be published to sessionId, not threadId
+        // Snapshot should be pushed to sessionId queue, not threadId
         $redis->expects($this->once())
-            ->method('publish')
+            ->method('rpush')
             ->with(
-                'claire:sse:chat:sess-abc123',
-                $this->callback(static function (string $payload): bool {
+                'claire:sse:chat:sess-abc123:queue',
+                $this->callback(static function (array $payloadArr): bool {
+                    $payload = $payloadArr[0];
                     $data = json_decode($payload, true);
 
                     return is_array($data)

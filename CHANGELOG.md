@@ -7,6 +7,55 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.4.7] - 2026-04-26
+
+### Added
+- **SSE** : Nouvelles options de configuration `SSE_QUEUE_TTL` (durée de vie des messages en file d'attente) et `SSE_POP_TIMEOUT` (timeout de lecture bloquante)
+- **Files** : Fusion des entités `File` et `ChatHistoryFile` pour une gestion unifiée des fichiers générés et uploadés
+- **Files** : Nouvelle colonne `kind` dans l'entité `File` pour différencier les types de fichiers (`generated_image`, `generated_pdf`, `upload`)
+
+### Changed
+- **SSE** : Optimisation du flux Server-Sent Events avec nettoyage automatique de la file d'attente Redis à l'ouverture du flux
+- **SSE** : Amélioration de la gestion des connexions Redis dans `ChatStreamPublisher` et `ChatStreamSubscriber`
+- **Image/PDF** : Optimisation de la génération et du stockage des fichiers (images et PDF)
+- **Image/PDF** : Post-traitement amélioré des messages contenant des fichiers générés
+- **Queue** : Amélioration du `QueueWorker` avec meilleure gestion des événements de terminaison
+- **Redis** : Ajout de la méthode `clearList()` pour purger efficacement les files Redis
+- **Twig** : Amélioration de l'extension `GeneratedFileExtension` pour supporter les deux types de fichiers (images et PDF)
+
+### Fixed
+- **Telegram** : Correction de l'envoi des images dans les messages Telegram (gestion améliorée des fichiers générés)
+- **Brain** : Correction du formatage des messages avec contenu OutOfContext (OC)
+- **Brain** : Correction du traitement des nouveaux messages lorsque le contenu est à l'intérieur des appels d'outils
+- **FileController** : Correction du endpoint `/files/img_serve/{id}` avec meilleure gestion des en-têtes de cache
+
+## [1.4.6] - 2026-04-22
+
+### Changed
+- **SSE** : Refonte complète du flux Server-Sent Events utilisant une file d'attente Redis bloquante (`BRPOP`) pour une livraison plus fiable des messages (modèle wait/notify)
+- **SSE** : Suppression du mécanisme de tampon (buffer) et des numéros de séquence (`seq`), la file d'attente Redis garantissant désormais l'ordre et la persistance temporaire
+- **SSE** : Centralisation des réglages dans `config/settings/sse.php` (nouvelles variables `SSE_QUEUE_TTL` et `SSE_POP_TIMEOUT`)
+- **SSE** : Nettoyage automatique de la file d'attente de session à l'ouverture du flux pour éviter les messages résiduels
+- Fusion des entités `File` et `ChatHistoryFile` pour unifier la gestion des fichiers
+
+### Added
+- **Génération de PDF** : Nouveau outil `generate_pdf` pour créer des documents PDF depuis du HTML ou du Markdown
+  - Service `PdfGeneratorService` basé sur mPDF avec support des marges, orientation et formats de page (A4, Letter, A3, A5)
+  - Tool `PdfGeneratorTool` intégré aux agents IA avec post-processing automatique des messages
+  - Extension Twig `GeneratedFileExtension` (remplace `GeneratedImageExtension`) pour l'affichage des fichiers générés (images et PDF)
+  - Variables d'environnement : `PDF_ENABLED`, `PDF_DEFAULT_FORMAT`, `PDF_DEFAULT_PAGE_SIZE`, `PDF_TEMP_DIR`
+  - Service `GeneratedFileService` pour la gestion centralisée des fichiers générés
+- Tests unitaires pour `PdfGeneratorTool` et `GeneratedFileExtension`
+
+### Changed
+- **Configuration** : Consolidation des settings d'outils dans `config/settings/tools.php` (searXNG, ComfyUI, PDF)
+- **Queue** : Force flush des logs OpenTelemetry après chaque traitement de job worker
+- **Docker** : Suppression des modules Caddy Mercure et Vulcain du Dockerfile
+- Remplacement de `GeneratedImageExtension` par `GeneratedFileExtension` pour supporter les images et les PDF
+
+### Removed
+- Suppression du fichier de configuration `config/settings/comfyui.php` (fusionné dans `tools.php`)
+
 ## [1.4.6] - 2026-04-22
 
 ### Added
@@ -414,7 +463,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.6...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.7...HEAD
+[1.4.7]: https://github.com/semhoun/claire-chatbot/compare/1.4.6...1.4.7
 [1.4.6]: https://github.com/semhoun/claire-chatbot/compare/1.4.5...1.4.6
 [1.4.5]: https://github.com/semhoun/claire-chatbot/compare/1.4.4...1.4.5
 [1.4.4]: https://github.com/semhoun/claire-chatbot/compare/1.4.3...1.4.4

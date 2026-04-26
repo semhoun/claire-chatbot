@@ -42,10 +42,6 @@ final class NewMessageJob implements QueueDoer
 {
     private string $streamedText = '';
 
-    private string $toolText = '';
-
-    private bool $isStreamingStarted = false;
-
     private int $nbPublishedChunks = 0;
 
     private string $userMessage;
@@ -110,7 +106,7 @@ final class NewMessageJob implements QueueDoer
      */
     private function initContext(array $payload): void
     {
-        $this->messageId = $params['messageId'] ?? uniqid('assistant-message-', true);
+        $this->messageId = $payload['messageId'] ?? uniqid('assistant-message-', true);
 
         $this->userMessage = trim((string) ($payload['message'] ?? ''));
         if ($this->userMessage === '') {
@@ -153,16 +149,24 @@ final class NewMessageJob implements QueueDoer
             $this->nbPublishedChunks++;
         }
 
-        $finalText = $this->toolText . $agentHandler->getMessage()->getContent();
-        $this->finalizeChat($finalText);
+        $finalText = $agentHandler->getMessage()->getContent();
+        if ($finalText !== '' && $finalText !== null) {
+            $this->publishContent($finalText);
+        } else {
+            $this->publishContent($this->streamedText);
+        }
+
+        $this->publishDoneMessages();
     }
 
     private function processChunk(mixed $chunk): void
     {
+        if ($chunk === null) {
+            return;
+        }
+
         if ($chunk instanceof ToolCallChunk || $chunk instanceof ToolResultChunk) {
             $this->processToolChunk($chunk);
-            // Le tesxte déjà récupéré ne seras pas de le dernier TextChunk
-            $this->toolText = $this->streamedText;
             return;
         }
 
@@ -172,7 +176,10 @@ final class NewMessageJob implements QueueDoer
 
         if ($chunk instanceof TextChunk) {
             $this->processTextChunk($chunk);
+            return;
         }
+
+        $this->logger->debug('Chunk type not handled: ' . $chunk::class);
     }
 
     private function processToolChunk(ToolCallChunk|ToolResultChunk $chunk): void
@@ -208,6 +215,10 @@ final class NewMessageJob implements QueueDoer
 
     private function processTextChunk(ReasoningChunk|TextChunk $chunk): void
     {
+        if ($chunk->content === '') {
+            return;
+        }
+
         $this->streamedText .= $chunk->content;
 
         $html = $this->twig->fetch('partials/md.twig', [
@@ -225,13 +236,16 @@ final class NewMessageJob implements QueueDoer
 
     private function publishStartMessages(): void
     {
-        if ($this->isStreamingStarted) {
-            return;
-        }
-
-        $this->isStreamingStarted = true;
-
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.start', [
+            'threadId' => $this->threadId,
+            'sessionId' => $this->sessionId,
+            'messageId' => $this->messageId,
+        ]);
+    }
+
+    private function publishDoneMessages(): void
+    {
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.done', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
@@ -257,9 +271,9 @@ final class NewMessageJob implements QueueDoer
         ]);
     }
 
-    private function finalizeChat(string $content): void
+    private function publishContent(string $content): void
     {
-        $finalHtml = $this->twig->fetch('partials/md.twig', [
+        $html = $this->twig->fetch('partials/md.twig', [
             'message' => $content,
             'streaming_placeholder_images' => false,
         ]);
@@ -268,12 +282,7 @@ final class NewMessageJob implements QueueDoer
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
-            'html' => $finalHtml,
-        ]);
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.done', [
-            'threadId' => $this->threadId,
-            'sessionId' => $this->sessionId,
-            'messageId' => $this->messageId,
+            'html' => $html,
         ]);
     }
 

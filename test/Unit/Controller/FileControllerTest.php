@@ -54,6 +54,14 @@ final class FileControllerTest extends TestCase
             $this->entityManager,
             $this->filesystem,
             $this->container,
+            new \App\Services\Settings([
+                'files' => [
+                    'upload' => [
+                        'path' => '/tmp',
+                        'acceptedExt' => '.txt',
+                    ],
+                ],
+            ]),
         );
     }
 
@@ -159,7 +167,7 @@ final class FileControllerTest extends TestCase
 
         $this->filesystem->expects($this->once())
             ->method('write')
-            ->with($this->isString(), 'file content');
+            ->with($this->stringContains('uploads/user-123/'), 'file content');
 
         $this->entityManager->expects($this->once())->method('persist');
         $this->entityManager->expects($this->once())->method('flush');
@@ -188,8 +196,9 @@ final class FileControllerTest extends TestCase
         $user->method('getId')->willReturn($userId);
         $file->method('getUser')->willReturn($user);
         $file->method('getFileId')->willReturn('internal-id');
+        $file->method('getFilePath')->willReturn('internal-id');
 
-        $repository->method('find')->with($fileId)->willReturn($file);
+        $repository->method('findOneBy')->willReturn($file);
         $repository->method('listByUser')->with($userId)->willReturn([]);
 
         $this->entityManager->method('getRepository')
@@ -198,6 +207,7 @@ final class FileControllerTest extends TestCase
 
         $request = $this->createRequestWithSession(attributeId: $fileId);
 
+        $this->filesystem->method('fileExists')->willReturn(true);
         $this->filesystem->expects($this->once())
             ->method('delete')
             ->with('internal-id');
@@ -211,12 +221,77 @@ final class FileControllerTest extends TestCase
         $this->controller->delete($request, $this->responseFactory->createResponse());
     }
 
+    public function testServeReturnsFileContent(): void
+    {
+        $userId = 'user-123';
+        $id = 'file-uuid';
+        $path = 'uploads/user-123/file-uuid.png';
+        $file = $this->createMock(File::class);
+        $repository = $this->createMock(\App\Repository\FileRepository::class);
+
+        $this->session->method('get')->with(Auth::USERID)->willReturn($userId);
+
+        $file->method('getFilePath')->willReturn($path);
+        $repository->method('findOneBy')->with(['fileId' => $id])->willReturn($file);
+
+        $this->entityManager->method('getRepository')->with(File::class)->willReturn($repository);
+        $this->filesystem->method('fileExists')->with($path)->willReturn(true);
+        $this->filesystem->method('mimeType')->with($path)->willReturn('image/png');
+        $this->filesystem->method('read')->with($path)->willReturn('binary data');
+
+        $request = $this->createRequestWithSession(attributeId: $id);
+        $response = $this->controller->serve($request, $this->responseFactory->createResponse());
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('image/png', $response->getHeaderLine('Content-Type'));
+        $this->assertSame('binary data', (string) $response->getBody());
+    }
+
+    public function testServeReturnsPdfWithDisplayName(): void
+    {
+        $userId = 'user-123';
+        $id = 'file-uuid.pdf';
+        $path = 'generated/user-123/file-uuid.pdf';
+        $file = $this->createMock(File::class);
+        $repository = $this->createMock(\App\Repository\FileRepository::class);
+
+        $this->session->method('get')->with(Auth::USERID)->willReturn($userId);
+
+        $file->method('getFilePath')->willReturn($path);
+        $file->method('getFilename')->willReturn('mon-rapport.pdf');
+        $file->method('fileType')->willReturn(File::FILE_TYPE_PDF);
+
+        $repository->method('findOneBy')->with(['fileId' => $id])->willReturn($file);
+
+        $this->entityManager->method('getRepository')->with(File::class)->willReturn($repository);
+        $this->filesystem->method('fileExists')->with($path)->willReturn(true);
+        $this->filesystem->method('mimeType')->with($path)->willReturn('application/pdf');
+        $this->filesystem->method('read')->with($path)->willReturn('pdf data');
+
+        $request = $this->createRequestWithSession(attributeId: $id);
+        $response = $this->controller->serve($request, $this->responseFactory->createResponse());
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('application/pdf', $response->getHeaderLine('Content-Type'));
+        $this->assertStringContainsString('inline; filename="mon-rapport.pdf"', $response->getHeaderLine('Content-Disposition'));
+    }
+
     public function testUploadRagSavesFileAndAddsToVectorStore(): void
     {
+        $userId = 'user-123';
         $uploadedFile = $this->createMock(UploadedFileInterface::class);
         $stream = $this->createMock(StreamInterface::class);
         $embedder = $this->createMock(EmbeddingsProviderInterface::class);
         $store = $this->createMock(VectorStoreInterface::class);
+        $user = $this->createMock(User::class);
+
+        $this->session->method('get')
+            ->with(Auth::USERID)
+            ->willReturn($userId);
+
+        $this->entityManager->method('getReference')
+            ->with(User::class, $userId)
+            ->willReturn($user);
 
         $uploadedFile->method('getError')->willReturn(UPLOAD_ERR_OK);
         $uploadedFile->method('getClientFilename')->willReturn('test.txt');

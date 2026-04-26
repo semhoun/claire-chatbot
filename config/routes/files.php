@@ -13,6 +13,6 @@ return static function (App $app): void {
         $group->post('/upload', [FileController::class, 'upload'])->setName('files.upload');
         $group->post('/upload_rag', [FileController::class, 'uploadRag'])->setName('files.upload_rag');
         $group->delete('/delete/{id}', [FileController::class, 'delete'])->setName('files.delete');
-        $group->get('/img_serve/{id}', [FileController::class, 'imageServe'])->setName('files.img_serve');
+        $group->get('/serve/{id}', [FileController::class, 'serve'])->setName('files.serve');
     });
 };
