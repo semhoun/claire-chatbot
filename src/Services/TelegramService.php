@@ -577,9 +577,14 @@ class TelegramService implements QueueDoer
      */
     private function sendPhoto(int $telegramChatId, string $imageId, ?string $caption = null): void
     {
-        $fileId = File::GENERATED_PREFIX . $imageId . File::GENERATED_SUFFIX;
-        $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $fileId]);
+        $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $imageId]);
         $imagePath = $file?->getFilePath() ?? '';
+
+        if ($file === null) {
+            $this->handlePhotoSendError(new \Exception("File not found for image ID: $imageId"), $telegramChatId, $imagePath);
+            $this->logger->error("File not found for image ID: $imageId");
+            return;
+        }
 
         try {
             $this->sendChatAction($telegramChatId, TelegramAction::PHOTO);
