@@ -64,7 +64,11 @@ final readonly class AuthController
 
         $this->auth->login($session, $result['id'], $result['data']);
 
-        return $response->withStatus(302)->withHeader('Location', '/');
+        // Render callback page that stores token client-side then redirects
+        // This avoids losing the session token on a 302 redirect
+        return $this->twig->render($response, 'auth_callback.twig', [
+            'redirect_url' => '/',
+        ]);
     }
 
     public function logout(Request $request, Response $response): Response

@@ -45,6 +45,7 @@ final class CorsMiddleware implements MiddlewareInterface
         return $response
             ->withHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
             ->withHeader('Access-Control-Allow-Headers', '*')
+            ->withHeader('Access-Control-Expose-Headers', 'X-Claire-Token')
             ->withHeader('Access-Control-Max-Age', '86400')
             ->withHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
             ->withHeader('Pragma', 'no-cache');
