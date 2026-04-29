@@ -10,12 +10,10 @@
     const AUTH_HEADER = 'X-Claire-Auth';
     const TOKEN_HEADER = 'X-Claire-Token';
     const MINI_TOKEN_HEADER = 'X-Claire-Minitoken';
-    const MINI_TOKEN_URL = '/auth/minitoken';
     const PROTECTED_PATH_PREFIX = '/files/serve/';
 
     let cachedMiniToken = null;
     let cachedMiniTokenExpiresAt = 0;
-    let pendingMiniTokenPromise = null;
 
     function readTokenFromUrl() {
         try {
@@ -109,49 +107,6 @@
         return typeof cachedMiniToken === 'string'
             && cachedMiniToken.length > 0
             && Date.now() < cachedMiniTokenExpiresAt;
-    }
-
-    async function fetchMiniToken() {
-        const response = await fetch(MINI_TOKEN_URL, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            if (response.status === 401 || response.status === 403) {
-                clearSession();
-            }
-            throw new Error('Unable to retrieve mini token: ' + response.status);
-        }
-
-        const payload = await response.json();
-        if (!payload || typeof payload.minitoken !== 'string' || payload.minitoken === '') {
-            throw new Error('Invalid mini token response');
-        }
-
-        const expiresIn = Number(payload.expiresIn || 0);
-        setMiniToken(payload.minitoken, expiresIn);
-
-        return cachedMiniToken;
-    }
-
-    async function ensureMiniToken() {
-        if (hasValidMiniToken()) {
-            return cachedMiniToken;
-        }
-
-        if (pendingMiniTokenPromise !== null) {
-            return pendingMiniTokenPromise;
-        }
-
-        pendingMiniTokenPromise = fetchMiniToken()
-            .finally(function () {
-                pendingMiniTokenPromise = null;
-            });
-
-        return pendingMiniTokenPromise;
     }
 
     function appendTokenToUrl(rawUrl, token, miniToken) {
@@ -333,23 +288,8 @@
                 return;
             }
 
-            event.preventDefault();
-            ensureMiniToken()
-                .catch(function () {
-                    return null;
-                })
-                .then(function (miniToken) {
-                    const target = appendTokenToUrl(href, token, miniToken);
-                    const openInNewTab = link.getAttribute('target') === '_blank'
-                        || event.ctrlKey
-                        || event.metaKey;
-
-                    if (openInNewTab) {
-                        window.open(target, '_blank', 'noopener');
-                    } else {
-                        window.location.assign(target);
-                    }
-                });
+            const miniToken = hasValidMiniToken() ? cachedMiniToken : null;
+            link.setAttribute('href', appendTokenToUrl(href, token, miniToken));
         });
     }
 
@@ -365,25 +305,17 @@
     }
 
     function bootstrap() {
-        loadMiniTokenFromStorage();
-
-        const tokenFromUrl = readTokenFromUrl();
-        if (tokenFromUrl) {
-            setSessionToken(tokenFromUrl);
-        }
-
         configureFetch();
         configureHtmx();
         configureProtectedResourceClicks();
         configureMutationObserver();
-        ensureMiniToken()
-            .catch(function () {
-                return null;
-            })
-            .finally(function () {
-                applyTokenToProtectedResources();
-            });
         applyTokenToProtectedResources();
+    }
+
+    loadMiniTokenFromStorage();
+    const earlyTokenFromUrl = readTokenFromUrl();
+    if (earlyTokenFromUrl) {
+        setSessionToken(earlyTokenFromUrl);
     }
 
     configureFetch();
@@ -397,6 +329,9 @@
 
     window.ClaireSession = {
         getSessionToken: getSessionToken,
+        getMiniToken: function () {
+            return hasValidMiniToken() ? cachedMiniToken : null;
+        },
         setSessionToken: setSessionToken,
         clearSession: clearSession,
         getAuthHeaders: getAuthHeaders,

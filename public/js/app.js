@@ -134,6 +134,38 @@
     // --- RAG Toggle ---
     createToggle('ragToggle', 'ragPanel', null);
 
+    // --- Initial Counters Refresh (after session bootstrap) ---
+    (function() {
+        function refreshInitialCounters() {
+            if (!window.htmx) return;
+
+            const historyCountBadge = document.getElementById('historyCountBadge');
+            const filesCountBadge = document.getElementById('filesCountBadge');
+
+            if (historyCountBadge) {
+                window.htmx.ajax('GET', baseUrl + '/history/count', {
+                    target: '#historyCountBadge',
+                    swap: 'innerHTML',
+                });
+            }
+
+            if (filesCountBadge) {
+                window.htmx.ajax('GET', baseUrl + '/files/count', {
+                    target: '#filesCountBadge',
+                    swap: 'innerHTML',
+                });
+            }
+        }
+
+        if (document.readyState !== 'loading') {
+            setTimeout(refreshInitialCounters, 0);
+        } else {
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(refreshInitialCounters, 0);
+            });
+        }
+    })();
+
     // --- Upload Dialog ---
     (function() {
         const root = document;
@@ -561,26 +593,6 @@
             };
         }
 
-        async function fetchSseMiniToken() {
-            const response = await fetch(baseUrl + '/auth/minitoken', {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error('Unable to retrieve SSE mini token: ' + response.status);
-            }
-
-            const payload = await response.json();
-            if (!payload || typeof payload.minitoken !== 'string' || payload.minitoken === '') {
-                throw new Error('Invalid SSE mini token response');
-            }
-
-            return payload.minitoken;
-        }
-
         async function initChatEventSource(sessionId) {
             if (window.chatEventSource) window.chatEventSource.close();
 
@@ -589,8 +601,15 @@
                 return;
             }
 
+            const minitoken = window.ClaireSession && typeof window.ClaireSession.getMiniToken === 'function'
+                ? window.ClaireSession.getMiniToken()
+                : null;
+            if (!minitoken) {
+                setTimeout(function() { void initChatEventSource(sessionId); }, 1500);
+                return;
+            }
+
             try {
-                const minitoken = await fetchSseMiniToken();
                 const sseUrl = baseUrl
                     + '/brain/stream?sessionId=' + encodeURIComponent(sessionId)
                     + '&threadId=' + encodeURIComponent(threadId)

@@ -76,6 +76,21 @@
         </div>
     </div>
 </div>
+<script>
+    (function () {
+        'use strict';
+
+        const storageKey = 'claire_session_token';
+        const token = sessionStorage.getItem(storageKey);
+
+        if (!token || token === '0') {
+            return;
+        }
+
+        const target = new URL('{{ base_url }}/', window.location.origin);
+        target.searchParams.set('token', token);
+        window.location.replace(target.pathname + target.search + target.hash);
+    })();
+</script>
 </body>
 </html>
-

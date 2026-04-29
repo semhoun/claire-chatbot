@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Services\Auth;
-use App\Services\MiniToken;
 use App\Services\OidcClient;
 use App\Services\Session\SessionManagerInterface;
 use App\Services\Session\SessionInterface;
@@ -31,7 +30,6 @@ final readonly class AuthController
         private \Psr\Log\LoggerInterface $logger,
         private OidcClient $oidcClient,
         private Auth $auth,
-        private MiniToken $miniToken,
         private Settings $settings,
         private Twig $twig,
     ) {
@@ -96,27 +94,6 @@ final readonly class AuthController
 
         $this->auth->logout($session);
         return $response->withStatus(302)->withHeader('Location', '/');
-    }
-
-    public function minitoken(Request $request, Response $response): Response
-    {
-        $session = $this->getSession($request);
-        $userId = (string) $session->get(Auth::USERID, '');
-        if ($userId === '' || $userId === '0') {
-            return $response->withStatus(401);
-        }
-
-        $lifetime = (int) $this->settings->get('session.lifetime');
-        $token = $this->miniToken->generate($session, $lifetime);
-
-        $response->getBody()->write(json_encode([
-            'minitoken' => $token,
-            'expiresIn' => $lifetime,
-        ], JSON_THROW_ON_ERROR));
-
-        return $response
-            ->withHeader('Content-Type', 'application/json')
-            ->withStatus(200);
     }
 
     private function buildSessionToken(SessionInterface $session): string
