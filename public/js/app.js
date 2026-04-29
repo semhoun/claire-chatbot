@@ -438,7 +438,9 @@
 
         document.addEventListener('DOMContentLoaded', function() {
             const sessionId = window.claireStreamSessionId;
-            if (sessionId) initChatEventSource(sessionId);
+            if (sessionId) {
+                void initChatEventSource(sessionId);
+            }
         });
 
         function setComposerBusyState(isBusy) {
@@ -555,15 +557,48 @@
             eventSource.addEventListener('chat.tool.update', function(event) { handleEvent('chat.tool.update', event); });
             eventSource.onerror = function(error) {
                 eventSource.close();
-                setTimeout(function() { initChatEventSource(sessionId); }, 5000);
+                setTimeout(function() { void initChatEventSource(sessionId); }, 5000);
             };
         }
 
-        function initChatEventSource(sessionId) {
+        async function fetchSseMiniToken() {
+            const response = await fetch(baseUrl + '/auth/minitoken', {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Unable to retrieve SSE mini token: ' + response.status);
+            }
+
+            const payload = await response.json();
+            if (!payload || typeof payload.minitoken !== 'string' || payload.minitoken === '') {
+                throw new Error('Invalid SSE mini token response');
+            }
+
+            return payload.minitoken;
+        }
+
+        async function initChatEventSource(sessionId) {
             if (window.chatEventSource) window.chatEventSource.close();
+
             const threadId = $('#chatStream').getAttribute('data-thread-id');
-            const sseUrl = baseUrl + '/brain/stream?sessionId=' + encodeURIComponent(sessionId) + '&threadId=' + encodeURIComponent(threadId);
-            bindChatEventSource(sessionId, new EventSource(sseUrl));
+            if (!threadId) {
+                return;
+            }
+
+            try {
+                const minitoken = await fetchSseMiniToken();
+                const sseUrl = baseUrl
+                    + '/brain/stream?sessionId=' + encodeURIComponent(sessionId)
+                    + '&threadId=' + encodeURIComponent(threadId)
+                    + '&minitoken=' + encodeURIComponent(minitoken);
+                bindChatEventSource(sessionId, new EventSource(sseUrl));
+            } catch (error) {
+                setTimeout(function() { void initChatEventSource(sessionId); }, 3000);
+            }
         }
 
         window.chatClick = function chatClick(event) {
@@ -626,7 +661,7 @@
             chatStreamContainer.setAttribute('data-stream-session-id', streamSessionId);
             $('#thread-id-input').value = threadId;
             $('#session-id-input').value = streamSessionId;
-            initChatEventSource(streamSessionId);
+            void initChatEventSource(streamSessionId);
         };
 
         window.handleLastExchangeResponse = function handleLastExchangeResponse(event) {

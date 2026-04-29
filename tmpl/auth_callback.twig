@@ -56,36 +56,24 @@
         (function() {
             'use strict';
 
-            const COOKIE_KEY = 'claire_session_token';
             const STORAGE_KEY = 'claire_session_token';
-            const TARGET_URL = '{{ redirect_url|default("/") }}';
-
-            function readCookie(name) {
-                const prefix = name + '=';
-                const parts = document.cookie ? document.cookie.split(';') : [];
-                for (let i = 0; i < parts.length; i++) {
-                    const part = parts[i].trim();
-                    if (part.indexOf(prefix) === 0) {
-                        return decodeURIComponent(part.slice(prefix.length));
-                    }
-                }
-                return null;
-            }
+            const SESSION_TOKEN = '{{ session_token|e('js') }}';
 
             function storeTokenAndRedirect() {
-                const token = readCookie(COOKIE_KEY);
-                if (token) {
+                if (SESSION_TOKEN) {
                     try {
-                        sessionStorage.setItem(STORAGE_KEY, token);
+                        sessionStorage.setItem(STORAGE_KEY, SESSION_TOKEN);
                     } catch (e) {
                         console.warn('Failed to store token in sessionStorage:', e);
                     }
                 }
-                window.location.replace(TARGET_URL);
+                const targetUrl = SESSION_TOKEN
+                    ? '/?token=' + encodeURIComponent(SESSION_TOKEN)
+                    : '{{ redirect_url|default("/") }}';
+                window.location.replace(targetUrl);
             }
 
-            // Small delay to ensure cookie is set
-            setTimeout(storeTokenAndRedirect, 100);
+            storeTokenAndRedirect();
         })();
     </script>
 </body>

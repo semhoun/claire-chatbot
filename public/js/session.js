@@ -1,53 +1,205 @@
 /**
  * Session management module for X-Claire-Auth header-based authentication.
- * Stores token in sessionStorage, injects headers for fetch/HTMX,
- * and mirrors token into a cookie for EventSource requests.
+ * Stores token in sessionStorage and injects headers for fetch/HTMX.
  */
 (function () {
     'use strict';
 
     const STORAGE_KEY = 'claire_session_token';
-    const COOKIE_KEY = 'claire_session_token';
+    const MINI_STORAGE_KEY = 'claire_minitoken';
     const AUTH_HEADER = 'X-Claire-Auth';
     const TOKEN_HEADER = 'X-Claire-Token';
+    const MINI_TOKEN_HEADER = 'X-Claire-Minitoken';
+    const MINI_TOKEN_URL = '/auth/minitoken';
+    const PROTECTED_PATH_PREFIX = '/files/serve/';
 
-    function readCookie(name) {
-        const prefix = name + '=';
-        const parts = document.cookie ? document.cookie.split(';') : [];
-        for (let i = 0; i < parts.length; i += 1) {
-            const part = parts[i].trim();
-            if (part.indexOf(prefix) === 0) {
-                return decodeURIComponent(part.slice(prefix.length));
+    let cachedMiniToken = null;
+    let cachedMiniTokenExpiresAt = 0;
+    let pendingMiniTokenPromise = null;
+
+    function readTokenFromUrl() {
+        try {
+            const url = new URL(window.location.href);
+            const token = url.searchParams.get('token');
+            if (token && token !== '0') {
+                url.searchParams.delete('token');
+                window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + url.hash);
+                return token;
             }
+        } catch (_error) {
+            // no-op
         }
 
         return null;
-    }
-
-    function writeCookie(token) {
-        const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-        document.cookie = COOKIE_KEY + '=' + encodeURIComponent(token)
-            + '; Path=/; SameSite=Lax' + secure;
-    }
-
-    function deleteCookie() {
-        document.cookie = COOKIE_KEY
-            + '=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
     }
 
     function getSessionToken() {
-        const storageToken = sessionStorage.getItem(STORAGE_KEY);
-        if (storageToken) {
-            return storageToken;
+        return sessionStorage.getItem(STORAGE_KEY);
+    }
+
+    function readJwtExp(token) {
+        try {
+            const parts = String(token).split('.');
+            if (parts.length !== 3) {
+                return null;
+            }
+
+            const payloadPart = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            const padded = payloadPart + '==='.slice((payloadPart.length + 3) % 4);
+            const payload = JSON.parse(atob(padded));
+            if (!payload || typeof payload.exp !== 'number') {
+                return null;
+            }
+
+            return payload.exp;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    function setMiniToken(token, expiresInSec) {
+        if (typeof token !== 'string' || token.length === 0) {
+            return;
         }
 
-        const cookieToken = readCookie(COOKIE_KEY);
-        if (cookieToken) {
-            sessionStorage.setItem(STORAGE_KEY, cookieToken);
-            return cookieToken;
+        const now = Date.now();
+        const marginMs = 2000;
+        let ttlMs = Math.max(0, Number(expiresInSec || 0) * 1000 - marginMs);
+        if (ttlMs <= 0) {
+            const exp = readJwtExp(token);
+            if (typeof exp === 'number') {
+                ttlMs = Math.max(0, exp * 1000 - now - marginMs);
+            }
         }
 
-        return null;
+        cachedMiniToken = token;
+        cachedMiniTokenExpiresAt = now + ttlMs;
+
+        sessionStorage.setItem(MINI_STORAGE_KEY, JSON.stringify({
+            token: token,
+            expiresAt: cachedMiniTokenExpiresAt,
+        }));
+    }
+
+    function loadMiniTokenFromStorage() {
+        const raw = sessionStorage.getItem(MINI_STORAGE_KEY);
+        if (!raw) {
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed.token !== 'string' || typeof parsed.expiresAt !== 'number') {
+                return;
+            }
+
+            if (Date.now() >= parsed.expiresAt) {
+                sessionStorage.removeItem(MINI_STORAGE_KEY);
+                return;
+            }
+
+            cachedMiniToken = parsed.token;
+            cachedMiniTokenExpiresAt = parsed.expiresAt;
+        } catch (_error) {
+            sessionStorage.removeItem(MINI_STORAGE_KEY);
+        }
+    }
+
+    function hasValidMiniToken() {
+        return typeof cachedMiniToken === 'string'
+            && cachedMiniToken.length > 0
+            && Date.now() < cachedMiniTokenExpiresAt;
+    }
+
+    async function fetchMiniToken() {
+        const response = await fetch(MINI_TOKEN_URL, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+                clearSession();
+            }
+            throw new Error('Unable to retrieve mini token: ' + response.status);
+        }
+
+        const payload = await response.json();
+        if (!payload || typeof payload.minitoken !== 'string' || payload.minitoken === '') {
+            throw new Error('Invalid mini token response');
+        }
+
+        const expiresIn = Number(payload.expiresIn || 0);
+        setMiniToken(payload.minitoken, expiresIn);
+
+        return cachedMiniToken;
+    }
+
+    async function ensureMiniToken() {
+        if (hasValidMiniToken()) {
+            return cachedMiniToken;
+        }
+
+        if (pendingMiniTokenPromise !== null) {
+            return pendingMiniTokenPromise;
+        }
+
+        pendingMiniTokenPromise = fetchMiniToken()
+            .finally(function () {
+                pendingMiniTokenPromise = null;
+            });
+
+        return pendingMiniTokenPromise;
+    }
+
+    function appendTokenToUrl(rawUrl, token, miniToken) {
+        try {
+            const resolved = new URL(rawUrl, window.location.origin);
+            if (resolved.origin !== window.location.origin) {
+                return rawUrl;
+            }
+
+            if (!resolved.pathname.startsWith(PROTECTED_PATH_PREFIX)) {
+                return rawUrl;
+            }
+
+            resolved.searchParams.set('token', token);
+            if (typeof miniToken === 'string' && miniToken.length > 0) {
+                resolved.searchParams.set('minitoken', miniToken);
+            }
+            return resolved.pathname + resolved.search + resolved.hash;
+        } catch (_error) {
+            return rawUrl;
+        }
+    }
+
+    function applyTokenToProtectedResources() {
+        const token = getSessionToken();
+        if (!token) {
+            return;
+        }
+
+        const links = document.querySelectorAll('a.generated-file[href]');
+        links.forEach(function (link) {
+            const href = link.getAttribute('href');
+            if (!href) {
+                return;
+            }
+            const miniToken = hasValidMiniToken() ? cachedMiniToken : null;
+            link.setAttribute('href', appendTokenToUrl(href, token, miniToken));
+        });
+
+        const images = document.querySelectorAll('img.generated-image[src]');
+        images.forEach(function (image) {
+            const src = image.getAttribute('src');
+            if (!src) {
+                return;
+            }
+            const miniToken = hasValidMiniToken() ? cachedMiniToken : null;
+            image.setAttribute('src', appendTokenToUrl(src, token, miniToken));
+        });
     }
 
     function setSessionToken(token) {
@@ -56,12 +208,14 @@
         }
 
         sessionStorage.setItem(STORAGE_KEY, token);
-        writeCookie(token);
+        applyTokenToProtectedResources();
     }
 
     function clearSession() {
         sessionStorage.removeItem(STORAGE_KEY);
-        deleteCookie();
+        sessionStorage.removeItem(MINI_STORAGE_KEY);
+        cachedMiniToken = null;
+        cachedMiniTokenExpiresAt = 0;
     }
 
     function getAuthHeaders(headers) {
@@ -82,6 +236,11 @@
         const newToken = response.headers.get(TOKEN_HEADER);
         if (newToken) {
             setSessionToken(newToken);
+        }
+
+        const newMiniToken = response.headers.get(MINI_TOKEN_HEADER);
+        if (newMiniToken) {
+            setMiniToken(newMiniToken, 0);
         }
     }
 
@@ -150,17 +309,81 @@
             if (newToken) {
                 setSessionToken(newToken);
             }
+
+            applyTokenToProtectedResources();
+        });
+    }
+
+    function configureProtectedResourceClicks() {
+        document.addEventListener('click', function (event) {
+            const link = event.target && event.target.closest
+                ? event.target.closest('a.generated-file[href]')
+                : null;
+            if (!link) {
+                return;
+            }
+
+            const token = getSessionToken();
+            if (!token) {
+                return;
+            }
+
+            const href = link.getAttribute('href');
+            if (!href) {
+                return;
+            }
+
+            event.preventDefault();
+            ensureMiniToken()
+                .catch(function () {
+                    return null;
+                })
+                .then(function (miniToken) {
+                    const target = appendTokenToUrl(href, token, miniToken);
+                    const openInNewTab = link.getAttribute('target') === '_blank'
+                        || event.ctrlKey
+                        || event.metaKey;
+
+                    if (openInNewTab) {
+                        window.open(target, '_blank', 'noopener');
+                    } else {
+                        window.location.assign(target);
+                    }
+                });
+        });
+    }
+
+    function configureMutationObserver() {
+        const observer = new MutationObserver(function () {
+            applyTokenToProtectedResources();
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
         });
     }
 
     function bootstrap() {
-        const token = getSessionToken();
-        if (token) {
-            writeCookie(token);
+        loadMiniTokenFromStorage();
+
+        const tokenFromUrl = readTokenFromUrl();
+        if (tokenFromUrl) {
+            setSessionToken(tokenFromUrl);
         }
 
         configureFetch();
         configureHtmx();
+        configureProtectedResourceClicks();
+        configureMutationObserver();
+        ensureMiniToken()
+            .catch(function () {
+                return null;
+            })
+            .finally(function () {
+                applyTokenToProtectedResources();
+            });
+        applyTokenToProtectedResources();
     }
 
     configureFetch();

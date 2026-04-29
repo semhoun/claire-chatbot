@@ -6,6 +6,9 @@ namespace App\Middleware;
 
 use App\Services\Session\ArraySession;
 use App\Services\Settings;
+use App\Services\Auth;
+use App\Entity\User;
+use Doctrine\ORM\EntityManager;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use Lcobucci\JWT\Encoding\ChainedFormatter;
@@ -24,11 +27,12 @@ use Psr\Http\Server\RequestHandlerInterface as Handler;
 use Ramsey\Uuid\Uuid;
 use RuntimeException;
 use Slim\Psr7\NonBufferedBody;
+use App\Services\MiniToken;
 
 /**
  * Middleware for JWT-based session management via X-Claire-Auth header.
  *
- * Reads JWT from X-Claire-Auth header (or fallback cookie for SSE),
+ * Reads JWT from X-Claire-Auth header or `minitoken` query parameter,
  * populates session data, stores the session in request attributes,
  * and returns the session token in X-Claire-Token response header when
  * the session is modified or refreshed.
@@ -41,7 +45,11 @@ final class JwtSessionMiddleware implements MiddlewareInterface
 
     private const string TOKEN_HEADER = 'X-Claire-Token';
 
-    private const string SESSION_TOKEN_COOKIE = 'claire_session_token';
+    private const string MINI_TOKEN_HEADER = 'X-Claire-Minitoken';
+
+    private const string MINI_TOKEN_QUERY = 'minitoken';
+
+    private const string SESSION_TOKEN_QUERY = 'token';
 
     private const string SESSION_ID_KEY = 'sub';
 
@@ -55,6 +63,9 @@ final class JwtSessionMiddleware implements MiddlewareInterface
 
     public function __construct(
         private readonly Settings $settings,
+        private readonly Auth $auth,
+        private readonly EntityManager $entityManager,
+        private readonly MiniToken $miniToken,
     ) {
     }
 
@@ -102,10 +113,14 @@ final class JwtSessionMiddleware implements MiddlewareInterface
             return $authHeader;
         }
 
-        $cookies = $request->getCookieParams();
-        $cookieToken = (string) ($cookies[self::SESSION_TOKEN_COOKIE] ?? '');
-        if ($cookieToken !== '' && $cookieToken !== '0') {
-            return $cookieToken;
+        $querySessionToken = trim((string) (($request->getQueryParams()[self::SESSION_TOKEN_QUERY] ?? '')));
+        if ($querySessionToken !== '' && $querySessionToken !== '0') {
+            return $querySessionToken;
+        }
+
+        $queryToken = trim((string) (($request->getQueryParams()[self::MINI_TOKEN_QUERY] ?? '')));
+        if ($queryToken !== '' && $queryToken !== '0') {
+            return $queryToken;
         }
 
         return null;
@@ -148,6 +163,15 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         $inMemory = InMemory::plainText($secret);
         $sha256 = new Sha256();
 
+        $miniUserId = $this->miniToken->extractUserIdFromToken($tokenString);
+        if ($miniUserId !== null) {
+            $arraySession->start();
+            $this->rebuildSessionFromMiniToken($arraySession, $miniUserId);
+            $this->originalSessionData = $arraySession->getStorageAsArray();
+
+            return;
+        }
+
         try {
             $token = new JwtFacade()->parse(
                 $tokenString,
@@ -178,24 +202,55 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         }
     }
 
+    private function rebuildSessionFromMiniToken(ArraySession $arraySession, mixed $userIdClaim): void
+    {
+        if (! is_string($userIdClaim) || $userIdClaim === '' || $userIdClaim === '0') {
+            return;
+        }
+
+        /** @var User|null $user */
+        $user = $this->entityManager->getRepository(User::class)->find($userIdClaim);
+        if (! $user instanceof User) {
+            return;
+        }
+
+        $data = [
+            'firstName' => $user->getFirstName() ?? '',
+            'lastName' => $user->getLastName() ?? '',
+            'email' => $user->getEmail() ?? '',
+        ];
+
+        $arraySession->clear();
+        $this->auth->login($arraySession, $userIdClaim, $data);
+    }
+
     private function writeSessionToHeader(ArraySession $arraySession, Response $response, string $secret): Response
     {
         $sessionData = $arraySession->getStorageAsArray();
 
         // If session is empty, don't return a token
         if ($sessionData === null || $sessionData === []) {
-            return $response->withHeader('Set-Cookie', $this->deleteSessionTokenCookie());
+            return $response;
         }
+
+        $lifetime = (int) $this->settings->get('session.lifetime');
 
         $tokenString = $this->encodeSessionToJwt(
             $arraySession,
             $secret,
-            $this->settings->get('session.lifetime')
+            $lifetime
         );
 
-        return $response
-            ->withHeader(self::TOKEN_HEADER, $tokenString)
-            ->withHeader('Set-Cookie', $this->buildSessionTokenCookie($tokenString));
+        $response = $response->withHeader(self::TOKEN_HEADER, $tokenString);
+
+        $userId = (string) $arraySession->get(Auth::USERID, '');
+        if ($userId === '' || $userId === '0') {
+            return $response;
+        }
+
+        $miniToken = $this->miniToken->generate($arraySession, $lifetime);
+
+        return $response->withHeader(self::MINI_TOKEN_HEADER, $miniToken);
     }
 
     private function encodeSessionToJwt(ArraySession $arraySession, string $secret, int $lifetime): string
@@ -228,32 +283,6 @@ final class JwtSessionMiddleware implements MiddlewareInterface
                 return new DateTimeImmutable();
             }
         };
-    }
-
-    private function buildSessionTokenCookie(string $token): string
-    {
-        $secure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
-
-        $parts = [
-            self::SESSION_TOKEN_COOKIE . '=' . urlencode($token),
-            'Path=/',
-            'SameSite=Lax',
-        ];
-
-        if ($secure) {
-            $parts[] = 'Secure';
-        }
-
-        return implode('; ', $parts);
-    }
-
-    private function deleteSessionTokenCookie(): string
-    {
-        return sprintf(
-            '%s=; Path=/; Max-Age=0; Expires=%s; SameSite=Lax',
-            self::SESSION_TOKEN_COOKIE,
-            gmdate('D, d M Y H:i:s T', 0)
-        );
     }
 
 }

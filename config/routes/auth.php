@@ -14,5 +14,6 @@ return static function (App $app): void {
     $app->group('/auth', static function (Group $group): void {
         $group->get('/sso', [AuthController::class, 'ssoRedirect'])->setName('auth.sso');
         $group->get('/callback', [AuthController::class, 'ssoCallback'])->setName('auth.callback');
+        $group->get('/minitoken', [AuthController::class, 'minitoken'])->setName('auth.minitoken');
     });
 };

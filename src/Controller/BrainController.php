@@ -300,4 +300,5 @@ final readonly class BrainController
             'content' => base64_encode($this->filesystem->read($fileDB->getFilePath())),
         ];
     }
+
 }
