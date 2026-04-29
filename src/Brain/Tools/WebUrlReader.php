@@ -29,6 +29,8 @@ class WebUrlReader extends Tool
             throw new ToolException('Invalid URL.');
         }
 
+        $this->validateUrlForSsrf($url);
+
         try {
             $client = new Client(['timeout' => 15]);
             $response = $client->request('GET', $url);
@@ -208,6 +210,36 @@ class WebUrlReader extends Tool
     {
         foreach ($domxPath->query('//base') as $base) {
             $base->parentNode?->removeChild($base);
+        }
+    }
+
+    private function validateUrlForSsrf(string $url): void
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+        if ($host === null || $host === false) {
+            throw new ToolException('Invalid URL host.');
+        }
+
+        // 1. Check if the host itself is an IP and if it's private
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            if (! filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                throw new ToolException('SSRF protection: Private or reserved IP range is not allowed.');
+            }
+            return;
+        }
+
+        // 2. Resolve the host to get its IP addresses
+        $ips = gethostbynamel($host);
+        if ($ips === false || $ips === []) {
+            // If resolution fails, we'll let Guzzle try, but it will likely fail too.
+            // Or we could be strict and throw an error.
+            return;
+        }
+
+        foreach ($ips as $ip) {
+            if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                throw new ToolException(sprintf('SSRF protection: Host "%s" resolves to a private or reserved IP "%s".', $host, $ip));
+            }
         }
     }
 }

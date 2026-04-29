@@ -115,6 +115,9 @@ final readonly class PdfGeneratorService
             'margin_bottom' => $margins['bottom'] ?? 15,
             'margin_left' => $margins['left'] ?? 15,
             'margin_right' => $margins['right'] ?? 15,
+            'setExternalImageTimeout' => 2,
+            'setExternalResourceTimeout' => 2,
+            'curlAllowUnsafeSsl' => false,
         ]);
 
         $mpdf->WriteHTML($html);

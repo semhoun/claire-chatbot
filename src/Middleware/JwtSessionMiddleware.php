@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace App\Middleware;
 
+use App\Entity\User;
+use App\Services\Auth;
+use App\Services\MiniToken;
 use App\Services\Session\ArraySession;
 use App\Services\Settings;
 use DateTimeImmutable;
+use Doctrine\ORM\EntityManager;
 use InvalidArgumentException;
 use Lcobucci\JWT\Encoding\ChainedFormatter;
 use Lcobucci\JWT\Encoding\JoseEncoder;
@@ -26,28 +30,32 @@ use RuntimeException;
 use Slim\Psr7\NonBufferedBody;
 
 /**
- * Middleware for JWT-based session management via cookies.
+ * Middleware for JWT-based session management via X-Claire-Auth header.
  *
- * Reads JWT from cookie, populates session data, and writes back
- * the session as a JWT cookie at the end of the request.
+ * Reads JWT from X-Claire-Auth header or `minitoken` query parameter,
+ * populates session data, stores the session in request attributes,
+ * and returns the session token in X-Claire-Token response header when
+ * the session is modified or refreshed.
  */
 final class JwtSessionMiddleware implements MiddlewareInterface
 {
     public const string SESSION_ATTRIBUTE = 'session';
 
+    private const string AUTH_HEADER = 'X-Claire-Auth';
+
+    private const string TOKEN_HEADER = 'X-Claire-Token';
+
+    private const string MINI_TOKEN_HEADER = 'X-Claire-Minitoken';
+
+    private const string MINI_TOKEN_QUERY = 'minitoken';
+
+    private const string SESSION_TOKEN_QUERY = 'token';
+
     private const string SESSION_ID_KEY = 'sub';
 
     private const string SESSION_DATA_KEY = 'data';
 
-    private const string DEFAULT_COOKIE_NAME = 'jwt_session';
-
-    private const int DEFAULT_LIFETIME = 7200;
-
-    private readonly ArraySession $arraySession;
-
-    /**
-     * @var array<string, mixed>
-     */
+    /** @var array<string, mixed> */
     private array $tokenClaims = [];
 
     /** @var array<string, mixed>|null */
@@ -55,28 +63,31 @@ final class JwtSessionMiddleware implements MiddlewareInterface
 
     public function __construct(
         private readonly Settings $settings,
+        private readonly Auth $auth,
+        private readonly EntityManager $entityManager,
+        private readonly MiniToken $miniToken,
     ) {
-        $this->arraySession = new ArraySession();
     }
 
     public function process(Request $request, Handler $handler): Response
     {
-        $cookieName = $this->getCookieName();
-        $secret = $this->getSecret();
-
-        $cookies = $request->getCookieParams();
-        $tokenString = $cookies[$cookieName] ?? null;
+        $secret = $this->settings->get('session.jwt.secret');
+        $tokenString = $this->extractBearerToken($request);
 
         $this->tokenClaims = [];
+        $this->originalSessionData = null;
 
-        if (! in_array($tokenString, [null, '', '0'], true)) {
-            $this->decodeAndPopulateSession($tokenString, $secret);
+        // Create a new session instance for this request (not a singleton)
+        $arraySession = new ArraySession();
+
+        if ($tokenString !== null) {
+            $this->decodeAndPopulateSession($arraySession, $tokenString, $secret);
         } else {
-            $this->arraySession->start();
+            $arraySession->start();
         }
 
-        // Add session to request for controllers
-        $request = $request->withAttribute(self::SESSION_ATTRIBUTE, $this->arraySession);
+        // Store session in request attributes
+        $request = $request->withAttribute(self::SESSION_ATTRIBUTE, $arraySession);
 
         $response = $handler->handle($request);
 
@@ -86,18 +97,39 @@ final class JwtSessionMiddleware implements MiddlewareInterface
             return $response;
         }
 
-        // Only write cookie if data changed or token needs refresh
-        if ($this->shouldWriteCookie()) {
-            return $this->writeSessionToCookie($response, $secret);
+        // Return X-Claire-Token header if data changed or token needs refresh
+        if ($this->shouldReturnToken($arraySession)) {
+            return $this->writeSessionToHeader($arraySession, $response, $secret);
         }
 
         return $response;
     }
 
-    private function shouldWriteCookie(): bool
+    private function extractBearerToken(Request $request): ?string
     {
-        // If session data changed, write cookie
-        $currentData = $this->arraySession->getStorageAsArray();
+        $authHeader = $request->getHeaderLine(self::AUTH_HEADER);
+
+        if ($authHeader !== '' && $authHeader !== '0') {
+            return $authHeader;
+        }
+
+        $querySessionToken = trim((string) (($request->getQueryParams()[self::SESSION_TOKEN_QUERY] ?? '')));
+        if ($querySessionToken !== '' && $querySessionToken !== '0') {
+            return $querySessionToken;
+        }
+
+        $queryToken = trim((string) (($request->getQueryParams()[self::MINI_TOKEN_QUERY] ?? '')));
+        if ($queryToken !== '' && $queryToken !== '0') {
+            return $queryToken;
+        }
+
+        return null;
+    }
+
+    private function shouldReturnToken(ArraySession $arraySession): bool
+    {
+        // If session data changed, return new token
+        $currentData = $arraySession->getStorageAsArray();
         if ($this->originalSessionData === null || $currentData !== $this->originalSessionData) {
             return true;
         }
@@ -126,56 +158,19 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         return $elapsed > $totalLifetime / 2;
     }
 
-    /**
-     * @return array{
-     *   cookie_name: string,
-     *   secret: string|null,
-     *   lifetime: int,
-     *   secure: bool,
-     *   httponly: bool,
-     *   domain: string|null,
-     *   path: string
-     * }
-     */
-    private function getJwtConfig(): array
-    {
-        try {
-            $config = $this->settings->get('session');
-        } catch (RuntimeException) {
-            $config = [];
-        }
-
-        return [
-            'cookie_name' => $config['name'] ?? self::DEFAULT_COOKIE_NAME,
-            'secret' => $config['jwt_secret'] ?? null,
-            'lifetime' => $config['lifetime'] ?? self::DEFAULT_LIFETIME,
-            'secure' => $config['secure'] ?? false,
-            'httponly' => $config['httponly'] ?? true,
-            'domain' => $config['domain'] ?? null,
-            'path' => $config['path'] ?? '/',
-        ];
-    }
-
-    private function getCookieName(): string
-    {
-        return $this->getJwtConfig()['cookie_name'];
-    }
-
-    private function getSecret(): string
-    {
-        $secret = $this->getJwtConfig()['secret'];
-
-        if ($secret === null || $secret === '') {
-            throw new RuntimeException('JWT secret key is not configured');
-        }
-
-        return $secret;
-    }
-
-    private function decodeAndPopulateSession(string $tokenString, string $secret): void
+    private function decodeAndPopulateSession(ArraySession $arraySession, string $tokenString, string $secret): void
     {
         $inMemory = InMemory::plainText($secret);
         $sha256 = new Sha256();
+
+        $miniUserId = $this->miniToken->extractUserIdFromToken($tokenString);
+        if ($miniUserId !== null) {
+            $arraySession->start();
+            $this->rebuildSessionFromMiniToken($arraySession, $miniUserId);
+            $this->originalSessionData = $arraySession->getStorageAsArray();
+
+            return;
+        }
 
         try {
             $token = new JwtFacade()->parse(
@@ -186,14 +181,14 @@ final class JwtSessionMiddleware implements MiddlewareInterface
 
             $sessionId = $token->claims()->get(self::SESSION_ID_KEY);
             if (! in_array($sessionId, [null, '', '0'], true)) {
-                $this->arraySession->setId($sessionId);
+                $arraySession->setId($sessionId);
             }
 
-            $this->arraySession->start();
+            $arraySession->start();
 
             $sessionData = $token->claims()->get(self::SESSION_DATA_KEY);
             if (is_array($sessionData)) {
-                $this->arraySession->setStorageFromArray($sessionData);
+                $arraySession->setStorageFromArray($sessionData);
                 $this->originalSessionData = $sessionData;
             }
 
@@ -203,55 +198,68 @@ final class JwtSessionMiddleware implements MiddlewareInterface
                 'exp' => $token->claims()->get('exp'),
             ];
         } catch (InvalidArgumentException|RuntimeException) {
-            $this->arraySession->start();
+            $arraySession->start();
         }
     }
 
-    private function writeSessionToCookie(Response $response, string $secret): Response
+    private function rebuildSessionFromMiniToken(ArraySession $arraySession, mixed $userIdClaim): void
     {
-        $config = $this->getJwtConfig();
-        $sessionData = $this->arraySession->getStorageAsArray();
-
-        // If session is empty, delete the cookie
-        if ($sessionData === null || $sessionData === []) {
-            return $response->withHeader('Set-Cookie', $this->deleteCookie(
-                $config['cookie_name'],
-                $config['path'],
-                $config['domain'],
-                $config['secure'],
-                $config['httponly']
-            ));
+        if (! is_string($userIdClaim) || $userIdClaim === '' || $userIdClaim === '0') {
+            return;
         }
 
-        $cookieName = $config['cookie_name'];
-        $lifetime = $config['lifetime'];
-        $secure = $config['secure'];
-        $httponly = $config['httponly'];
-        $domain = $config['domain'];
-        $path = $config['path'];
+        /** @var User|null $user */
+        $user = $this->entityManager->getRepository(User::class)->find($userIdClaim);
+        if (! $user instanceof User) {
+            return;
+        }
 
-        $tokenString = $this->encodeSessionToJwt($secret, $lifetime);
+        $data = [
+            'firstName' => $user->getFirstName() ?? '',
+            'lastName' => $user->getLastName() ?? '',
+            'email' => $user->getEmail() ?? '',
+        ];
 
-        $cookieValue = $this->buildCookieValue(
-            $cookieName,
-            $tokenString,
-            $lifetime,
-            $path,
-            $domain,
-            $secure,
-            $httponly,
+        $arraySession->clear();
+        $this->auth->login($arraySession, $userIdClaim, $data);
+    }
+
+    private function writeSessionToHeader(ArraySession $arraySession, Response $response, string $secret): Response
+    {
+        $sessionData = $arraySession->getStorageAsArray();
+
+        // If session is empty, don't return a token
+        if ($sessionData === null || $sessionData === []) {
+            return $response;
+        }
+
+        $lifetime = (int) $this->settings->get('session.lifetime');
+
+        $tokenString = $this->encodeSessionToJwt(
+            $arraySession,
+            $secret,
+            $lifetime
         );
 
-        return $response->withHeader('Set-Cookie', $cookieValue);
+        $response = $response->withHeader(self::TOKEN_HEADER, $tokenString);
+
+        $userId = (string) $arraySession->get(Auth::USERID, '');
+        if ($userId === '' || $userId === '0') {
+            return $response;
+        }
+
+        $miniToken = $this->miniToken->generate($arraySession, $lifetime);
+
+        return $response->withHeader(self::MINI_TOKEN_HEADER, $miniToken);
     }
 
-    private function encodeSessionToJwt(string $secret, int $lifetime): string
+    private function encodeSessionToJwt(ArraySession $arraySession, string $secret, int $lifetime): string
     {
         $inMemory = InMemory::plainText($secret);
         $sha256 = new Sha256();
         $now = new DateTimeImmutable();
 
-        $sessionData = $this->arraySession->getStorageAsArray();
+        $sessionData = $arraySession->getStorageAsArray();
 
         $builder = Builder::new(new JoseEncoder(), ChainedFormatter::withUnixTimestampDates());
 
@@ -260,74 +268,11 @@ final class JwtSessionMiddleware implements MiddlewareInterface
             ->canOnlyBeUsedAfter($now)
             ->expiresAt($now->modify(sprintf('+%d seconds', $lifetime)))
             ->identifiedBy(Uuid::uuid4()->toString())
-            ->relatedTo($this->arraySession->getId())
+            ->relatedTo($arraySession->getId())
             ->withClaim(self::SESSION_DATA_KEY, $sessionData)
             ->getToken($sha256, $inMemory);
 
         return $unencryptedToken->toString();
-    }
-
-    private function buildCookieValue(
-        string $name,
-        string $value,
-        int $lifetime,
-        string $path,
-        ?string $domain,
-        bool $secure,
-        bool $httponly,
-    ): string {
-        $parts = [
-            $name . '=' . urlencode($value),
-            'Path=' . $path,
-            'Max-Age=' . $lifetime,
-        ];
-
-        if ($domain !== null && $domain !== '') {
-            $parts[] = 'Domain=' . $domain;
-        }
-
-        if ($secure) {
-            $parts[] = 'Secure';
-        }
-
-        if ($httponly) {
-            $parts[] = 'HttpOnly';
-        }
-
-        $parts[] = 'SameSite=Lax';
-
-        return implode('; ', $parts);
-    }
-
-    private function deleteCookie(
-        string $name,
-        string $path,
-        ?string $domain,
-        bool $secure,
-        bool $httponly,
-    ): string {
-        $parts = [
-            $name . '=',
-            'Path=' . $path,
-            'Max-Age=0',
-            'Expires=' . gmdate('D, d M Y H:i:s T', 0),
-        ];
-
-        if ($domain !== null && $domain !== '') {
-            $parts[] = 'Domain=' . $domain;
-        }
-
-        if ($secure) {
-            $parts[] = 'Secure';
-        }
-
-        if ($httponly) {
-            $parts[] = 'HttpOnly';
-        }
-
-        $parts[] = 'SameSite=Lax';
-
-        return implode('; ', $parts);
     }
 
     private function createClock(): ClockInterface

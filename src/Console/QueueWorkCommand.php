@@ -48,7 +48,7 @@ final class QueueWorkCommand extends Command
 
         $output->writeln(sprintf('<info>Starting queue worker %s on queue %s</info>', $workerId, $queueWorkerOptions->queueName));
 
-        $processedJobs = $this->queueWorker->run($queueWorkerOptions, $workerId, $output);
+        $processedJobs = $this->queueWorker->run($queueWorkerOptions, $workerId);
 
         $output->writeln(sprintf('<info>Queue worker stopped after %d job(s)</info>', $processedJobs));
 

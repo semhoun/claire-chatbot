@@ -134,6 +134,38 @@
     // --- RAG Toggle ---
     createToggle('ragToggle', 'ragPanel', null);
 
+    // --- Initial Counters Refresh (after session bootstrap) ---
+    (function() {
+        function refreshInitialCounters() {
+            if (!window.htmx) return;
+
+            const historyCountBadge = document.getElementById('historyCountBadge');
+            const filesCountBadge = document.getElementById('filesCountBadge');
+
+            if (historyCountBadge) {
+                window.htmx.ajax('GET', baseUrl + '/history/count', {
+                    target: '#historyCountBadge',
+                    swap: 'innerHTML',
+                });
+            }
+
+            if (filesCountBadge) {
+                window.htmx.ajax('GET', baseUrl + '/files/count', {
+                    target: '#filesCountBadge',
+                    swap: 'innerHTML',
+                });
+            }
+        }
+
+        if (document.readyState !== 'loading') {
+            setTimeout(refreshInitialCounters, 0);
+        } else {
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(refreshInitialCounters, 0);
+            });
+        }
+    })();
+
     // --- Upload Dialog ---
     (function() {
         const root = document;
@@ -438,7 +470,9 @@
 
         document.addEventListener('DOMContentLoaded', function() {
             const sessionId = window.claireStreamSessionId;
-            if (sessionId) initChatEventSource(sessionId);
+            if (sessionId) {
+                void initChatEventSource(sessionId);
+            }
         });
 
         function setComposerBusyState(isBusy) {
@@ -555,15 +589,35 @@
             eventSource.addEventListener('chat.tool.update', function(event) { handleEvent('chat.tool.update', event); });
             eventSource.onerror = function(error) {
                 eventSource.close();
-                setTimeout(function() { initChatEventSource(sessionId); }, 5000);
+                setTimeout(function() { void initChatEventSource(sessionId); }, 5000);
             };
         }
 
-        function initChatEventSource(sessionId) {
+        async function initChatEventSource(sessionId) {
             if (window.chatEventSource) window.chatEventSource.close();
+
             const threadId = $('#chatStream').getAttribute('data-thread-id');
-            const sseUrl = baseUrl + '/brain/stream?sessionId=' + encodeURIComponent(sessionId) + '&threadId=' + encodeURIComponent(threadId);
-            bindChatEventSource(sessionId, new EventSource(sseUrl));
+            if (!threadId) {
+                return;
+            }
+
+            const minitoken = window.ClaireSession && typeof window.ClaireSession.getMiniToken === 'function'
+                ? window.ClaireSession.getMiniToken()
+                : null;
+            if (!minitoken) {
+                setTimeout(function() { void initChatEventSource(sessionId); }, 1500);
+                return;
+            }
+
+            try {
+                const sseUrl = baseUrl
+                    + '/brain/stream?sessionId=' + encodeURIComponent(sessionId)
+                    + '&threadId=' + encodeURIComponent(threadId)
+                    + '&minitoken=' + encodeURIComponent(minitoken);
+                bindChatEventSource(sessionId, new EventSource(sseUrl));
+            } catch (error) {
+                setTimeout(function() { void initChatEventSource(sessionId); }, 3000);
+            }
         }
 
         window.chatClick = function chatClick(event) {
@@ -626,7 +680,7 @@
             chatStreamContainer.setAttribute('data-stream-session-id', streamSessionId);
             $('#thread-id-input').value = threadId;
             $('#session-id-input').value = streamSessionId;
-            initChatEventSource(streamSessionId);
+            void initChatEventSource(streamSessionId);
         };
 
         window.handleLastExchangeResponse = function handleLastExchangeResponse(event) {

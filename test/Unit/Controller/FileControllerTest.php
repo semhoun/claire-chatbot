@@ -40,6 +40,12 @@ final class FileControllerTest extends TestCase
 
     private ResponseFactory $responseFactory;
 
+    private User $user;
+
+    private \Doctrine\ORM\EntityRepository $userRepository;
+
+    private ?\App\Repository\FileRepository $fileRepository = null;
+
     protected function setUp(): void
     {
         $this->twig = $this->createMock(Twig::class);
@@ -49,6 +55,26 @@ final class FileControllerTest extends TestCase
         $this->container = $this->createMock(ContainerInterface::class);
         $this->responseFactory = new ResponseFactory();
 
+        $this->user = $this->createMock(User::class);
+        $this->user->method('getId')->willReturn('user-123');
+        $this->userRepository = $this->createMock(\Doctrine\ORM\EntityRepository::class);
+        $this->userRepository->method('find')->willReturn($this->user);
+
+        $this->entityManager->method('getRepository')->willReturnCallback(function (string $class) {
+            if ($class === User::class) {
+                return $this->userRepository;
+            }
+            if ($class === File::class) {
+                return $this->fileRepository;
+            }
+
+            return null;
+        });
+
+        $this->entityManager->method('getReference')
+            ->with(User::class, $this->anything())
+            ->willReturn($this->user);
+
         $this->controller = new FileController(
             $this->twig,
             $this->entityManager,
@@ -57,7 +83,7 @@ final class FileControllerTest extends TestCase
             new \App\Services\Settings([
                 'files' => [
                     'upload' => [
-                        'path' => '/tmp',
+                        'path' => 'uploads',
                         'acceptedExt' => '.txt',
                     ],
                 ],
@@ -82,20 +108,16 @@ final class FileControllerTest extends TestCase
     public function testListReturnsFilesList(): void
     {
         $userId = 'user-123';
-        $repository = $this->createMock(\App\Repository\FileRepository::class);
+        $this->fileRepository = $this->createMock(\App\Repository\FileRepository::class);
 
         $this->session->method('get')
             ->with(Auth::USERID)
             ->willReturn($userId);
 
-        $repository->expects($this->once())
+        $this->fileRepository->expects($this->once())
             ->method('listByUser')
             ->with($userId)
             ->willReturn([]);
-
-        $this->entityManager->method('getRepository')
-            ->with(File::class)
-            ->willReturn($repository);
 
         $this->twig->expects($this->once())
             ->method('render')
@@ -115,20 +137,16 @@ final class FileControllerTest extends TestCase
     public function testCountReturnsNumber(): void
     {
         $userId = 'user-123';
-        $repository = $this->createMock(\App\Repository\FileRepository::class);
+        $this->fileRepository = $this->createMock(\App\Repository\FileRepository::class);
 
         $this->session->method('get')
             ->with(Auth::USERID)
             ->willReturn($userId);
 
-        $repository->expects($this->once())
+        $this->fileRepository->expects($this->once())
             ->method('countByUserId')
             ->with($userId)
             ->willReturn(5);
-
-        $this->entityManager->method('getRepository')
-            ->with(File::class)
-            ->willReturn($repository);
 
         $result = $this->controller->count(
             $this->createRequestWithSession(),
@@ -143,8 +161,7 @@ final class FileControllerTest extends TestCase
         $userId = 'user-123';
         $uploadedFile = $this->createMock(UploadedFileInterface::class);
         $stream = $this->createMock(StreamInterface::class);
-        $user = $this->createMock(User::class);
-        $repository = $this->createMock(\App\Repository\FileRepository::class);
+        $this->fileRepository = $this->createMock(\App\Repository\FileRepository::class);
 
         $this->session->method('get')
             ->with(Auth::USERID)
@@ -161,21 +178,14 @@ final class FileControllerTest extends TestCase
 
         $request = $this->createRequestWithSession(['file' => $uploadedFile]);
 
-        $this->entityManager->method('getReference')
-            ->with(User::class, $userId)
-            ->willReturn($user);
-
         $this->filesystem->expects($this->once())
             ->method('write')
             ->with($this->stringContains('uploads/user-123/'), 'file content');
 
         $this->entityManager->expects($this->once())->method('persist');
         $this->entityManager->expects($this->once())->method('flush');
-        $this->entityManager->method('getRepository')
-            ->with(File::class)
-            ->willReturn($repository);
 
-        $repository->method('listByUser')->with($userId)->willReturn([]);
+        $this->fileRepository->method('listByUser')->with($userId)->willReturn([]);
         $this->twig->method('render')->willReturn($this->responseFactory->createResponse());
 
         $this->controller->upload($request, $this->responseFactory->createResponse());
@@ -186,24 +196,19 @@ final class FileControllerTest extends TestCase
         $userId = 'user-123';
         $fileId = 'file-789';
         $file = $this->createMock(File::class);
-        $user = $this->createMock(User::class);
-        $repository = $this->createMock(\App\Repository\FileRepository::class);
+        $this->fileRepository = $this->createMock(\App\Repository\FileRepository::class);
 
         $this->session->method('get')
             ->with(Auth::USERID)
             ->willReturn($userId);
 
-        $user->method('getId')->willReturn($userId);
-        $file->method('getUser')->willReturn($user);
+        $this->user->method('getId')->willReturn($userId);
+        $file->method('getUser')->willReturn($this->user);
         $file->method('getFileId')->willReturn('internal-id');
         $file->method('getFilePath')->willReturn('internal-id');
 
-        $repository->method('findOneBy')->willReturn($file);
-        $repository->method('listByUser')->with($userId)->willReturn([]);
-
-        $this->entityManager->method('getRepository')
-            ->with(File::class)
-            ->willReturn($repository);
+        $this->fileRepository->method('findOneBy')->willReturn($file);
+        $this->fileRepository->method('listByUser')->with($userId)->willReturn([]);
 
         $request = $this->createRequestWithSession(attributeId: $fileId);
 
@@ -227,14 +232,12 @@ final class FileControllerTest extends TestCase
         $id = 'file-uuid';
         $path = 'uploads/user-123/file-uuid.png';
         $file = $this->createMock(File::class);
-        $repository = $this->createMock(\App\Repository\FileRepository::class);
+        $this->fileRepository = $this->createMock(\App\Repository\FileRepository::class);
 
         $this->session->method('get')->with(Auth::USERID)->willReturn($userId);
 
         $file->method('getFilePath')->willReturn($path);
-        $repository->method('findOneBy')->with(['fileId' => $id])->willReturn($file);
-
-        $this->entityManager->method('getRepository')->with(File::class)->willReturn($repository);
+        $this->fileRepository->method('findOneBy')->with(['fileId' => $id, 'user' => $this->user])->willReturn($file);
         $this->filesystem->method('fileExists')->with($path)->willReturn(true);
         $this->filesystem->method('mimeType')->with($path)->willReturn('image/png');
         $this->filesystem->method('read')->with($path)->willReturn('binary data');
@@ -253,7 +256,7 @@ final class FileControllerTest extends TestCase
         $id = 'file-uuid.pdf';
         $path = 'generated/user-123/file-uuid.pdf';
         $file = $this->createMock(File::class);
-        $repository = $this->createMock(\App\Repository\FileRepository::class);
+        $this->fileRepository = $this->createMock(\App\Repository\FileRepository::class);
 
         $this->session->method('get')->with(Auth::USERID)->willReturn($userId);
 
@@ -261,9 +264,7 @@ final class FileControllerTest extends TestCase
         $file->method('getFilename')->willReturn('mon-rapport.pdf');
         $file->method('fileType')->willReturn(File::FILE_TYPE_PDF);
 
-        $repository->method('findOneBy')->with(['fileId' => $id])->willReturn($file);
-
-        $this->entityManager->method('getRepository')->with(File::class)->willReturn($repository);
+        $this->fileRepository->method('findOneBy')->with(['fileId' => $id, 'user' => $this->user])->willReturn($file);
         $this->filesystem->method('fileExists')->with($path)->willReturn(true);
         $this->filesystem->method('mimeType')->with($path)->willReturn('application/pdf');
         $this->filesystem->method('read')->with($path)->willReturn('pdf data');
@@ -283,15 +284,10 @@ final class FileControllerTest extends TestCase
         $stream = $this->createMock(StreamInterface::class);
         $embedder = $this->createMock(EmbeddingsProviderInterface::class);
         $store = $this->createMock(VectorStoreInterface::class);
-        $user = $this->createMock(User::class);
 
         $this->session->method('get')
             ->with(Auth::USERID)
             ->willReturn($userId);
-
-        $this->entityManager->method('getReference')
-            ->with(User::class, $userId)
-            ->willReturn($user);
 
         $uploadedFile->method('getError')->willReturn(UPLOAD_ERR_OK);
         $uploadedFile->method('getClientFilename')->willReturn('test.txt');

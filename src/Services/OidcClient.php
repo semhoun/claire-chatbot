@@ -272,7 +272,14 @@ final class OidcClient
      */
     private function validateCallback(SessionInterface $session, array $queryParams): ?array
     {
-        if (! isset($queryParams['state']) || $session->get('oidc_state') !== $queryParams['state']) {
+        if (! isset($queryParams['state'])) {
+            return ['logged' => false];
+        }
+
+        $expectedState = (string) $session->get('oidc_state', '');
+        // Header-only session can be unavailable on browser redirect callbacks.
+        // If we still have a stored state, enforce strict match.
+        if ($expectedState !== '' && $expectedState !== (string) $queryParams['state']) {
             return ['logged' => false];
         }
 

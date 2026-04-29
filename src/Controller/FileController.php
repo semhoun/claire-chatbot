@@ -88,6 +88,10 @@ final readonly class FileController
             return $response->withStatus(400);
         }
 
+        if (! $this->validateUploadedFile($file)) {
+            return $response->withStatus(400);
+        }
+
         $entity = $this->createFileEntity($file, $user);
 
         $data = $this->readFileContent($file);
@@ -112,6 +116,10 @@ final readonly class FileController
 
         $file = $this->getUploadedFile($request);
         if (! $file instanceof \Psr\Http\Message\UploadedFileInterface || $file->getError() !== UPLOAD_ERR_OK) {
+            return $response->withStatus(400);
+        }
+
+        if (! $this->validateUploadedFile($file)) {
             return $response->withStatus(400);
         }
 
@@ -267,5 +275,35 @@ final readonly class FileController
             ->getDocuments();
 
         $store->addDocuments($embedder->embedDocuments($documents));
+    }
+
+    private function validateUploadedFile(UploadedFileInterface $file): bool
+    {
+        $filename = $file->getClientFilename() ?? '';
+        $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+
+        $forbiddenExtensions = $this->settings->get('files.upload.forbidden_extensions', []);
+        if (in_array($extension, $forbiddenExtensions, true)) {
+            return false;
+        }
+
+        $mimeType = $file->getClientMediaType();
+        
+        // Use finfo to check the real mime type if possible
+        $tmpFile = $file->getStream()->getMetadata('uri');
+        if ($tmpFile !== null && is_string($tmpFile) && file_exists($tmpFile)) {
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $realMimeType = $finfo->file($tmpFile);
+            if ($realMimeType !== false) {
+                $mimeType = $realMimeType;
+            }
+        }
+
+        $allowedMimeTypes = $this->settings->get('files.upload.allowed_mime_types', []);
+        if ($mimeType !== null && ! in_array($mimeType, $allowedMimeTypes, true)) {
+            return false;
+        }
+
+        return true;
     }
 }

@@ -13,7 +13,7 @@ use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use App\Services\SseEventFormatter;
-use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Exception\ORMException;
 use Doctrine\ORM\OptimisticLockException;
 use League\Flysystem\Filesystem;
@@ -34,7 +34,7 @@ final readonly class BrainController
         private Logger $logger,
         private Twig $twig,
         private BrainRegistry $brainRegistry,
-        private EntityManager $entityManager,
+        private EntityManagerInterface $entityManager,
         private Filesystem $filesystem,
         private Settings $settings,
         private QueueDispatcherInterface $queueDispatcher,
@@ -64,8 +64,19 @@ final readonly class BrainController
             return $response->withStatus(400);
         }
 
+        $user = $this->entityManager->getRepository(\App\Entity\User::class)->getCurrentUser($session);
+        if ($user === null) {
+            return $response->withStatus(401);
+        }
+
+        // BOLA check: if thread exists, it must belong to the current user
+        $existingHistory = $this->entityManager->getRepository(\App\Entity\ChatHistory::class)->findOneBy(['threadId' => $threadId]);
+        if ($existingHistory !== null && $existingHistory->getUser()->getId() !== $user->getId()) {
+            return $response->withStatus(403);
+        }
+
         $messageId = uniqid('assistant-message-', true);
-        $attachments = $this->extractAttachments($request, includeStoredFiles: true);
+        $attachments = $this->extractAttachments($request, $user, includeStoredFiles: true);
 
         $this->queueDispatcher->dispatch(
             NewMessageJob::class,
@@ -192,12 +203,12 @@ final readonly class BrainController
     /**
      * @return array{fileIds: list<string>, uploadedFiles: list<array{filename: string, mimeType: string, content: string}>}
      */
-    private function extractAttachments(Request $request, bool $includeStoredFiles): array
+    private function extractAttachments(Request $request, \App\Entity\User $user, bool $includeStoredFiles): array
     {
         $fileIds = $this->extractFileIdsFromRequest($request);
 
         return [
-            'fileIds' => $includeStoredFiles ? $this->serializeStoredFileIds($fileIds) : $fileIds,
+            'fileIds' => $includeStoredFiles ? $this->serializeStoredFileIds($fileIds, $user) : $fileIds,
             'uploadedFiles' => $this->extractUploadedFiles($request),
         ];
     }
@@ -220,13 +231,13 @@ final readonly class BrainController
      *
      * @return list<array{filename: string, mimeType: string, content: string}>
      */
-    private function serializeStoredFileIds(array $fileIds): array
+    private function serializeStoredFileIds(array $fileIds, \App\Entity\User $user): array
     {
         $serializedFileIds = [];
 
         foreach ($fileIds as $fileId) {
             try {
-                $storedAttachment = $this->getStoredFileAttachment($fileId);
+                $storedAttachment = $this->getStoredFileAttachment($fileId, $user);
                 if ($storedAttachment !== null) {
                     $serializedFileIds[] = $storedAttachment;
                 }
@@ -287,9 +298,13 @@ final readonly class BrainController
     /**
      * @return array{filename: string, mimeType: string, content: string}|null
      */
-    private function getStoredFileAttachment(string $fileId): ?array
+    private function getStoredFileAttachment(string $fileId, \App\Entity\User $user): ?array
     {
-        $fileDB = $this->entityManager->find(\App\Entity\File::class, $fileId);
+        $fileDB = $this->entityManager->getRepository(\App\Entity\File::class)->findOneBy([
+            'fileId' => $fileId,
+            'user' => $user,
+        ]);
+
         if ($fileDB === null) {
             return null;
         }

@@ -575,6 +575,7 @@ class TelegramService implements QueueDoer
                 $this->sendMessage($telegramChatId, "Désolé j'ai un soucis pour trouver le fichier à envoyer.");
                 continue;
             }
+
             if ($file->fileType() === File::FILE_TYPE_IMAGE) {
                 $this->sendPhoto($telegramChatId, $file, $fileCaption);
             } else {
@@ -588,9 +589,9 @@ class TelegramService implements QueueDoer
      */
     private function sendDocument(int $telegramChatId, File $file, ?string $caption = null): void
     {
-       try {
+        try {
             $this->sendChatAction($telegramChatId, TelegramAction::DOCUMENT);
-            $tempFile = $this->prepareTempFile($telegramChatId,  $file->getFilePath(), 'document');
+            $tempFile = $this->prepareTempFile($telegramChatId, $file->getFilePath(), 'document');
             if ($tempFile === null) {
                 return;
             }
@@ -856,9 +857,7 @@ class TelegramService implements QueueDoer
             $this->sendMessage($telegramChatId, 'Workflow ComfyUI inconnu.');
             return;
         }
-
-        $telegramUserId = (string) $telegramChatId;
-        $success = $this->updateUserSetting($telegramUserId, 'comfyui_workflow');
+        $success = $this->updateUserSetting('comfyui_workflow', $workflow);
 
         if ($success) {
             $meta = $this->comfyUIWorkflowRegistry->getMeta($workflow);

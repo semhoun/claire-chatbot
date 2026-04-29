@@ -12,6 +12,9 @@ use Twig\TwigFilter;
 
 class GeneratedFileExtension extends AbstractExtension
 {
+    private const string IMAGE_PLACEHOLDER_DATA_URI =
+        'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+
     public function __construct(
         protected readonly Settings $settings,
         protected readonly EntityManagerInterface $entityManager,
@@ -49,14 +52,14 @@ class GeneratedFileExtension extends AbstractExtension
 
             if ($prefix !== '') {
                 if ($file->fileType() === File::FILE_TYPE_IMAGE) {
-                    return $prefix . '"' . $fileUrl . '"  class="generated-image"' . $suffix;
+                    return $prefix . '"' . self::IMAGE_PLACEHOLDER_DATA_URI . '" data-protected-src="' . $fileUrl . '" class="generated-image"' . $suffix;
                 }
 
                 return $prefix . '"' . $fileUrl . '"  class="generated-file"' . $suffix;
             }
 
             if ($file->fileType() === File::FILE_TYPE_IMAGE) {
-                return '<img src="' . $fileUrl . '" alt="Generated image" class="generated-image">';
+                return '<img data-protected-src="' . $fileUrl . '" src="' . self::IMAGE_PLACEHOLDER_DATA_URI . '" alt="Generated image" class="generated-image">';
             }
 
             return '<a href="' . $fileUrl . '" class="generated-file" target="_blank">' . $file->getFilename() . '</a>';

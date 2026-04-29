@@ -232,9 +232,12 @@ class UserChatHistory extends AbstractChatHistory
     protected function clear(): void
     {
         $stmt = $this->pdo->prepare(
-            'DELETE FROM ' . self::TABLE . ' WHERE thread_id = :threadId'
+            'DELETE FROM ' . self::TABLE . ' WHERE thread_id = :thread_id AND user_id = :user_id'
         );
-        $stmt->execute(['thread_id' => $this->threadId]);
+        $stmt->execute([
+            'thread_id' => $this->threadId,
+            'user_id' => $this->session->get(Auth::USERID),
+        ]);
 
         $this->history = [];
         $this->displayHistory = [];
@@ -281,7 +284,7 @@ class UserChatHistory extends AbstractChatHistory
     {
         $stmt = $this->pdo->prepare(
             sprintf(
-                'UPDATE %s SET %s = :llm_messages, %s = :display_messages, %s = :display_messages_count WHERE thread_id = :thread_id',
+                'UPDATE %s SET %s = :llm_messages, %s = :display_messages, %s = :display_messages_count WHERE thread_id = :thread_id AND user_id = :user_id',
                 self::TABLE,
                 self::LLM_MESSAGES_COLUMN,
                 self::DISPLAY_MESSAGES_COLUMN,
@@ -290,6 +293,7 @@ class UserChatHistory extends AbstractChatHistory
         );
         $stmt->execute([
             'thread_id' => $this->threadId,
+            'user_id' => $this->session->get(Auth::USERID),
             'llm_messages' => json_encode(
                 $this->serializeMessages($this->history),
                 JSON_THROW_ON_ERROR

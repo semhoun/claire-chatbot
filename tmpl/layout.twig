@@ -92,7 +92,6 @@
                             class="options-item__badge"
                             id="historyCountBadge"
                             hx-get="{{ base_url }}/history/count"
-                            hx-trigger="load"
                             hx-swap="innerHTML"
                     >0</span>
                 </div>
@@ -116,7 +115,6 @@
                             class="options-item__badge"
                             id="filesCountBadge"
                             hx-get="{{ base_url }}/files/count"
-                            hx-trigger="load"
                             hx-swap="innerHTML"
                     >0</span>
                 </div>
@@ -279,13 +277,11 @@
 
 <script src="{{ base_url }}/js/htmx.min.js"></script>
 <script src="{{ base_url }}/js/sse.js"></script>
+<script src="{{ base_url }}/js/session.js"></script>
 {% block script %}{% endblock %}
 <!-- Global fixed tooltip banner (bottom of the page) -->
 <div id="historyTooltipBanner" role="status" aria-live="polite" aria-hidden="true"></div>
 <script src="{{ base_url }}/js/app.js"></script>
 <script src="{{ base_url }}/js/dialog.js"></script>
-<script type="module">
-    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-</script>
 </body>
 </html>

@@ -7,9 +7,19 @@ namespace App\Controller;
 use App\Services\Auth;
 use App\Services\OidcClient;
 use App\Services\Session\SessionInterface;
+use App\Services\Session\SessionManagerInterface;
 use App\Services\Session\Trait\SessionFromRequest;
+use App\Services\Settings;
+use DateTimeImmutable;
+use Lcobucci\JWT\Encoding\ChainedFormatter;
+use Lcobucci\JWT\Encoding\JoseEncoder;
+use Lcobucci\JWT\Signer\Hmac\Sha256;
+use Lcobucci\JWT\Signer\Key\InMemory;
+use Lcobucci\JWT\Token\Builder;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
+use Ramsey\Uuid\Uuid;
+use RuntimeException;
 use Slim\Views\Twig;
 
 final readonly class AuthController
@@ -20,6 +30,7 @@ final readonly class AuthController
         private \Psr\Log\LoggerInterface $logger,
         private OidcClient $oidcClient,
         private Auth $auth,
+        private Settings $settings,
         private Twig $twig,
     ) {
     }
@@ -64,7 +75,14 @@ final readonly class AuthController
 
         $this->auth->login($session, $result['id'], $result['data']);
 
-        return $response->withStatus(302)->withHeader('Location', '/');
+        $sessionToken = $this->buildSessionToken($session);
+
+        // Render callback page that stores token client-side then redirects
+        // This avoids losing the session token on a 302 redirect
+        return $this->twig->render($response, 'auth_callback.twig', [
+            'redirect_url' => '/?token=' . urlencode($sessionToken),
+            'session_token' => $sessionToken,
+        ]);
     }
 
     public function logout(Request $request, Response $response): Response
@@ -76,5 +94,36 @@ final readonly class AuthController
 
         $this->auth->logout($session);
         return $response->withStatus(302)->withHeader('Location', '/');
+    }
+
+    private function buildSessionToken(SessionInterface $session): string
+    {
+        $secret = (string) $this->settings->get('session.jwt.secret');
+        if ($secret === '') {
+            throw new RuntimeException('JWT secret key is not configured');
+        }
+
+        $sessionData = $session instanceof SessionManagerInterface
+            ? ($session->getStorageAsArray() ?? [])
+            : $session->all();
+        $sessionId = $session instanceof SessionManagerInterface
+            ? $session->getId()
+            : (string) ($session->get(Auth::USERID, '') ?: hash('sha256', json_encode($sessionData, JSON_THROW_ON_ERROR)));
+
+        $inMemory = InMemory::plainText($secret);
+        $sha256 = new Sha256();
+        $now = new DateTimeImmutable();
+        $lifetime = (int) $this->settings->get('session.lifetime');
+
+        $unencryptedToken = Builder::new(new JoseEncoder(), ChainedFormatter::withUnixTimestampDates())
+            ->issuedAt($now)
+            ->canOnlyBeUsedAfter($now)
+            ->expiresAt($now->modify(sprintf('+%d seconds', $lifetime)))
+            ->identifiedBy(Uuid::uuid4()->toString())
+            ->relatedTo($sessionId)
+            ->withClaim('data', $sessionData)
+            ->getToken($sha256, $inMemory);
+
+        return $unencryptedToken->toString();
     }
 }

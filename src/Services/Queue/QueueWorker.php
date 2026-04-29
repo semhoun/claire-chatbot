@@ -7,7 +7,6 @@ namespace App\Services\Queue;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
 use RuntimeException;
-use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
 final class QueueWorker
@@ -36,7 +35,6 @@ final class QueueWorker
     public function run(
         QueueWorkerOptions $queueWorkerOptions,
         string $workerId,
-        OutputInterface $output,
     ): int {
         $this->logger->info('Queue worker started', [
             'worker_id' => $workerId,
@@ -50,7 +48,7 @@ final class QueueWorker
         while ($this->running && ! $this->hasReachedRuntimeLimit($queueWorkerOptions)) {
             $this->loopCount++;
 
-            $this->executeWorkCycle($queueWorkerOptions, $workerId, $output);
+            $this->executeWorkCycle($queueWorkerOptions, $workerId);
 
             pcntl_signal_dispatch();
         }
@@ -95,7 +93,6 @@ final class QueueWorker
     private function executeWorkCycle(
         QueueWorkerOptions $queueWorkerOptions,
         string $workerId,
-        OutputInterface $output,
     ): void {
         $job = $this->reserveJob($queueWorkerOptions, $workerId);
 
