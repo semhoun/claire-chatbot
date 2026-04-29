@@ -45,18 +45,18 @@ final readonly class MiniToken
         $expiresAt = $now->modify(sprintf('+%d seconds', $ttl));
 
         $inMemory = InMemory::plainText($secret);
-        $signer = new Sha256();
+        $sha256 = new Sha256();
 
-        $token = Builder::new(new JoseEncoder(), ChainedFormatter::withUnixTimestampDates())
+        $unencryptedToken = Builder::new(new JoseEncoder(), ChainedFormatter::withUnixTimestampDates())
             ->issuedAt($now)
             ->canOnlyBeUsedAfter($now)
             ->expiresAt($expiresAt)
             ->identifiedBy(Uuid::uuid4()->toString())
             ->relatedTo($userId)
             ->withClaim(self::TYPE_CLAIM, self::TYPE_VALUE)
-            ->getToken($signer, $inMemory);
+            ->getToken($sha256, $inMemory);
 
-        return $token->toString();
+        return $unencryptedToken->toString();
     }
 
     public function isValid(string $token): bool
@@ -72,12 +72,12 @@ final readonly class MiniToken
 
         $secret = $this->secret();
         $inMemory = InMemory::plainText($secret);
-        $signer = new Sha256();
+        $sha256 = new Sha256();
 
         try {
-            $parsedToken = (new JwtFacade())->parse(
+            $parsedToken = new JwtFacade()->parse(
                 $token,
-                new SignedWith($signer, $inMemory),
+                new SignedWith($sha256, $inMemory),
                 new StrictValidAt($this->clock()),
             );
 

@@ -36,6 +36,9 @@ final class HistoryControllerTest extends TestCase
             'redis' => [
                 'prefix' => 'claire:',
             ],
+            'sse' => [
+                'queue_ttl' => 3600,
+            ],
         ]);
         $session = $this->createMock(SessionInterface::class);
         $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
@@ -80,7 +83,7 @@ final class HistoryControllerTest extends TestCase
             )
             ->willReturn(1);
         $subscriber = new \App\Services\ChatStreamSubscriber($redis, $settings);
-        $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber);
+        $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber, $settings);
         $filesystem = $this->createMock(Filesystem::class);
         $queueDispatcher = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);
 
@@ -113,6 +116,9 @@ final class HistoryControllerTest extends TestCase
             ],
             'redis' => [
                 'prefix' => 'claire:',
+            ],
+            'sse' => [
+                'queue_ttl' => 3600,
             ],
         ]);
         $session = $this->createMock(SessionInterface::class);
@@ -160,7 +166,7 @@ final class HistoryControllerTest extends TestCase
             )
             ->willReturn(1);
         $subscriber = new \App\Services\ChatStreamSubscriber($redis, $settings);
-        $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber);
+        $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber, $settings);
         $filesystem = $this->createMock(Filesystem::class);
         $queueDispatcher = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);
 

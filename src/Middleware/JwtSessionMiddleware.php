@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Middleware;
 
+use App\Entity\User;
+use App\Services\Auth;
+use App\Services\MiniToken;
 use App\Services\Session\ArraySession;
 use App\Services\Settings;
-use App\Services\Auth;
-use App\Entity\User;
-use Doctrine\ORM\EntityManager;
 use DateTimeImmutable;
+use Doctrine\ORM\EntityManager;
 use InvalidArgumentException;
 use Lcobucci\JWT\Encoding\ChainedFormatter;
 use Lcobucci\JWT\Encoding\JoseEncoder;
@@ -27,7 +28,6 @@ use Psr\Http\Server\RequestHandlerInterface as Handler;
 use Ramsey\Uuid\Uuid;
 use RuntimeException;
 use Slim\Psr7\NonBufferedBody;
-use App\Services\MiniToken;
 
 /**
  * Middleware for JWT-based session management via X-Claire-Auth header.
@@ -284,5 +284,4 @@ final class JwtSessionMiddleware implements MiddlewareInterface
             }
         };
     }
-
 }

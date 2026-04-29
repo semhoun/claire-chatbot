@@ -6,8 +6,8 @@ namespace App\Controller;
 
 use App\Services\Auth;
 use App\Services\OidcClient;
-use App\Services\Session\SessionManagerInterface;
 use App\Services\Session\SessionInterface;
+use App\Services\Session\SessionManagerInterface;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use DateTimeImmutable;
@@ -108,14 +108,14 @@ final readonly class AuthController
             : $session->all();
         $sessionId = $session instanceof SessionManagerInterface
             ? $session->getId()
-            : (string) ($session->get(Auth::USERID, '') ?: hash('sha256', (string) json_encode($sessionData, JSON_THROW_ON_ERROR)));
+            : (string) ($session->get(Auth::USERID, '') ?: hash('sha256', json_encode($sessionData, JSON_THROW_ON_ERROR)));
 
         $inMemory = InMemory::plainText($secret);
         $sha256 = new Sha256();
         $now = new DateTimeImmutable();
         $lifetime = (int) $this->settings->get('session.lifetime');
 
-        $token = Builder::new(new JoseEncoder(), ChainedFormatter::withUnixTimestampDates())
+        $unencryptedToken = Builder::new(new JoseEncoder(), ChainedFormatter::withUnixTimestampDates())
             ->issuedAt($now)
             ->canOnlyBeUsedAfter($now)
             ->expiresAt($now->modify(sprintf('+%d seconds', $lifetime)))
@@ -124,6 +124,6 @@ final readonly class AuthController
             ->withClaim('data', $sessionData)
             ->getToken($sha256, $inMemory);
 
-        return $token->toString();
+        return $unencryptedToken->toString();
     }
 }
