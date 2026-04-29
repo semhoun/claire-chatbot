@@ -80,15 +80,34 @@
     (function () {
         'use strict';
 
-        const storageKey = 'claire_session_token';
-        const token = sessionStorage.getItem(storageKey);
+        const miniStorageKey = 'claire_minitoken';
 
-        if (!token || token === '0') {
+        let minitoken = null;
+        const rawMini = sessionStorage.getItem(miniStorageKey);
+        if (rawMini) {
+            try {
+                const parsed = JSON.parse(rawMini);
+                if (
+                    parsed
+                    && typeof parsed.token === 'string'
+                    && parsed.token !== ''
+                    && typeof parsed.expiresAt === 'number'
+                    && Date.now() < parsed.expiresAt
+                ) {
+                    minitoken = parsed.token;
+                }
+            } catch (_error) {
+                sessionStorage.removeItem(miniStorageKey);
+            }
+        }
+
+        if (!minitoken) {
             return;
         }
 
         const target = new URL('{{ base_url }}/', window.location.origin);
-        target.searchParams.set('token', token);
+        target.searchParams.set('minitoken', minitoken);
+        target.searchParams.delete('token');
         window.location.replace(target.pathname + target.search + target.hash);
     })();
 </script>

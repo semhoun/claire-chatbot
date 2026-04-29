@@ -109,8 +109,12 @@
             && Date.now() < cachedMiniTokenExpiresAt;
     }
 
-    function appendTokenToUrl(rawUrl, token, miniToken) {
+    function appendTokenToUrl(rawUrl, miniToken) {
         try {
+            if (typeof miniToken !== 'string' || miniToken.length === 0) {
+                return rawUrl;
+            }
+
             const resolved = new URL(rawUrl, window.location.origin);
             if (resolved.origin !== window.location.origin) {
                 return rawUrl;
@@ -120,10 +124,7 @@
                 return rawUrl;
             }
 
-            resolved.searchParams.set('token', token);
-            if (typeof miniToken === 'string' && miniToken.length > 0) {
-                resolved.searchParams.set('minitoken', miniToken);
-            }
+            resolved.searchParams.set('minitoken', miniToken);
             return resolved.pathname + resolved.search + resolved.hash;
         } catch (_error) {
             return rawUrl;
@@ -131,10 +132,11 @@
     }
 
     function applyTokenToProtectedResources() {
-        const token = getSessionToken();
-        if (!token) {
+        if (!hasValidMiniToken()) {
             return;
         }
+
+        const miniToken = cachedMiniToken;
 
         const links = document.querySelectorAll('a.generated-file[href]');
         links.forEach(function (link) {
@@ -142,18 +144,16 @@
             if (!href) {
                 return;
             }
-            const miniToken = hasValidMiniToken() ? cachedMiniToken : null;
-            link.setAttribute('href', appendTokenToUrl(href, token, miniToken));
+            link.setAttribute('href', appendTokenToUrl(href, miniToken));
         });
 
-        const images = document.querySelectorAll('img.generated-image[src]');
+        const images = document.querySelectorAll('img.generated-image');
         images.forEach(function (image) {
-            const src = image.getAttribute('src');
+            const src = image.getAttribute('data-protected-src') || image.getAttribute('src');
             if (!src) {
                 return;
             }
-            const miniToken = hasValidMiniToken() ? cachedMiniToken : null;
-            image.setAttribute('src', appendTokenToUrl(src, token, miniToken));
+            image.setAttribute('src', appendTokenToUrl(src, miniToken));
         });
     }
 
@@ -265,6 +265,11 @@
                 setSessionToken(newToken);
             }
 
+            const newMiniToken = xhr.getResponseHeader(MINI_TOKEN_HEADER);
+            if (newMiniToken) {
+                setMiniToken(newMiniToken, 0);
+            }
+
             applyTokenToProtectedResources();
         });
     }
@@ -278,8 +283,8 @@
                 return;
             }
 
-            const token = getSessionToken();
-            if (!token) {
+            if (!hasValidMiniToken()) {
+                event.preventDefault();
                 return;
             }
 
@@ -288,8 +293,7 @@
                 return;
             }
 
-            const miniToken = hasValidMiniToken() ? cachedMiniToken : null;
-            link.setAttribute('href', appendTokenToUrl(href, token, miniToken));
+            link.setAttribute('href', appendTokenToUrl(href, cachedMiniToken));
         });
     }
 
