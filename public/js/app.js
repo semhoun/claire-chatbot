@@ -470,12 +470,18 @@
             window.claireStreamSessionId = sessionId;
         })();
 
-        document.addEventListener('DOMContentLoaded', function() {
+        const startStreamIfReady = function() {
             const sessionId = window.claireStreamSessionId;
             if (sessionId) {
                 void initChatEventSource(sessionId);
             }
-        });
+        };
+
+        if (document.readyState !== 'loading') {
+            startStreamIfReady();
+        } else {
+            document.addEventListener('DOMContentLoaded', startStreamIfReady);
+        }
 
         function setComposerBusyState(isBusy) {
             const form = document.getElementById('claire-brain-chat');

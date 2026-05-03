@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claire Embed Test</title>
+    <style>
+        :root {
+            color-scheme: light;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 24px;
+            background: #f4f6f8;
+            color: #1f2937;
+        }
+
+        .test-shell {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            gap: 16px;
+        }
+
+        .card {
+            background: #fff;
+            border: 1px solid #d1d5db;
+            border-radius: 10px;
+            padding: 16px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(240px, 1fr));
+            gap: 12px;
+        }
+
+        .controls .full {
+            grid-column: 1 / -1;
+        }
+
+        label {
+            font-size: 14px;
+            font-weight: 600;
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        input,
+        select,
+        button,
+        textarea {
+            width: 100%;
+            font: inherit;
+            padding: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        .actions button {
+            width: auto;
+            cursor: pointer;
+        }
+
+        #claire-test-target {
+            min-height: 640px;
+            border: 2px dashed #94a3b8;
+            border-radius: 12px;
+            background: #ffffff;
+            overflow: hidden;
+        }
+
+        #status {
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+
+        @media (max-width: 768px) {
+            .controls {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="test-shell">
+    <section class="card">
+        <h1>Test Embed Claire</h1>
+        <p>Page statique pour valider <code>window.claireEmbed(...)</code> avec token Claire ou SSO.</p>
+
+        <div class="controls">
+            <div>
+                <label for="baseUrl">Base URL Claire</label>
+                <input id="baseUrl" type="url" placeholder="auto-detect" />
+            </div>
+
+            <div class="full">
+                <label for="token">Token (SSO ou Claire session)</label>
+                <textarea id="token" placeholder="opaque_or_jwt_token"></textarea>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button id="btnEmbed" type="button">Initialiser l'embed</button>
+            <button id="btnDestroy" type="button">Destroy embed</button>
+            <button id="btnClear" type="button">Clear tokens</button>
+        </div>
+    </section>
+
+    <section class="card">
+        <h2>Widget</h2>
+        <div id="claire-test-target"></div>
+    </section>
+
+    <section class="card">
+        <h2>Logs</h2>
+        <textarea id="status" readonly></textarea>
+    </section>
+</div>
+
+<script src="/js/embed.js"></script>
+<script>
+    (function () {
+        const baseUrlEl = document.getElementById('baseUrl');
+        const tokenEl = document.getElementById('token');
+        const statusEl = document.getElementById('status');
+        const targetSelector = '#claire-test-target';
+
+        function detectBaseUrl() {
+            try {
+                const fromQuery = new URL(window.location.href)
+                    .searchParams
+                    .get('baseUrl');
+                if (fromQuery && fromQuery.trim() !== '') {
+                    return fromQuery.trim().replace(/\/$/, '');
+                }
+            } catch (_error) {
+                // no-op
+            }
+
+            const script = document.querySelector('script[src*="/js/embed.js"]');
+            if (script && script.src) {
+                try {
+                    const scriptUrl = new URL(script.src, window.location.href);
+                    const cleaned = scriptUrl.pathname.replace(/\/js\/embed\.js$/, '');
+                    return (scriptUrl.origin + cleaned).replace(/\/$/, '');
+                } catch (_error) {
+                    // no-op
+                }
+            }
+
+            return window.location.origin;
+        }
+
+        function log(message) {
+            const now = new Date().toISOString();
+            statusEl.value += '[' + now + '] ' + message + '\n';
+            statusEl.scrollTop = statusEl.scrollHeight;
+        }
+
+        function trimValue(el) {
+            return String(el.value || '').trim();
+        }
+
+        baseUrlEl.value = detectBaseUrl();
+
+        document.getElementById('btnEmbed').addEventListener('click', async function () {
+            const baseUrl = trimValue(baseUrlEl) || detectBaseUrl();
+            const token = trimValue(tokenEl);
+
+            const config = {
+                baseUrl: baseUrl,
+                target: targetSelector,
+            };
+
+            if (token !== '') {
+                config.token = token;
+            }
+
+            if (token !== '') {
+                config.token = token;
+            }
+
+            log('Init embed: ' + JSON.stringify({
+                baseUrl: config.baseUrl,
+                hasToken: typeof config.token === 'string',
+                tokenMode: 'auto-detect',
+            }));
+
+            try {
+                await window.claireEmbed(config);
+                log('Embed initialisé avec succès');
+            } catch (error) {
+                log('Erreur embed: ' + (error && error.message ? error.message : String(error)));
+            }
+        });
+
+        document.getElementById('btnDestroy').addEventListener('click', function () {
+            if (typeof window.destroyClaireEmbed === 'function') {
+                window.destroyClaireEmbed();
+                log('Embed détruit');
+            }
+        });
+
+        document.getElementById('btnClear').addEventListener('click', function () {
+            tokenEl.value = '';
+            statusEl.value = '';
+            log('Champs nettoyés');
+        });
+    })();
+</script>
+</body>
+</html>

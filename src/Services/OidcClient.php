@@ -6,12 +6,19 @@ namespace App\Services;
 
 use App\Services\Session\SessionInterface;
 use GuzzleHttp\Client;
+use JsonException;
 use Lcobucci\Clock\SystemClock;
 use Lcobucci\JWT\Encoding\JoseEncoder;
+use Lcobucci\JWT\Signer;
+use Lcobucci\JWT\Signer\Ecdsa\Sha256 as EcdsaSha256;
+use Lcobucci\JWT\Signer\Ecdsa\Sha384 as EcdsaSha384;
+use Lcobucci\JWT\Signer\Ecdsa\Sha512 as EcdsaSha512;
 use Lcobucci\JWT\Signer\Key\InMemory;
-use Lcobucci\JWT\Signer\Rsa\Sha256;
-use Lcobucci\JWT\Token;
+use Lcobucci\JWT\Signer\Rsa\Sha256 as RsaSha256;
+use Lcobucci\JWT\Signer\Rsa\Sha384 as RsaSha384;
+use Lcobucci\JWT\Signer\Rsa\Sha512 as RsaSha512;
 use Lcobucci\JWT\Token\Parser;
+use Lcobucci\JWT\UnencryptedToken;
 use Lcobucci\JWT\Validation\Constraint\LooseValidAt;
 use Lcobucci\JWT\Validation\Constraint\SignedWith;
 use Lcobucci\JWT\Validation\Validator;
@@ -20,6 +27,7 @@ use League\OAuth2\Client\OptionProvider\PostAuthOptionProvider;
 use League\OAuth2\Client\Provider\Exception\IdentityProviderException;
 use League\OAuth2\Client\Provider\GenericProvider;
 use Psr\Log\LoggerInterface as Logger;
+use Throwable;
 
 final class OidcClient
 {
@@ -65,6 +73,37 @@ final class OidcClient
     }
 
     /**
+     * @return array{logged:bool,id?:string,data?:array<string,mixed>,token_type?:string,reason?:string}
+     */
+    public function resolveUserFromSsoToken(
+        string $ssoToken,
+        ?string $tokenType = null
+    ): array {
+        $normalizedType = $tokenType === null
+            ? null
+            : strtolower(trim($tokenType));
+
+        if ($normalizedType === 'access_token') {
+            return $this->resolveFromAccessToken($ssoToken);
+        }
+
+        if ($normalizedType === 'id_token') {
+            return $this->resolveFromIdToken($ssoToken);
+        }
+
+        if ($this->looksLikeJwt($ssoToken)) {
+            $idTokenResult = $this->resolveFromIdToken($ssoToken);
+            if (($idTokenResult['logged'] ?? false) === true) {
+                return $idTokenResult;
+            }
+
+            return $this->resolveFromAccessToken($ssoToken);
+        }
+
+        return $this->resolveFromAccessToken($ssoToken);
+    }
+
+    /**
      * @param array<string, mixed> $queryParams
      *
      * @return array{logged:bool,id?:string,data?:array<string,mixed>,error?:string,error_description?:string} Normalized outcome
@@ -93,6 +132,10 @@ final class OidcClient
 
             $parser = new Parser(new JoseEncoder());
             $token = $parser->parse($idToken);
+
+            if (! $token instanceof UnencryptedToken) {
+                return ['logged' => false];
+            }
 
             if (! $this->validateToken($token)) {
                 return ['logged' => false];
@@ -139,12 +182,18 @@ final class OidcClient
         return json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
     }
 
-    private function validateToken(Token $token): bool
+    private function validateToken(UnencryptedToken $token): bool
     {
         $kid = $token->headers()->get('kid');
         $alg = $token->headers()->get('alg');
 
-        if ($alg !== 'RS256') {
+        if (! is_string($alg) || $alg === '') {
+            $this->logger->error('Missing ID token algorithm');
+            return false;
+        }
+
+        $signer = $this->resolveSigner($alg);
+        if ($signer === null) {
             $this->logger->error('Unsupported ID token algorithm', ['alg' => $alg]);
             return false;
         }
@@ -162,27 +211,91 @@ final class OidcClient
             return false;
         }
 
-        if (! isset($keyData['n'], $keyData['e'])) {
-            $this->logger->error('Invalid JWK format');
+        $publicKey = $this->extractPublicKey($keyData, $alg);
+        if ($publicKey === null) {
+            $this->logger->error('Invalid JWK format for algorithm', [
+                'alg' => $alg,
+            ]);
             return false;
         }
 
-        $publicKey = $this->convertJwkToPem($keyData['n'], $keyData['e']);
-        $sha256 = new Sha256();
         $key = InMemory::plainText($publicKey);
 
         $validator = new Validator();
-        if (! $validator->validate($token, new SignedWith($sha256, $key))) {
-            $this->logger->info('Invalid token signature', ['token' => $token]);
+        if (! $validator->validate($token, new SignedWith($signer, $key))) {
+            $this->logger->info('Invalid ID token signature');
             return false;
         }
 
         if (! $validator->validate($token, new LooseValidAt(SystemClock::fromUTC()))) {
-            $this->logger->info('Token is not valid at current time', ['token' => $token]);
+            $this->logger->info('ID token is not valid at current time');
+            return false;
+        }
+
+        $expectedAudience = (string) $this->settings->get('oidc.client_id');
+        if (! $this->hasExpectedAudience($token, $expectedAudience)) {
+            $this->logger->info('Unexpected ID token audience', [
+                'expected_audience' => $expectedAudience,
+            ]);
+            return false;
+        }
+
+        $expectedIssuer = (string) ($this->discovery['issuer'] ?? '');
+        if (
+            $expectedIssuer !== ''
+            && $token->claims()->get('iss', '') !== $expectedIssuer
+        ) {
+            $this->logger->info('Unexpected ID token issuer', [
+                'expected_issuer' => $expectedIssuer,
+            ]);
             return false;
         }
 
         return true;
+    }
+
+    private function resolveSigner(string $alg): ?Signer
+    {
+        return match ($alg) {
+            'RS256' => new RsaSha256(),
+            'RS384' => new RsaSha384(),
+            'RS512' => new RsaSha512(),
+            'ES256' => new EcdsaSha256(),
+            'ES384' => new EcdsaSha384(),
+            'ES512' => new EcdsaSha512(),
+            default => null,
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $keyData
+     */
+    private function extractPublicKey(array $keyData, string $alg): ?string
+    {
+        if (str_starts_with($alg, 'RS')) {
+            if (! isset($keyData['n'], $keyData['e'])) {
+                return null;
+            }
+
+            return $this->convertJwkToPem((string) $keyData['n'], (string) $keyData['e']);
+        }
+
+        if (str_starts_with($alg, 'ES')) {
+            if (! isset($keyData['x5c']) || ! is_array($keyData['x5c'])) {
+                return null;
+            }
+
+            $certificate = $keyData['x5c'][0] ?? null;
+            if (! is_string($certificate) || $certificate === '') {
+                return null;
+            }
+
+            return "-----BEGIN CERTIFICATE-----\n"
+                . wordwrap($certificate, 64, "\n", true)
+                . "\n-----END CERTIFICATE-----";
+        }
+
+        return null;
     }
 
     private function convertJwkToPem(string $n, string $e): string
@@ -308,6 +421,153 @@ final class OidcClient
         } catch (IdentityProviderException|\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * @return array{logged:bool,id?:string,data?:array<string,mixed>,token_type:string,reason?:string}
+     */
+    private function resolveFromAccessToken(string $token): array
+    {
+        $userinfoEndpoint = (string) ($this->discovery['userinfo_endpoint'] ?? '');
+        if ($userinfoEndpoint === '') {
+            return [
+                'logged' => false,
+                'token_type' => 'access_token',
+                'reason' => 'missing_userinfo_endpoint',
+            ];
+        }
+
+        try {
+            $client = new Client(['timeout' => 5.0]);
+            $response = $client->get($userinfoEndpoint, [
+                'headers' => [
+                    'Authorization' => 'Bearer ' . $token,
+                    'Accept' => 'application/json',
+                ],
+            ]);
+
+            $claims = json_decode(
+                (string) $response->getBody(),
+                true,
+                512,
+                JSON_THROW_ON_ERROR
+            );
+
+            if (! is_array($claims)) {
+                return [
+                    'logged' => false,
+                    'token_type' => 'access_token',
+                    'reason' => 'invalid_userinfo_payload',
+                ];
+            }
+
+            $subject = (string) ($claims['sub'] ?? '');
+            if ($subject === '') {
+                return [
+                    'logged' => false,
+                    'token_type' => 'access_token',
+                    'reason' => 'missing_sub',
+                ];
+            }
+
+            return [
+                'logged' => true,
+                'id' => $subject,
+                'data' => $this->normalizeUserData($claims),
+                'token_type' => 'access_token',
+            ];
+        } catch (JsonException|Throwable $exception) {
+            $this->logger->info('Access token userinfo validation failed', [
+                'reason' => $exception::class,
+            ]);
+
+            return [
+                'logged' => false,
+                'token_type' => 'access_token',
+                'reason' => 'userinfo_validation_failed',
+            ];
+        }
+    }
+
+    /**
+     * @return array{logged:bool,id?:string,data?:array<string,mixed>,token_type:string,reason?:string}
+     */
+    private function resolveFromIdToken(string $idToken): array
+    {
+        try {
+            $parser = new Parser(new JoseEncoder());
+            $token = $parser->parse($idToken);
+
+            if (! $token instanceof UnencryptedToken) {
+                return [
+                    'logged' => false,
+                    'token_type' => 'id_token',
+                    'reason' => 'id_token_parse_failed',
+                ];
+            }
+
+            if (! $this->validateToken($token)) {
+                return [
+                    'logged' => false,
+                    'token_type' => 'id_token',
+                    'reason' => 'id_token_validation_failed',
+                ];
+            }
+
+            $claims = $token->claims()->all();
+            $subject = (string) ($claims['sub'] ?? '');
+            if ($subject === '') {
+                return [
+                    'logged' => false,
+                    'token_type' => 'id_token',
+                    'reason' => 'missing_sub',
+                ];
+            }
+
+            return [
+                'logged' => true,
+                'id' => $subject,
+                'data' => $this->normalizeUserData($claims),
+                'token_type' => 'id_token',
+            ];
+        } catch (Throwable) {
+            return [
+                'logged' => false,
+                'token_type' => 'id_token',
+                'reason' => 'id_token_parse_failed',
+            ];
+        }
+    }
+
+    private function looksLikeJwt(string $token): bool
+    {
+        return substr_count($token, '.') === 2;
+    }
+
+    private function hasExpectedAudience(
+        UnencryptedToken $token,
+        string $expectedAudience
+    ): bool {
+        if (! $token->claims()->has('aud')) {
+            return false;
+        }
+
+        $audience = $token->claims()->get('aud');
+        if (is_string($audience)) {
+            return $audience === $expectedAudience;
+        }
+
+        if (! is_iterable($audience)) {
+            return false;
+        }
+
+        foreach ($audience as $value) {
+            if (is_string($value) && $value === $expectedAudience) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

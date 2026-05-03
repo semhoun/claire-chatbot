@@ -8,6 +8,7 @@ return [
     ],
     'public_routes' => [
         '/health',
+        '/embed',
         '/logout',
         '/auth',
         '/telegram',

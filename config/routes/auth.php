@@ -17,5 +17,7 @@ return static function (App $app): void {
             ->setName('auth.refresh');
         $group->get('/sso', [AuthController::class, 'ssoRedirect'])->setName('auth.sso');
         $group->get('/callback', [AuthController::class, 'ssoCallback'])->setName('auth.callback');
+        $group->post('/embed/exchange', [AuthController::class, 'embedExchange'])
+            ->setName('auth.embed.exchange');
     });
 };
