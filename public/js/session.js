@@ -231,7 +231,7 @@
 
         const miniToken = cachedMiniToken;
 
-        const links = document.querySelectorAll('a.generated-file[href]');
+        const links = document.querySelectorAll('a.claire-generated-file[href]');
         links.forEach(function (link) {
             const href = link.getAttribute('href');
             if (!href) {
@@ -240,7 +240,7 @@
             link.setAttribute('href', appendTokenToUrl(href, miniToken));
         });
 
-        const images = document.querySelectorAll('img.generated-image');
+        const images = document.querySelectorAll('img.claire-generated-image');
         images.forEach(function (image) {
             const src = image.getAttribute('data-protected-src') || image.getAttribute('src');
             if (!src) {
@@ -501,7 +501,7 @@
     function configureProtectedResourceClicks() {
         document.addEventListener('click', function (event) {
             const link = event.target && event.target.closest
-                ? event.target.closest('a.generated-file[href]')
+                ? event.target.closest('a.claire-generated-file[href]')
                 : null;
             if (!link) {
                 return;
@@ -562,7 +562,7 @@
         document.addEventListener('DOMContentLoaded', bootstrap);
     }
 
-    window.ClaireSession = {
+    window.claireSession = {
         getSessionToken: getSessionToken,
         getMiniToken: function () {
             return hasValidMiniToken() ? cachedMiniToken : null;

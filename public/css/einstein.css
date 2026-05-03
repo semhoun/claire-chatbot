@@ -73,7 +73,7 @@ html, body {
 }
 
 /* Retirer l’overlay sombre de style.css et ajouter des halos « éclats » discrets */
-.chat-panel::before {
+.claire-chat-panel::before {
     background:
             radial-gradient(900px 520px at 100% 0%, rgba(0, 247, 255, 0.12), transparent 62%),
             radial-gradient(760px 460px at 0% 100%, rgba(255, 59, 0, 0.16), transparent 64%),
@@ -83,32 +83,32 @@ html, body {
 }
 
 /* Entête avec liseré néon */
-.chat-header {
+.claire-chat-header {
     background: linear-gradient(135deg, rgba(14, 0, 38, 0.95), rgba(24, 0, 68, 0.95));
     box-shadow: 0 18px 38px var(--elevation-panel);
 }
 
-.chat-header__avatar {
+.claire-chat-header__avatar {
     border: 2px solid rgba(0, 247, 255, 0.35);
     box-shadow: 0 8px 28px var(--elevation-panel-avatar);
 }
 
 /* Bouton d’options rond néon */
-.options-toggle {
+.claire-options-toggle {
     background: linear-gradient(135deg, var(--accent), var(--accent-light));
     color: #0a0014;
     box-shadow: 0 20px 40px var(--elevation-panel-strong);
 }
 
 /* Messages */
-.message--sent .message__bubble {
+.claire-message--sent .claire-message__bubble {
     background: linear-gradient(135deg, rgba(57, 255, 20, 0.98), rgba(0, 247, 255, 0.95));
     color: #071a0a;
     border-bottom-right-radius: 12px;
     box-shadow: 0 26px 40px var(--accent-shadow), 0 0 0 1px rgba(57, 255, 20, 0.28) inset;
 }
 
-.message--received .message__bubble {
+.claire-message--received .claire-message__bubble {
     background: linear-gradient(135deg, rgba(20, 0, 42, 0.9), rgba(30, 0, 70, 0.9));
     color: var(--text-primary);
     border: 1px solid var(--border);
@@ -117,7 +117,7 @@ html, body {
 }
 
 /* Résultat d’outils: bulle contrastée */
-.toolcall__result {
+.claire-toolcall__result {
     color: var(--text-primary);
     background: rgba(0, 0, 0, 0.8);
     border-radius: 12px;
@@ -125,98 +125,98 @@ html, body {
 }
 
 /* Indicateur de saisie en pulsation néon */
-.typing-indicator {
+.claire-typing-indicator {
     background: rgba(57, 255, 20, 0.18);
     box-shadow: 0 12px 28px var(--elevation-panel-strong);
 }
 
 /* Barre d’entrée */
-.chat-input {
+.claire-chat-input {
     box-shadow: 0 -18px 38px var(--elevation-panel-dark);
 }
 
 /* (rien à surcharger ici) */
 
-.chat-input__form:focus-within {
+.claire-chat-input__form:focus-within {
     border-color: var(--focus-ring);
     box-shadow: 0 0 0 5px var(--focus-glow), 0 0 24px var(--accent-shadow-soft);
 }
 
 /* Boutons icônes */
-.chat-icon-btn {
+.claire-chat-icon-btn {
     background: linear-gradient(135deg, var(--hero-start), var(--hero-mid), var(--hero-end));
     box-shadow: 0 22px 36px rgba(93, 0, 255, 0.38);
 }
 
-.chat-icon-btn--upload {
+.claire-chat-icon-btn--upload {
     background: linear-gradient(135deg, rgba(0, 247, 255, 0.9), rgba(57, 255, 20, 0.9));
     color: #0a0014;
     box-shadow: 0 16px 30px var(--elevation-panel-strong);
 }
 
 /* Panneau d’options */
-.options-panel {
+.claire-options-panel {
     box-shadow: inset 0 0 0 1px var(--surface-stroke-soft);
 }
 
-.options-panel__title { color: var(--text-secondary); }
+.claire-options-panel__title { color: var(--text-secondary); }
 
-.options-item {
+.claire-options-item {
     background: rgba(24, 0, 68, 0.78);
     border: 1px solid rgba(0, 247, 255, 0.18);
 }
 
-.options-item:hover {
+.claire-options-item:hover {
     background: rgba(30, 0, 84, 0.86);
     border-color: var(--accent);
 }
 
-.options-item__badge {
+.claire-options-item__badge {
     background: rgba(0, 247, 255, 0.20);
     color: var(--accent);
 }
 
 /* Bannière tooltip */
-#historyTooltipBanner {
+#claire-history-tooltip-banner {
     border: 1px solid rgba(0, 247, 255, 0.28);
     box-shadow: 0 8px 28px var(--tooltip-shadow), 0 0 24px rgba(0, 247, 255, 0.18) inset;
 }
 
 /* Modale */
-.modal__container {
+.claire-modal__container {
     border: 1px solid var(--border);
     box-shadow: 0 26px 60px var(--modal-shadow), inset 0 0 0 1px var(--surface-stroke-soft);
 }
 
-.modal__close {
+.claire-modal__close {
     background: rgba(0, 0, 0, 0.4);
     color: var(--text-primary);
 }
 
-.modal__close:hover {
+.claire-modal__close:hover {
     background: rgba(0, 0, 0, 0.55);
     border-color: var(--accent);
 }
 
 /* Dialogs intégrés */
-.dialog-backdrop { background: rgba(0, 0, 0, .55); }
+.claire-dialog-backdrop { background: rgba(0, 0, 0, .55); }
 
-.dialog-panel {
+.claire-dialog-panel {
     background: rgba(10, 0, 28, 0.94);
     color: var(--text-primary);
 }
 
-.dialog-panel-btn {
+.claire-dialog-panel-btn {
     background: rgba(0, 0, 0, 0.28);
     color: var(--text-primary);
 }
 
-.dialog-panel-btn:hover {
+.claire-dialog-panel-btn:hover {
     background: rgba(0, 0, 0, 0.38);
     border-color: var(--accent);
 }
 
-.scroll-down-button  {
+.claire-scroll-down-button  {
     background: linear-gradient(135deg, var(--accent), var(--accent-light));
     color: #0a0014;
 }

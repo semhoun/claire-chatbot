@@ -1,20 +1,20 @@
 {% extends 'layout.twig' %}
 
 {% block app %}
-        <header class="chat-header">
+        <header class="claire-chat-header">
             <button
-                    class="options-toggle"
+                    class="claire-options-toggle"
                     type="button"
                     aria-label="Ouvrir le menu"
                     aria-expanded="false"
                     hx-on:click="
-                        this.classList.toggle('is-active');
-                        const expanded = this.classList.contains('is-active');
+                        this.classList.toggle('claire-is-active');
+                        const expanded = this.classList.contains('claire-is-active');
                         this.setAttribute('aria-expanded', expanded);
-                        const panel = document.getElementById('optionsPanel');
-                        if (panel) { panel.classList.toggle('is-open'); }
-                        const bd = document.getElementById('optionsBackdrop');
-                        if (bd) { bd.classList.toggle('is-visible', expanded); }
+                        const panel = document.getElementById('claire-options-panel');
+                        if (panel) { panel.classList.toggle('claire-is-open'); }
+                        const bd = document.getElementById('claire-options-backdrop');
+                        if (bd) { bd.classList.toggle('claire-is-visible', expanded); }
                     "
                 >
                 <svg viewBox="0 0 24 24" aria-hidden="true">

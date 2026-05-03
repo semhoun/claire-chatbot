@@ -1,15 +1,15 @@
 {% extends 'layout_base.twig' %}
 
 {% block content %}
-    <div class="panel is-centered is-hidden" role="status" id="auth-status" aria-live="polite">
-        <div class="spinner" aria-hidden="true"></div>
+    <div class="claire-panel claire-is-centered claire-is-hidden" role="status" id="claire-auth-status" aria-live="polite">
+        <div class="claire-spinner" aria-hidden="true"></div>
         <h1>Connexion en cours...</h1>
         <p>Redirection automatique</p>
     </div>
-    <div class="panel" role="dialog" aria-label="Connexion" id="sso-panel">
+    <div class="claire-panel" role="dialog" aria-label="Connexion" id="claire-sso-panel">
         <h2>Bienvenue</h2>
         <p>Pour continuer, veuillez vous authentifier via notre SSO.</p>
-        <a href="{{ base_url }}/auth/sso" class="sso-btn">Se connecter</a>
+        <a href="{{ base_url }}/auth/sso" class="claire-sso-btn">Se connecter</a>
     </div>
 {% endblock %}
 
@@ -19,16 +19,16 @@
         'use strict';
 
         const miniStorageKey = 'claire_mini_token';
-        const authStatus = document.getElementById('auth-status');
-        const ssoPanel = document.getElementById('sso-panel');
+        const authStatus = document.getElementById('claire-auth-status');
+        const ssoPanel = document.getElementById('claire-sso-panel');
 
         function showAuthStatus() {
             if (authStatus) {
-                authStatus.classList.remove('is-hidden');
+                authStatus.classList.remove('claire-is-hidden');
             }
 
             if (ssoPanel) {
-                ssoPanel.classList.add('is-hidden');
+                ssoPanel.classList.add('claire-is-hidden');
             }
         }
 

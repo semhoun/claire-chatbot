@@ -7,12 +7,12 @@
     const doc = document;
 
     /** Elements (created in layout.twig) */
-    const backdrop = doc.getElementById('modalBackdrop');
-    const modal = doc.getElementById('modalRoot');
-    const titleEl = doc.getElementById('modalTitle');
-    const bodyEl = doc.getElementById('modalBody');
-    const confirmBtn = doc.getElementById('modalConfirm');
-    const cancelBtn = doc.getElementById('modalCancel');
+    const backdrop = doc.getElementById('claire-modal-backdrop');
+    const modal = doc.getElementById('claire-modal-root');
+    const titleEl = doc.getElementById('claire-modal-title');
+    const bodyEl = doc.getElementById('claire-modal-body');
+    const confirmBtn = doc.getElementById('claire-modal-confirm');
+    const cancelBtn = doc.getElementById('claire-modal-cancel');
 
     if (!backdrop || !modal || !titleEl || !bodyEl || !confirmBtn || !cancelBtn) {
         // Layout not loaded yet; do nothing
@@ -27,7 +27,7 @@
     }
 
     function trapFocus(e) {
-        if (!modal.classList.contains('is-open')) return;
+        if (!modal.classList.contains('claire-is-open')) return;
         const focusable = [confirmBtn, cancelBtn];
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
@@ -44,7 +44,7 @@
                 }
             }
         } else if (e.key === 'Escape') {
-            Dialog.close();
+            claireDialog.close();
         }
     }
 
@@ -67,11 +67,11 @@
         setVariant(variant);
         currentOnConfirm = typeof onConfirm === 'function' ? onConfirm : null;
 
-        backdrop.classList.add('is-visible');
-        modal.classList.add('is-open');
+        backdrop.classList.add('claire-is-visible');
+        modal.classList.add('claire-is-open');
         modal.setAttribute('aria-hidden', 'false');
         modal.setAttribute('aria-autoclose', 'true');
-        doc.body.classList.add('modal-open');
+        doc.body.classList.add('claire-modal-open');
 
         // Focus management
         setTimeout(() => confirmBtn.focus(), 0);
@@ -80,9 +80,9 @@
     }
 
     function close() {
-        backdrop.classList.remove('is-visible');
-        modal.classList.remove('is-open');
-        doc.body.classList.remove('modal-open');
+        backdrop.classList.remove('claire-is-visible');
+        modal.classList.remove('claire-is-open');
+        doc.body.classList.remove('claire-modal-open');
         doc.removeEventListener('keydown', trapFocus, true);
         // Move focus before hiding from assistive tech to avoid aria-hidden warning
         if (lastActive && typeof lastActive.focus === 'function') {
@@ -93,16 +93,16 @@
     }
 
     // Public API
-    const Dialog = {
+    const claireDialog = {
         open,
         close,
     };
-    window.Dialog = Dialog;
+    window.claireDialog = claireDialog;
 
     // Wire buttons
     cancelBtn.addEventListener('click', () => close());
     backdrop.addEventListener('click', () => close());
-    doc.getElementById('modalClose')?.addEventListener('click', () => close());
+    doc.getElementById('claire-modal-close')?.addEventListener('click', () => close());
     // Ensure the modal is closed BEFORE executing the confirmed action,
     // so that any global guards (e.g., htmx:beforeRequest) don't cancel the request.
     confirmBtn.addEventListener('click', () => {
@@ -147,7 +147,7 @@
         try {
             const elt = event.detail && event.detail.elt ? event.detail.elt : null;
             if (!elt) return;
-            if (modal.classList.contains('is-open') && elt.closest('[data-dialog-confirm]')) {
+            if (modal.classList.contains('claire-is-open') && elt.closest('[data-dialog-confirm]')) {
                 event.preventDefault();
             }
         } catch (_) {
@@ -203,20 +203,20 @@
             if (!elt || !detail.successful) return;
 
             // Only handle deletions coming from the history delete button
-            if (!elt.classList || !elt.classList.contains('history-item__delete')) return;
+            if (!elt.classList || !elt.classList.contains('claire-history-item__delete')) return;
 
             // After the <li> has been swapped out, if the history panel is open and now empty,
             // reload the list fragment from the server to render the proper empty-state.
-            const badge = doc.getElementById('historyCountBadge');
-            const toggle = doc.getElementById('historyToggle');
-            const panel = doc.getElementById('historyList');
+            const badge = doc.getElementById('claire-history-count-badge');
+            const toggle = doc.getElementById('claire-history-toggle');
+            const panel = doc.getElementById('claire-history-list');
             if (!toggle || !panel || !badge || !window.htmx)
                 return;
 
             // Defer to the next tick to let HTMX perform the swap on the <li>
             setTimeout(function () {
-                window.htmx.ajax('GET', '/history/count', {target: '#historyCountBadge', swap: 'innerHTML'});
-                window.htmx.ajax('GET', '/history/list', {target: '#historyList', swap: 'innerHTML'});
+                window.htmx.ajax('GET', '/history/count', {target: '#claire-history-count-badge', swap: 'innerHTML'});
+                window.htmx.ajax('GET', '/history/list', {target: '#claire-history-list', swap: 'innerHTML'});
             }, 0);
         } catch (_) {
             // no-op: fail safely

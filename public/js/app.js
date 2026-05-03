@@ -28,17 +28,17 @@
 
     // --- Layout & Options Panel ---
     (function() {
-        const panel = document.getElementById('optionsPanel');
-        const closeBtn = panel ? panel.querySelector('.options-close') : null;
-        const toggleBtn = $('.options-toggle');
-        const backdrop = document.getElementById('optionsBackdrop');
+        const panel = document.getElementById('claire-options-panel');
+        const closeBtn = panel ? panel.querySelector('.claire-options-close') : null;
+        const toggleBtn = $('.claire-options-toggle');
+        const backdrop = document.getElementById('claire-options-backdrop');
         if (!panel || !closeBtn || !toggleBtn) return;
 
         function closePanel(focusToggle = true) {
-            panel.classList.remove('is-open');
-            toggleBtn.classList.remove('is-active');
+            panel.classList.remove('claire-is-open');
+            toggleBtn.classList.remove('claire-is-active');
             toggleBtn.setAttribute('aria-expanded', 'false');
-            if (backdrop) { backdrop.classList.remove('is-visible'); }
+            if (backdrop) { backdrop.classList.remove('claire-is-visible'); }
             if (focusToggle) {
                 try { toggleBtn.focus(); } catch (e) {}
             }
@@ -46,29 +46,31 @@
 
         closeBtn.addEventListener('click', () => closePanel(true));
         if (backdrop) backdrop.addEventListener('click', () => closePanel(true));
-        onEscape(() => panel.classList.contains('is-open'), () => closePanel(true));
+        onEscape(() => panel.classList.contains('claire-is-open'), () => closePanel(true));
 
         const observer = new MutationObserver(function() {
-            const isOpen = panel.classList.contains('is-open');
+            const isOpen = panel.classList.contains('claire-is-open');
             toggleBtn.setAttribute('aria-expanded', String(isOpen));
-            if (backdrop) { backdrop.classList.toggle('is-visible', isOpen); }
+            if (backdrop) {
+                backdrop.classList.toggle('claire-is-visible', isOpen);
+            }
         });
         observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
     })();
 
-    window.setGlobalActionIndicatorState = function(isVisible) {
-        const indicator = document.getElementById('globalActionIndicator');
+    window.claireSetGlobalActionIndicatorState = function(isVisible) {
+        const indicator = document.getElementById('claire-global-action-indicator');
         if (!indicator) return;
         indicator.classList.toggle('htmx-request', isVisible);
     };
 
     // --- Assistant & Workflow Selectors ---
     (function() {
-        const sel = document.getElementById('brainSelector');
+        const sel = document.getElementById('claire-brain-selector');
         if (!sel) return;
         sel.addEventListener('change', async function() {
             const val = sel.value;
-            window.setGlobalActionIndicatorState(true);
+            window.claireSetGlobalActionIndicatorState(true);
             try {
                 await fetch(baseUrl + '/config/brain_avatar', {
                     method: 'POST',
@@ -78,18 +80,18 @@
             } catch (e) {
                 console.error(e);
             } finally {
-                window.setGlobalActionIndicatorState(false);
+                window.claireSetGlobalActionIndicatorState(false);
             }
             window.location.reload();
         });
     })();
 
     (function() {
-        const sel = document.getElementById('comfyuiWorkflowSelector');
+        const sel = document.getElementById('claire-comfyui-workflow-selector');
         if (!sel) return;
         sel.addEventListener('change', async function() {
             const val = sel.value;
-            window.setGlobalActionIndicatorState(true);
+            window.claireSetGlobalActionIndicatorState(true);
             try {
                 await fetch(baseUrl + '/config/comfyui_workflow', {
                     method: 'POST',
@@ -99,7 +101,7 @@
             } catch (e) {
                 console.error(e);
             } finally {
-                window.setGlobalActionIndicatorState(false);
+                window.claireSetGlobalActionIndicatorState(false);
             }
         });
     })();
@@ -132,26 +134,26 @@
     }
 
     // --- RAG Toggle ---
-    createToggle('ragToggle', 'ragPanel', null);
+    createToggle('claire-rag-toggle', 'claire-rag-panel', null);
 
     // --- Initial Counters Refresh (after session bootstrap) ---
     (function() {
         function refreshInitialCounters() {
             if (!window.htmx) return;
 
-            const historyCountBadge = document.getElementById('historyCountBadge');
-            const filesCountBadge = document.getElementById('filesCountBadge');
+            const historyCountBadge = document.getElementById('claire-history-count-badge');
+            const filesCountBadge = document.getElementById('claire-files-count-badge');
 
             if (historyCountBadge) {
                 window.htmx.ajax('GET', baseUrl + '/history/count', {
-                    target: '#historyCountBadge',
+                    target: '#claire-history-count-badge',
                     swap: 'innerHTML',
                 });
             }
 
             if (filesCountBadge) {
                 window.htmx.ajax('GET', baseUrl + '/files/count', {
-                    target: '#filesCountBadge',
+                    target: '#claire-files-count-badge',
                     swap: 'innerHTML',
                 });
             }
@@ -170,26 +172,26 @@
     (function() {
         const root = document;
         const dlg = (function createDialog(){
-            let existing = root.getElementById('uploadDialog');
+            let existing = root.getElementById('claire-upload-dialog');
             if (existing) return existing;
             const wrap = root.createElement('div');
-            wrap.id = 'uploadDialog';
+            wrap.id = 'claire-upload-dialog';
             wrap.setAttribute('role', 'dialog');
             wrap.setAttribute('aria-modal', 'true');
             wrap.setAttribute('aria-hidden', 'true');
             wrap.style.cssText = 'position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:1000;';
             wrap.innerHTML = `
-                <div class="dialog-backdrop" data-upload-backdrop></div>
-                <div class="dialog-panel" role="document">
+                <div class="claire-dialog-backdrop" data-upload-backdrop></div>
+                <div class="claire-dialog-panel" role="document">
                     <div style="display:flex; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid rgba(0,0,0,.08);">
-                        <div id="uploadDialogTitle" class="options-panel__title" style="font-size:17px;">Téléverser un fichier</div>
+                        <div id="claire-upload-dialog-title" class="claire-options-panel__title" style="font-size:17px;">Téléverser un fichier</div>
                     </div>
-                    <form id="uploadDialogForm"
+                    <form id="claire-upload-dialog-form"
                         style="padding:18px; display:flex; flex-direction:column; gap:14px;"
                         hx-encoding="multipart/form-data"
-                        hx-indicator="#filesRagUploadIndicator"
+                        hx-indicator="#claire-files-rag-upload-indicator"
                         >
-                        <div id="filesRagUploadIndicator" class="htmx-indicator" aria-hidden="true"
+                        <div id="claire-files-rag-upload-indicator" class="htmx-indicator" aria-hidden="true"
                              style="position:absolute; inset:0; display:none; background:rgba(8,0,14,0.55); backdrop-filter:blur(2px); border-radius:10px; align-items:center; justify-content:center; z-index:5;">
                             <div style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(30,0,50,0.9); border:1px solid rgba(255,255,255,0.08); border-radius:999px; box-shadow:0 10px 26px rgba(26,0,41,0.35);">
                                 <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style="color:#ff7ce5;">
@@ -199,17 +201,17 @@
                                 <span style="color:#fff0fe; font-size:14px;">Téléversement et vectorisation en cours…</span>
                             </div>
                         </div>
-                        <div class="upload-field" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                            <input type="file" name="file" id="uploadDialogInput"
+                        <div class="claire-upload-field" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                            <input type="file" name="file" id="claire-upload-dialog-input"
                                    accept="${acceptedExt}" required
                                    style="position:absolute; left:-10000px; width:1px; height:1px; overflow:hidden;" />
-                            <label for="uploadDialogInput" class="btn dialog-panel-btn" aria-label="Parcourir" title="Parcourir…">Parcourir…</label>
-                            <span id="uploadDialogFileName" style="min-width:180px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color: wheat;" aria-live="polite">Aucun fichier sélectionné</span>
+                            <label for="claire-upload-dialog-input" class="claire-btn claire-dialog-panel-btn" aria-label="Parcourir" title="Parcourir…">Parcourir…</label>
+                            <span id="claire-upload-dialog-file-name" style="min-width:180px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color: wheat;" aria-live="polite">Aucun fichier sélectionné</span>
                         </div>
                         <div style="font-size:12px; color:#666;">Extensions autorisées: ${acceptedExt}</div>
                         <div style="display:flex; gap:8px; justify-content:flex-end;">
-                            <button type="button" class="btn dialog-panel-btn" data-upload-cancel>Annuler</button>
-                            <button type="submit" class="btn btn--primary" data-upload-submit disabled>Envoyer</button>
+                            <button type="button" class="claire-btn claire-dialog-panel-btn" data-upload-cancel>Annuler</button>
+                            <button type="submit" class="claire-btn claire-btn--primary" data-upload-submit disabled>Envoyer</button>
                         </div>
                     </form>
                 </div>`;
@@ -217,11 +219,11 @@
             return wrap;
         })();
 
-        const form = dlg.querySelector('#uploadDialogForm');
-        const input = dlg.querySelector('#uploadDialogInput');
+        const form = dlg.querySelector('#claire-upload-dialog-form');
+        const input = dlg.querySelector('#claire-upload-dialog-input');
         const btnCancel = dlg.querySelector('[data-upload-cancel]');
         const backdrop = dlg.querySelector('[data-upload-backdrop]');
-        const title = dlg.querySelector('#uploadDialogTitle');
+        const title = dlg.querySelector('#claire-upload-dialog-title');
 
         function openDialog(ctx) {
             input.value = '';
@@ -232,10 +234,10 @@
             if (ctx === 'files') {
                 title.textContent = 'Téléverser un fichier';
                 form.setAttribute('hx-post', baseUrl + '/files/upload');
-                form.setAttribute('hx-target', '#filesList');
+                form.setAttribute('hx-target', '#claire-files-list');
                 form.setAttribute('hx-swap', 'innerHTML');
                 const onAfter = function() {
-                    try { if (window.htmx) { window.htmx.ajax('GET', baseUrl + '/files/count', {target:'#filesCountBadge', swap:'innerHTML'}); } } catch(_){ }
+                    try { if (window.htmx) { window.htmx.ajax('GET', baseUrl + '/files/count', {target:'#claire-files-count-badge', swap:'innerHTML'}); } } catch(_){ }
                     closeDialog();
                 };
                 form.addEventListener('htmx:afterOnLoad', onAfter, { once: true });
@@ -245,7 +247,7 @@
                 form.setAttribute('hx-swap', 'none');
                 const onAfterReq = function() {
                     try {
-                        var fb = document.getElementById('ragUploadFeedback');
+                        var fb = document.getElementById('claire-rag-upload-feedback');
                         if (fb) { fb.textContent = 'Fichier envoyé'; fb.style.opacity = '1'; setTimeout(function(){ fb.style.opacity = '0'; }, 1800); }
                     } catch(_) {}
                     closeDialog();
@@ -257,7 +259,7 @@
             dlg.setAttribute('aria-hidden', 'false');
             const submitBtn = dlg.querySelector('[data-upload-submit]');
             if (submitBtn) submitBtn.disabled = true;
-            setTimeout(function(){ const label = dlg.querySelector('label[for="uploadDialogInput"]'); (label||input).focus(); }, 0);
+            setTimeout(function(){ const label = dlg.querySelector('label[for="claire-upload-dialog-input"]'); (label||input).focus(); }, 0);
         }
 
         function closeDialog() {
@@ -278,7 +280,7 @@
         input.addEventListener('change', function(){
             const fileChosen = input.files && input.files.length > 0;
             const submit = dlg.querySelector('[data-upload-submit]');
-            const nameEl = dlg.querySelector('#uploadDialogFileName');
+            const nameEl = dlg.querySelector('#claire-upload-dialog-file-name');
             if (nameEl) {
                 nameEl.textContent = fileChosen ? (input.files[0].name || 'Fichier sélectionné') : 'Aucun fichier sélectionné';
                 nameEl.title = nameEl.textContent;
@@ -289,14 +291,14 @@
 
     // --- Layout Mode ---
     (function() {
-        const toggle = document.getElementById('toggleLayoutMode');
+        const toggle = document.getElementById('claire-toggle-layout-mode');
         if (!toggle) return;
         const badge = toggle.querySelector('[data-layout-badge]');
         function currentMode() { return (toggle.getAttribute('data-layout-mode') || 'full'); }
         function setMode(mode) {
             toggle.setAttribute('data-layout-mode', mode);
             const isCompact = mode === 'compact';
-            document.body.classList.toggle('compact', isCompact);
+            document.body.classList.toggle('claire-compact', isCompact);
             if (badge) badge.textContent = isCompact ? 'Largeur 800px' : 'Plein écran';
         }
         async function postMode(mode) {
@@ -320,22 +322,22 @@
 
     // --- History Tooltips ---
     (function() {
-        const banner = document.getElementById('historyTooltipBanner');
+        const banner = document.getElementById('claire-history-tooltip-banner');
         if (!banner) return;
         function showBannerFrom(el) {
             const text = el.getAttribute('data-tooltip') || '';
             if (!text) return;
             banner.textContent = text;
-            banner.classList.add('is-visible');
+            banner.classList.add('claire-is-visible');
             banner.setAttribute('aria-hidden', 'false');
         }
         function hideBanner() {
-            banner.classList.remove('is-visible');
+            banner.classList.remove('claire-is-visible');
             banner.setAttribute('aria-hidden', 'true');
         }
         function wireTooltips(root) {
             const scope = root || document;
-            const nodes = scope.querySelectorAll('.history-item__content[data-tooltip]');
+            const nodes = scope.querySelectorAll('.claire-history-item__content[data-tooltip]');
             nodes.forEach(function(el) {
                 if (el.__hasTooltipBanner) return;
                 el.__hasTooltipBanner = true;
@@ -354,24 +356,24 @@
         }
         window.addEventListener('htmx:afterSwap', function(e) {
             const t = e.target;
-            try { if (t && (t.id === 'historyList' || (t.closest && t.closest('#historyList')))) { wireTooltips(t); } } catch (_) {}
+            try { if (t && (t.id === 'claire-history-list' || (t.closest && t.closest('#claire-history-list')))) { wireTooltips(t); } } catch (_) {}
         });
     })();
 
     // --- History Toggle ---
-    createToggle('historyToggle', 'historyList', () => {
+    createToggle('claire-history-toggle', 'claire-history-list', () => {
         if (window.htmx) {
             window.htmx.ajax('GET', baseUrl + '/history/list', {
-                target: '#historyList', swap: 'innerHTML', indicator: '#globalActionIndicator'
+                target: '#claire-history-list', swap: 'innerHTML', indicator: '#claire-global-action-indicator'
             });
         }
     });
 
     // --- Files Toggle ---
-    createToggle('filesToggle', 'filesList', () => {
+    createToggle('claire-files-toggle', 'claire-files-list', () => {
         if (window.htmx) {
             window.htmx.ajax('GET', baseUrl + '/files/list', {
-                target: '#filesList', swap: 'innerHTML', indicator: '#globalActionIndicator'
+                target: '#claire-files-list', swap: 'innerHTML', indicator: '#claire-global-action-indicator'
             });
         }
     });
@@ -379,18 +381,18 @@
     // --- Lightbox ---
     (function () {
         function createLightbox() {
-            let lb = document.getElementById('imageLightbox');
+            let lb = document.getElementById('claire-image-lightbox');
             if (lb) return lb;
             lb = document.createElement('div');
-            lb.id = 'imageLightbox';
-            lb.className = 'image-lightbox';
+            lb.id = 'claire-image-lightbox';
+            lb.className = 'claire-image-lightbox';
             lb.setAttribute('role', 'dialog');
             lb.setAttribute('aria-modal', 'true');
             lb.setAttribute('aria-hidden', 'true');
             lb.innerHTML = `
-                <div class="image-lightbox__backdrop" data-lightbox-close></div>
-                <div class="image-lightbox__content">
-                    <img class="image-lightbox__img" src="" alt="Image agrandie" data-lightbox-close>
+                <div class="claire-image-lightbox__backdrop" data-lightbox-close></div>
+                <div class="claire-image-lightbox__content">
+                    <img class="claire-image-lightbox__img" src="" alt="Image agrandie" data-lightbox-close>
                 </div>
             `;
             document.body.appendChild(lb);
@@ -398,24 +400,24 @@
         }
         function openLightbox(src) {
             const lb = createLightbox();
-            const img = lb.querySelector('.image-lightbox__img');
+            const img = lb.querySelector('.claire-image-lightbox__img');
             img.src = src;
-            lb.classList.add('is-open');
+            lb.classList.add('claire-is-open');
             lb.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('modal-open');
+            document.body.classList.add('claire-modal-open');
             document.addEventListener('keydown', onKeyDown);
         }
         function closeLightbox() {
-            const lb = document.getElementById('imageLightbox');
+            const lb = document.getElementById('claire-image-lightbox');
             if (!lb) return;
-            lb.classList.remove('is-open');
+            lb.classList.remove('claire-is-open');
             lb.setAttribute('aria-hidden', 'true');
-            document.body.classList.remove('modal-open');
+            document.body.classList.remove('claire-modal-open');
             document.removeEventListener('keydown', onKeyDown);
         }
         function onKeyDown(e) { if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); } }
         document.addEventListener('click', function (e) {
-            const img = e.target.closest('.generated-image');
+            const img = e.target.closest('.claire-generated-image');
             if (!img) return;
             e.preventDefault();
             openLightbox(img.src);
@@ -428,26 +430,26 @@
     })();
 
     // --- Telegram Config Form ---
-    window.onTelegramFormSuccess = function() {
-        const confirmBtn = document.getElementById('modalConfirm');
+    window.claireOnTelegramFormSuccess = function() {
+        const confirmBtn = document.getElementById('claire-modal-confirm');
         if (confirmBtn) {
             confirmBtn.onclick = null;
         }
         setTimeout(function() {
-            const modalRoot = document.getElementById('modalRoot');
-            const modalBackdrop = document.getElementById('modalBackdrop');
+            const modalRoot = document.getElementById('claire-modal-root');
+            const modalBackdrop = document.getElementById('claire-modal-backdrop');
             if (document.activeElement && modalRoot?.contains(document.activeElement)) {
                 document.activeElement.blur();
             }
-            modalRoot?.classList.remove('is-open');
+            modalRoot?.classList.remove('claire-is-open');
             modalRoot?.setAttribute('aria-hidden', 'true');
-            modalBackdrop?.classList.remove('is-visible');
-            document.body?.classList.remove('modal-open');
+            modalBackdrop?.classList.remove('claire-is-visible');
+            document.body?.classList.remove('claire-modal-open');
         }, 1500);
     };
 
-    window.onTelegramFormError = function() {
-        const confirmBtn = document.getElementById('modalConfirm');
+    window.claireOnTelegramFormError = function() {
+        const confirmBtn = document.getElementById('claire-modal-confirm');
         if (confirmBtn) {
             confirmBtn.disabled = false;
         }
@@ -455,7 +457,7 @@
 
     // --- Chat/SSE Logic ---
     (function () {
-        const chatStreamContainer = document.getElementById('chatStream');
+        const chatStreamContainer = document.getElementById('claire-chat-stream');
         if (!chatStreamContainer) return;
 
         (function initSession() {
@@ -476,26 +478,28 @@
         });
 
         function setComposerBusyState(isBusy) {
-            const form = document.getElementById('brain_chat');
+            const form = document.getElementById('claire-brain-chat');
             if (!form) return;
-            const disablers = form.querySelectorAll('.form_disabler');
+            const disablers = form.querySelectorAll('.claire-form-disabler');
             disablers.forEach((element) => {
                 if (isBusy) element.setAttribute('disabled', true);
                 else element.removeAttribute('disabled');
             });
-            form.classList.toggle('is-busy', isBusy);
+            form.classList.toggle('claire-is-busy', isBusy);
         }
 
-        function getChatBody() { return $('.chat-body'); }
+        function getChatBody() { return $('.claire-chat-body'); }
         function scrollChatToBottom() {
             const chatBody = getChatBody();
             if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
         }
 
         function finalizeAssistantResponse() {
-            const messages = document.getElementById('messages');
+            const messages = document.getElementById('claire-messages');
             if (messages) {
-                const loader = messages.querySelector('[data-role="assistant-loader"]');
+                const loader = messages.querySelector(
+                    '[data-role="claire-assistant-loader"]'
+                );
                 if (loader) loader.remove();
             }
             setComposerBusyState(false);
@@ -512,14 +516,14 @@
 
             if (eventType === 'chat.error') {
                 finalizeAssistantResponse();
-                const messages = document.getElementById('messages');
+                const messages = document.getElementById('claire-messages');
                 if (messages) {
-                    messages.insertAdjacentHTML('beforeend', '<article class="message message--received"><div class="message__bubble"><span class="message__text">' + update.message + '</span></div></article>');
+                    messages.insertAdjacentHTML('beforeend', '<article class="claire-message claire-message--received"><div class="claire-message__bubble"><span class="claire-message__text">' + update.message + '</span></div></article>');
                 }
             }
 
             // On est dans des updates de chat, on vérifie donc que ce qu'on reçoit est bien pour le thread courant
-            const threadId = $('#chatStream').getAttribute('data-thread-id');
+            const threadId = $('#claire-chat-stream').getAttribute('data-thread-id');
             if (threadId !== update.threadId) {
                 return;
             }
@@ -534,7 +538,7 @@
                 html = '';
             }
 
-            const chatStream= $('#messages');
+            const chatStream= $('#claire-messages');
             if (!chatStream) {
                 console.log('chatStream not found');
                 return;
@@ -547,24 +551,32 @@
             }
 
             if (eventType === 'chat.assistant.placeholder') {
-                const element = document.getElementById(update.messageId);
+                const element = document.getElementById(
+                    'claire-' + update.messageId
+                ) || document.getElementById(update.messageId);
                 if (element) return;
 
-                const loader = chatStream.querySelector('[data-role="assistant-loader"]');
+                const loader = chatStream.querySelector(
+                    '[data-role="claire-assistant-loader"]'
+                );
                 if (loader) loader.outerHTML = html;
                 else chatStream.insertAdjacentHTML('beforeend', html);
                 return;
             }
 
             if (eventType === 'chat.assistant.update') {
-                const element = document.getElementById('message_' + update.messageId);
+                const element = document.getElementById(
+                    'claire-message-' + update.messageId
+                );
                 if (!element) return;
                 element.innerHTML = html;
                 return;
             }
 
             if (eventType === 'chat.tool.update') {
-                const element = document.getElementById('toolscall_' + update.messageId);
+                const element = document.getElementById(
+                    'claire-toolscall-' + update.messageId
+                );
                 if (!element) return;
                 element.innerHTML = html;
                 return;
@@ -572,7 +584,7 @@
         }
 
         function bindChatEventSource(sessionId, eventSource) {
-            window.chatEventSource = eventSource;
+            window.claireChatEventSource = eventSource;
             const handleEvent = function(eventType, event) {
                 try {
                     const update = JSON.parse(event.data);
@@ -594,15 +606,17 @@
         }
 
         async function initChatEventSource(sessionId) {
-            if (window.chatEventSource) window.chatEventSource.close();
+            if (window.claireChatEventSource) {
+                window.claireChatEventSource.close();
+            }
 
-            const threadId = $('#chatStream').getAttribute('data-thread-id');
+            const threadId = $('#claire-chat-stream').getAttribute('data-thread-id');
             if (!threadId) {
                 return;
             }
 
-            const token = window.ClaireSession && typeof window.ClaireSession.getMiniToken === 'function'
-                ? window.ClaireSession.getMiniToken()
+            const token = window.claireSession && typeof window.claireSession.getMiniToken === 'function'
+                ? window.claireSession.getMiniToken()
                 : null;
             if (!token) {
                 setTimeout(function() { void initChatEventSource(sessionId); }, 1500);
@@ -620,28 +634,28 @@
             }
         }
 
-        window.chatClick = function chatClick(event) {
+        window.claireChatClick = function claireChatClick(event) {
             const form = event.target;
             setComposerBusyState(true);
             const input = form.querySelector('[name="message"]');
             if (!input) return;
             const text = (input.value || '').trim();
             if (!text) return;
-            const messages = document.getElementById('messages');
-            const scrollBtn = document.getElementById('scrollDownBtn');
+            const messages = document.getElementById('claire-messages');
+            const scrollBtn = document.getElementById('claire-scroll-down-btn');
             if (!messages) return;
             const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
             const wrapper = document.createElement('div');
-            wrapper.innerHTML = '<article class="message message--sent"><div class="message__bubble"></div><span class="message__meta"></span></article>';
+            wrapper.innerHTML = '<article class="claire-message claire-message--sent"><div class="claire-message__bubble"></div><span class="claire-message__meta"></span></article>';
             const article = wrapper.firstElementChild;
-            article.querySelector('.message__bubble').textContent = text;
-            article.querySelector('.message__meta').textContent = time + ' • Vous';
+            article.querySelector('.claire-message__bubble').textContent = text;
+            article.querySelector('.claire-message__meta').textContent = time + ' • Vous';
             messages.appendChild(article);
             const loader = document.createElement('article');
-            loader.className = 'message';
-            loader.id = 'assistant-loader';
-            loader.setAttribute('data-role', 'assistant-loader');
-            loader.innerHTML = '<div class="message__bubble"><span class="typing-indicator" aria-hidden="true"><span class="typing-indicator__dot"></span><span class="typing-indicator__dot"></span><span class="typing-indicator__dot"></span></span></div>';
+            loader.className = 'claire-message';
+            loader.id = 'claire-assistant-loader';
+            loader.setAttribute('data-role', 'claire-assistant-loader');
+            loader.innerHTML = '<div class="claire-message__bubble"><span class="claire-typing-indicator" aria-hidden="true"><span class="claire-typing-indicator__dot"></span><span class="claire-typing-indicator__dot"></span><span class="claire-typing-indicator__dot"></span></span></div>';
             messages.appendChild(loader);
             scrollChatToBottom();
             if (scrollBtn) scrollBtn.style.display = 'none';
@@ -657,33 +671,38 @@
             if (!input) return;
             const form = input.closest('form');
             if (!form) return;
-            form.classList.toggle('chat-input__form--typing', input.value.trim() !== '');
+            form.classList.toggle(
+                'claire-chat-input__form--typing',
+                input.value.trim() !== ''
+            );
         }
 
-        window.clearInput = function clearInput(event) {
+        window.claireClearInput = function claireClearInput(event) {
             const detail = event.detail || {};
             if (!detail.successful) return;
             const form = detail.elt instanceof HTMLFormElement ? detail.elt : (event.target instanceof HTMLFormElement ? event.target : null);
             if (!form) return;
             form.reset();
-            $$('.chat-chip__remove').forEach(el => removeChatChip(el));
+            $$('.claire-chat-chip__remove').forEach(
+                (el) => window.claireRemoveChatChip(el)
+            );
             const input = form.querySelector('[name="message"]');
             autoResizeComposer(input);
             updateComposerToggleState(input);
         };
 
-        window.updatePersistentChatStream = function updatePersistentChatStream(threadId) {
-            const chatStreamContainer =$('#chatStream');
+        window.claireUpdatePersistentChatStream = function claireUpdatePersistentChatStream(threadId) {
+            const chatStreamContainer =$('#claire-chat-stream');
             const streamSessionId = window.claireStreamSessionId;
             if (!chatStreamContainer || !threadId || !streamSessionId) return;
             chatStreamContainer.setAttribute('data-thread-id', threadId);
             chatStreamContainer.setAttribute('data-stream-session-id', streamSessionId);
-            $('#thread-id-input').value = threadId;
-            $('#session-id-input').value = streamSessionId;
+            $('#claire-thread-id-input').value = threadId;
+            $('#claire-session-id-input').value = streamSessionId;
             void initChatEventSource(streamSessionId);
         };
 
-        window.handleLastExchangeResponse = function handleLastExchangeResponse(event) {
+        window.claireHandleLastExchangeResponse = function claireHandleLastExchangeResponse(event) {
             const detail = event.detail || {};
             if (!detail.successful) { setComposerBusyState(false); return; }
             scrollChatToBottom();
@@ -691,27 +710,27 @@
         };
 
         function $(sel, root=document) { return root.querySelector(sel); }
-        function chipSelectorById(id) { return '.chat-chip[data-file-id="' + CSS.escape(String(id)) + '"]' }
+        function chipSelectorById(id) { return '.claire-chat-chip[data-file-id="' + CSS.escape(String(id)) + '"]' }
 
         const containers = {
             chat: {
-                chips: $('#chatAttachedFilesChat'),
-                hidden: $('#chatAttachedFilesChatHidden'),
-                fileInput: $('#chat-upload'),
+                chips: $('#claire-chat-attached-files-chat'),
+                hidden: $('#claire-chat-attached-files-chat-hidden'),
+                fileInput: $('#claire-chat-upload'),
             },
             stream: {
-                chips: $('#chatAttachedFilesStream'),
-                hidden: $('#chatAttachedFilesStreamHidden'),
-                fileInput: $('#chat-upload-stream'),
+                chips: $('#claire-chat-attached-files-stream'),
+                hidden: $('#claire-chat-attached-files-stream-hidden'),
+                fileInput: $('#claire-chat-upload-stream'),
             }
         };
 
         function svgFileIcon() { return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h7l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13 2v6h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>'; }
-        function removeBtn() { return '<button type="button" class="chat-chip__remove" aria-label="Retirer" title="Retirer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>'; }
+        function removeBtn() { return '<button type="button" class="claire-chat-chip__remove" aria-label="Retirer" title="Retirer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>'; }
 
         function createIdChip(fileId, fileName) {
             const chip = document.createElement('span');
-            chip.className = 'chat-chip form_disabler';
+            chip.className = 'claire-chat-chip claire-form-disabler';
             chip.setAttribute('data-type', 'id');
             chip.setAttribute('data-file-id', String(fileId));
             chip.title = fileName || '';
@@ -722,7 +741,7 @@
 
         function createLocalChip(tmpKey, file) {
             const chip = document.createElement('span');
-            chip.className = 'chat-chip';
+            chip.className = 'claire-chat-chip';
             chip.setAttribute('data-type', 'local');
             chip.setAttribute('data-tmp-key', tmpKey);
             chip.title = file.name;
@@ -783,13 +802,13 @@
                 if (!fileInput.files || !fileInput.files.length) return;
                 for (const file of fileInput.files) {
                     const tmpKey = makeTmpKey(file);
-                    if (chips.querySelector('.chat-chip[data-type="local"][data-tmp-key="' + CSS.escape(tmpKey) + '"]')) continue;
+                    if (chips.querySelector('.claire-chat-chip[data-type="local"][data-tmp-key="' + CSS.escape(tmpKey) + '"]')) continue;
                     chips.appendChild(createLocalChip(tmpKey, file));
                 }
             });
         }
 
-        const messageInput = $('.chat-input__field');
+        const messageInput = $('.claire-chat-input__field');
         if (messageInput) {
             autoResizeComposer(messageInput);
             updateComposerToggleState(messageInput);
@@ -807,10 +826,10 @@
             });
         }
 
-        window.removeChatChip = function removeChatChip(e) {
-            const rem = e && e.closest ? e.closest('.chat-chip__remove') : null;
+        window.claireRemoveChatChip = function claireRemoveChatChip(e) {
+            const rem = e && e.closest ? e.closest('.claire-chat-chip__remove') : null;
             if (!rem) return;
-            const chip = rem.closest('.chat-chip');
+            const chip = rem.closest('.claire-chat-chip');
             if (!chip) return;
             const type = chip.getAttribute('data-type');
             if (type === 'id') {
@@ -830,17 +849,17 @@
                 for (const mode of Object.keys(containers)) {
                     const list = containers[mode].chips;
                     if (!list) continue;
-                    list.querySelectorAll('.chat-chip[data-type="local"][data-tmp-key="' + CSS.escape(tmpKey) + '"]').forEach(node => node.remove());
+                    list.querySelectorAll('.claire-chat-chip[data-type="local"][data-tmp-key="' + CSS.escape(tmpKey) + '"]').forEach(node => node.remove());
                 }
             }
         }
 
-        document.addEventListener('click', function (e) { window.removeChatChip(e.target); });
+        document.addEventListener('click', function (e) { window.claireRemoveChatChip(e.target); });
 
         // Scroll management
-        const chatBody = $('.chat-body');
-        const messages = document.getElementById('messages');
-        const scrollBtn = document.getElementById('scrollDownBtn');
+        const chatBody = $('.claire-chat-body');
+        const messages = document.getElementById('claire-messages');
+        const scrollBtn = document.getElementById('claire-scroll-down-btn');
         if (chatBody && scrollBtn) {
             const threshold = 24;
             function atBottomOf(el) { return el.scrollTop + el.clientHeight >= el.scrollHeight - threshold; }
@@ -865,7 +884,7 @@
             document.body.addEventListener('htmx:afterSwap', function (evt) {
                 const detail = evt.detail || {};
                 const target = detail.target;
-                if (target && (target.id === 'messages' || (target.closest && target.closest('#messages')))) {
+                if (target && (target.id === 'claire-messages' || (target.closest && target.closest('#claire-messages')))) {
                     updateButtonVisibility();
                 }
             });

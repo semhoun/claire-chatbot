@@ -43,170 +43,170 @@ css_inline: |
       background: linear-gradient(180deg, #ffffff 0%, var(--bg-main) 100%);
   }
   
-  .chat-panel::before {
+  .claire-chat-panel::before {
       background: none;
       opacity: 0;
       mix-blend-mode: normal;
   }
   
-  .chat-header {
+  .claire-chat-header {
       background: linear-gradient(180deg, #ffffff, #f9fbfe);
   }
   
-  .chat-header__avatar {
+  .claire-chat-header__avatar {
       border: 2px solid rgba(0, 0, 0, 0.06);
   }
   
-  .options-toggle {
+  .claire-options-toggle {
       background: var(--accent);
       color: var(--ink);
   }
   
-  .message--sent .message__bubble {
+  .claire-message--sent .claire-message__bubble {
       background: linear-gradient(135deg, var(--accent), var(--accent-light));
       color: var(--ink);
   }
   
-  .message--received .message__bubble {
+  .claire-message--received .claire-message__bubble {
       border: 1px solid var(--border);
   }
   
-  .chat-input__form:focus-within {
+  .claire-chat-input__form:focus-within {
       background: var(--bg-input);
   }
   
-  .chat-icon-btn {
+  .claire-chat-icon-btn {
       background: linear-gradient(135deg, var(--accent), var(--accent-light));
       color: #ffffff;
   }
   
-  .chat-icon-btn--upload {
+  .claire-chat-icon-btn--upload {
       background: #ffffff;
       color: var(--accent);
   }
   
-  .options-panel {
+  .claire-options-panel {
       background: var(--bg-panel-alt);
       border-left: 1px solid var(--border);
       scrollbar-color: var(--accent) rgba(0, 0, 0, 0.06);
   }
   
-  .options-panel .options-close {
+  .claire-options-panel .claire-options-close {
       background: #ffffff;
       color: var(--accent);
   }
    
   /* Scrollbars chat (thème clair) */
-  .chat-body::-webkit-scrollbar-track {
+  .claire-chat-body::-webkit-scrollbar-track {
       background: rgba(0, 0, 0, 0.06);
   }
   
-  .chat-body::-webkit-scrollbar-thumb {
+  .claire-chat-body::-webkit-scrollbar-thumb {
       background: linear-gradient(180deg, var(--accent), var(--accent-light));
   }
   
-  .chat-body::-webkit-scrollbar-thumb:hover {
+  .claire-chat-body::-webkit-scrollbar-thumb:hover {
       background: linear-gradient(180deg, var(--accent-light), #21b6ff);
   }
   
   /* Scrollbars options panel (thème clair) */
-  .options-panel::-webkit-scrollbar-track {
+  .claire-options-panel::-webkit-scrollbar-track {
       background: rgba(0, 0, 0, 0.06);
   }
   
-  .options-panel::-webkit-scrollbar-thumb {
+  .claire-options-panel::-webkit-scrollbar-thumb {
       background: linear-gradient(180deg, var(--accent), var(--accent-light));
   }
   
-  .options-panel::-webkit-scrollbar-thumb:hover {
+  .claire-options-panel::-webkit-scrollbar-thumb:hover {
       background: linear-gradient(180deg, var(--accent-light), #21b6ff);
   }
   
-  .options-panel__title {
+  .claire-options-panel__title {
       color: var(--text-secondary);
   }
   
-  .options-item {
+  .claire-options-item {
       background: #ffffff;
       border: 1px solid var(--border);
   }
   
-  .options-item:hover {
+  .claire-options-item:hover {
       background: var(--bg-panel-alt);
       border-color: var(--accent);
   }
   
-  .options-item__badge {
+  .claire-options-item__badge {
       background: var(--accent-soft);
       color: var(--accent);
   }
   
-  .option-item__button {
+  .claire-option-item__button {
       background: #ffffff;
       color: var(--text-primary);
   }
   
-  .option-item__button:hover {
+  .claire-option-item__button:hover {
       background: var(--bg-panel-alt);
       border-color: var(--accent);
       color: var(--accent);
   }
   
-  .modal-backdrop {
+  .claire-modal-backdrop {
       background: rgba(0, 0, 0, 0.35);
   }
   
-  .modal__container {
+  .claire-modal__container {
       background: var(--bg-panel-alt);
   }
   
-  .modal__close {
+  .claire-modal__close {
       background: #ffffff;
       color: var(--text-primary);
   }
   
-  .modal__close:hover {
+  .claire-modal__close:hover {
       background: var(--bg-panel-alt);
       border-color: var(--accent);
   }
   
-  .btn--secondary {
+  .claire-btn--secondary {
       background: #ffffff;
       color: var(--text-primary);
   }
   
-  .btn--secondary:hover {
+  .claire-btn--secondary:hover {
       background: var(--bg-panel-alt);
       border-color: var(--accent);
   }
   
-  .btn--primary {
+  .claire-btn--primary {
       background: linear-gradient(135deg, var(--accent), var(--accent-light));
       color: var(--ink);
   }
   
-  .modal[data-variant="danger"] .btn--primary {
+  .claire-modal[data-variant="danger"] .claire-btn--primary {
       background: linear-gradient(135deg, #ff3c3c, #b3003c, #7a003f);
   }
-  .file-upload__name {
+  .claire-file-upload__name {
       border: 1px solid rgba(255, 255, 255, 0.08);
   }
   
-  .dialog-panel {
+  .claire-dialog-panel {
       background: var(--background);
       border-color: var(--border);
       color: #111;
   }
   
-  .dialog-panel-btn:hover {
+  .claire-dialog-panel-btn:hover {
       border-color: var(--accent);
   }
   
-  .scroll-down-button  {
+  .claire-scroll-down-button  {
       background: var(--accent);
       color: var(--ink);
   }
-  .global-action-indicator__pill {
+  .claire-global-action-indicator__pill {
     display: inline-flex;
     align-items: center;
     gap: 10px;

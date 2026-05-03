@@ -1,7 +1,7 @@
 {% for tool in toolsCall %}
-    <div class="toolcall__text" id="tool.id">
+    <div class="claire-toolcall__text" id="claire-tool-{{ tool.id }}">
         {% if tool.running %}
-            <span class="tools-running-flag" style="display:none"></span>
+            <span class="claire-tools-running-flag" style="display:none"></span>
         {% endif %}
         Utilisation de l'outil : {{ tool.name }}<br>
         Paramètres : <br>
@@ -12,7 +12,7 @@
         </ul>
         Réponse : <br>
         {%if tool.result is not empty %}
-            <pre class="toolcall__result">{{ tool.result}}</pre>
+            <pre class="claire-toolcall__result">{{ tool.result}}</pre>
         {% endif %}
     </div>
 {% endfor %}

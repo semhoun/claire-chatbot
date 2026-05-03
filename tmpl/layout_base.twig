@@ -12,8 +12,14 @@
     <link rel="stylesheet" href="{{ base_url }}/css/style.css">
 
     <style>
+        .claire-app-base {
+            width: 100%;
+            min-height: 100vh;
+        }
+
         .welcome-page {
             position: relative;
+            width: 100%;
             min-height: 100vh;
             background: #000;
             background-image: url('{{ base_url }}/image/background.png');
@@ -21,7 +27,7 @@
             background-position: center;
             background-repeat: no-repeat;
         }
-        .panel {
+        .claire-panel {
             position: absolute;
             top: 50%;
             left: 50%;
@@ -34,23 +40,23 @@
             padding: 40px;
             box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
         }
-        .panel h1, .panel h2 {
+        .claire-panel h1, .claire-panel h2 {
             margin: 0 0 12px 0;
             font-size: clamp(24px, 4vw, 34px);
             font-weight: 800;
         }
-        .panel p {
+        .claire-panel p {
             margin: 0 0 24px 0;
             font-size: clamp(15px, 2.8vw, 19px);
             color: rgba(255, 255, 255, 0.92);
         }
-        .panel.is-centered {
+        .claire-panel.claire-is-centered {
             text-align: center;
         }
-        .panel.is-centered p {
+        .claire-panel.claire-is-centered p {
             margin: 0;
         }
-        .spinner {
+        .claire-spinner {
             width: 48px;
             height: 48px;
             border: 3px solid rgba(255, 255, 255, 0.2);
@@ -62,10 +68,10 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        .is-hidden {
+        .claire-is-hidden {
             display: none !important;
         }
-        .sso-btn {
+        .claire-sso-btn {
             text-decoration: none;
             display: inline-flex;
             align-items: center;
@@ -80,14 +86,14 @@
             box-shadow: 0 6px 18px rgba(13, 110, 253, 0.35);
             transition: transform .06s ease, box-shadow .2s ease, background-color .2s ease;
         }
-        .sso-btn:hover {
+        .claire-sso-btn:hover {
             background: rgba(11, 94, 215, 0.78);
             color: #fef3c7;
             transform: translateY(-1px);
             box-shadow: 0 10px 24px rgba(13, 110, 253, 0.45);
         }
         @media (max-width: 640px) {
-            .panel {
+            .claire-panel {
                 width: min(92vw, 520px);
                 padding: 26px;
             }
@@ -96,7 +102,7 @@
     {% block style %}{% endblock %}
 </head>
 <body>
-<div class="app">
+<div class="claire-app-base">
     <div class="welcome-page">
         {% block content %}{% endblock %}
     </div>

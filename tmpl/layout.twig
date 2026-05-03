@@ -21,16 +21,16 @@
     <link rel="stylesheet" href="{{ base_url }}/css/highlight.min.css">
     <script src="{{ base_url }}/js/highlight.min.js"></script>
 </head>
-<body class="{{ (layout_mode|default('full')) == 'compact' ? 'compact' : '' }}" data-base-url="{{ base_url }}" data-accepted-ext="{{ settings.get('files.upload.acceptedExt') }}">
-<div class="app">
+<body class="{{ (layout_mode|default('full')) == 'compact' ? 'claire-compact' : '' }}" data-base-url="{{ base_url }}" data-accepted-ext="{{ settings.get('files.upload.acceptedExt') }}">
+<div class="claire-app">
     {% block app %}{% endblock %}
 
     <!-- Backdrop pour le panneau d'options (fermeture au clic en dehors) -->
-    <div class="options-backdrop" id="optionsBackdrop" aria-hidden="true"></div>
+    <div class="claire-options-backdrop" id="claire-options-backdrop" aria-hidden="true"></div>
 
-    <aside class="options-panel" id="optionsPanel">
+    <aside class="claire-options-panel" id="claire-options-panel">
         <button
-                class="options-close"
+                class="claire-options-close"
                 type="button"
                 aria-label="Fermer le panneau d’options"
                 title="Fermer"
@@ -39,111 +39,111 @@
                 <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
             </svg>
         </button>
-        <div class="options-panel__section">
-            <span class="options-panel__title">Conversations</span>
+        <div class="claire-options-panel__section">
+            <span class="claire-options-panel__title">Conversations</span>
             <div
-                class="options-item"
+                class="claire-options-item"
                 role="button"
                 tabindex="0"
                 hx-post="{{ base_url }}/history/new"
                 hx-swap="none"
-                hx-indicator="#globalActionIndicator"
+                hx-indicator="#claire-global-action-indicator"
                 hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
                 hx-vals="js:{sessionId: window.claireStreamSessionId || ''}"
                 hx-on::after-request="
                      if (event.detail.successful) {
                          try {
                              const payload = JSON.parse(event.detail.xhr.responseText || '{}');
-                             if (payload.threadId && window.updatePersistentChatStream) {
-                                 window.updatePersistentChatStream(payload.threadId);
+                             if (payload.threadId && window.claireUpdatePersistentChatStream) {
+                                 window.claireUpdatePersistentChatStream(payload.threadId);
                              }
                          } catch (e) {}
                          // Ferme le panneau d'options
-                         const panel = document.getElementById('optionsPanel');
-                        const bd = document.getElementById('optionsBackdrop');
-                        const toggle = document.querySelector('.options-toggle');
-                        if (panel) panel.classList.remove('is-open');
-                        if (bd) bd.classList.remove('is-visible');
-                        if (toggle) toggle.classList.remove('is-active');
+                         const panel = document.getElementById('claire-options-panel');
+                        const bd = document.getElementById('claire-options-backdrop');
+                         const toggle = document.querySelector('.claire-options-toggle');
+                         if (panel) panel.classList.remove('claire-is-open');
+                         if (bd) bd.classList.remove('claire-is-visible');
+                         if (toggle) toggle.classList.remove('claire-is-active');
 
                         // Scroll en bas
-                        const chatBody = document.querySelector('.chat-body');
+                        const chatBody = document.querySelector('.claire-chat-body');
                         if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
 
                         // Rafraîchir le compteur
                         const countUrl = '{{ base_url }}/history/count';
-                        if (window.htmx) { htmx.ajax('GET', countUrl, {target: '#historyCountBadge', swap: 'innerHTML'}); }
+                        if (window.htmx) { htmx.ajax('GET', countUrl, {target: '#claire-history-count-badge', swap: 'innerHTML'}); }
                     }
                 "
             >
-                <span class="options-item__label">Nouvelle conversation</span>
+                <span class="claire-options-item__label">Nouvelle conversation</span>
             </div>
-            <div class="options-list">
+            <div class="claire-options-list">
                 <div
-                        class="options-item"
-                        id="historyToggle"
+                        class="claire-options-item"
+                        id="claire-history-toggle"
                         role="button"
                         tabindex="0"
                         aria-expanded="false"
-                        aria-controls="historyList"
+                        aria-controls="claire-history-list"
                 >
-                    <span class="options-item__label">Historique des conversations</span>
+                    <span class="claire-options-item__label">Historique des conversations</span>
                     <span
-                            class="options-item__badge"
-                            id="historyCountBadge"
+                            class="claire-options-item__badge"
+                            id="claire-history-count-badge"
                             hx-get="{{ base_url }}/history/count"
                             hx-swap="innerHTML"
                     >0</span>
                 </div>
-                <div id="historyList" class="options-subpanel" aria-live="polite" style="margin: 0 16px 8px;"></div>
+                <div id="claire-history-list" class="claire-options-subpanel" aria-live="polite" style="margin: 0 16px 8px;"></div>
             </div>
         </div>
 
-        <div class="options-panel__section">
-            <span class="options-panel__title">Données</span>
-            <div class="options-list">
+        <div class="claire-options-panel__section">
+            <span class="claire-options-panel__title">Données</span>
+            <div class="claire-options-list">
                 <div
-                        class="options-item"
-                        id="filesToggle"
+                        class="claire-options-item"
+                        id="claire-files-toggle"
                         role="button"
                         tabindex="0"
                         aria-expanded="false"
-                        aria-controls="filesList"
+                        aria-controls="claire-files-list"
                 >
-                    <span class="options-item__label">Fichiers</span>
+                    <span class="claire-options-item__label">Fichiers</span>
                     <span
-                            class="options-item__badge"
-                            id="filesCountBadge"
+                            class="claire-options-item__badge"
+                            id="claire-files-count-badge"
                             hx-get="{{ base_url }}/files/count"
                             hx-swap="innerHTML"
                     >0</span>
                 </div>
-                <div id="filesList" class="options-subpanel files-root" aria-live="polite" style="margin: 0 16px 8px;"></div>
+                <div id="claire-files-list" class="claire-options-subpanel claire-files-root" aria-live="polite" style="margin: 0 16px 8px;"></div>
             </div>
 
-            <div class="options-list">
+            <div class="claire-options-list">
                 <div
-                        class="options-item"
-                        id="ragToggle"
+                        class="claire-options-item"
+                        id="claire-rag-toggle"
                         role="button"
                         tabindex="0"
                         aria-expanded="false"
-                        aria-controls="ragPanel"
+                        aria-controls="claire-rag-panel"
                         data-open-upload-dialog
                         data-upload-context="rag"
                 >
-                    <span class="options-item__label">Documents RAG</span>
+                    <span class="claire-options-item__label">Documents RAG</span>
                 </div>
             </div>
         </div>
 
-        <div class="options-panel__section">
-            <span class="options-panel__title">Préférences</span>
-            <div class="options-list">
-                <div class="options-item">
-                    <label for="brainSelector" class="options-item__label brain-selector" style="cursor: pointer;">Assistant</label>
-                    <span class="options-item__badge brain-selector">
-                        <select id="brainSelector" name="brain">
+        <div class="claire-options-panel__section">
+            <span class="claire-options-panel__title">Préférences</span>
+            <div class="claire-options-list">
+                <div class="claire-options-item">
+                    <label for="claire-brain-selector" class="claire-options-item__label claire-brain-selector" style="cursor: pointer;">Assistant</label>
+                    <span class="claire-options-item__badge claire-brain-selector">
+                        <select id="claire-brain-selector" name="brain">
                             {% for b in brains|default([]) %}
                                 <option value="{{ b.slug }}" {{ (current_brain|default('claire')) == b.slug ? 'selected' : '' }}>
                                     {{ b.name }}
@@ -153,10 +153,10 @@
                     </span>
                 </div>
                 {% if comfyui_enabled and comfyui_workflows is not empty %}
-                    <div class="options-item">
-                        <label for="comfyuiWorkflowSelector" class="options-item__label" style="cursor: pointer;">Workflow ComfyUI</label>
-                        <span class="options-item__badge brain-selector">
-                            <select id="comfyuiWorkflowSelector" name="comfyui_workflow">
+                    <div class="claire-options-item">
+                        <label for="claire-comfyui-workflow-selector" class="claire-options-item__label" style="cursor: pointer;">Workflow ComfyUI</label>
+                        <span class="claire-options-item__badge claire-brain-selector">
+                            <select id="claire-comfyui-workflow-selector" name="comfyui_workflow">
                                 {% for workflow in comfyui_workflows %}
                                     <option value="{{ workflow.slug }}" {{ current_comfyui_workflow == workflow.slug ? 'selected' : '' }}>
                                         {{ workflow.label }}
@@ -167,13 +167,13 @@
                     </div>
                 {% endif %}
                 <div
-                        class="options-item"
-                        id="toggleLayoutMode"
+                        class="claire-options-item"
+                        id="claire-toggle-layout-mode"
                         data-layout-toggle
                         data-layout-mode="{{ layout_mode|default('full') }}"
                 >
-                    <span class="options-item__label">Mode largeur</span>
-                    <span class="options-item__badge" data-layout-badge>
+                    <span class="claire-options-item__label">Mode largeur</span>
+                    <span class="claire-options-item__badge" data-layout-badge>
                         {{ (layout_mode|default('full')) == 'compact' ? 'Largeur 800px' : 'Plein écran' }}
                     </span>
                 </div>
@@ -181,25 +181,25 @@
         </div>
 
         {% if (uinfo is defined) and (uinfo.id != 'default') %}
-            <div class="options-panel__section">
-                <span class="options-panel__title">Compte</span>
-                <div class="options-list">
-                    <div class="options-item" aria-current="true">
-                        <span class="options-item__label">{{ uinfo.displayName }}</span>
+            <div class="claire-options-panel__section">
+                <span class="claire-options-panel__title">Compte</span>
+                <div class="claire-options-list">
+                    <div class="claire-options-item" aria-current="true">
+                        <span class="claire-options-item__label">{{ uinfo.displayName }}</span>
                     </div>
                     <div
-                        class="options-item"
+                        class="claire-options-item"
                         role="button"
                         tabindex="0"
                         hx-get="{{ base_url }}/config/telegram_form"
-                        hx-target="#modalBody"
+                        hx-target="#claire-modal-body"
                         hx-swap="innerHTML"
                         hx-on::after-request="
-                            document.getElementById('modalTitle').textContent = 'Configuration Telegram';
-                            const confirmBtn = document.getElementById('modalConfirm');
-                            const cancelBtn = document.getElementById('modalCancel');
+                            document.getElementById('claire-modal-title').textContent = 'Configuration Telegram';
+                            const confirmBtn = document.getElementById('claire-modal-confirm');
+                            const cancelBtn = document.getElementById('claire-modal-cancel');
                             confirmBtn.textContent = 'Enregistrer';
-                            const form = document.getElementById('telegram-config-form');
+                            const form = document.getElementById('claire-telegram-config-form');
                             confirmBtn.disabled = false;
                             confirmBtn.onclick = function(e) {
                                 e.preventDefault();
@@ -213,7 +213,7 @@
                                     values[key] = value;
                                 }
                                 window.htmx.ajax('POST', form.getAttribute('hx-post'), {
-                                    target: '#modalBody',
+                                    target: '#claire-modal-body',
                                     swap: 'innerHTML',
                                     values: values
                                 });
@@ -221,29 +221,29 @@
                             };
                             cancelBtn.onclick = function() {
                                 confirmBtn.blur();
-                                document.getElementById('modalRoot').classList.remove('is-open');
-                                document.getElementById('modalBackdrop').classList.remove('is-visible');
-                                document.body.classList.remove('modal-open');
-                                document.getElementById('modalRoot').setAttribute('aria-hidden', 'true');
+                                 document.getElementById('claire-modal-root').classList.remove('claire-is-open');
+                                 document.getElementById('claire-modal-backdrop').classList.remove('claire-is-visible');
+                                 document.body.classList.remove('claire-modal-open');
+                                document.getElementById('claire-modal-root').setAttribute('aria-hidden', 'true');
                                 confirmBtn.onclick = null;
                             };
-                            document.getElementById('modalBackdrop').classList.add('is-visible');
-                            document.getElementById('modalRoot').classList.add('is-open');
-                            document.getElementById('modalRoot').setAttribute('aria-hidden', 'false');
-                            document.getElementById('modalRoot').setAttribute('aria-autoclose', 'false');
-                            document.body.classList.add('modal-open');
+                            document.getElementById('claire-modal-backdrop').classList.add('claire-is-visible');
+                            document.getElementById('claire-modal-root').classList.add('claire-is-open');
+                            document.getElementById('claire-modal-root').setAttribute('aria-hidden', 'false');
+                            document.getElementById('claire-modal-root').setAttribute('aria-autoclose', 'false');
+                            document.body.classList.add('claire-modal-open');
                         "
                     >
-                        <span class="options-item__label">Configuration Telegram</span>
+                        <span class="claire-options-item__label">Configuration Telegram</span>
                     </div>
                      <div
-                             class="options-item"
+                             class="claire-options-item"
                              role="button"
                              tabindex="0"
-                             hx-on:click="if (window.ClaireSession && typeof window.ClaireSession.clearSession === 'function') { window.ClaireSession.clearSession(); } sessionStorage.clear(); window.location='{{ base_url }}/logout'"
+                              hx-on:click="if (window.claireSession && typeof window.claireSession.clearSession === 'function') { window.claireSession.clearSession(); } sessionStorage.clear(); window.location='{{ base_url }}/logout'"
                              hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
                      >
-                         <span class="options-item__label">Se déconnecter</span>
+                         <span class="claire-options-item__label">Se déconnecter</span>
                      </div>
                 </div>
             </div>
@@ -251,25 +251,25 @@
     </aside>
 
     {# Global reusable modal dialog #}
-    <div id="modalBackdrop" class="modal-backdrop" aria-hidden="true"></div>
-    <div id="modalRoot" class="modal" role="dialog" aria-modal="true" aria-autoclose="true" aria-hidden="true" aria-labelledby="modalTitle" aria-describedby="modalBody" data-variant="default">
-        <div class="modal__container">
-            <div class="modal__header">
-                <h2 id="modalTitle" class="modal__title">Confirmation</h2>
-                <button id="modalClose" class="modal__close" type="button" aria-label="Fermer la boîte de dialogue" title="Fermer">
+    <div id="claire-modal-backdrop" class="claire-modal-backdrop" aria-hidden="true"></div>
+    <div id="claire-modal-root" class="claire-modal" role="dialog" aria-modal="true" aria-autoclose="true" aria-hidden="true" aria-labelledby="claire-modal-title" aria-describedby="claire-modal-body" data-variant="default">
+        <div class="claire-modal__container">
+            <div class="claire-modal__header">
+                <h2 id="claire-modal-title" class="claire-modal__title">Confirmation</h2>
+                <button id="claire-modal-close" class="claire-modal__close" type="button" aria-label="Fermer la boîte de dialogue" title="Fermer">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
                 </button>
             </div>
-            <div id="modalBody" class="modal__body">Êtes-vous sûr ?</div>
-            <div class="modal__footer">
-                <button id="modalCancel" class="btn btn--secondary" type="button">Annuler</button>
-                <button id="modalConfirm" class="btn btn--primary" type="button">Confirmer</button>
+            <div id="claire-modal-body" class="claire-modal__body">Êtes-vous sûr ?</div>
+            <div class="claire-modal__footer">
+                <button id="claire-modal-cancel" class="claire-btn claire-btn--secondary" type="button">Annuler</button>
+                <button id="claire-modal-confirm" class="claire-btn claire-btn--primary" type="button">Confirmer</button>
             </div>
         </div>
     </div>
-    <div id="globalActionIndicator" class="global-action-indicator htmx-indicator" role="status" aria-live="polite" aria-atomic="true">
-        <div class="global-action-indicator__pill">
-            <span class="global-action-indicator__spinner" aria-hidden="true"></span>
+    <div id="claire-global-action-indicator" class="claire-global-action-indicator htmx-indicator" role="status" aria-live="polite" aria-atomic="true">
+        <div class="claire-global-action-indicator__pill">
+            <span class="claire-global-action-indicator__spinner" aria-hidden="true"></span>
             <span>Action en cours...</span>
         </div>
     </div>
@@ -284,7 +284,7 @@
 <script src="{{ base_url }}/js/session.js"></script>
 {% block script %}{% endblock %}
 <!-- Global fixed tooltip banner (bottom of the page) -->
-<div id="historyTooltipBanner" role="status" aria-live="polite" aria-hidden="true"></div>
+<div id="claire-history-tooltip-banner" role="status" aria-live="polite" aria-hidden="true"></div>
 <script src="{{ base_url }}/js/app.js"></script>
 <script src="{{ base_url }}/js/dialog.js"></script>
 </body>

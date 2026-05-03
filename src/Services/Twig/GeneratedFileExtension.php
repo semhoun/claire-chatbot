@@ -52,17 +52,17 @@ class GeneratedFileExtension extends AbstractExtension
 
             if ($prefix !== '') {
                 if ($file->fileType() === File::FILE_TYPE_IMAGE) {
-                    return $prefix . '"' . self::IMAGE_PLACEHOLDER_DATA_URI . '" data-protected-src="' . $fileUrl . '" class="generated-image"' . $suffix;
+                    return $prefix . '"' . self::IMAGE_PLACEHOLDER_DATA_URI . '" data-protected-src="' . $fileUrl . '" class="claire-generated-image"' . $suffix;
                 }
 
-                return $prefix . '"' . $fileUrl . '"  class="generated-file"' . $suffix;
+                return $prefix . '"' . $fileUrl . '"  class="claire-generated-file"' . $suffix;
             }
 
             if ($file->fileType() === File::FILE_TYPE_IMAGE) {
-                return '<img data-protected-src="' . $fileUrl . '" src="' . self::IMAGE_PLACEHOLDER_DATA_URI . '" alt="Generated image" class="generated-image">';
+                return '<img data-protected-src="' . $fileUrl . '" src="' . self::IMAGE_PLACEHOLDER_DATA_URI . '" alt="Generated image" class="claire-generated-image">';
             }
 
-            return '<a href="' . $fileUrl . '" class="generated-file" target="_blank">' . $file->getFilename() . '</a>';
+            return '<a href="' . $fileUrl . '" class="claire-generated-file" target="_blank">' . $file->getFilename() . '</a>';
         }, $content);
     }
 
@@ -71,7 +71,7 @@ class GeneratedFileExtension extends AbstractExtension
         return preg_replace_callback(File::GENERATED_FILE_PATTERN, static function (array $matches): string {
             $prefix = $matches[1] ?? '';
             if ($prefix === '' || str_starts_with($prefix, '<img')) {
-                return '<span class="generated-image-placeholder" aria-label="Image géneré">&#128247;</span>';
+                return '<span class="claire-generated-image-placeholder" aria-label="Image géneré">&#128247;</span>';
             }
 
             return $matches[0];

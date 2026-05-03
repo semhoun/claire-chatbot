@@ -5,7 +5,7 @@ css_inline: |
     --accent: #FF6B35;
     --accent-light: #FF8C42;
   }
-  .message--sent .message__bubble {
+  .claire-message--sent .claire-message__bubble {
     background: linear-gradient(135deg, var(--accent), var(--accent-light));
   }
 welcomes:

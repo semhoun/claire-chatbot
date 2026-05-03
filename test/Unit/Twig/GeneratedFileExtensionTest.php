@@ -48,7 +48,7 @@ final class GeneratedFileExtensionTest extends TestCase
         $result = $this->extension->processGeneratedFiles($content);
 
         $this->assertStringContainsString('http://localhost/files/serve/uuid-123', $result);
-        $this->assertStringContainsString('class="generated-image"', $result);
+        $this->assertStringContainsString('class="claire-generated-image"', $result);
         $this->assertStringNotContainsString('@@GENERATED@@', $result);
     }
 
@@ -69,7 +69,7 @@ final class GeneratedFileExtensionTest extends TestCase
         $result = $this->extension->processGeneratedFiles($content);
 
         $this->assertStringContainsString('http://localhost/files/serve/uuid-456', $result);
-        $this->assertStringContainsString('class="generated-file"', $result);
+        $this->assertStringContainsString('class="claire-generated-file"', $result);
         $this->assertStringNotContainsString('@@GENERATED@@', $result);
     }
 
@@ -86,7 +86,7 @@ final class GeneratedFileExtensionTest extends TestCase
         // Regex : "/(['\"]?@@GENERATED@@[a-zA-Z0-9_@\-.]+@@['\"]?)/"
         // Groupe 1 est tout le placeholder.
         
-        $this->assertStringContainsString('generated-image-placeholder', $result);
+        $this->assertStringContainsString('claire-generated-image-placeholder', $result);
     }
 
     public function testProcessGeneratedFilesPlaceholderWithImageId(): void
@@ -94,7 +94,7 @@ final class GeneratedFileExtensionTest extends TestCase
         $content = 'Here is an image: @@GENERATED@@user123@abc-def.png@@';
         $result = $this->extension->processGeneratedFilesPlaceholder($content);
 
-        $this->assertStringContainsString('generated-image-placeholder', $result);
+        $this->assertStringContainsString('claire-generated-image-placeholder', $result);
     }
 
     public function testExtractGeneratedFilesReturnsAllMatches(): void
@@ -169,8 +169,8 @@ final class GeneratedFileExtensionTest extends TestCase
         $this->assertStringContainsString('http://localhost/files/serve/uuid-2', $result);
         $this->assertStringContainsString('http://localhost/files/serve/uuid-3', $result);
         $this->assertStringNotContainsString('@@GENERATED@@', $result);
-        $this->assertStringContainsString('class="generated-image"', $result);
-        $this->assertStringContainsString('class="generated-file"', $result);
+        $this->assertStringContainsString('class="claire-generated-image"', $result);
+        $this->assertStringContainsString('class="claire-generated-file"', $result);
     }
 
     public function testProcessGeneratedFilesInsideHrefWithoutQuotes(): void
@@ -193,7 +193,7 @@ final class GeneratedFileExtensionTest extends TestCase
         // ou au moins <a href=http://localhost/files/serve/uuid-pdf>Download</a>
         // MAIS SURTOUT PAS <a href=<a href="...">...</a>>
         $this->assertStringContainsString('href="http://localhost/files/serve/uuid-pdf"', $result);
-        $this->assertStringContainsString('class="generated-file"', $result);
+        $this->assertStringContainsString('class="claire-generated-file"', $result);
     }
 
     public function testProcessGeneratedFilesInsideSrcWithoutQuotes(): void
@@ -212,6 +212,6 @@ final class GeneratedFileExtensionTest extends TestCase
         $result = $this->extension->processGeneratedFiles($content);
 
         $this->assertStringContainsString('src="http://localhost/files/serve/uuid-img"', $result);
-        $this->assertStringContainsString('class="generated-image"', $result);
+        $this->assertStringContainsString('class="claire-generated-image"', $result);
     }
 }

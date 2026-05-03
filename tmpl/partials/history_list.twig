@@ -1,54 +1,54 @@
-<div class="option-list">
-<div class="option-list">
+<div class="claire-option-list">
+<div class="claire-option-list">
     {% if histories is empty %}
-        <div class="option-list__empty">
-            <svg class="option-list__empty-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <div class="claire-option-list__empty">
+            <svg class="claire-option-list__empty-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M4 5h16v14H4z" fill="none" stroke="currentColor" stroke-width="1.5"/>
                 <path d="M7 9h10M7 12h7M7 15h5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
-            <div class="option-list__empty-text">Aucune conversation pour le moment</div>
-            <div class="option-list__empty-help">Envoyez un message pour créer une nouvelle conversation.</div>
+            <div class="claire-option-list__empty-text">Aucune conversation pour le moment</div>
+            <div class="claire-option-list__empty-help">Envoyez un message pour créer une nouvelle conversation.</div>
         </div>
     {% else %}
-        <ul class="option-list__items">
+        <ul class="claire-option-list__items">
             {% for h in histories %}
-                <li class="option-item history-item">
-                    <div class="option-item__icon" aria-hidden="true">
+                <li class="claire-option-item claire-history-item">
+                    <div class="claire-option-item__icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24">
                             <path d="M4 5h16v12H7l-3 3V5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
                         </svg>
                     </div>
-                    <div class="option-item__content history-item__content"{% if h.summary is defined and h.summary %} data-tooltip="{{ h.summary }}"{% endif %}>
-                        <div class="option-item__title"{% if h.summary is defined and h.summary %} aria-label="{{ h.summary }}"{% endif %}>{{ h.title ?: 'Conversation' }}</div>
+                    <div class="claire-option-item__content claire-history-item__content"{% if h.summary is defined and h.summary %} data-tooltip="{{ h.summary }}"{% endif %}>
+                        <div class="claire-option-item__title"{% if h.summary is defined and h.summary %} aria-label="{{ h.summary }}"{% endif %}>{{ h.title ?: 'Conversation' }}</div>
                         {% if h.updatedAt is defined %}
-                            <div class="option-item__meta">Modifiée le {{ h.updatedAt|date('d/m/Y \à H:i') }}</div>
+                            <div class="claire-option-item__meta">Modifiée le {{ h.updatedAt|date('d/m/Y \à H:i') }}</div>
                         {% endif %}
                     </div>
-                    <div class="option-item__actions">
-                        <button class="option-item__button"
+                    <div class="claire-option-item__actions">
+                        <button class="claire-option-item__button"
                                 type="button"
                                 aria-label="Afficher la conversation"
                                 title="Afficher la conversation"
                                 hx-get="{{ base_url }}/history/open/{{ h.threadId }}"
                                 hx-swap="none"
-                                hx-indicator="#globalActionIndicator"
+                                hx-indicator="#claire-global-action-indicator"
                                 hx-vals="js:{sessionId: window.claireStreamSessionId || ''}"
-                                hx-on:click="(function(){var b=document.getElementById('historyTooltipBanner');if(b){b.classList.remove('is-visible');b.setAttribute('aria-hidden','true');}})()"
-                                hx-on::after-request="if (event.detail.successful) { try { const payload = JSON.parse(event.detail.xhr.responseText || '{}'); if (payload.threadId && window.updatePersistentChatStream) { window.updatePersistentChatStream(payload.threadId); } } catch (e) {} const btn = document.getElementById('historyToggle'); const panel = document.getElementById('historyList'); if (btn) btn.setAttribute('aria-expanded','false'); if (panel) panel.innerHTML=''; const chatBody = document.querySelector('.chat-body'); if (chatBody) chatBody.scrollTop = chatBody.scrollHeight; const optionsPanelEl = document.getElementById('optionsPanel'); const optionsBackdropEl = document.getElementById('optionsBackdrop'); const optionsToggleEl = document.querySelector('.options-toggle'); if (optionsPanelEl) optionsPanelEl.classList.remove('is-open'); if (optionsBackdropEl) optionsBackdropEl.classList.remove('is-visible'); if (optionsToggleEl) { optionsToggleEl.classList.remove('is-active'); optionsToggleEl.setAttribute('aria-expanded','false'); } const banner = document.getElementById('historyTooltipBanner'); if (banner) { banner.classList.remove('is-visible'); banner.setAttribute('aria-hidden','true'); } }"
+                                hx-on:click="(function(){var b=document.getElementById('claire-history-tooltip-banner');if(b){b.classList.remove('claire-is-visible');b.setAttribute('aria-hidden','true');}})()"
+                                hx-on::after-request="if (event.detail.successful) { try { const payload = JSON.parse(event.detail.xhr.responseText || '{}'); if (payload.threadId && window.claireUpdatePersistentChatStream) { window.claireUpdatePersistentChatStream(payload.threadId); } } catch (e) {} const btn = document.getElementById('claire-history-toggle'); const panel = document.getElementById('claire-history-list'); if (btn) btn.setAttribute('aria-expanded','false'); if (panel) panel.innerHTML=''; const chatBody = document.querySelector('.claire-chat-body'); if (chatBody) chatBody.scrollTop = chatBody.scrollHeight; const optionsPanelEl = document.getElementById('claire-options-panel'); const optionsBackdropEl = document.getElementById('claire-options-backdrop'); const optionsToggleEl = document.querySelector('.claire-options-toggle'); if (optionsPanelEl) optionsPanelEl.classList.remove('claire-is-open'); if (optionsBackdropEl) optionsBackdropEl.classList.remove('claire-is-visible'); if (optionsToggleEl) { optionsToggleEl.classList.remove('claire-is-active'); optionsToggleEl.setAttribute('aria-expanded','false'); } const banner = document.getElementById('claire-history-tooltip-banner'); if (banner) { banner.classList.remove('claire-is-visible'); banner.setAttribute('aria-hidden','true'); } }"
                         >
                             <svg viewBox="0 0 24 24" aria-hidden="true">
                                 <path d="M12 8c-5 0-11 6-11 6s6 6 11 6 11-6 11-6-6-6-11-6zm0 10c-2.2 0-4-1.8-4-4s1.8-4 4-4 4 1.8 4 4-1.8 4-4 4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
                                 <circle cx="12" cy="14" r="2" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
                             </svg>
                         </button>
-                        <button class="option-item__button history-item__delete"
+                        <button class="claire-option-item__button claire-history-item__delete"
                                 type="button"
                                 aria-label="Supprimer cette conversation"
                                 title="Supprimer"
                                 hx-delete="{{ base_url }}/history/delete/{{ h.threadId }}"
                                 hx-target="closest li"
                                 hx-swap="outerHTML"
-                                hx-indicator="#globalActionIndicator"
+                                hx-indicator="#claire-global-action-indicator"
                                 data-dialog-confirm="Supprimer cette conversation ? Cette action est irréversible."
                                 data-dialog-title="Confirmer la suppression"
                                 data-dialog-variant="danger"

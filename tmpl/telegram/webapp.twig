@@ -36,14 +36,14 @@
         }
 
         /* Floating Header */
-        .header {
+        .claire-header {
             text-align: center;
             margin-bottom: 20px;
             padding: 10px;
             position: relative;
         }
 
-        .header-close {
+        .claire-header-close {
             position: absolute;
             top: 0;
             left: 0;
@@ -62,12 +62,12 @@
             z-index: 10;
         }
 
-        .header-close:active {
+        .claire-header-close:active {
             transform: scale(0.9);
             background: rgba(255, 255, 255, 0.3);
         }
 
-        .user-avatar {
+        .claire-user-avatar {
             width: 160px;
             height: 160px;
             border-radius: 50%;
@@ -83,17 +83,17 @@
             transition: transform 0.3s ease;
         }
 
-        .user-avatar:active {
+        .claire-user-avatar:active {
             transform: scale(0.95);
         }
 
-        .user-avatar img {
+        .claire-user-avatar img {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
 
-        .header-title {
+        .claire-header-title {
             font-size: 28px;
             font-weight: 700;
             margin-bottom: 8px;
@@ -101,13 +101,13 @@
             text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
         }
 
-        .header-subtitle {
+        .claire-header-subtitle {
             font-size: 14px;
             color: var(--text-secondary);
             font-weight: 400;
         }
 
-        .user-avatar {
+        .claire-user-avatar {
             width: 60px;
             height: 60px;
             border-radius: 50%;
@@ -123,31 +123,31 @@
             transition: transform 0.3s ease;
         }
 
-        .user-avatar:active {
+        .claire-user-avatar:active {
             transform: scale(0.95);
         }
 
-        .user-avatar img {
+        .claire-user-avatar img {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
 
-        .header-title {
+        .claire-header-title {
             font-size: 20px;
             font-weight: 700;
             margin-bottom: 3px;
             text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
         }
 
-        .header-subtitle {
+        .claire-header-subtitle {
             font-size: 12px;
             color: var(--text-secondary);
             font-weight: 400;
         }
 
         /* Glass Cards */
-        .glass-card {
+        .claire-glass-card {
             background: var(--glass-bg);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
@@ -159,12 +159,12 @@
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
-        .glass-card:active {
+        .claire-glass-card:active {
             transform: translateY(2px);
             box-shadow: 0 4px 16px 0 rgba(31, 38, 135, 0.2);
         }
 
-        .card-title {
+        .claire-card-title {
             font-size: 12px;
             text-transform: uppercase;
             letter-spacing: 1.5px;
@@ -174,7 +174,7 @@
         }
 
         /* Selection Items */
-        .selection-item {
+        .claire-selection-item {
             display: flex;
             align-items: center;
             padding: 15px;
@@ -186,22 +186,22 @@
             border: 1px solid transparent;
         }
 
-        .selection-item:last-child {
+        .claire-selection-item:last-child {
             margin-bottom: 0;
         }
 
-        .selection-item:hover {
+        .claire-selection-item:hover {
             background: rgba(255, 255, 255, 0.2);
             border-color: rgba(255, 255, 255, 0.3);
         }
 
-        .selection-item.active {
+        .claire-selection-item.claire-active {
             background: rgba(255, 255, 255, 0.25);
             border-color: var(--accent);
             box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
         }
 
-        .selection-avatar {
+        .claire-selection-avatar {
             width: 50px;
             height: 50px;
             border-radius: 12px;
@@ -215,28 +215,28 @@
             overflow: hidden;
         }
 
-        .selection-avatar img {
+        .claire-selection-avatar img {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
 
-        .selection-info {
+        .claire-selection-info {
             flex: 1;
         }
 
-        .selection-name {
+        .claire-selection-name {
             font-size: 16px;
             font-weight: 600;
             margin-bottom: 3px;
         }
 
-        .selection-desc {
+        .claire-selection-desc {
             font-size: 12px;
             color: var(--text-secondary);
         }
 
-        .selection-check {
+        .claire-selection-check {
             width: 24px;
             height: 24px;
             border-radius: 50%;
@@ -249,19 +249,19 @@
             font-weight: bold;
         }
 
-        .selection-item.active .selection-check {
+        .claire-selection-item.claire-active .claire-selection-check {
             display: flex;
         }
 
         /* Action Buttons */
-        .action-grid {
+        .claire-action-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 12px;
             margin-top: 20px;
         }
 
-        .action-btn {
+        .claire-action-btn {
             padding: 16px 20px;
             border-radius: 16px;
             border: none;
@@ -275,23 +275,23 @@
             gap: 8px;
         }
 
-        .action-btn:active {
+        .claire-action-btn:active {
             transform: scale(0.96);
         }
 
-        .btn-primary {
+        .claire-btn-primary {
             background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
             color: white;
             box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
         }
 
-        .btn-secondary {
+        .claire-btn-secondary {
             background: rgba(255, 255, 255, 0.2);
             color: white;
             border: 1px solid rgba(255, 255, 255, 0.3);
         }
 
-        .btn-danger {
+        .claire-btn-danger {
             background: rgba(255, 71, 87, 0.2);
             color: var(--danger);
             border: 1px solid rgba(255, 71, 87, 0.3);
@@ -299,7 +299,7 @@
         }
 
         /* Modal */
-        .modal-overlay {
+        .claire-modal-overlay {
             position: fixed;
             top: 0;
             left: 0;
@@ -315,12 +315,12 @@
             transition: opacity 0.3s ease;
         }
 
-        .modal-overlay.active {
+        .claire-modal-overlay.claire-active {
             display: flex;
             opacity: 1;
         }
 
-        .modal-content {
+        .claire-modal-content {
             background: linear-gradient(180deg, #2d2d3a 0%, #1a1a2e 100%);
             width: 100%;
             max-height: 80vh;
@@ -330,23 +330,23 @@
             transition: transform 0.3s ease;
         }
 
-        .modal-overlay.active .modal-content {
+        .claire-modal-overlay.claire-active .claire-modal-content {
             transform: translateY(0);
         }
 
-        .modal-header {
+        .claire-modal-header {
             padding: 20px;
             text-align: center;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             position: relative;
         }
 
-        .modal-title {
+        .claire-modal-title {
             font-size: 18px;
             font-weight: 600;
         }
 
-        .modal-close {
+        .claire-modal-close {
             position: absolute;
             right: 20px;
             top: 50%;
@@ -364,13 +364,13 @@
             justify-content: center;
         }
 
-        .modal-body {
+        .claire-modal-body {
             padding: 10px 20px 30px;
             max-height: 60vh;
             overflow-y: auto;
         }
 
-        .option-item {
+        .claire-option-item {
             display: flex;
             align-items: center;
             padding: 15px;
@@ -380,15 +380,15 @@
             margin-bottom: 8px;
         }
 
-        .option-item:hover {
+        .claire-option-item:hover {
             background: rgba(255, 255, 255, 0.05);
         }
 
-        .option-item.selected {
+        .claire-option-item.claire-selected {
             background: rgba(102, 126, 234, 0.3);
         }
 
-        .option-avatar {
+        .claire-option-avatar {
             width: 40px;
             height: 40px;
             border-radius: 10px;
@@ -402,18 +402,18 @@
             flex-shrink: 0;
         }
 
-        .option-avatar img {
+        .claire-option-avatar img {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
 
-        .option-label {
+        .claire-option-label {
             flex: 1;
             font-size: 15px;
         }
 
-        .option-check {
+        .claire-option-check {
             width: 22px;
             height: 22px;
             border-radius: 50%;
@@ -424,13 +424,13 @@
             font-size: 12px;
         }
 
-        .option-item.selected .option-check {
+        .claire-option-item.claire-selected .claire-option-check {
             background: var(--success);
             border-color: var(--success);
         }
 
         /* Toast */
-        .toast {
+        .claire-toast {
             position: fixed;
             top: 20px;
             left: 50%;
@@ -447,13 +447,13 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        .toast.show {
+        .claire-toast.claire-show {
             transform: translateX(-50%) translateY(0);
             opacity: 1;
         }
 
         /* Loading */
-        .loading-overlay {
+        .claire-loading-overlay {
             position: fixed;
             top: 0;
             left: 0;
@@ -468,12 +468,12 @@
             transition: opacity 0.3s ease;
         }
 
-        .loading-overlay.hidden {
+        .claire-loading-overlay.hidden {
             opacity: 0;
             pointer-events: none;
         }
 
-        .loader {
+        .claire-loader {
             width: 50px;
             height: 50px;
             border: 3px solid rgba(255, 255, 255, 0.3);
@@ -486,7 +486,7 @@
             to { transform: rotate(360deg); }
         }
 
-        .loading-text {
+        .claire-loading-text {
             margin-top: 20px;
             font-size: 16px;
             color: var(--text-secondary);
@@ -500,66 +500,66 @@
 </head>
 <body>
     <!-- Loading -->
-    <div id="loadingOverlay" class="loading-overlay">
-        <div class="loader"></div>
-        <div class="loading-text">Chargement...</div>
+    <div id="claire-loading-overlay" class="claire-loading-overlay">
+        <div class="claire-loader"></div>
+        <div class="claire-loading-text">Chargement...</div>
     </div>
 
     <!-- Header -->
-    <div class="header">
-        <button class="header-close" id="closeBtn">✕</button>
-        <div class="header-title">Claire</div>
-        <div class="header-subtitle">Personnalisez votre expérience</div>
+    <div class="claire-header">
+        <button class="claire-header-close" id="claire-close-btn">✕</button>
+        <div class="claire-header-title">Claire</div>
+        <div class="claire-header-subtitle">Personnalisez votre expérience</div>
     </div>
 
     <!-- Brain Selection -->
-    <div class="glass-card">
-        <div class="card-title">Assistant</div>
-        <div class="selection-item" id="brainSelector">
-            <div class="selection-avatar" id="brainAvatar">🤖</div>
-            <div class="selection-info">
-                <div class="selection-name" id="brainName">Chargement...</div>
-                <div class="selection-desc" id="brainDesc">Sélectionnez un assistant</div>
+    <div class="claire-glass-card">
+        <div class="claire-card-title">Assistant</div>
+        <div class="claire-selection-item" id="claire-brain-selector">
+            <div class="claire-selection-avatar" id="claire-brain-avatar">🤖</div>
+            <div class="claire-selection-info">
+                <div class="claire-selection-name" id="claire-brain-name">Chargement...</div>
+                <div class="claire-selection-desc" id="claire-brain-desc">Sélectionnez un assistant</div>
             </div>
-            <div class="selection-check">✓</div>
+            <div class="claire-selection-check">✓</div>
         </div>
     </div>
 
     {% if comfyui_enabled and workflows is not empty %}
     <!-- Workflow Selection -->
-    <div class="glass-card">
-        <div class="card-title">Workflow ComfyUI</div>
-        <div class="selection-item" id="workflowSelector">
-            <div class="selection-avatar" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">🎨</div>
-            <div class="selection-info">
-                <div class="selection-name" id="workflowName">Chargement...</div>
-                <div class="selection-desc">Style de génération d'images</div>
+    <div class="claire-glass-card">
+        <div class="claire-card-title">Workflow ComfyUI</div>
+        <div class="claire-selection-item" id="claire-workflow-selector">
+            <div class="claire-selection-avatar" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">🎨</div>
+            <div class="claire-selection-info">
+                <div class="claire-selection-name" id="claire-workflow-name">Chargement...</div>
+                <div class="claire-selection-desc">Style de génération d'images</div>
             </div>
-            <div class="selection-check">✓</div>
+            <div class="claire-selection-check">✓</div>
         </div>
     </div>
     {% endif %}
 
     <!-- Actions -->
-    <div class="action-grid">
-        <button class="action-btn btn-primary" id="newChatBtn" style="grid-column: span 2;">
+    <div class="claire-action-grid">
+        <button class="claire-action-btn claire-btn-primary" id="claire-new-chat-btn" style="grid-column: span 2;">
             <span>💬</span> Nouvelle conversation
         </button>
     </div>
 
     <!-- Modal -->
-    <div class="modal-overlay" id="modalOverlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <div class="modal-title" id="modalTitle">Sélectionner</div>
-                <button class="modal-close" id="modalClose">×</button>
+    <div class="claire-modal-overlay" id="claire-modal-overlay">
+        <div class="claire-modal-content">
+            <div class="claire-modal-header">
+                <div class="claire-modal-title" id="claire-modal-title">Sélectionner</div>
+                <button class="claire-modal-close" id="claire-modal-close">×</button>
             </div>
-            <div class="modal-body" id="modalBody"></div>
+            <div class="claire-modal-body" id="claire-modal-body"></div>
         </div>
     </div>
 
     <!-- Toast -->
-    <div class="toast" id="toast"></div>
+    <div class="claire-toast" id="claire-toast"></div>
 
     <script>
         const baseUrl = {{ base_url|json_encode|raw }};
@@ -574,20 +574,20 @@
         const initData = tg.initData;
 
         // DOM elements
-        const loadingOverlay = document.getElementById('loadingOverlay');
-        const brainSelector = document.getElementById('brainSelector');
-        const brainAvatar = document.getElementById('brainAvatar');
-        const brainName = document.getElementById('brainName');
-        const brainDesc = document.getElementById('brainDesc');
-        const workflowSelector = document.getElementById('workflowSelector');
-        const workflowName = document.getElementById('workflowName');
-        const closeBtn = document.getElementById('closeBtn');
-        const newChatBtn = document.getElementById('newChatBtn');
-        const modalOverlay = document.getElementById('modalOverlay');
-        const modalTitle = document.getElementById('modalTitle');
-        const modalBody = document.getElementById('modalBody');
-        const modalClose = document.getElementById('modalClose');
-        const toast = document.getElementById('toast');
+        const loadingOverlay = document.getElementById('claire-loading-overlay');
+        const brainSelector = document.getElementById('claire-brain-selector');
+        const brainAvatar = document.getElementById('claire-brain-avatar');
+        const brainName = document.getElementById('claire-brain-name');
+        const brainDesc = document.getElementById('claire-brain-desc');
+        const workflowSelector = document.getElementById('claire-workflow-selector');
+        const workflowName = document.getElementById('claire-workflow-name');
+        const closeBtn = document.getElementById('claire-close-btn');
+        const newChatBtn = document.getElementById('claire-new-chat-btn');
+        const modalOverlay = document.getElementById('claire-modal-overlay');
+        const modalTitle = document.getElementById('claire-modal-title');
+        const modalBody = document.getElementById('claire-modal-body');
+        const modalClose = document.getElementById('claire-modal-close');
+        const toast = document.getElementById('claire-toast');
 
         let currentSettings = {};
 
@@ -634,13 +634,13 @@
                     brainAvatar.textContent = '🤖';
                 }
                 
-                brainSelector.classList.add('active');
+                brainSelector.classList.add('claire-active');
             }
 
             if (comfyuiEnabled && workflows.length > 0) {
                 const workflow = workflows.find(w => w.slug === settings.comfyui_workflow);
                 workflowName.textContent = workflow ? workflow.label : 'Non défini';
-                if (workflow) workflowSelector.classList.add('active');
+                if (workflow) workflowSelector.classList.add('claire-active');
             }
         }
 
@@ -658,17 +658,17 @@
 
             options.forEach(opt => {
                 const div = document.createElement('div');
-                div.className = 'option-item' + (opt.value === selectedValue ? ' selected' : '');
+                div.className = 'claire-option-item' + (opt.value === selectedValue ? ' claire-selected' : '');
                 
                 let avatarHtml = '';
                 if (opt.avatar) {
-                    avatarHtml = `<div class="option-avatar">${getAvatarHtml(opt.avatar)}</div>`;
+                    avatarHtml = `<div class="claire-option-avatar">${getAvatarHtml(opt.avatar)}</div>`;
                 }
 
                 div.innerHTML = `
                     ${avatarHtml}
-                    <div class="option-label">${opt.label}</div>
-                    <div class="option-check">✓</div>
+                    <div class="claire-option-label">${opt.label}</div>
+                    <div class="claire-option-check">✓</div>
                 `;
                 
                 div.onclick = () => {
@@ -678,11 +678,11 @@
                 modalBody.appendChild(div);
             });
 
-            modalOverlay.classList.add('active');
+            modalOverlay.classList.add('claire-active');
         }
 
         function closeModal() {
-            modalOverlay.classList.remove('active');
+            modalOverlay.classList.remove('claire-active');
         }
 
         // Brain selection
@@ -766,8 +766,8 @@
         // Toast
         function showToast(message) {
             toast.textContent = message;
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
+            toast.classList.add('claire-show');
+            setTimeout(() => toast.classList.remove('claire-show'), 3000);
         }
 
         // Initialize

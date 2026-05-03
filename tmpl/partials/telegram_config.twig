@@ -1,32 +1,32 @@
 <form
-    id="telegram-config-form"
+    id="claire-telegram-config-form"
     hx-post="{{ base_url }}/config/telegram"
-    hx-target="#modalBody"
+    hx-target="#claire-modal-body"
     hx-swap="innerHTML"
     style="display: flex; flex-direction: column; gap: 20px;"
 >
     {% if success is defined %}
-        <div class="message message--sent" style="max-width: 100%;">
-            <div class="message__bubble">{{ success }}</div>
+        <div class="claire-message claire-message--sent" style="max-width: 100%;">
+            <div class="claire-message__bubble">{{ success }}</div>
         </div>
-        <script>onTelegramFormSuccess();</script>
+        <script>window.claireOnTelegramFormSuccess();</script>
     {% endif %}
     {% if error is defined %}
-        <div class="message message--received" style="max-width: 100%;">
-            <div class="message__bubble">{{ error }}</div>
+        <div class="claire-message claire-message--received" style="max-width: 100%;">
+            <div class="claire-message__bubble">{{ error }}</div>
         </div>
-        <script>onTelegramFormError();</script>
+        <script>window.claireOnTelegramFormError();</script>
     {% endif %}
 
-    <div class="options-item" style="cursor: default; flex-direction: column; align-items: stretch; gap: 12px;">
-        <label for="telegram-id" class="options-item__label" style="font-weight: 600;">
+    <div class="claire-options-item" style="cursor: default; flex-direction: column; align-items: stretch; gap: 12px;">
+        <label for="claire-telegram-id" class="claire-options-item__label" style="font-weight: 600;">
             Votre identifiant Telegram
         </label>
         <input
             type="number"
-            id="telegram-id"
+            id="claire-telegram-id"
             name="telegram_id"
-            class="chat-input__field"
+            class="claire-chat-input__field"
             placeholder="123456789"
             value="{{ telegram_id|default('') }}"
             style="background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 12px 16px;"
@@ -36,8 +36,8 @@
         </p>
     </div>
 
-    <div class="options-item" style="cursor: default; flex-direction: column; align-items: stretch; gap: 12px; background: rgba(255, 255, 255, 0.04);">
-        <span class="options-item__label" style="font-weight: 600;">Comment obtenir votre ID Telegram</span>
+    <div class="claire-options-item" style="cursor: default; flex-direction: column; align-items: stretch; gap: 12px; background: rgba(255, 255, 255, 0.04);">
+        <span class="claire-options-item__label" style="font-weight: 600;">Comment obtenir votre ID Telegram</span>
         <ol style="font-size: 13px; color: var(--text-secondary); margin: 0; padding-left: 18px; line-height: 1.6;">
             <li>Ouvrez Telegram et cherchez le bot <strong>@userinfobot</strong></li>
             <li>Démarrez une conversation avec ce bot</li>

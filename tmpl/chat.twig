@@ -1,36 +1,36 @@
 {% extends 'layout.twig' %}
 
 {% block app %}
-<section class="chat-panel">
-    <div class="chat-shell">
-        <header class="chat-header">
-            <div class="chat-header__main">
-                <img class="chat-header__avatar" src="{{ brain_info.avatar }}">
-                <div class="chat-header__info">
-                    <span class="chat-header__title">{{ brain_info.name }}</span>
-                    <span class="chat-header__subtitle">{{ brain_info.description }}</span>
+<section class="claire-chat-panel">
+    <div class="claire-chat-shell">
+        <header class="claire-chat-header">
+            <div class="claire-chat-header__main">
+                <img class="claire-chat-header__avatar" src="{{ brain_info.avatar }}">
+                <div class="claire-chat-header__info">
+                    <span class="claire-chat-header__title">{{ brain_info.name }}</span>
+                    <span class="claire-chat-header__subtitle">{{ brain_info.description }}</span>
                 </div>
             </div>
             <button
-                    class="options-toggle"
+                    class="claire-options-toggle"
                     type="button"
                     aria-label="Ouvrir le menu"
                     aria-expanded="false"
                     hx-on:click="
-                        this.classList.toggle('is-active');
-                        const expanded = this.classList.contains('is-active');
+                        this.classList.toggle('claire-is-active');
+                        const expanded = this.classList.contains('claire-is-active');
                         this.setAttribute('aria-expanded', expanded);
-                        const panel = document.getElementById('optionsPanel');
-                        if (panel) { panel.classList.toggle('is-open'); }
-                        const bd = document.getElementById('optionsBackdrop');
-                        if (bd) { bd.classList.toggle('is-visible', expanded); }
+                        const panel = document.getElementById('claire-options-panel');
+                        if (panel) { panel.classList.toggle('claire-is-open'); }
+                        const bd = document.getElementById('claire-options-backdrop');
+                        if (bd) { bd.classList.toggle('claire-is-visible', expanded); }
                         // Rafraîchir le compteur d'historiques à l'ouverture du menu
                         if (expanded) {
                             const historyCountUrl = '{{ base_url }}/history/count';
                             const filesCountUrl = '{{ base_url }}/files/count';
                             if (window.htmx) {
-                                htmx.ajax('GET', historyCountUrl, {target: '#historyCountBadge', swap: 'innerHTML'});
-                                htmx.ajax('GET', filesCountUrl, {target: '#filesCountBadge', swap: 'innerHTML'});
+                                htmx.ajax('GET', historyCountUrl, {target: '#claire-history-count-badge', swap: 'innerHTML'});
+                                htmx.ajax('GET', filesCountUrl, {target: '#claire-files-count-badge', swap: 'innerHTML'});
                             }
                         }
                     "
@@ -41,20 +41,20 @@
             </button>
         </header>
 
-        <main class="chat-body" style="position: relative; z-index: 1;">
+        <main class="claire-chat-body" style="position: relative; z-index: 1;">
             <div
-                id="chatStream"
+                id="claire-chat-stream"
                 data-thread-id="{{ current_thread_id }}"
                 data-stream-session-id="{{ stream_session_id }}"
                 style="display: contents;"
             >
-                <div id="messages" class="messages">
+                <div id="claire-messages" class="claire-messages">
                     {% include 'partials/messages_list.twig' %}
                 </div>
             </div>
             <button
-                    id="scrollDownBtn"
-                    class="scroll-down-button"
+                    id="claire-scroll-down-btn"
+                    class="claire-scroll-down-button"
                     type="button"
                     aria-label="Descendre au dernier message"
                     title="Aller en bas"
@@ -65,48 +65,48 @@
             </button>
         </main>
 
-        <footer class="chat-input">
-            <form class="chat-input__form" id="brain_chat"
+        <footer class="claire-chat-input">
+            <form class="claire-chat-input__form" id="claire-brain-chat"
                   hx-post="{{ base_url }}/brain/messages"
                   hx-swap="none"
                   hx-encoding="multipart/form-data"
-                  hx-on::after-request="clearInput(event)"
-                  hx-on::before-request="chatClick(event)"
+                  hx-on::after-request="window.claireClearInput(event)"
+                  hx-on::before-request="window.claireChatClick(event)"
             >
-                <label class="chat-icon-btn chat-icon-btn--upload form_disabler chat-input__toggleable" for="chat-upload" aria-label="Joindre un fichier">
+                <label class="claire-chat-icon-btn claire-chat-icon-btn--upload claire-form-disabler claire-chat-input__toggleable" for="claire-chat-upload" aria-label="Joindre un fichier">
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                         <path d="M16.5 6.5L12 2 7.5 6.5l1.41 1.41L11 5.83V16a3 3 0 1 1-6 0V9H3v7a5 5 0 1 0 10 0V5.83l2.09 2.08L16.5 6.5Z"/>
                     </svg>
                 </label>
-                <input type="hidden" name="threadId" value="{{ current_thread_id }}" id="thread-id-input" />
-                <input type="hidden" name="sessionId" value="{{ stream_session_id }}" id="session-id-input" />
-                <input class="chat-input__file" type="file" id="chat-upload" name="upload_files[]" multiple accept="{{ settings.get('files.upload.acceptedExt') }}" />
-                <span id="chatAttachedFilesChat" class="chat-attached"></span>
-                <span id="chatAttachedFilesChatHidden" hidden></span>
+                <input type="hidden" name="threadId" value="{{ current_thread_id }}" id="claire-thread-id-input" />
+                <input type="hidden" name="sessionId" value="{{ stream_session_id }}" id="claire-session-id-input" />
+                <input class="claire-chat-input__file" type="file" id="claire-chat-upload" name="upload_files[]" multiple accept="{{ settings.get('files.upload.acceptedExt') }}" />
+                <span id="claire-chat-attached-files-chat" class="claire-chat-attached"></span>
+                <span id="claire-chat-attached-files-chat-hidden" hidden></span>
                 <textarea
-                        class="chat-input__field chat-input__field--multiline form_disabler"
+                        class="claire-chat-input__field claire-chat-input__field--multiline claire-form-disabler"
                         name="message"
                         placeholder="Écrivez votre message..."
                         rows="1"
                         required
                 ></textarea>
-                <div class="chat-input__actions">
+                <div class="claire-chat-input__actions">
                     <button
-                            class="chat-icon-btn form_disabler chat-input__toggleable"
+                            class="claire-chat-icon-btn claire-form-disabler claire-chat-input__toggleable"
                             type="button"
                             aria-label="Annuler le dernier échange"
                             title="Annuler le dernier échange"
                             hx-delete="{{ base_url }}/history/exchange/last"
                             hx-swap="none"
-                            hx-indicator="#globalActionIndicator"
+                            hx-indicator="#claire-global-action-indicator"
                             hx-vals="js:{sessionId: window.claireStreamSessionId || ''}"
-                            hx-on::after-request="handleLastExchangeResponse(event)"
+                            hx-on::after-request="window.claireHandleLastExchangeResponse(event)"
                     >
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M9 7H5v4M5.5 10.5A7 7 0 1 1 7 17.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </button>
-                    <button class="chat-icon-btn form_disabler" type="submit" aria-label="Envoyer">
+                    <button class="claire-chat-icon-btn claire-form-disabler" type="submit" aria-label="Envoyer">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
                             <path d="M3.4 20.6L4.8 14.2 16.2 12 4.8 9.8 3.4 3.4 22 12 3.4 20.6Z"/>
                         </svg>
