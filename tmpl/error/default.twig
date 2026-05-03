@@ -1,16 +1,78 @@
-{% extends 'error/layout.twig' %}
+{% extends 'layout_base.twig' %}
 
-{% block contents %}
-    <div class="center-screen">
+{% block style %}
+<style>
+    .error-panel {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        background: rgba(0,0,0,0.45);
+        color: #fff;
+        padding: 40px;
+        border-radius: 16px;
+        max-width: 90%;
+    }
+    .error-title {
+        font-size: clamp(48px, 12vw, 120px);
+        line-height: 1;
+        font-weight: 800;
+        margin: 0 0 12px;
+        color: #fff;
+        text-shadow: 0 2px 16px rgba(0,0,0,0.4);
+    }
+    .error-subtitle {
+        font-size: clamp(16px, 3.5vw, 22px);
+        margin: 0 0 24px;
+        color: rgba(255,255,255,0.9);
+    }
+    .error-btn {
+        display: inline-block;
+        padding: 12px 24px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        background: #0d6efd;
+        color: #fff;
+        box-shadow: 0 6px 18px rgba(13,110,253,0.35);
+        transition: transform .06s ease, box-shadow .2s ease, background-color .2s ease;
+    }
+    .error-btn:hover {
+        background: #0b5ed7;
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(13,110,253,0.45);
+    }
+    .error-debug {
+        max-width: 960px;
+        margin: 40px auto 0;
+        background: rgba(0,0,0,0.5);
+        padding: 16px 20px;
+        border-radius: 12px;
+        text-align: left;
+        color: #fff;
+    }
+    .error-debug h3 {
+        margin-top: 0;
+        color: #fff;
+    }
+    .error-debug ul {
+        margin: 0 0 16px 18px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+    <div class="error-panel">
         <h1 class="error-title">{{ code }}</h1>
         <p class="error-subtitle">{{ title is defined and title ? title : 'Erreur' }}</p>
-        <a href="/" class="btn btn-primary btn-lg">Retour à l'accueil</a>
+        <a href="/" class="error-btn">Retour à l'accueil</a>
     </div>
 
     {% if debug %}
-        <div style="max-width:960px;margin:0 auto 40px;background:rgba(0,0,0,0.35);padding:16px 20px;border-radius:12px;">
-            <h3 style="margin-top:0;">Détails</h3>
-            <ul style="margin:0 0 16px 18px;">
+        <div class="error-debug">
+            <h3>Détails</h3>
+            <ul>
                 <li><b>Type: </b>{{ type }}</li>
                 <li><b>Code: </b>{{ code }}</li>
                 <li><b>Message: </b>{{ message }}</li>

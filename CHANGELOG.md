@@ -7,6 +7,21 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Added
+- **Session/Auth** : Nouveau service `JwtTokenService` pour centraliser la génération et la validation des JWT de session et mini-token
+- **Session/Auth** : Nouvel endpoint `GET /auth/refresh` pour déclencher un rafraîchissement silencieux de session côté navigateur
+- **Session/Auth** : Nouvelles options de configuration `SESSION_REFRESH_BEFORE_EXPIRE` et `SESSION_REFRESH_MIN_INTERVAL`
+- **UI** : Nouveau template partagé `tmpl/layout_base.twig` pour harmoniser les pages d'accueil, callback d'authentification et erreurs
+
+### Changed
+- **Session/Auth** : Refonte du cycle de vie des tokens (stockage structuré en `sessionStorage`, refresh planifié, backoff, propagation via en-têtes)
+- **Session/Auth** : Unification du paramètre de query des ressources protégées (`token` remplace l'ancien `minitoken` dans les URLs)
+- **Middleware** : `AuthMiddleware` et `JwtSessionMiddleware` ignorent explicitement la route 404 nommée pour éviter les effets de bord sur la page non trouvée
+- **Twig** : Les templates d'erreur et de callback SSO utilisent désormais `layout_base.twig`; suppression de `tmpl/error/layout.twig`
+
+### Removed
+- **Session/Auth** : Suppression du service `MiniToken` (fusionné dans `JwtTokenService`)
+
 ## [1.4.7] - 2026-04-26
 
 ### Added

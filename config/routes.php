@@ -27,5 +27,5 @@ return static function (App $app): void {
         static function (Request $request): void {
             throw new Slim\Exception\HttpNotFoundException($request);
         }
-    );
+    )->setName('not-found');
 };

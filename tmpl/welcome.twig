@@ -1,88 +1,38 @@
-<!-- index.html -->
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <title>Claire</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#ff3cac">
-    <link rel="icon" href="{{ base_url }}/image/icon-192.png">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ base_url }}/css/style.css">
+{% extends 'layout_base.twig' %}
 
-    <style>
-        .welcome-page {
-            position: relative;
-            min-height: 70vh;
-            border-radius: 16px;
-            overflow: hidden;
-            background: #000;
-            background-image: url('{{ base_url }}/image/background.png');
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-        }
-        .bubble {
-            position: absolute;
-            top: 16px;
-            right: 16px;
-            left: auto;
-            max-width: min(90%, 420px);
-            background: rgba(255,255,255,0.92);
-            color: #1c1b1f;
-            border-radius: 16px;
-            padding: 14px 16px;
-            box-shadow: 0 6px 24px rgba(0,0,0,0.15);
-            border: 1px solid rgba(0,0,0,0.06);
-        }
-        .bubble h2 {
-            margin: 0 0 8px 0;
-            font-size: 16px;
-            font-weight: 700;
-        }
-        .bubble p { margin: 0 0 12px 0; font-size: 14px; color: #4a5568; }
-        .sso-btn {
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 14px;
-            border: none;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #c4e3ff, #8bd0ff);
-            color: #003252;
-            cursor: pointer;
-            font-weight: 700;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.12);
-        }
-        .sso-btn:hover {
-            color: rgba(255,255,255,0.92);
-        }
-        @media (max-width: 640px) {
-            .welcome-page { min-height: 50vh; }
-            .bubble { top: 12px; left: 12px; right: 12px; }
-        }
-    </style>
-</head>
-<body>
-<div class="app">
-    <div class="welcome-page">
-        <div class="bubble" role="dialog" aria-label="Connexion">
-            <h2>Bienvenue</h2>
-            <p>Pour continuer, veuillez vous authentifier via notre SSO.</p>
-            <a href="{{ base_url }}/auth/sso" class="sso-btn">Se connecter</a>
-        </div>
+{% block content %}
+    <div class="panel is-centered is-hidden" role="status" id="auth-status" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <h1>Connexion en cours...</h1>
+        <p>Redirection automatique</p>
     </div>
-</div>
+    <div class="panel" role="dialog" aria-label="Connexion" id="sso-panel">
+        <h2>Bienvenue</h2>
+        <p>Pour continuer, veuillez vous authentifier via notre SSO.</p>
+        <a href="{{ base_url }}/auth/sso" class="sso-btn">Se connecter</a>
+    </div>
+{% endblock %}
+
+{% block script %}
 <script>
     (function () {
         'use strict';
 
-        const miniStorageKey = 'claire_minitoken';
+        const miniStorageKey = 'claire_mini_token';
+        const authStatus = document.getElementById('auth-status');
+        const ssoPanel = document.getElementById('sso-panel');
 
-        let minitoken = null;
+        function showAuthStatus() {
+            if (authStatus) {
+                authStatus.classList.remove('is-hidden');
+            }
+
+            if (ssoPanel) {
+                ssoPanel.classList.add('is-hidden');
+            }
+        }
+
+        let token = null;
         const rawMini = sessionStorage.getItem(miniStorageKey);
         if (rawMini) {
             try {
@@ -94,22 +44,24 @@
                     && typeof parsed.expiresAt === 'number'
                     && Date.now() < parsed.expiresAt
                 ) {
-                    minitoken = parsed.token;
+                    token = parsed.token;
+                } else {
+                    sessionStorage.removeItem(miniStorageKey);
                 }
             } catch (_error) {
                 sessionStorage.removeItem(miniStorageKey);
             }
         }
 
-        if (!minitoken) {
+        if (!token) {
             return;
         }
 
+        showAuthStatus();
+
         const target = new URL('{{ base_url }}/', window.location.origin);
-        target.searchParams.set('minitoken', minitoken);
-        target.searchParams.delete('token');
+        target.searchParams.set('token', token);
         window.location.replace(target.pathname + target.search + target.hash);
     })();
 </script>
-</body>
-</html>
+{% endblock %}

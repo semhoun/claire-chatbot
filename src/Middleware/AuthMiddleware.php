@@ -12,6 +12,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface as Handler;
 use Slim\Psr7\Response as SlimResponse;
+use Slim\Routing\RouteContext;
 use Slim\Views\Twig;
 
 /**
@@ -48,6 +49,10 @@ final readonly class AuthMiddleware implements MiddlewareInterface
             return true;
         }
 
+        if ($this->isNotFoundRoute($request)) {
+            return true;
+        }
+
         if ($this->isPublicRoute($request)) {
             return true;
         }
@@ -60,6 +65,14 @@ final readonly class AuthMiddleware implements MiddlewareInterface
         return $this->auth->isAuthenticated($session);
     }
 
+    private function isNotFoundRoute(Request $request): bool
+    {
+        $routeContext = RouteContext::fromRequest($request);
+        $route = $routeContext->getRoute();
+
+        return $route?->getName() === 'not-found';
+    }
+
     private function isPublicRoute(Request $request): bool
     {
         $path = $request->getUri()->getPath();
@@ -70,26 +83,12 @@ final readonly class AuthMiddleware implements MiddlewareInterface
 
     private function handleUnauthorized(Request $request): Response
     {
-        return $this->isJsonRequest($request)
-            ? $this->createJsonUnauthorizedResponse()
-            : $this->createHtmlUnauthorizedResponse();
-    }
+        if (str_contains($request->getHeaderLine('Accept'), 'application/json')) {
+            $response = new SlimResponse(401);
+            $response->getBody()->write((string) json_encode(['error' => 'unauthorized']));
 
-    private function isJsonRequest(Request $request): bool
-    {
-        return str_contains($request->getHeaderLine('Accept'), 'application/json');
-    }
-
-    private function createJsonUnauthorizedResponse(): Response
-    {
-        $response = new SlimResponse(401);
-        $response->getBody()->write((string) json_encode(['error' => 'unauthorized']));
-
-        return $response->withHeader('Content-Type', 'application/json');
-    }
-
-    private function createHtmlUnauthorizedResponse(): Response
-    {
+            return $response->withHeader('Content-Type', 'application/json');
+        }
         return $this->twig->render(new SlimResponse(200), 'welcome.twig');
     }
 }

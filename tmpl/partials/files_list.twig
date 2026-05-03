@@ -63,7 +63,7 @@
     {% else %}
         <ul class="option-list__items">
             {% for file in files %}
-                <li class="option-item file-item" id="file-{{ file.id }}">
+                <li class="option-item file-item" id="file-{{ file.fileId }}">
                     <div class="option-item__icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24">
                             <path d="M6 2h7l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
@@ -84,7 +84,7 @@
                                 type="button"
                                 aria-label="Ajouter ce fichier à la conversation"
                                 title="Ajouter à la conversation"
-                                data-add-file-id="{{ file.id }}"
+                                data-add-file-id="{{ file.fileId }}"
                                 data-add-file-name="{{ file.filename }}"
                         >
                             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -95,7 +95,7 @@
                                 type="button"
                                 aria-label="Supprimer ce fichier"
                                 title="Supprimer"
-                                hx-delete="{{ base_url }}/files/delete/{{ file.id }}"
+                                hx-delete="{{ base_url }}/files/delete/{{ file.fileId }}"
                                 hx-target="closest .files-root"
                                 hx-swap="innerHTML"
                                 hx-indicator="#globalActionIndicator"

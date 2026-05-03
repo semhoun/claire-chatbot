@@ -6,33 +6,99 @@
     'use strict';
 
     const STORAGE_KEY = 'claire_session_token';
-    const MINI_STORAGE_KEY = 'claire_minitoken';
+    const MINI_STORAGE_KEY = 'claire_mini_token';
     const AUTH_HEADER = 'X-Claire-Auth';
     const TOKEN_HEADER = 'X-Claire-Token';
     const MINI_TOKEN_HEADER = 'X-Claire-Minitoken';
     const PROTECTED_PATH_PREFIX = '/files/serve/';
+    const REFRESH_ENDPOINT_PATH = '/auth/refresh';
+    const DEFAULT_REFRESH_TIMEOUT_SEC = 300;
+    const DEFAULT_REFRESH_MIN_INTERVAL_SEC = 30;
+    const MAX_REFRESH_BACKOFF_FACTOR = 4;
 
+    let cachedSessionToken = null;
+    let cachedSessionTokenExpiresAt = 0;
     let cachedMiniToken = null;
     let cachedMiniTokenExpiresAt = 0;
+    let sessionRefreshTimerId = null;
+    let sessionRefreshInFlight = false;
+    let lastSessionRefreshAttemptAt = 0;
+    let sessionRefreshErrorCount = 0;
 
-    function readTokenFromUrl() {
+    function readTokensFromUrl() {
         try {
             const url = new URL(window.location.href);
             const token = url.searchParams.get('token');
-            if (token && token !== '0') {
+            const miniToken = url.searchParams.get('minitoken');
+            const hasSessionToken = !!(token && token !== '0');
+            const hasMiniToken = !!(miniToken && miniToken !== '0');
+
+            if (hasSessionToken || hasMiniToken) {
                 url.searchParams.delete('token');
+                url.searchParams.delete('minitoken');
                 window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : '') + url.hash);
-                return token;
+
+                return {
+                    token: hasSessionToken ? token : null,
+                    miniToken: hasMiniToken ? miniToken : null,
+                };
             }
         } catch (_error) {
             // no-op
         }
 
-        return null;
+        return {
+            token: null,
+            miniToken: null,
+        };
+    }
+
+    function getConfiguredRefreshTimeoutMs() {
+        const raw = Number(window.claireRefreshTimeout);
+        if (!Number.isFinite(raw) || raw < 0) {
+            return DEFAULT_REFRESH_TIMEOUT_SEC * 1000;
+        }
+
+        return Math.floor(raw) * 1000;
+    }
+
+    function getConfiguredRefreshMinIntervalMs() {
+        const raw = Number(window.claireRefreshMinInterval);
+        if (!Number.isFinite(raw) || raw < 1) {
+            return DEFAULT_REFRESH_MIN_INTERVAL_SEC * 1000;
+        }
+
+        return Math.floor(raw) * 1000;
+    }
+
+    function getBaseUrlPath() {
+        const rawBaseUrl = document.body && document.body.dataset
+            ? document.body.dataset.baseUrl
+            : '';
+        const baseUrl = typeof rawBaseUrl === 'string' ? rawBaseUrl.trim() : '';
+        if (baseUrl === '' || baseUrl === '/') {
+            return '';
+        }
+
+        return baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    }
+
+    function getRefreshEndpoint() {
+        return getBaseUrlPath() + REFRESH_ENDPOINT_PATH;
     }
 
     function getSessionToken() {
-        return sessionStorage.getItem(STORAGE_KEY);
+        if (typeof cachedSessionToken === 'string'
+            && cachedSessionToken.length > 0
+            && Date.now() < cachedSessionTokenExpiresAt) {
+            return cachedSessionToken;
+        }
+
+        cachedSessionToken = null;
+        cachedSessionTokenExpiresAt = 0;
+        sessionStorage.removeItem(STORAGE_KEY);
+
+        return null;
     }
 
     function readJwtExp(token) {
@@ -77,6 +143,33 @@
             token: token,
             expiresAt: cachedMiniTokenExpiresAt,
         }));
+
+        applyTokenToProtectedResources();
+    }
+
+    function loadSessionTokenFromStorage() {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed.token !== 'string' || typeof parsed.expiresAt !== 'number') {
+                sessionStorage.removeItem(STORAGE_KEY);
+                return;
+            }
+
+            if (Date.now() >= parsed.expiresAt) {
+                sessionStorage.removeItem(STORAGE_KEY);
+                return;
+            }
+
+            cachedSessionToken = parsed.token;
+            cachedSessionTokenExpiresAt = parsed.expiresAt;
+        } catch (_error) {
+            sessionStorage.removeItem(STORAGE_KEY);
+        }
     }
 
     function loadMiniTokenFromStorage() {
@@ -124,7 +217,7 @@
                 return rawUrl;
             }
 
-            resolved.searchParams.set('minitoken', miniToken);
+            resolved.searchParams.set('token', miniToken);
             return resolved.pathname + resolved.search + resolved.hash;
         } catch (_error) {
             return rawUrl;
@@ -162,15 +255,146 @@
             return;
         }
 
-        sessionStorage.setItem(STORAGE_KEY, token);
+        const exp = readJwtExp(token);
+        const expiresAt = typeof exp === 'number'
+            ? exp * 1000
+            : Date.now();
+
+        cachedSessionToken = token;
+        cachedSessionTokenExpiresAt = expiresAt;
+
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+            token: token,
+            expiresAt: expiresAt,
+        }));
+
+        sessionRefreshErrorCount = 0;
+        scheduleSessionRefresh();
         applyTokenToProtectedResources();
     }
 
     function clearSession() {
+        if (sessionRefreshTimerId !== null) {
+            clearTimeout(sessionRefreshTimerId);
+            sessionRefreshTimerId = null;
+        }
+
         sessionStorage.removeItem(STORAGE_KEY);
         sessionStorage.removeItem(MINI_STORAGE_KEY);
+        cachedSessionToken = null;
+        cachedSessionTokenExpiresAt = 0;
         cachedMiniToken = null;
         cachedMiniTokenExpiresAt = 0;
+        sessionRefreshInFlight = false;
+        lastSessionRefreshAttemptAt = 0;
+        sessionRefreshErrorCount = 0;
+    }
+
+    function clearSessionRefreshTimer() {
+        if (sessionRefreshTimerId !== null) {
+            clearTimeout(sessionRefreshTimerId);
+            sessionRefreshTimerId = null;
+        }
+    }
+
+    function scheduleSessionRefreshWithDelay(delayMs) {
+        clearSessionRefreshTimer();
+
+        const safeDelay = Math.max(0, Math.floor(delayMs));
+        sessionRefreshTimerId = window.setTimeout(function () {
+            void attemptSessionRefresh();
+        }, safeDelay);
+    }
+
+    function scheduleSessionRefresh() {
+        const token = getSessionToken();
+        if (!token) {
+            clearSessionRefreshTimer();
+            return;
+        }
+
+        const now = Date.now();
+        const refreshAt = cachedSessionTokenExpiresAt - getConfiguredRefreshTimeoutMs();
+        const minNextAt = lastSessionRefreshAttemptAt + getConfiguredRefreshMinIntervalMs();
+        const nextAttemptAt = Math.max(refreshAt, minNextAt);
+
+        scheduleSessionRefreshWithDelay(nextAttemptAt - now);
+    }
+
+    function scheduleSessionRefreshRetry() {
+        const minIntervalMs = getConfiguredRefreshMinIntervalMs();
+        const backoffFactor = Math.min(
+            MAX_REFRESH_BACKOFF_FACTOR,
+            Math.max(1, sessionRefreshErrorCount)
+        );
+        const targetAttemptAt = Math.max(
+            Date.now() + backoffFactor * minIntervalMs,
+            lastSessionRefreshAttemptAt + minIntervalMs
+        );
+
+        scheduleSessionRefreshWithDelay(targetAttemptAt - Date.now());
+    }
+
+    async function attemptSessionRefresh() {
+        if (sessionRefreshInFlight) {
+            return;
+        }
+
+        const token = getSessionToken();
+        if (!token) {
+            clearSessionRefreshTimer();
+            return;
+        }
+
+        const now = Date.now();
+        const minIntervalMs = getConfiguredRefreshMinIntervalMs();
+        const earliestAllowedAt = lastSessionRefreshAttemptAt + minIntervalMs;
+        if (now < earliestAllowedAt) {
+            scheduleSessionRefreshWithDelay(earliestAllowedAt - now);
+            return;
+        }
+
+        sessionRefreshInFlight = true;
+        lastSessionRefreshAttemptAt = now;
+
+        try {
+            const response = await window.fetch(getRefreshEndpoint(), {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'text/plain, */*',
+                },
+            });
+
+            if (response.status === 401 || response.status === 403) {
+                clearSession();
+
+                return;
+            }
+
+            if (!response.ok) {
+                throw new Error('Session refresh failed with status ' + response.status);
+            }
+
+            const refreshedToken = response.headers.get(TOKEN_HEADER);
+            if (refreshedToken) {
+                setSessionToken(refreshedToken);
+            } else {
+                sessionRefreshErrorCount = 0;
+                scheduleSessionRefresh();
+            }
+
+            const refreshedMiniToken = response.headers.get(MINI_TOKEN_HEADER);
+            if (refreshedMiniToken) {
+                setMiniToken(refreshedMiniToken, 0);
+            }
+        } catch (_error) {
+            sessionRefreshErrorCount += 1;
+            scheduleSessionRefreshRetry();
+        } finally {
+            sessionRefreshInFlight = false;
+        }
     }
 
     function getAuthHeaders(headers) {
@@ -316,11 +540,18 @@
         applyTokenToProtectedResources();
     }
 
+    loadSessionTokenFromStorage();
     loadMiniTokenFromStorage();
-    const earlyTokenFromUrl = readTokenFromUrl();
-    if (earlyTokenFromUrl) {
-        setSessionToken(earlyTokenFromUrl);
+    const earlyTokensFromUrl = readTokensFromUrl();
+    if (earlyTokensFromUrl.miniToken) {
+        setMiniToken(earlyTokensFromUrl.miniToken, 0);
     }
+
+    if (earlyTokensFromUrl.token) {
+        setSessionToken(earlyTokensFromUrl.token);
+    }
+
+    scheduleSessionRefresh();
 
     configureFetch();
     configureHtmx();

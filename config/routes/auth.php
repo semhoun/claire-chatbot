@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controller\AuthController;
+use App\Controller\SessionController;
 use Slim\App;
 use Slim\Interfaces\RouteCollectorProxyInterface as Group;
 
@@ -12,6 +13,8 @@ return static function (App $app): void {
 
     // OpenID Connect (SSO)
     $app->group('/auth', static function (Group $group): void {
+        $group->get('/refresh', [SessionController::class, 'refresh'])
+            ->setName('auth.refresh');
         $group->get('/sso', [AuthController::class, 'ssoRedirect'])->setName('auth.sso');
         $group->get('/callback', [AuthController::class, 'ssoCallback'])->setName('auth.callback');
     });

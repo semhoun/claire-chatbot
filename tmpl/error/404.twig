@@ -1,9 +1,55 @@
-{% extends 'error/layout.twig' %}
+{% extends 'layout_base.twig' %}
 
-{% block contents %}
-    <div class="center-screen">
+{% block style %}
+<style>
+    .error-panel {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        background: rgba(0,0,0,0.45);
+        color: #fff;
+        padding: 40px;
+        border-radius: 16px;
+        max-width: 90%;
+    }
+    .error-title {
+        font-size: clamp(48px, 12vw, 120px);
+        line-height: 1;
+        font-weight: 800;
+        margin: 0 0 12px;
+        color: #fff;
+        text-shadow: 0 2px 16px rgba(0,0,0,0.4);
+    }
+    .error-subtitle {
+        font-size: clamp(16px, 3.5vw, 22px);
+        margin: 0 0 24px;
+        color: rgba(255,255,255,0.9);
+    }
+    .error-btn {
+        display: inline-block;
+        padding: 12px 24px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        background: #0d6efd;
+        color: #fff;
+        box-shadow: 0 6px 18px rgba(13,110,253,0.35);
+        transition: transform .06s ease, box-shadow .2s ease, background-color .2s ease;
+    }
+    .error-btn:hover {
+        background: #0b5ed7;
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(13,110,253,0.45);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+    <div class="error-panel">
         <h1 class="error-title">404</h1>
-        <p class="error-subtitle">Oups ! La page que vous recherchez est introuvable.</p>
-        <a href="/" class="btn btn-primary btn-lg">Retour à l'accueil</a>
+        <p class="error-subtitle">Oups ! La page que vous recherchez est introuvable.</p>
+        <a href="/" class="error-btn">Retour à l'accueil</a>
     </div>
 {% endblock %}

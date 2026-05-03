@@ -236,15 +236,15 @@
                     >
                         <span class="options-item__label">Configuration Telegram</span>
                     </div>
-                    <div
-                            class="options-item"
-                            role="button"
-                            tabindex="0"
-                            hx-on:click="window.location='{{ base_url }}/logout'"
-                            hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
-                    >
-                        <span class="options-item__label">Se déconnecter</span>
-                    </div>
+                     <div
+                             class="options-item"
+                             role="button"
+                             tabindex="0"
+                             hx-on:click="if (window.ClaireSession && typeof window.ClaireSession.clearSession === 'function') { window.ClaireSession.clearSession(); } sessionStorage.clear(); window.location='{{ base_url }}/logout'"
+                             hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
+                     >
+                         <span class="options-item__label">Se déconnecter</span>
+                     </div>
                 </div>
             </div>
         {% endif %}
@@ -277,6 +277,10 @@
 
 <script src="{{ base_url }}/js/htmx.min.js"></script>
 <script src="{{ base_url }}/js/sse.js"></script>
+<script>
+    window.claireRefreshTimeout = {{ settings.get('session.refresh_before_expire')|number_format(0, '.', '') }};
+    window.claireRefreshMinInterval = {{ settings.get('session.refresh_min_interval')|number_format(0, '.', '') }};
+</script>
 <script src="{{ base_url }}/js/session.js"></script>
 {% block script %}{% endblock %}
 <!-- Global fixed tooltip banner (bottom of the page) -->

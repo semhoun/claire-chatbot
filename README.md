@@ -50,28 +50,31 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 
 ### Variables optionnelles
 
-| Variable | Description | Défaut |
-|----------|-------------|--------|
+| Variable | Description | Défaut                    |
+|----------|-------------|---------------------------|
 | `OPENAPI_MODEL_SUMMARY` | Modèle pour les résumés | valeur de `OPENAPI_MODEL` |
-| `OPENAPI_MODEL_EMBED` | Modèle pour embeddings (RAG) | désactivé |
-| `OPENAPI_REQUEST_TIMEOUT` | Timeout des requêtes API (secondes) | `180` |
-| `SEARXNG_URL` | URL SearXNG pour recherche web | - |
-| `TELEGRAM_BOT_TOKEN` | Token du bot Telegram | - |
-| `TELEGRAM_WEBHOOK_SECRET` | Secret webhook Telegram | - |
-| `COMFYUI_ENABLED` | Active la génération d'images | `false` |
-| `COMFYUI_URL` | URL de l'instance ComfyUI | `http://localhost:8188` |
-| `PDF_ENABLED` | Active la génération de PDF | `true` |
-| `PDF_DEFAULT_FORMAT` | Format d'entrée par défaut (`html`, `markdown`) | `html` |
-| `PDF_DEFAULT_PAGE_SIZE` | Format de page par défaut (`A4`, `Letter`, `A3`, `A5`) | `A4` |
-| `PDF_TEMP_DIR` | Répertoire temporaire pour la génération PDF | `<app>/var/tmp` |
-| `DATABASE_KIND` | Type de base (`sqlite`, `mysql`, `postgres`) | `sqlite` |
-| `DEBUG_MODE` | Mode debug | `false` |
-| `QUEUE_WORKERS` | Nombre de workers de queue | `8` |
-| `QUEUE_WORKER_TIMEOUT` | Timeout BRPOP du worker (secondes) | `5` |
-| `QUEUE_WORKER_MAX_JOBS` | Nombre max de jobs par worker | `0` (illimité) |
-| `QUEUE_WORKER_MAX_TIME` | Durée de vie max d'un worker (secondes) | `0` (illimité) |
-| `SSE_QUEUE_TTL` | Durée de vie des messages SSE en file d'attente (secondes) | `60` |
-| `SSE_POP_TIMEOUT` | Timeout de lecture bloquante SSE (secondes) | `15` |
+| `OPENAPI_MODEL_EMBED` | Modèle pour embeddings (RAG) | désactivé                 |
+| `OPENAPI_REQUEST_TIMEOUT` | Timeout des requêtes API (secondes) | `180`                     |
+| `SESSION_LIFETIME` | Durée de vie des JWT de session (secondes) | `900`                     |
+| `SESSION_REFRESH_BEFORE_EXPIRE` | Marge avant expiration pour déclencher le refresh (secondes) | `120`                     |
+| `SESSION_REFRESH_MIN_INTERVAL` | Intervalle minimal entre deux tentatives de refresh (secondes) | `30`                      |
+| `SEARXNG_URL` | URL SearXNG pour recherche web | -                         |
+| `TELEGRAM_BOT_TOKEN` | Token du bot Telegram | -                         |
+| `TELEGRAM_WEBHOOK_SECRET` | Secret webhook Telegram | -                         |
+| `COMFYUI_ENABLED` | Active la génération d'images | `false`                   |
+| `COMFYUI_URL` | URL de l'instance ComfyUI | `http://localhost:8188`   |
+| `PDF_ENABLED` | Active la génération de PDF | `true`                    |
+| `PDF_DEFAULT_FORMAT` | Format d'entrée par défaut (`html`, `markdown`) | `html`                    |
+| `PDF_DEFAULT_PAGE_SIZE` | Format de page par défaut (`A4`, `Letter`, `A3`, `A5`) | `A4`                      |
+| `PDF_TEMP_DIR` | Répertoire temporaire pour la génération PDF | `<app>/var/tmp`           |
+| `DATABASE_KIND` | Type de base (`sqlite`, `mysql`, `postgres`) | `sqlite`                  |
+| `DEBUG_MODE` | Mode debug | `false`                   |
+| `QUEUE_WORKERS` | Nombre de workers de queue | `8`                       |
+| `QUEUE_WORKER_TIMEOUT` | Timeout BRPOP du worker (secondes) | `5`                       |
+| `QUEUE_WORKER_MAX_JOBS` | Nombre max de jobs par worker | `0` (illimité)            |
+| `QUEUE_WORKER_MAX_TIME` | Durée de vie max d'un worker (secondes) | `0` (illimité)            |
+| `SSE_QUEUE_TTL` | Durée de vie des messages SSE en file d'attente (secondes) | `60`                      |
+| `SSE_POP_TIMEOUT` | Timeout de lecture bloquante SSE (secondes) | `15`                      |
 
 Voir [`docker/compose.yml`](docker/compose.yml) pour un exemple complet avec toutes les variables.
 
@@ -183,6 +186,13 @@ docker compose exec claire ./console queue:work
 ```
 
 ## API
+
+### Authentification session (JWT)
+
+- Le frontend envoie le JWT de session via l'en-tête `X-Claire-Auth`.
+- Le backend peut renvoyer un JWT rafraîchi via `X-Claire-Token` et un mini-token via `X-Claire-Minitoken`.
+- Endpoint de refresh silencieux: `GET /auth/refresh` (retour `204` avec en-têtes de session si renouvellement).
+- Les ressources protégées (fichiers servis) acceptent un paramètre de query `token` pour les liens/images signés côté client.
 
 ### Healthcheck
 

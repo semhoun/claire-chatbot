@@ -601,10 +601,10 @@
                 return;
             }
 
-            const minitoken = window.ClaireSession && typeof window.ClaireSession.getMiniToken === 'function'
+            const token = window.ClaireSession && typeof window.ClaireSession.getMiniToken === 'function'
                 ? window.ClaireSession.getMiniToken()
                 : null;
-            if (!minitoken) {
+            if (!token) {
                 setTimeout(function() { void initChatEventSource(sessionId); }, 1500);
                 return;
             }
@@ -613,7 +613,7 @@
                 const sseUrl = baseUrl
                     + '/brain/stream?sessionId=' + encodeURIComponent(sessionId)
                     + '&threadId=' + encodeURIComponent(threadId)
-                    + '&minitoken=' + encodeURIComponent(minitoken);
+                    + '&token=' + encodeURIComponent(token);
                 bindChatEventSource(sessionId, new EventSource(sseUrl));
             } catch (error) {
                 setTimeout(function() { void initChatEventSource(sessionId); }, 3000);
