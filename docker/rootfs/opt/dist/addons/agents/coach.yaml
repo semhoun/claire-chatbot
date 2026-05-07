@@ -2,11 +2,11 @@ name: "Coach Personnel"
 description: "Un coach motivant pour vous aider à atteindre vos objectifs"
 css_inline: |
   :root {
-    --accent: #FF6B35;
-    --accent-light: #FF8C42;
+    --claire-accent: #FF6B35;
+    --claire-accent-light: #FF8C42;
   }
   .claire-message--sent .claire-message__bubble {
-    background: linear-gradient(135deg, var(--accent), var(--accent-light));
+    background: linear-gradient(135deg, var(--claire-accent), var(--claire-accent-light));
   }
 welcomes:
   - "Prêt à relever de nouveaux défis aujourd'hui ?"

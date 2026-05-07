@@ -1,0 +1,25 @@
+{# Global reusable modal dialog #}
+<div id="claire-modal-backdrop" class="claire-modal-backdrop" aria-hidden="true"></div>
+<div id="claire-modal-root" class="claire-modal" role="dialog" aria-modal="true" aria-autoclose="true" aria-hidden="true" aria-labelledby="claire-modal-title" aria-describedby="claire-modal-body" data-variant="default">
+    <div class="claire-modal__container">
+        <div class="claire-modal__header">
+            <h2 id="claire-modal-title" class="claire-modal__title">Confirmation</h2>
+            <button id="claire-modal-close" class="claire-modal__close" type="button" aria-label="Fermer la boîte de dialogue" title="Fermer">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+        </div>
+        <div id="claire-modal-body" class="claire-modal__body">Êtes-vous sûr ?</div>
+        <div class="claire-modal__footer">
+            <button id="claire-modal-cancel" class="claire-btn claire-btn--secondary" type="button">Annuler</button>
+            <button id="claire-modal-confirm" class="claire-btn claire-btn--primary" type="button">Confirmer</button>
+        </div>
+    </div>
+</div>
+<div id="claire-global-action-indicator" class="claire-global-action-indicator htmx-indicator" role="status" aria-live="polite" aria-atomic="true">
+    <div class="claire-global-action-indicator__pill">
+        <span class="claire-global-action-indicator__spinner" aria-hidden="true"></span>
+        <span>Action en cours...</span>
+    </div>
+</div>
+<!-- Global fixed tooltip banner (bottom of the page) -->
+<div id="claire-history-tooltip-banner" role="status" aria-live="polite" aria-hidden="true"></div>

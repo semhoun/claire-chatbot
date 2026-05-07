@@ -7,17 +7,26 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-07
+
 ### Added
 - **Session/Auth** : Nouveau service `JwtTokenService` pour centraliser la génération et la validation des JWT de session et mini-token
 - **Session/Auth** : Nouvel endpoint `GET /auth/refresh` pour déclencher un rafraîchissement silencieux de session côté navigateur
+- **Session/Auth** : Nouvel endpoint `POST /auth/embed/exchange` pour échanger un token SSO contre un token de session Claire (mode widget)
 - **Session/Auth** : Nouvelles options de configuration `SESSION_REFRESH_BEFORE_EXPIRE` et `SESSION_REFRESH_MIN_INTERVAL`
 - **UI** : Nouveau template partagé `tmpl/layout_base.twig` pour harmoniser les pages d'accueil, callback d'authentification et erreurs
+- **Embed** : Nouveau mode widget avec endpoint `GET /embed`, bootstrap JS `window.claireEmbed(...)` et teardown `window.destroyClaireEmbed()`
+- **Embed** : Nouvelle page de test `public/embed.html` pour valider l'intégration dans un site tiers
+- **UI** : Nouveaux partiels partagés `tmpl/partials/chat_body.twig`, `tmpl/partials/options_content.twig`, `tmpl/partials/modal_dialog.twig` et `tmpl/partials/embed_toolbar.twig`
 
 ### Changed
 - **Session/Auth** : Refonte du cycle de vie des tokens (stockage structuré en `sessionStorage`, refresh planifié, backoff, propagation via en-têtes)
 - **Session/Auth** : Unification du paramètre de query des ressources protégées (`token` remplace l'ancien `minitoken` dans les URLs)
 - **Middleware** : `AuthMiddleware` et `JwtSessionMiddleware` ignorent explicitement la route 404 nommée pour éviter les effets de bord sur la page non trouvée
-- **Twig** : Les templates d'erreur et de callback SSO utilisent désormais `layout_base.twig`; suppression de `tmpl/error/layout.twig`
+- **Twig** : Les templates d'erreur et de callback SSO utilisent désormais `layout_base.twig` ; suppression de `tmpl/error/layout.twig`
+- **UI** : Refonte de la structure Twig pour séparer le mode normal (`layout.twig` + `chat.twig`) et le mode embed (`embed.twig`) sans duplication
+- **CSS** : Normalisation des sélecteurs et des variables CSS avec préfixe `claire-` pour limiter les collisions côté intégration
+- **Styles** : Optimisations de `public/css/style.css` et ajustements de styles des brains (`public/css/einstein.css`, addons YAML)
 
 ### Removed
 - **Session/Auth** : Suppression du service `MiniToken` (fusionné dans `JwtTokenService`)
@@ -478,7 +487,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.4.7...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.5.0...HEAD
+[1.5.0]: https://github.com/semhoun/claire-chatbot/compare/1.4.8...1.5.0
 [1.4.7]: https://github.com/semhoun/claire-chatbot/compare/1.4.6...1.4.7
 [1.4.6]: https://github.com/semhoun/claire-chatbot/compare/1.4.5...1.4.6
 [1.4.5]: https://github.com/semhoun/claire-chatbot/compare/1.4.4...1.4.5

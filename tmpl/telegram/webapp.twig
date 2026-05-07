@@ -7,16 +7,16 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            --bg-gradient-start: #667eea;
-            --bg-gradient-end: #764ba2;
-            --glass-bg: rgba(255, 255, 255, 0.15);
-            --glass-border: rgba(255, 255, 255, 0.2);
-            --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255, 255, 255, 0.8);
-            --accent: #ffd700;
-            --danger: #ff4757;
-            --success: #2ed573;
+            --claire-bg-gradient-start: #667eea;
+            --claire-bg-gradient-end: #764ba2;
+            --claire-glass-bg: rgba(255, 255, 255, 0.15);
+            --claire-glass-border: rgba(255, 255, 255, 0.2);
+            --claire-glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            --claire-text-primary: #ffffff;
+            --claire-text-secondary: rgba(255, 255, 255, 0.8);
+            --claire-accent: #ffd700;
+            --claire-danger: #ff4757;
+            --claire-success: #2ed573;
         }
 
         * {
@@ -27,9 +27,9 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            background: linear-gradient(135deg, var(--claire-bg-gradient-start) 0%, var(--claire-bg-gradient-end) 100%);
             background-attachment: fixed;
-            color: var(--text-primary);
+            color: var(--claire-text-primary);
             min-height: 100vh;
             padding: 20px 16px;
             -webkit-font-smoothing: antialiased;
@@ -103,7 +103,7 @@
 
         .claire-header-subtitle {
             font-size: 14px;
-            color: var(--text-secondary);
+            color: var(--claire-text-secondary);
             font-weight: 400;
         }
 
@@ -142,20 +142,20 @@
 
         .claire-header-subtitle {
             font-size: 12px;
-            color: var(--text-secondary);
+            color: var(--claire-text-secondary);
             font-weight: 400;
         }
 
         /* Glass Cards */
         .claire-glass-card {
-            background: var(--glass-bg);
+            background: var(--claire-glass-bg);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
-            border: 1px solid var(--glass-border);
+            border: 1px solid var(--claire-glass-border);
             border-radius: 20px;
             padding: 20px;
             margin-bottom: 16px;
-            box-shadow: var(--glass-shadow);
+            box-shadow: var(--claire-glass-shadow);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
 
@@ -168,7 +168,7 @@
             font-size: 12px;
             text-transform: uppercase;
             letter-spacing: 1.5px;
-            color: var(--text-secondary);
+            color: var(--claire-text-secondary);
             margin-bottom: 15px;
             font-weight: 600;
         }
@@ -197,7 +197,7 @@
 
         .claire-selection-item.claire-active {
             background: rgba(255, 255, 255, 0.25);
-            border-color: var(--accent);
+            border-color: var(--claire-accent);
             box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
         }
 
@@ -233,14 +233,14 @@
 
         .claire-selection-desc {
             font-size: 12px;
-            color: var(--text-secondary);
+            color: var(--claire-text-secondary);
         }
 
         .claire-selection-check {
             width: 24px;
             height: 24px;
             border-radius: 50%;
-            background: var(--accent);
+            background: var(--claire-accent);
             display: none;
             align-items: center;
             justify-content: center;
@@ -293,7 +293,7 @@
 
         .claire-btn-danger {
             background: rgba(255, 71, 87, 0.2);
-            color: var(--danger);
+            color: var(--claire-danger);
             border: 1px solid rgba(255, 71, 87, 0.3);
             grid-column: span 2;
         }
@@ -425,8 +425,8 @@
         }
 
         .claire-option-item.claire-selected .claire-option-check {
-            background: var(--success);
-            border-color: var(--success);
+            background: var(--claire-success);
+            border-color: var(--claire-success);
         }
 
         /* Toast */
@@ -459,7 +459,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            background: linear-gradient(135deg, var(--claire-bg-gradient-start) 0%, var(--claire-bg-gradient-end) 100%);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -489,7 +489,7 @@
         .claire-loading-text {
             margin-top: 20px;
             font-size: 16px;
-            color: var(--text-secondary);
+            color: var(--claire-text-secondary);
         }
 
         ::-webkit-scrollbar {

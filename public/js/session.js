@@ -87,6 +87,34 @@
         return getBaseUrlPath() + REFRESH_ENDPOINT_PATH;
     }
 
+    function getConfiguredBaseOrigin() {
+        try {
+            const basePath = getBaseUrlPath();
+            if (!basePath) {
+                return null;
+            }
+
+            return new URL(basePath, window.location.origin).origin;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    function isTrustedRequestUrl(rawUrl) {
+        try {
+            const resolved = new URL(String(rawUrl), window.location.origin);
+            if (resolved.origin === window.location.origin) {
+                return true;
+            }
+
+            const configuredBaseOrigin = getConfiguredBaseOrigin();
+            return configuredBaseOrigin !== null
+                && resolved.origin === configuredBaseOrigin;
+        } catch (_error) {
+            return false;
+        }
+    }
+
     function getSessionToken() {
         if (typeof cachedSessionToken === 'string'
             && cachedSessionToken.length > 0
@@ -209,7 +237,7 @@
             }
 
             const resolved = new URL(rawUrl, window.location.origin);
-            if (resolved.origin !== window.location.origin) {
+            if (!isTrustedRequestUrl(resolved.toString())) {
                 return rawUrl;
             }
 
@@ -428,9 +456,8 @@
             const requestUrl = input instanceof Request
                 ? input.url
                 : String(input);
-            const resolved = new URL(requestUrl, window.location.origin);
 
-            return resolved.origin === window.location.origin;
+            return isTrustedRequestUrl(requestUrl);
         } catch (_error) {
             return true;
         }
@@ -472,6 +499,14 @@
         }
 
         window.htmx.on('htmx:configRequest', function (evt) {
+            const pathInfo = evt && evt.detail ? evt.detail.pathInfo || {} : {};
+            const requestPath = pathInfo.finalRequestPath
+                || pathInfo.requestPath
+                || '';
+            if (!isTrustedRequestUrl(requestPath)) {
+                return;
+            }
+
             const token = getSessionToken();
             if (token) {
                 evt.detail.headers[AUTH_HEADER] = token;
@@ -479,6 +514,14 @@
         });
 
         window.htmx.on('htmx:afterRequest', function (evt) {
+            const pathInfo = evt && evt.detail ? evt.detail.pathInfo || {} : {};
+            const requestPath = pathInfo.finalRequestPath
+                || pathInfo.requestPath
+                || '';
+            if (!isTrustedRequestUrl(requestPath)) {
+                return;
+            }
+
             const xhr = evt.detail.xhr;
             if (!xhr) {
                 return;

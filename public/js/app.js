@@ -58,6 +58,18 @@
         observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
     })();
 
+    // --- Embed Collapse Toggle ---
+    (function() {
+        const embed = document.querySelector('.claire-embed');
+        const toolbar = document.querySelector('.claire-embed-toolbar');
+        if (!embed || !toolbar) return;
+        toolbar.addEventListener('click', function(e) {
+            if (e.target.closest('.claire-embed-toolbar__item') ||
+                e.target.closest('.claire-embed-toolbar__subpanel')) return;
+            embed.classList.toggle('is-collapsed');
+        });
+    })();
+
     window.claireSetGlobalActionIndicatorState = function(isVisible) {
         const indicator = document.getElementById('claire-global-action-indicator');
         if (!indicator) return;
@@ -470,12 +482,18 @@
             window.claireStreamSessionId = sessionId;
         })();
 
-        document.addEventListener('DOMContentLoaded', function() {
+        const startStreamIfReady = function() {
             const sessionId = window.claireStreamSessionId;
             if (sessionId) {
                 void initChatEventSource(sessionId);
             }
-        });
+        };
+
+        if (document.readyState !== 'loading') {
+            startStreamIfReady();
+        } else {
+            document.addEventListener('DOMContentLoaded', startStreamIfReady);
+        }
 
         function setComposerBusyState(isBusy) {
             const form = document.getElementById('claire-brain-chat');
