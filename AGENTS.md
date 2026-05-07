@@ -46,8 +46,8 @@ The widget defaults to `.is-collapsed`:
 
 ```css
 :root {
-    --embed-collapsed-size: 64px;   /* widget diameter */
-    --embed-collapsed-avatar: 56px; /* avatar size inside the circle */
+    --claire-embed-collapsed-size: 64px;   /* widget diameter */
+    --claire-embed-collapsed-avatar: 56px; /* avatar size inside the circle */
 }
 ```
 

@@ -2,45 +2,45 @@ name: "Calliope"
 description: "Calliope la conteuse"
 css_inline: |
   :root {
-      --body-background: linear-gradient(180deg, #ffffff 0%, var(--bg-main) 100%);
+      --claire-body-background: linear-gradient(180deg, #ffffff 0%, var(--claire-bg-main) 100%);
 
-      --bg-main: #f5f7fb;
-      --bg-panel: #ffffff;
-      --bg-panel-alt: #f0f3f8;
-      --bg-input: #ffffff;
-      --accent: #005C9F; /* bleu principal */
-      --accent-soft: rgba(0, 92, 159, 0.14);
-      --accent-light: #00AEEF; /* cyan/secondaire */
-      --text-primary: #1e2a35;
-      --text-secondary: rgba(30, 42, 53, 0.7);
-      --border: rgba(0, 0, 0, 0.08);
-      --shadow: 0 22px 50px rgba(16, 24, 40, 0.08);
+      --claire-bg-main: #f5f7fb;
+      --claire-bg-panel: #ffffff;
+      --claire-bg-panel-alt: #f0f3f8;
+      --claire-bg-input: #ffffff;
+      --claire-accent: #005C9F; /* bleu principal */
+      --claire-accent-soft: rgba(0, 92, 159, 0.14);
+      --claire-accent-light: #00AEEF; /* cyan/secondaire */
+      --claire-text-primary: #1e2a35;
+      --claire-text-secondary: rgba(30, 42, 53, 0.7);
+      --claire-border: rgba(0, 0, 0, 0.08);
+      --claire-shadow: 0 22px 50px rgba(16, 24, 40, 0.08);
   
-      --header-bg:linear-gradient(180deg, #ffffff, #f9fbfe);
+      --claire-header-bg:linear-gradient(180deg, #ffffff, #f9fbfe);
     
-      --ink: #ffffff;
-      --ink-dark: #ffffff;
-      --border-weak: rgba(0, 0, 0, 0.08);
-      --background: #ffffff;
-      --surface-1: #ffffff;
-      --surface-2: #ffffff;
-      --input-bar-bg: #ffffff;
-      --focus-ring: var(--accent);
-      --focus-glow: var(--accent-soft);
-      --placeholder: rgba(30, 42, 53, 0.5);
-      --tooltip-bg: var(--bg-panel);
-      --elevation-panel: rgba(16, 24, 40, 0.06);
-      --elevation-panel-avatar: rgba(16, 24, 40, 0.08);
-      --elevation-panel-soft: rgba(16, 24, 40, 0.12);
-      --elevation-focus-ring: var(--accent-soft);
-      --surface-stroke-soft: rgba(0, 0, 0, 0.04);
-      --scrollbar-thumb-stroke: rgba(255, 255, 255, 0.4);
-      --scrollbar-thumb-shadow: rgba(16, 24, 40, 0.18);
-      --tooltip-shadow: rgba(16, 24, 40, 0.15);
-      --modal-shadow: rgba(16, 24, 40, 0.18);
-      --accent-shadow: rgba(0, 92, 159, 0.25);
-      --accent-shadow-soft: rgba(0, 92, 159, 0.18);
-      --danger-shadow: rgba(255, 60, 60, 0.35);
+      --claire-ink: #ffffff;
+      --claire-ink-dark: #ffffff;
+      --claire-border-weak: rgba(0, 0, 0, 0.08);
+      --claire-background: #ffffff;
+      --claire-surface-1: #ffffff;
+      --claire-surface-2: #ffffff;
+      --claire-input-bar-bg: #ffffff;
+      --claire-focus-ring: var(--claire-accent);
+      --claire-focus-glow: var(--claire-accent-soft);
+      --claire-placeholder: rgba(30, 42, 53, 0.5);
+      --claire-tooltip-bg: var(--claire-bg-panel);
+      --claire-elevation-panel: rgba(16, 24, 40, 0.06);
+      --claire-elevation-panel-avatar: rgba(16, 24, 40, 0.08);
+      --claire-elevation-panel-soft: rgba(16, 24, 40, 0.12);
+      --claire-elevation-focus-ring: var(--claire-accent-soft);
+      --claire-surface-stroke-soft: rgba(0, 0, 0, 0.04);
+      --claire-scrollbar-thumb-stroke: rgba(255, 255, 255, 0.4);
+      --claire-scrollbar-thumb-shadow: rgba(16, 24, 40, 0.18);
+      --claire-tooltip-shadow: rgba(16, 24, 40, 0.15);
+      --claire-modal-shadow: rgba(16, 24, 40, 0.18);
+      --claire-accent-shadow: rgba(0, 92, 159, 0.25);
+      --claire-accent-shadow-soft: rgba(0, 92, 159, 0.18);
+      --claire-danger-shadow: rgba(255, 60, 60, 0.35);
   }
     
   .claire-chat-panel::before {
@@ -54,42 +54,42 @@ css_inline: |
   }
   
   .claire-options-toggle {
-      background: var(--accent);
-      color: var(--ink);
+      background: var(--claire-accent);
+      color: var(--claire-ink);
   }
   
   .claire-message--sent .claire-message__bubble {
-      background: linear-gradient(135deg, var(--accent), var(--accent-light));
-      color: var(--ink);
+      background: linear-gradient(135deg, var(--claire-accent), var(--claire-accent-light));
+      color: var(--claire-ink);
   }
   
   .claire-message--received .claire-message__bubble {
-      border: 1px solid var(--border);
+      border: 1px solid var(--claire-border);
   }
   
   .claire-chat-input__form:focus-within {
-      background: var(--bg-input);
+      background: var(--claire-bg-input);
   }
   
   .claire-chat-icon-btn {
-      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      background: linear-gradient(135deg, var(--claire-accent), var(--claire-accent-light));
       color: #ffffff;
   }
   
   .claire-chat-icon-btn--upload {
       background: #ffffff;
-      color: var(--accent);
+      color: var(--claire-accent);
   }
   
   .claire-options-panel {
-      background: var(--bg-panel-alt);
-      border-left: 1px solid var(--border);
-      scrollbar-color: var(--accent) rgba(0, 0, 0, 0.06);
+      background: var(--claire-bg-panel-alt);
+      border-left: 1px solid var(--claire-border);
+      scrollbar-color: var(--claire-accent) rgba(0, 0, 0, 0.06);
   }
   
   .claire-options-panel .claire-options-close {
       background: #ffffff;
-      color: var(--accent);
+      color: var(--claire-accent);
   }
    
   /* Scrollbars chat (thème clair) */
@@ -98,11 +98,11 @@ css_inline: |
   }
   
   .claire-chat-body::-webkit-scrollbar-thumb {
-      background: linear-gradient(180deg, var(--accent), var(--accent-light));
+      background: linear-gradient(180deg, var(--claire-accent), var(--claire-accent-light));
   }
   
   .claire-chat-body::-webkit-scrollbar-thumb:hover {
-      background: linear-gradient(180deg, var(--accent-light), #21b6ff);
+      background: linear-gradient(180deg, var(--claire-accent-light), #21b6ff);
   }
   
   /* Scrollbars options panel (thème clair) */
@@ -111,41 +111,41 @@ css_inline: |
   }
   
   .claire-options-panel::-webkit-scrollbar-thumb {
-      background: linear-gradient(180deg, var(--accent), var(--accent-light));
+      background: linear-gradient(180deg, var(--claire-accent), var(--claire-accent-light));
   }
   
   .claire-options-panel::-webkit-scrollbar-thumb:hover {
-      background: linear-gradient(180deg, var(--accent-light), #21b6ff);
+      background: linear-gradient(180deg, var(--claire-accent-light), #21b6ff);
   }
   
   .claire-options-panel__title {
-      color: var(--text-secondary);
+      color: var(--claire-text-secondary);
   }
   
   .claire-options-item {
       background: #ffffff;
-      border: 1px solid var(--border);
+      border: 1px solid var(--claire-border);
   }
   
   .claire-options-item:hover {
-      background: var(--bg-panel-alt);
-      border-color: var(--accent);
+      background: var(--claire-bg-panel-alt);
+      border-color: var(--claire-accent);
   }
   
   .claire-options-item__badge {
-      background: var(--accent-soft);
-      color: var(--accent);
+      background: var(--claire-accent-soft);
+      color: var(--claire-accent);
   }
   
   .claire-option-item__button {
       background: #ffffff;
-      color: var(--text-primary);
+      color: var(--claire-text-primary);
   }
   
   .claire-option-item__button:hover {
-      background: var(--bg-panel-alt);
-      border-color: var(--accent);
-      color: var(--accent);
+      background: var(--claire-bg-panel-alt);
+      border-color: var(--claire-accent);
+      color: var(--claire-accent);
   }
   
   .claire-modal-backdrop {
@@ -153,32 +153,32 @@ css_inline: |
   }
   
   .claire-modal__container {
-      background: var(--bg-panel-alt);
+      background: var(--claire-bg-panel-alt);
   }
   
   .claire-modal__close {
       background: #ffffff;
-      color: var(--text-primary);
+      color: var(--claire-text-primary);
   }
   
   .claire-modal__close:hover {
-      background: var(--bg-panel-alt);
-      border-color: var(--accent);
+      background: var(--claire-bg-panel-alt);
+      border-color: var(--claire-accent);
   }
   
   .claire-btn--secondary {
       background: #ffffff;
-      color: var(--text-primary);
+      color: var(--claire-text-primary);
   }
   
   .claire-btn--secondary:hover {
-      background: var(--bg-panel-alt);
-      border-color: var(--accent);
+      background: var(--claire-bg-panel-alt);
+      border-color: var(--claire-accent);
   }
   
   .claire-btn--primary {
-      background: linear-gradient(135deg, var(--accent), var(--accent-light));
-      color: var(--ink);
+      background: linear-gradient(135deg, var(--claire-accent), var(--claire-accent-light));
+      color: var(--claire-ink);
   }
   
   .claire-modal[data-variant="danger"] .claire-btn--primary {
@@ -189,18 +189,18 @@ css_inline: |
   }
   
   .claire-dialog-panel {
-      background: var(--background);
-      border-color: var(--border);
+      background: var(--claire-background);
+      border-color: var(--claire-border);
       color: #111;
   }
   
   .claire-dialog-panel-btn:hover {
-      border-color: var(--accent);
+      border-color: var(--claire-accent);
   }
   
   .claire-scroll-down-button  {
-      background: var(--accent);
-      color: var(--ink);
+      background: var(--claire-accent);
+      color: var(--claire-ink);
   }
   .claire-global-action-indicator__pill {
     display: inline-flex;
@@ -210,8 +210,8 @@ css_inline: |
     border-radius: 999px;
     background: rgba(17, 0, 30, 0.92);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 18px 40px var(--elevation-panel-dark);
-    color: var(--ink);
+    box-shadow: 0 18px 40px var(--claire-elevation-panel-dark);
+    color: var(--claire-ink);
     font-size: 13px;
     letter-spacing: 0.01em;
     backdrop-filter: blur(10px);

@@ -113,7 +113,7 @@ name: "Coach Personnel"
 description: "Un coach motivant pour vous aider à atteindre vos objectifs"
 avatar: "data:image/png;base64,..."
 css_inline: |
-  :root { --accent: #FF6B35; }
+  :root { --claire-accent: #FF6B35; }
 welcomes:
   - "Prêt à relever de nouveaux défis ?"
   - "Bonjour champion !"

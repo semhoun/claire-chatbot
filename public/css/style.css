@@ -1,79 +1,79 @@
 :root {
-    --font: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --body-background: radial-gradient(circle at 20% 20%, var(--hero-start) 0%, var(--hero-mid) 45%, var(--hero-end) 100%);
+    --claire-font: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --claire-body-background: radial-gradient(circle at 20% 20%, var(--claire-hero-start) 0%, var(--claire-hero-mid) 45%, var(--claire-hero-end) 100%);
 
-    --bg-main: #1a0029;
-    --bg-panel: rgba(35, 0, 58, 0.92);
-    --bg-panel-alt: rgba(18, 0, 35, 0.92);
-    --bg-input: rgba(58, 0, 94, 0.78);
-    --accent: #ff3cac;
-    --accent-soft: rgba(255, 60, 172, 0.22);
-    --accent-light: #ff7ce5;
-    --text-primary: #f0f0f0;
-    --text-secondary: rgba(255, 240, 254, 0.7);
-    --border: rgba(255, 255, 255, 0.08);
-    --radius: 22px;
-    --shadow: 0 22px 50px rgba(18, 0, 35, 0.6);
+    --claire-bg-main: #1a0029;
+    --claire-bg-panel: rgba(35, 0, 58, 0.92);
+    --claire-bg-panel-alt: rgba(18, 0, 35, 0.92);
+    --claire-bg-input: rgba(58, 0, 94, 0.78);
+    --claire-accent: #ff3cac;
+    --claire-accent-soft: rgba(255, 60, 172, 0.22);
+    --claire-accent-light: #ff7ce5;
+    --claire-text-primary: #f0f0f0;
+    --claire-text-secondary: rgba(255, 240, 254, 0.7);
+    --claire-border: rgba(255, 255, 255, 0.08);
+    --claire-radius: 22px;
+    --claire-shadow: 0 22px 50px rgba(18, 0, 35, 0.6);
     /* Embed collapsed sizing */
-    --embed-collapsed-size: 64px;
-    --embed-collapsed-avatar: 56px;
+    --claire-embed-collapsed-size: 64px;
+    --claire-embed-collapsed-avatar: 56px;
     /* Additional color variables to reduce hard-coded colors */
-    --ink-dark: #2b0052;
-    --ink: #111111;
-    --background: #000000;
-    --overlay: rgba(6, 0, 20, 0.6);
-    --overlay-strong: rgba(8, 0, 14, 0.45);
-    --surface-1: rgba(30, 0, 50, 0.7);
-    --surface-2: rgba(74, 0, 127, 0.78);
-    --header-bg: rgba(40, 0, 68, 0.86);
-    --input-bar-bg: rgba(32, 0, 55, 0.9);
-    --placeholder: rgba(255, 240, 254, 0.58);
-    --border-weak: rgba(255, 255, 255, 0.04);
-    --border-subtle: rgba(255, 255, 255, 0.07);
-    --border-strong: rgba(255, 255, 255, 0.10);
-    --focus-ring: rgba(255, 124, 229, 0.8);
-    --focus-glow: rgba(255, 124, 229, 0.2);
-    --input-field-highlight: rgba(255, 255, 255, 0.04);
-    --input-field-border-glow: rgba(255, 255, 255, 0.08);
-    --input-field-shadow: rgba(255, 124, 229, 0.14);
-    --input-field-shadow-focus: rgba(255, 124, 229, 0.22);
-    --elevation-panel: rgba(18, 0, 35, 0.4);
-    --elevation-panel-avatar: rgba(18, 0, 35, 0.45);
-    --elevation-panel-deep: rgba(26, 0, 41, 0.5);
-    --elevation-panel-dark: rgba(10, 0, 24, 0.42);
-    --elevation-panel-soft: rgba(18, 0, 35, 0.25);
-    --elevation-panel-subtle: rgba(18, 0, 35, 0.24);
-    --elevation-focus-ring-soft: rgba(255, 124, 229, 0.22);
-    --elevation-focus-ring: rgba(255, 124, 229, 0.28);
-    --surface-stroke-soft: rgba(255, 255, 255, 0.05);
-    --scrollbar-thumb-stroke: rgba(255, 255, 255, 0.15);
-    --scrollbar-thumb-stroke-dark: rgba(43, 0, 82, 0.25);
-    --scrollbar-thumb-shadow: rgba(18, 0, 35, 0.35);
-    --tooltip-shadow: rgba(0, 0, 0, 0.35);
-    --modal-shadow: rgba(9, 0, 28, 0.55);
-    --danger-shadow: rgba(255, 60, 60, 0.35);
-    --floating-button-shadow: rgba(26, 0, 41, 0.35);
-    --accent-shadow-soft: rgba(255, 60, 172, 0.28);
-    --chip-inner-shadow: rgba(0, 0, 0, 0.18);
-    --chip-remove-shadow: rgba(0, 0, 0, 0.22);
-    --dialog-shadow: rgba(0, 0, 0, 0.28);
-    --image-shadow: rgba(0, 0, 0, 0.3);
-    --image-shadow-hover: rgba(0, 0, 0, 0.4);
-    --lightbox-image-shadow: rgba(0, 0, 0, 0.5);
-    --accent-border: rgba(255, 124, 229, 0.32);
-    --accent-border-strong: rgba(255, 124, 229, 0.35);
-    --accent-shadow: rgba(255, 60, 172, 0.35);
-    --tooltip-bg: rgba(17, 17, 17, 0.95);
-    --success: #34d399;
-    --danger-1: #ff3c3c;
-    --danger-2: #b3003c;
-    --danger-3: #7a003f;
+    --claire-ink-dark: #2b0052;
+    --claire-ink: #111111;
+    --claire-background: #000000;
+    --claire-overlay: rgba(6, 0, 20, 0.6);
+    --claire-overlay-strong: rgba(8, 0, 14, 0.45);
+    --claire-surface-1: rgba(30, 0, 50, 0.7);
+    --claire-surface-2: rgba(74, 0, 127, 0.78);
+    --claire-header-bg: rgba(40, 0, 68, 0.86);
+    --claire-input-bar-bg: rgba(32, 0, 55, 0.9);
+    --claire-placeholder: rgba(255, 240, 254, 0.58);
+    --claire-border-weak: rgba(255, 255, 255, 0.04);
+    --claire-border-subtle: rgba(255, 255, 255, 0.07);
+    --claire-border-strong: rgba(255, 255, 255, 0.10);
+    --claire-focus-ring: rgba(255, 124, 229, 0.8);
+    --claire-focus-glow: rgba(255, 124, 229, 0.2);
+    --claire-input-field-highlight: rgba(255, 255, 255, 0.04);
+    --claire-input-field-border-glow: rgba(255, 255, 255, 0.08);
+    --claire-input-field-shadow: rgba(255, 124, 229, 0.14);
+    --claire-input-field-shadow-focus: rgba(255, 124, 229, 0.22);
+    --claire-elevation-panel: rgba(18, 0, 35, 0.4);
+    --claire-elevation-panel-avatar: rgba(18, 0, 35, 0.45);
+    --claire-elevation-panel-deep: rgba(26, 0, 41, 0.5);
+    --claire-elevation-panel-dark: rgba(10, 0, 24, 0.42);
+    --claire-elevation-panel-soft: rgba(18, 0, 35, 0.25);
+    --claire-elevation-panel-subtle: rgba(18, 0, 35, 0.24);
+    --claire-elevation-focus-ring-soft: rgba(255, 124, 229, 0.22);
+    --claire-elevation-focus-ring: rgba(255, 124, 229, 0.28);
+    --claire-surface-stroke-soft: rgba(255, 255, 255, 0.05);
+    --claire-scrollbar-thumb-stroke: rgba(255, 255, 255, 0.15);
+    --claire-scrollbar-thumb-stroke-dark: rgba(43, 0, 82, 0.25);
+    --claire-scrollbar-thumb-shadow: rgba(18, 0, 35, 0.35);
+    --claire-tooltip-shadow: rgba(0, 0, 0, 0.35);
+    --claire-modal-shadow: rgba(9, 0, 28, 0.55);
+    --claire-danger-shadow: rgba(255, 60, 60, 0.35);
+    --claire-floating-button-shadow: rgba(26, 0, 41, 0.35);
+    --claire-accent-shadow-soft: rgba(255, 60, 172, 0.28);
+    --claire-chip-inner-shadow: rgba(0, 0, 0, 0.18);
+    --claire-chip-remove-shadow: rgba(0, 0, 0, 0.22);
+    --claire-dialog-shadow: rgba(0, 0, 0, 0.28);
+    --claire-image-shadow: rgba(0, 0, 0, 0.3);
+    --claire-image-shadow-hover: rgba(0, 0, 0, 0.4);
+    --claire-lightbox-image-shadow: rgba(0, 0, 0, 0.5);
+    --claire-accent-border: rgba(255, 124, 229, 0.32);
+    --claire-accent-border-strong: rgba(255, 124, 229, 0.35);
+    --claire-accent-shadow: rgba(255, 60, 172, 0.35);
+    --claire-tooltip-bg: rgba(17, 17, 17, 0.95);
+    --claire-success: #34d399;
+    --claire-danger-1: #ff3c3c;
+    --claire-danger-2: #b3003c;
+    --claire-danger-3: #7a003f;
     /* Gradient palette */
-    --hero-start: #ff3cac;
-    --hero-mid: #784ba0;
-    --hero-end: #2b0052;
-    --accent-2: #784ba0;
-    --accent-3: #2b86c5;
+    --claire-hero-start: #ff3cac;
+    --claire-hero-mid: #784ba0;
+    --claire-hero-end: #2b0052;
+    --claire-accent-2: #784ba0;
+    --claire-accent-3: #2b86c5;
 }
 
 #claire-body *, #claire-body *::before, #claire-body *::after,
@@ -88,9 +88,9 @@
     width: 100%;
     transition: padding 0.3s ease;
     overflow: hidden; /* Empêche le scroll global, on scrolle uniquement dans les zones prévues */
-    font-family: var(--font);
-    color: var(--text-primary);
-    background: var(--body-background);
+    font-family: var(--claire-font);
+    color: var(--claire-text-primary);
+    background: var(--claire-body-background);
 }
 
 body.claire-compact {
@@ -98,8 +98,8 @@ body.claire-compact {
 }
 
 #claire-embed-container {
-    font-family: var(--font);
-    color: var(--text-primary);
+    font-family: var(--claire-font);
+    color: var(--claire-text-primary);
 }
 
 #claire-embed-container p,
@@ -109,14 +109,14 @@ body.claire-compact {
 
 #claire-embed-container a,
 .claire-app a {
-    color: var(--accent-light);
+    color: var(--claire-accent-light);
     text-decoration: underline;
     text-underline-offset: 2px;
 }
 
 #claire-embed-container a:hover,
 .claire-app a:hover {
-    color: var(--accent);
+    color: var(--claire-accent);
 }
 .claire-form-disabler:disabled,
 .claire-form-disabler[disabled] {
@@ -135,9 +135,9 @@ body.claire-compact {
     height: 100dvh; /* taille fixe au viewport pour éviter le scroll de page */
     backdrop-filter: blur(18px);
     position: relative;
-    box-shadow: var(--shadow);
-    border-left: 1px solid var(--border-weak);
-    border-right: 1px solid var(--border-weak);
+    box-shadow: var(--claire-shadow);
+    border-left: 1px solid var(--claire-border-weak);
+    border-right: 1px solid var(--claire-border-weak);
     overflow: hidden;
 }
 
@@ -145,7 +145,7 @@ body.claire-compact {
 .claire-options-backdrop {
     position: absolute;
     inset: 0;
-    background: var(--overlay-strong);
+    background: var(--claire-overlay-strong);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.25s ease;
@@ -169,8 +169,8 @@ body.claire-compact .claire-app {
     position: relative;
     display: flex;
     flex-direction: column;
-    background: var(--surface-1);
-    border-right: 1px solid var(--border-weak);
+    background: var(--claire-surface-1);
+    border-right: 1px solid var(--claire-border-weak);
     overflow: hidden;
     height: 100%; /* occupe toute la hauteur de .claire-app */
 }
@@ -224,14 +224,14 @@ body.claire-is-busy * {
     justify-content: space-between;
     gap: 16px;
     padding: 24px 34px;
-    background: var(--header-bg);
-    border-bottom: 1px solid var(--border);
-    box-shadow: 0 10px 30px var(--elevation-panel);
+    background: var(--claire-header-bg);
+    border-bottom: 1px solid var(--claire-border);
+    box-shadow: 0 10px 30px var(--claire-elevation-panel);
     position: sticky;
     top: 0;
     z-index: 10;
-    border-top-left-radius: var(--radius);
-    border-top-right-radius: var(--radius);
+    border-top-left-radius: var(--claire-radius);
+    border-top-right-radius: var(--claire-radius);
 }
 
 .claire-chat-header__main {
@@ -250,12 +250,12 @@ body.claire-is-busy * {
     font-size: 19px;
     font-weight: 700;
     letter-spacing: -0.01em;
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
 }
 
 .claire-chat-header__subtitle {
     font-size: 13px;
-    color: var(--text-secondary);
+    color: var(--claire-text-secondary);
 }
 
 .claire-chat-header__avatar {
@@ -264,7 +264,7 @@ body.claire-is-busy * {
     border-radius: 50%;
     object-fit: cover;
     border: 2px solid rgba(255, 255, 255, 0.6);
-    box-shadow: 0 8px 18px var(--elevation-panel-avatar);
+    box-shadow: 0 8px 18px var(--claire-elevation-panel-avatar);
 }
 
 .claire-options-toggle {
@@ -274,8 +274,8 @@ body.claire-is-busy * {
     width: 46px;
     height: 46px;
     background: linear-gradient(135deg, rgba(255, 240, 254, 0.92), rgba(255, 176, 240, 0.88));
-    color: var(--ink-dark);
-    box-shadow: 0 7px 16px var(--accent-shadow);
+    color: var(--claire-ink-dark);
+    box-shadow: 0 7px 16px var(--claire-accent-shadow);
     cursor: pointer;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
@@ -293,7 +293,7 @@ body.claire-is-busy * {
     gap: 24px;
     /* Custom scrollbar (cross-browser) */
     scrollbar-width: thin; /* Firefox */
-    scrollbar-color: var(--accent) rgba(255, 255, 255, 0.08); /* thumb, track */
+    scrollbar-color: var(--claire-accent) rgba(255, 255, 255, 0.08); /* thumb, track */
     scrollbar-gutter: stable both-edges; /* avoid layout shift */
 }
 
@@ -330,7 +330,7 @@ body.claire-compact .claire-chat-body {
     font-size: 11px;
     margin-top: 4px;
     opacity: 0.8;
-    color: var(--text-secondary);
+    color: var(--claire-text-secondary);
 }
 
 .claire-message--sent {
@@ -340,9 +340,9 @@ body.claire-compact .claire-chat-body {
 
 .claire-message--sent .claire-message__bubble {
     background: linear-gradient(135deg, rgba(255, 60, 172, 0.95), rgba(255, 124, 229, 0.9));
-    color: var(--ink-dark);
+    color: var(--claire-ink-dark);
     border-bottom-right-radius: 12px;
-    box-shadow: 0 7px 16px var(--accent-shadow);
+    box-shadow: 0 7px 16px var(--claire-accent-shadow);
 }
 
 .claire-message--received {
@@ -350,16 +350,16 @@ body.claire-compact .claire-chat-body {
 }
 
 .claire-message--received .claire-message__bubble {
-    background: var(--surface-2);
-    color: var(--text-primary);
+    background: var(--claire-surface-2);
+    color: var(--claire-text-primary);
     border-bottom-left-radius: 12px;
-    box-shadow: 0 18px 34px var(--elevation-panel-deep);
+    box-shadow: 0 18px 34px var(--claire-elevation-panel-deep);
 }
 
 /* Toolcall sub-bubble (more beautiful) */
 .claire-message__subbubble--toolcall {
     background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--border);
+    border: 1px solid var(--claire-border);
     border-radius: 12px;
     /* Compact when collapsed */
     padding: 4px 6px;
@@ -367,7 +367,7 @@ body.claire-compact .claire-chat-body {
     display: inline-flex; /* shrink to content when closed */
     align-items: center;
     max-width: 100%;
-    box-shadow: 0 10px 24px var(--elevation-panel-soft);
+    box-shadow: 0 10px 24px var(--claire-elevation-panel-soft);
     transition: padding 0.2s ease, margin 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -401,19 +401,19 @@ body.claire-compact .claire-chat-body {
     align-items: center;
     gap: 8px;
     padding: 4px 2px;
-    color: var(--text-secondary);
+    color: var(--claire-text-secondary);
     cursor: pointer;
     user-select: none;
     transition: color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
 }
 
 .claire-toolcall__summary:hover {
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
 }
 
 .claire-toolcall__summary:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 4px var(--elevation-focus-ring-soft);
+    box-shadow: 0 0 0 4px var(--claire-elevation-focus-ring-soft);
     border-radius: 8px;
 }
 
@@ -458,7 +458,7 @@ body.claire-compact .claire-chat-body {
 .claire-toolcall__text {
     font-size: 13px;
     line-height: 1.55;
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
     margin-top: 8px;
     opacity: 0;
     transform-origin: top;
@@ -467,10 +467,10 @@ body.claire-compact .claire-chat-body {
 }
 
 .claire-toolcall__result {
-    color: var(--text-primary);
-    background: var(--background);
+    color: var(--claire-text-primary);
+    background: var(--claire-background);
     border-radius: 12px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--claire-border);
     text-wrap: auto;
 }
 
@@ -499,7 +499,7 @@ body.claire-compact .claire-chat-body {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--claire-accent);
     opacity: 0.45;
     animation: typing 1.2s infinite ease-in-out;
 }
@@ -533,8 +533,8 @@ body.claire-compact .claire-chat-body {
     border-radius: 999px;
     background: rgba(17, 0, 30, 0.92);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 18px 40px var(--elevation-panel-dark);
-    color: var(--text-primary);
+    box-shadow: 0 18px 40px var(--claire-elevation-panel-dark);
+    color: var(--claire-text-primary);
     font-size: 13px;
     letter-spacing: 0.01em;
     backdrop-filter: blur(10px);
@@ -545,7 +545,7 @@ body.claire-compact .claire-chat-body {
     height: 14px;
     border-radius: 50%;
     border: 2px solid rgba(255, 255, 255, 0.22);
-    border-top-color: var(--accent-light);
+    border-top-color: var(--claire-accent-light);
     animation: action-spinner 0.75s linear infinite;
 }
 
@@ -568,9 +568,9 @@ body.claire-compact .claire-chat-body {
 
 .claire-chat-input {
     padding: 24px 34px;
-    background: var(--input-bar-bg);
-    border-top: 1px solid var(--border);
-    box-shadow: 0 -10px 30px var(--elevation-panel);
+    background: var(--claire-input-bar-bg);
+    border-top: 1px solid var(--claire-border);
+    box-shadow: 0 -10px 30px var(--claire-elevation-panel);
 }
 
 body.claire-compact .claire-chat-input {
@@ -582,16 +582,16 @@ body.claire-compact .claire-chat-input {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: var(--bg-input);
+    background: var(--claire-bg-input);
     border-radius: 24px;
     padding: 6px 8px 6px 12px;
-    border: 1px solid var(--border-subtle);
+    border: 1px solid var(--claire-border-subtle);
     transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .claire-chat-input__form:focus-within {
-    border-color: var(--focus-ring);
-    box-shadow: 0 0 0 5px var(--focus-glow);
+    border-color: var(--claire-focus-ring);
+    box-shadow: 0 0 0 5px var(--claire-focus-glow);
     background: rgba(90, 0, 146, 0.85);
 }
 
@@ -604,11 +604,11 @@ body.claire-compact .claire-chat-input {
     font: inherit;
     font-size: 15px;
     line-height: 1.45;
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
     outline: none;
     padding: 12px 16px;
     transition: background 0.2s ease, box-shadow 0.2s ease;
-    box-shadow: 0 7px 16px var(--accent-shadow);
+    box-shadow: 0 7px 16px var(--claire-accent-shadow);
 }
 
 .claire-chat-input__field--multiline {
@@ -623,7 +623,7 @@ body.claire-compact .claire-chat-input {
 }
 
 .claire-chat-input__field::placeholder {
-    color: var(--placeholder);
+    color: var(--claire-placeholder);
 }
 
 .claire-chat-input__actions {
@@ -648,14 +648,14 @@ body.claire-compact .claire-chat-input {
     height: 42px;
     border-radius: 50%;
     border: none;
-    background: linear-gradient(135deg, var(--hero-start), var(--accent-2), var(--accent-3));
+    background: linear-gradient(135deg, var(--claire-hero-start), var(--claire-accent-2), var(--claire-accent-3));
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
     cursor: pointer;
     transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
-    box-shadow: 0 7px 16px var(--accent-shadow);
+    box-shadow: 0 7px 16px var(--claire-accent-shadow);
     flex-shrink: 0;
 }
 
@@ -676,7 +676,7 @@ body.claire-compact .claire-chat-input {
 .claire-chat-icon-btn--upload {
     background: linear-gradient(135deg, rgba(255, 240, 254, 0.96), rgba(255, 176, 240, 0.92));
     color: #2b0052;
-    box-shadow: 0 7px 16px var(--accent-shadow);
+    box-shadow: 0 7px 16px var(--claire-accent-shadow);
 }
 
 .claire-chat-input__file {
@@ -697,13 +697,13 @@ body.claire-compact .claire-chat-input {
     right: 0;
     left: auto;
     width: min(360px, 100%);
-    background: var(--bg-panel-alt);
-    border-left: 1px solid var(--border-strong);
+    background: var(--claire-bg-panel-alt);
+    border-left: 1px solid var(--claire-border-strong);
     display: flex;
     flex-direction: column;
     gap: 32px;
     padding: 34px 30px;
-    box-shadow: inset 0 0 0 1px var(--surface-stroke-soft);
+    box-shadow: inset 0 0 0 1px var(--claire-surface-stroke-soft);
     transition: transform 0.35s ease, opacity 0.35s ease;
     z-index: 30; /* au-dessus du contenu */
     overflow-y: auto; /* scroll local si le contenu dépasse */
@@ -726,7 +726,7 @@ body.claire-compact .claire-chat-input {
     border-radius: 999px;
     background: linear-gradient(135deg, rgba(255, 240, 254, 0.96), rgba(255, 176, 240, 0.92));
     color: #2b0052;
-    box-shadow: 0 7px 16px var(--accent-shadow);
+    box-shadow: 0 7px 16px var(--claire-accent-shadow);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -745,7 +745,7 @@ body.claire-compact .claire-chat-input {
 
 .claire-options-panel .claire-options-close:focus-visible {
     outline: none;
-    box-shadow: 0 7px 16px var(--accent-shadow);
+    box-shadow: 0 7px 16px var(--claire-accent-shadow);
 }
 
 .claire-options-panel .claire-options-close svg {
@@ -772,7 +772,7 @@ body.claire-compact .claire-chat-input {
 .claire-chat-body::-webkit-scrollbar-thumb {
     border-radius: 999px;
     background: linear-gradient(180deg, rgba(255, 124, 229, 0.95), rgba(120, 75, 160, 0.95));
-    box-shadow: inset 0 0 0 1px var(--scrollbar-thumb-stroke), 0 6px 12px var(--scrollbar-thumb-shadow);
+    box-shadow: inset 0 0 0 1px var(--claire-scrollbar-thumb-stroke), 0 6px 12px var(--claire-scrollbar-thumb-shadow);
 }
 
 .claire-chat-body::-webkit-scrollbar-thumb:hover {
@@ -796,7 +796,7 @@ body.claire-compact .claire-chat-input {
 .claire-options-panel::-webkit-scrollbar-thumb {
     border-radius: 999px;
     background: linear-gradient(180deg, rgba(255, 240, 254, 0.9), rgba(255, 176, 240, 0.9));
-    box-shadow: inset 0 0 0 1px var(--scrollbar-thumb-stroke-dark), 0 6px 12px var(--scrollbar-thumb-shadow);
+    box-shadow: inset 0 0 0 1px var(--claire-scrollbar-thumb-stroke-dark), 0 6px 12px var(--claire-scrollbar-thumb-shadow);
 }
 
 .claire-options-panel::-webkit-scrollbar-thumb:hover {
@@ -829,7 +829,7 @@ body.claire-compact .claire-chat-input {
 
 .claire-options-item {
     padding: 18px 20px;
-    border-radius: calc(var(--radius) - 6px);
+    border-radius: calc(var(--claire-radius) - 6px);
     background: rgba(90, 0, 146, 0.68);
     border: 1px solid rgba(255, 255, 255, 0.06);
     display: flex;
@@ -842,7 +842,7 @@ body.claire-compact .claire-chat-input {
 .claire-options-item:hover {
     transform: translateY(-2px);
     background: rgba(112, 0, 180, 0.78);
-    border-color: var(--accent-border);
+    border-color: var(--claire-accent-border);
 }
 
 .claire-options-item__label {
@@ -892,18 +892,18 @@ body.claire-compact .claire-chat-input {
     padding: 12px 14px;
     border-radius: 14px;
     background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--border);
+    border: 1px solid var(--claire-border);
     transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
 .claire-option-item:hover {
     background: rgba(255, 255, 255, 0.06);
-    border-color: var(--accent-border);
+    border-color: var(--claire-accent-border);
     transform: translateY(-1px);
 }
 
 .claire-option-item:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--claire-accent);
     outline-offset: 2px;
 }
 
@@ -914,7 +914,7 @@ body.claire-compact .claire-chat-input {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--accent-light);
+    color: var(--claire-accent-light);
     opacity: 0.9;
     margin-top: 2px;
 }
@@ -932,7 +932,7 @@ body.claire-compact .claire-chat-input {
 .claire-option-item__title {
     font-size: 13px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
     white-space: wrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -941,7 +941,7 @@ body.claire-compact .claire-chat-input {
 .claire-option-item__meta {
     margin-top: 2px;
     font-size: 12px;
-    color: var(--text-secondary);
+    color: var(--claire-text-secondary);
 }
 
 /* Actions (delete button) */
@@ -955,7 +955,7 @@ body.claire-compact .claire-chat-input {
     width: 32px;
     height: 32px;
     border-radius: 8px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--claire-border);
     background: rgba(255, 255, 255, 0.04);
     color: rgba(255, 240, 254, 0.9);
     display: inline-flex;
@@ -967,8 +967,8 @@ body.claire-compact .claire-chat-input {
 
 .claire-option-item__button:hover {
     background: rgba(255, 255, 255, 0.08);
-    border-color: var(--accent-border-strong);
-    color: var(--text-primary);
+    border-color: var(--claire-accent-border-strong);
+    color: var(--claire-text-primary);
 }
 
 .claire-option-item__button:active {
@@ -976,7 +976,7 @@ body.claire-compact .claire-chat-input {
 }
 
 .claire-option-item__button:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--claire-accent);
     outline-offset: 2px;
 }
 
@@ -1003,10 +1003,10 @@ body.claire-compact .claire-chat-input {
     /* Extra bottom padding to avoid partial clipping of the last line on some engines */
     padding-bottom: 24px;
     border-radius: 10px;
-    background: var(--tooltip-bg);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-    box-shadow: 0 8px 28px var(--tooltip-shadow), 0 1px 0 var(--surface-stroke-soft) inset;
+    background: var(--claire-tooltip-bg);
+    color: var(--claire-text-primary);
+    border: 1px solid var(--claire-border);
+    box-shadow: 0 8px 28px var(--claire-tooltip-shadow), 0 1px 0 var(--claire-surface-stroke-soft) inset;
     backdrop-filter: saturate(120%) blur(2px);
     font-size: 13px;
     line-height: 1.4; /* slightly larger to prevent sub-pixel cropping */
@@ -1028,7 +1028,7 @@ body.claire-compact .claire-chat-input {
 .claire-modal-backdrop {
     position: fixed;
     inset: 0;
-    background: var(--overlay);
+    background: var(--claire-overlay);
     backdrop-filter: blur(1.5px);
     opacity: 0;
     pointer-events: none;
@@ -1059,10 +1059,10 @@ body.claire-compact .claire-chat-input {
 
 .claire-modal__container {
     width: min(520px, calc(100% - 32px));
-    background: var(--bg-panel-alt);
-    border: 1px solid var(--border);
+    background: var(--claire-bg-panel-alt);
+    border: 1px solid var(--claire-border);
     border-radius: 16px;
-    box-shadow: 0 26px 60px var(--modal-shadow), inset 0 0 0 1px var(--input-field-highlight);
+    box-shadow: 0 26px 60px var(--claire-modal-shadow), inset 0 0 0 1px var(--claire-input-field-highlight);
     transform: translateY(10px) scale(0.98);
     opacity: 0;
     transition: transform 0.22s ease, opacity 0.22s ease;
@@ -1084,14 +1084,14 @@ body.claire-compact .claire-chat-input {
     margin: 0;
     font-size: 18px;
     font-weight: 700;
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
 }
 
 .claire-modal__close {
     width: 38px;
     height: 38px;
     border-radius: 10px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--claire-border);
     background: rgba(255, 255, 255, 0.04);
     color: rgba(255, 240, 254, 0.9);
     display: inline-flex;
@@ -1108,7 +1108,7 @@ body.claire-compact .claire-chat-input {
 
 .claire-modal__body {
     padding: 8px 18px 16px;
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
     line-height: 1.5;
 }
 
@@ -1124,7 +1124,7 @@ body.claire-compact .claire-chat-input {
     min-width: 110px;
     height: 40px;
     border-radius: 10px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--claire-border);
     padding: 0 14px;
     font: inherit;
     font-weight: 600;
@@ -1138,7 +1138,7 @@ body.claire-compact .claire-chat-input {
 
 .claire-btn--secondary {
     background: rgba(255, 255, 255, 0.04);
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
 }
 
 .claire-btn--secondary:hover {
@@ -1155,9 +1155,9 @@ body.claire-compact .claire-chat-input {
 }
 
 .claire-btn--primary {
-    background: linear-gradient(135deg, var(--hero-start), var(--accent-2), var(--accent-3));
-    color: var(--text-primary);
-    box-shadow:0 7px 16px var(--accent-shadow);
+    background: linear-gradient(135deg, var(--claire-hero-start), var(--claire-accent-2), var(--claire-accent-3));
+    color: var(--claire-text-primary);
+    box-shadow:0 7px 16px var(--claire-accent-shadow);
 }
 
 .claire-btn--primary:hover {
@@ -1166,8 +1166,8 @@ body.claire-compact .claire-chat-input {
 
 /* Variant danger accent for confirm button */
 .claire-modal[data-variant="danger"] .claire-btn--primary {
-    background: linear-gradient(135deg, var(--danger-1), var(--danger-2), var(--danger-3));
-    box-shadow: 0 14px 26px var(--danger-shadow);
+    background: linear-gradient(135deg, var(--claire-danger-1), var(--claire-danger-2), var(--claire-danger-3));
+    box-shadow: 0 14px 26px var(--claire-danger-shadow);
 }
 
 /* Prevent background scroll when modal open */
@@ -1197,9 +1197,9 @@ body.claire-modal-open {
     width: 44px;
     height: 44px;
     cursor: pointer;
-    color: var(--ink-dark);
+    color: var(--claire-ink-dark);
     background: linear-gradient(135deg, rgba(255, 240, 254, 0.92), rgba(255, 176, 240, 0.88));
-    box-shadow: 0 12px 26px var(--floating-button-shadow);
+    box-shadow: 0 12px 26px var(--claire-floating-button-shadow);
     z-index: 50; /* au‑dessus du contenu et du footer */
 }
 
@@ -1250,11 +1250,11 @@ body.claire-modal-open {
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 12px;
-    color: var(--text-secondary);
+    color: var(--claire-text-secondary);
     padding: 6px 10px;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--border);
+    border: 1px solid var(--claire-border);
 }
 
 /* Center icons and reduce size for file upload actions */
@@ -1297,7 +1297,7 @@ body.claire-modal-open {
 .claire-option-list__empty-icon {
     width: 28px;
     height: 28px;
-    color: var(--accent-light);
+    color: var(--claire-accent-light);
     opacity: 0.9;
 }
 
@@ -1308,7 +1308,7 @@ body.claire-modal-open {
 
 .claire-option-list__empty-help {
     font-size: 12px;
-    color: var(--text-secondary);
+    color: var(--claire-text-secondary);
 }
 
 /* Attached file chips inside chat input */
@@ -1328,8 +1328,8 @@ body.claire-modal-open {
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.14);
-    color: var(--text-primary);
-    box-shadow: 0 2px 6px var(--chip-inner-shadow) inset;
+    color: var(--claire-text-primary);
+    box-shadow: 0 2px 6px var(--claire-chip-inner-shadow) inset;
     position: relative; /* needed for the close button positioning */
 }
 
@@ -1353,7 +1353,7 @@ body.claire-modal-open {
     cursor: pointer;
     background: linear-gradient(135deg, rgba(255, 60, 60, 0.95), rgba(234, 0, 94, 0.95));
     color: #fff;
-    box-shadow: 0 1px 4px var(--chip-remove-shadow);
+    box-shadow: 0 1px 4px var(--claire-chip-remove-shadow);
     padding: 0;
 }
 
@@ -1376,20 +1376,20 @@ body.claire-modal-open {
 
 .claire-dialog-panel {
     background: rgba(18, 0, 35, 0.90);
-    border-color: var(--accent-border);
+    border-color: var(--claire-accent-border);
     border-style: solid;
     position: relative;
-    color: var(--ink);
+    color: var(--claire-ink);
     width: min(600px, 92vw);
     border-radius: 10px;
-    box-shadow: 0 16px 48px var(--dialog-shadow);
+    box-shadow: 0 16px 48px var(--claire-dialog-shadow);
     font-size: 15px;
     line-height: 1.5;
 }
 
 .claire-dialog-panel-btn {
     background: rgba(255, 255, 255, 0.10);
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
 }
 
 .claire-dialog-panel-btn:hover {
@@ -1409,8 +1409,8 @@ body.claire-modal-open {
     min-width: 100px;
     -webkit-appearance: none;
     -moz-appearance: none;
-    background: var(--bg-input);
-    border: 1px solid var(--border);
+    background: var(--claire-bg-input);
+    border: 1px solid var(--claire-border);
     border-radius: 10px;
     padding: 6px 10px 6px 10px;
     font: inherit;
@@ -1435,13 +1435,13 @@ body.claire-modal-open {
     border-radius: 20px;
     overflow: hidden;
     transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-radius 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    background: var(--bg-panel);
-    box-shadow: var(--shadow);
+    background: var(--claire-bg-panel);
+    box-shadow: var(--claire-shadow);
 }
 
 .claire-embed.is-collapsed {
-    width: var(--embed-collapsed-size);
-    height: var(--embed-collapsed-size);
+    width: var(--claire-embed-collapsed-size);
+    height: var(--claire-embed-collapsed-size);
     border-radius: 50%;
 }
 
@@ -1450,7 +1450,7 @@ body.claire-modal-open {
 }
 
 .claire-embed.is-collapsed .claire-embed-toolbar {
-    height: var(--embed-collapsed-size);
+    height: var(--claire-embed-collapsed-size);
     padding: 0;
     border-bottom: none;
     justify-content: center;
@@ -1470,8 +1470,8 @@ body.claire-modal-open {
 }
 
 .claire-embed.is-collapsed .claire-embed-toolbar__avatar {
-    width: var(--embed-collapsed-avatar);
-    height: var(--embed-collapsed-avatar);
+    width: var(--claire-embed-collapsed-avatar);
+    height: var(--claire-embed-collapsed-avatar);
 }
 
 .claire-embed .claire-chat-header {
@@ -1488,9 +1488,9 @@ body.claire-modal-open {
     align-items: center;
     height: 52px;
     padding: 0 10px;
-    background: var(--header-bg);
+    background: var(--claire-header-bg);
     backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--claire-border);
     flex-shrink: 0;
     cursor: pointer;
     user-select: none;
@@ -1523,7 +1523,7 @@ body.claire-modal-open {
 .claire-embed-toolbar__title {
     font-size: 14px;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1536,7 +1536,7 @@ body.claire-modal-open {
     width: 34px;
     height: 34px;
     border-radius: 8px;
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
     cursor: pointer;
     transition: background 0.2s ease;
     position: relative;
@@ -1572,10 +1572,10 @@ body.claire-modal-open {
     position: absolute;
     top: calc(100% + 4px);
     right: 0;
-    background: var(--bg-panel-alt);
-    border: 1px solid var(--border);
+    background: var(--claire-bg-panel-alt);
+    border: 1px solid var(--claire-border);
     border-radius: 12px;
-    box-shadow: 0 14px 36px var(--elevation-panel-dark);
+    box-shadow: 0 14px 36px var(--claire-elevation-panel-dark);
     min-width: 220px;
     max-width: 320px;
     max-height: 460px;
@@ -1594,7 +1594,7 @@ body.claire-modal-open {
 .claire-embed-toolbar__subpanel-title {
     font-size: 13px;
     font-weight: 500;
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
 }
 
 .claire-embed-toolbar__subpanel-section {
@@ -1680,7 +1680,7 @@ body.claire-modal-open {
     }
 
     .claire-app { /* conserver des arrondis comme en mode 800px */
-        border-radius: var(--radius);
+        border-radius: var(--claire-radius);
         overflow: hidden;
     }
 
@@ -1771,7 +1771,7 @@ body.claire-modal-open {
     }
 
     .claire-app {
-        border-radius: var(--radius);
+        border-radius: var(--claire-radius);
         min-height: 100vh;
         height: 100dvh;
         overflow: hidden;
@@ -1813,14 +1813,14 @@ body.claire-modal-open {
     border-radius: 12px;
     margin: 8px auto;
     display: block;
-    box-shadow: 0 8px 24px var(--image-shadow);
+    box-shadow: 0 8px 24px var(--claire-image-shadow);
     cursor: zoom-in;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .claire-generated-image:hover {
     transform: scale(1.02);
-    box-shadow: 0 12px 32px var(--image-shadow-hover);
+    box-shadow: 0 12px 32px var(--claire-image-shadow-hover);
 }
 
 /* Generated documents (PDF) in chat messages */
@@ -1830,7 +1830,7 @@ body.claire-modal-open {
     gap: 12px;
     padding: 10px 16px;
     background: var(--bg-card);
-    color: var(--text-primary);
+    color: var(--claire-text-primary);
     text-decoration: none;
     border-radius: 10px;
     border: 1px solid var(--border-color);
@@ -1888,7 +1888,7 @@ body.claire-dark .claire-generated-file:hover {
     max-width: 100%;
     max-height: 95vh;
     border-radius: 8px;
-    box-shadow: 0 20px 60px var(--lightbox-image-shadow);
+    box-shadow: 0 20px 60px var(--claire-lightbox-image-shadow);
     cursor: zoom-out;
 }
 
