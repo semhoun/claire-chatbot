@@ -6,6 +6,14 @@ Claire is a PHP 8.5+ AI agent chatbot built with Slim 4, Twig, Doctrine ORM, and
 
 The project runs in Docker containers (PHP 8.5, PostgreSQL, Redis, Nginx) via Docker Compose.
 
+## Embed Mode (Reduced UI)
+
+- Claire can be embedded in third-party pages through `window.claireEmbed(...)` from `public/js/embed.js`
+- Embed page route: `GET /embed` (controller: `App\Controller\EmbedController`)
+- SSO exchange route: `POST /auth/embed/exchange` returns `session_token` and `mini_token`
+- Main integration script injects and manages app assets (`/css/style.css`, `/js/app.js`, `/js/dialog.js`, etc.) and can be destroyed with `window.destroyClaireEmbed()`
+- Embed shell/test page: `public/embed.html`
+
 ## Build / Lint / Test Commands
 
 ```bash
@@ -128,6 +136,7 @@ use App\Entity\ChatHistory;
 - **Telegram Sessions**: Dedicated `TelegramSession` entity for bot user persistence
 - **Queue System**: Redis-backed job queue in `App\Queue\` with `QueueWorker`, `QueueMessage`, and job classes
 - **Observability**: OpenTelemetry integration in `App\Brain\Observability\` for metrics, traces, and structured events
+- **Embed Integration**: Server-rendered embed entry (`embed.twig`) loaded by client-side bootstrap (`public/js/embed.js`) with token exchange and managed teardown
 
 ### Key Project Conventions
 - Use `Env::get()` from `App\Services\Env` for environment variables
@@ -136,6 +145,7 @@ use App\Entity\ChatHistory;
 - Container injection via PHP-DI (autowiring enabled)
 - Twig templates in `tmpl/` directory
 - Public assets served from `public/`
+- Embed integrations should use `window.claireEmbed({ baseUrl, target, token|ssoToken })` and avoid custom direct mounting logic
 
 ### Testing
 - PHPUnit 12.5+ with tests in `test/Unit/`
