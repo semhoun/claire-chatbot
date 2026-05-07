@@ -1,1 +1,16 @@
-{% extends 'chat.twig' %}
+{% extends 'layout.twig' %}
+
+{% block sidebar %}{% endblock %}
+
+{% block app %}
+<div class="claire-embed-wrapper">
+    <div class="claire-embed is-collapsed">
+        {% include 'partials/embed_toolbar.twig' %}
+        <section class="claire-chat-panel">
+            <div class="claire-chat-shell">
+                {% include 'partials/chat_body.twig' %}
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}

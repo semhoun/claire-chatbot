@@ -11,6 +11,9 @@
     --border: rgba(255, 255, 255, 0.08);
     --radius: 22px;
     --shadow: 0 22px 50px rgba(18, 0, 35, 0.6);
+    /* Embed collapsed sizing */
+    --embed-collapsed-size: 64px;
+    --embed-collapsed-avatar: 56px;
     /* Additional color variables to reduce hard-coded colors */
     --ink-dark: #2b0052;
     --ink: #111111;
@@ -1408,6 +1411,238 @@ body.claire-modal-open {
     font: inherit;
     color: inherit;
     cursor: pointer;
+}
+
+/* ============ Embed widget & toolbar ============ */
+.claire-embed-wrapper {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    padding: 20px;
+    z-index: 1000;
+}
+
+.claire-embed {
+    width: 400px;
+    height: 600px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 20px;
+    overflow: hidden;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-radius 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background: var(--bg-panel);
+    box-shadow: var(--shadow);
+}
+
+.claire-embed.is-collapsed {
+    width: var(--embed-collapsed-size);
+    height: var(--embed-collapsed-size);
+    border-radius: 50%;
+}
+
+.claire-embed.is-collapsed .claire-chat-panel {
+    display: none;
+}
+
+.claire-embed.is-collapsed .claire-embed-toolbar {
+    height: var(--embed-collapsed-size);
+    padding: 0;
+    border-bottom: none;
+    justify-content: center;
+}
+
+.claire-embed.is-collapsed .claire-embed-toolbar__dropdown,
+.claire-embed.is-collapsed .claire-embed-toolbar__item,
+.claire-embed.is-collapsed .claire-embed-toolbar__title,
+.claire-embed.is-collapsed .claire-embed-toolbar__right {
+    display: none;
+}
+
+.claire-embed.is-collapsed .claire-embed-toolbar__left {
+    flex: none;
+    min-width: auto;
+    overflow: visible;
+}
+
+.claire-embed.is-collapsed .claire-embed-toolbar__avatar {
+    width: var(--embed-collapsed-avatar);
+    height: var(--embed-collapsed-avatar);
+}
+
+.claire-embed .claire-chat-header {
+    display: none;
+}
+
+.claire-embed .claire-scroll-down-button {
+    right: 38px;
+}
+
+.claire-embed-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 52px;
+    padding: 0 10px;
+    background: var(--header-bg);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    z-index: 50;
+}
+
+.claire-embed-toolbar__left,
+.claire-embed-toolbar__right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.claire-embed-toolbar__left {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+}
+
+.claire-embed-toolbar__avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    flex-shrink: 0;
+}
+
+.claire-embed-toolbar__title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.claire-embed-toolbar__item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.2s ease;
+    position: relative;
+}
+
+.claire-embed-toolbar__item:hover,
+.claire-embed-toolbar__item:focus-visible {
+    background: rgba(255, 255, 255, 0.08);
+    outline: none;
+}
+
+.claire-embed-toolbar__badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.claire-embed-toolbar__dropdown {
+    position: relative;
+}
+
+.claire-embed-toolbar__subpanel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 14px 36px var(--elevation-panel-dark);
+    min-width: 220px;
+    max-width: 280px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 10px;
+    z-index: 40;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 124, 229, 0.85) rgba(255, 255, 255, 0.06);
+}
+
+.claire-embed-toolbar__dropdown:hover .claire-embed-toolbar__subpanel,
+.claire-embed-toolbar__dropdown:focus-within .claire-embed-toolbar__subpanel,
+.claire-embed-toolbar__subpanel.is-visible {
+    display: block;
+}
+
+.claire-embed-toolbar__subpanel-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.claire-embed-toolbar__subpanel-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    transition: background 0.2s ease;
+    cursor: pointer;
+}
+
+.claire-embed-toolbar__subpanel-section:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.claire-embed-toolbar__subpanel-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(255, 124, 229, 0.24);
+    color: rgba(255, 240, 254, 0.9);
+    white-space: nowrap;
+}
+
+/* WebKit scrollbars for toolbar subpanels */
+.claire-embed-toolbar__subpanel::-webkit-scrollbar {
+    width: 8px;
+}
+
+.claire-embed-toolbar__subpanel::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 999px;
+}
+
+.claire-embed-toolbar__subpanel::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(255, 124, 229, 0.95), rgba(120, 75, 160, 0.95));
+}
+
+@media (max-width: 680px) {
+    .claire-embed {
+        width: calc(100vw - 40px);
+        height: 75vh;
+    }
+
+    .claire-embed-toolbar__subpanel {
+        max-width: calc(100vw - 60px);
+    }
 }
 
 @media (max-width: 1180px) {
