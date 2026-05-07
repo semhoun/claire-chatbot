@@ -2,6 +2,8 @@ name: "Calliope"
 description: "Calliope la conteuse"
 css_inline: |
   :root {
+      --body-background: linear-gradient(180deg, #ffffff 0%, var(--bg-main) 100%);
+
       --bg-main: #f5f7fb;
       --bg-panel: #ffffff;
       --bg-panel-alt: #f0f3f8;
@@ -14,6 +16,8 @@ css_inline: |
       --border: rgba(0, 0, 0, 0.08);
       --shadow: 0 22px 50px rgba(16, 24, 40, 0.08);
   
+      --header-bg:linear-gradient(180deg, #ffffff, #f9fbfe);
+    
       --ink: #ffffff;
       --ink-dark: #ffffff;
       --border-weak: rgba(0, 0, 0, 0.08);
@@ -38,19 +42,11 @@ css_inline: |
       --accent-shadow-soft: rgba(0, 92, 159, 0.18);
       --danger-shadow: rgba(255, 60, 60, 0.35);
   }
-  
-  html, body {
-      background: linear-gradient(180deg, #ffffff 0%, var(--bg-main) 100%);
-  }
-  
+    
   .claire-chat-panel::before {
       background: none;
       opacity: 0;
       mix-blend-mode: normal;
-  }
-  
-  .claire-chat-header {
-      background: linear-gradient(180deg, #ffffff, #f9fbfe);
   }
   
   .claire-chat-header__avatar {

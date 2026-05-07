@@ -6,13 +6,67 @@ Claire is a PHP 8.5+ AI agent chatbot built with Slim 4, Twig, Doctrine ORM, and
 
 The project runs in Docker containers (PHP 8.5, PostgreSQL, Redis, Nginx) via Docker Compose.
 
-## Embed Mode (Reduced UI)
+## Display Modes
 
-- Claire can be embedded in third-party pages through `window.claireEmbed(...)` from `public/js/embed.js`
-- Embed page route: `GET /embed` (controller: `App\Controller\EmbedController`)
-- SSO exchange route: `POST /auth/embed/exchange` returns `session_token` and `mini_token`
-- Main integration script injects and manages app assets (`/css/style.css`, `/js/app.js`, `/js/dialog.js`, etc.) and can be destroyed with `window.destroyClaireEmbed()`
-- Embed shell/test page: `public/embed.html`
+Claire has two distinct display modes sharing the same core components.
+
+### Normal Mode (`layout.twig` + `chat.twig`)
+
+Full-page chat with a collapsible sidebar options panel.
+
+- **Layout**: `layout.twig` provides the HTML shell (`<html>`, `<head>`, asset links, scripts).
+- **Sidebar block**: `{% block sidebar %}` wraps the options backdrop + floating panel. Child templates can override or empty it.
+- **Chat page**: `chat.twig` extends `layout.twig`, renders the header (avatar + name + hamburger toggle) and includes `partials/chat_body.twig`.
+- **Options panel**: Rendered via `partials/options_content.twig` inside `<aside id="claire-options-panel">`. It is a floating panel (not a grid column) that slides in from the right.
+
+### Embed / Widget Mode (`embed.twig`)
+
+Floating widget injected into third-party pages via `window.claireEmbed(...)`.
+
+- **Entry point**: `GET /embed` (`App\Controller\EmbedController`).
+- **Template**: `embed.twig` does **not** extend `layout.twig`. It renders only the widget markup (wrapper + toolbar + chat body + modal partial).
+- **Integration script**: `public/js/embed.js` fetches `/embed` HTML, injects it into a container, loads JS/CSS assets, and handles SSO token exchange (`POST /auth/embed/exchange`).
+- **Teardown**: `window.destroyClaireEmbed()` removes the widget, clears event listeners, and closes the SSE stream.
+- **Test page**: `public/embed.html`.
+
+#### Embed Toolbar
+
+Instead of the full sidebar, the embed mode uses a horizontal toolbar (`partials/embed_toolbar.twig`):
+
+- **Left**: avatar + brain name (clickable to expand/collapse the widget).
+- **Right**: icon buttons/dropdowns — Nouvelle conversation, Historique, Fichiers, Documents RAG, Préférences, Compte.
+- **Key IDs preserved**: `claire-history-toggle`, `claire-files-toggle`, `claire-rag-toggle`, `claire-brain-selector`, etc. so existing JS selectors work unchanged.
+
+#### Collapsed State
+
+The widget defaults to `.is-collapsed`:
+- Reduced to a circle (`border-radius: 50%`) whose size is controlled by CSS variables.
+- Only the avatar is visible.
+- Clicking the toolbar (or avatar) toggles the expanded state (400×600px chat panel).
+
+```css
+:root {
+    --embed-collapsed-size: 64px;   /* widget diameter */
+    --embed-collapsed-avatar: 56px; /* avatar size inside the circle */
+}
+```
+
+### Shared Partials
+
+Both modes reuse the same partials to avoid duplication:
+
+| Partial | Purpose |
+|---------|---------|
+| `partials/chat_body.twig` | `<main class="claire-chat-body">` (messages stream) + `<footer class="claire-chat-input">` (textarea + send form). |
+| `partials/options_content.twig` | Options panel sections: Conversations, Données, Préférences, Compte. Used by the normal sidebar. |
+| `partials/modal_dialog.twig` | Global modal backdrop + container, action indicator spinner, and bottom tooltip banner. Included by both `layout.twig` and `embed.twig`. |
+| `partials/embed_toolbar.twig` | Horizontal toolbar specific to embed mode. |
+
+### Architectural Rules
+
+- **No layout inheritance for embed**: `embed.twig` is a standalone fragment so the JS can inject raw HTML without pulling in `<html>` or `<body>` tags.
+- **No duplicate IDs**: `embed.twig` empties `{% block sidebar %}` from `layout.twig` (when used indirectly) so the options panel IDs never collide with the toolbar IDs.
+- **No layout-mode toggle in embed**: The "Mode largeur" option is intentionally omitted from the embed toolbar because the widget has its own fixed sizing logic.
 
 ## Build / Lint / Test Commands
 
@@ -136,7 +190,7 @@ use App\Entity\ChatHistory;
 - **Telegram Sessions**: Dedicated `TelegramSession` entity for bot user persistence
 - **Queue System**: Redis-backed job queue in `App\Queue\` with `QueueWorker`, `QueueMessage`, and job classes
 - **Observability**: OpenTelemetry integration in `App\Brain\Observability\` for metrics, traces, and structured events
-- **Embed Integration**: Server-rendered embed entry (`embed.twig`) loaded by client-side bootstrap (`public/js/embed.js`) with token exchange and managed teardown
+- **Embed Integration**: See "Display Modes" section above. Server-rendered embed entry (`embed.twig`) loaded by client-side bootstrap (`public/js/embed.js`) with token exchange and managed teardown.
 
 ### Key Project Conventions
 - Use `Env::get()` from `App\Services\Env` for environment variables

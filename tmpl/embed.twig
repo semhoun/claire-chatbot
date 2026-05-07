@@ -1,9 +1,11 @@
-{% extends 'layout.twig' %}
+{% if brain_info.css %}
+<link rel="stylesheet" href="{{ base_url }}/css/{{ brain_info.css }}">
+{% endif %}
+{% if brain_info.css_inline %}
+<style>{{ brain_info.css_inline|raw }}</style>
+{% endif %}
 
-{% block sidebar %}{% endblock %}
-
-{% block app %}
-<div class="claire-embed-wrapper">
+<div class="claire-embed-wrapper" data-accepted-ext="{{ settings.get('files.upload.acceptedExt') }}">
     <div class="claire-embed is-collapsed">
         {% include 'partials/embed_toolbar.twig' %}
         <section class="claire-chat-panel">
@@ -13,4 +15,5 @@
         </section>
     </div>
 </div>
-{% endblock %}
+
+{% include 'partials/modal_dialog.twig' %}

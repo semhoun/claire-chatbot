@@ -270,11 +270,13 @@
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
         const appRoot = doc.querySelector('.claire-app');
-        const body = doc.querySelector('body');
+        const wrapper = doc.querySelector('.claire-embed-wrapper');
 
         return {
             html: appRoot ? appRoot.innerHTML : html,
-            acceptedExt: body ? body.getAttribute('data-accepted-ext') || '' : '',
+            acceptedExt: wrapper
+                ? wrapper.getAttribute('data-accepted-ext') || ''
+                : '',
         };
     }
 

@@ -42,29 +42,102 @@
             </svg>
         </div>
 
-        {# Historique #}
-        <div class="claire-embed-toolbar__dropdown">
-            <div
+        {# Compte #}
+        {% if (uinfo is defined) and (uinfo.id != 'default') %}
+            <div class="claire-embed-toolbar__dropdown">
+                <div
+                        class="claire-embed-toolbar__item"
+                        role="button"
+                        tabindex="0"
+                        aria-expanded="false"
+                        aria-label="Compte"
+                        title="Compte"
+                >
+                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <circle cx="12" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <div class="claire-embed-toolbar__subpanel claire-embed-toolbar__subpanel--account">
+                    <div class="claire-embed-toolbar__subpanel-section" aria-current="true">
+                        <span class="claire-embed-toolbar__subpanel-title">{{ uinfo.displayName }}</span>
+                    </div>
+                    <div
+                            class="claire-embed-toolbar__subpanel-section"
+                            role="button"
+                            tabindex="0"
+                            hx-get="{{ base_url }}/config/telegram_form"
+                            hx-target="#claire-modal-body"
+                            hx-swap="innerHTML"
+                            hx-on::after-request="
+                            document.getElementById('claire-modal-title').textContent = 'Configuration Telegram';
+                            const confirmBtn = document.getElementById('claire-modal-confirm');
+                            const cancelBtn = document.getElementById('claire-modal-cancel');
+                            confirmBtn.textContent = 'Enregistrer';
+                            const form = document.getElementById('claire-telegram-config-form');
+                            confirmBtn.disabled = false;
+                            confirmBtn.onclick = function(e) {
+                                e.preventDefault();
+                                e.stopImmediatePropagation();
+                                confirmBtn.disabled = true;
+                                if (form && window.htmx) {
+                                    const formData = new FormData(form);
+                                    const values = {};
+                                    for (const [key, value] of formData) {
+                                        values[key] = value;
+                                    }
+                                    window.htmx.ajax('POST', form.getAttribute('hx-post'), {
+                                        target: '#claire-modal-body',
+                                        swap: 'innerHTML',
+                                        values: values
+                                    });
+                                }
+                            };
+                            cancelBtn.onclick = function() {
+                                confirmBtn.blur();
+                                document.getElementById('claire-modal-root').classList.remove('claire-is-open');
+                                document.getElementById('claire-modal-backdrop').classList.remove('claire-is-visible');
+                                document.body.classList.remove('claire-modal-open');
+                                document.getElementById('claire-modal-root').setAttribute('aria-hidden', 'true');
+                                confirmBtn.onclick = null;
+                            };
+                            document.getElementById('claire-modal-backdrop').classList.add('claire-is-visible');
+                            document.getElementById('claire-modal-root').classList.add('claire-is-open');
+                            document.getElementById('claire-modal-root').setAttribute('aria-hidden', 'false');
+                            document.getElementById('claire-modal-root').setAttribute('aria-autoclose', 'false');
+                            document.body.classList.add('claire-modal-open');
+                        "
+                    >
+                        <span class="claire-embed-toolbar__subpanel-title">Configuration Telegram</span>
+                    </div>
+                    <div
+                            class="claire-embed-toolbar__subpanel-section"
+                            role="button"
+                            tabindex="0"
+                            hx-on:click="if (window.claireSession && typeof window.claireSession.clearSession === 'function') { window.claireSession.clearSession(); } sessionStorage.clear(); if (typeof window.destroyClaireEmbed === 'function') { window.destroyClaireEmbed(); }"
+                            hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
+                    >
+                        <span class="claire-embed-toolbar__subpanel-title">Se déconnecter</span>
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+
+        {# Documents RAG #}
+        <div
                 class="claire-embed-toolbar__item"
-                id="claire-history-toggle"
+                id="claire-rag-toggle"
                 role="button"
                 tabindex="0"
-                aria-expanded="false"
-                aria-controls="claire-history-list"
-                aria-label="Historique"
-                title="Historique"
-            >
-                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                    <path d="M12 7v5l3 3M12 22C6.5 22 2 17.5 2 12S6.5 2 12 2s10 4.5 10 10-4.5 10-10 10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span
-                    class="claire-embed-toolbar__badge"
-                    id="claire-history-count-badge"
-                    hx-get="{{ base_url }}/history/count"
-                    hx-swap="innerHTML"
-                >0</span>
-            </div>
-            <div id="claire-history-list" class="claire-embed-toolbar__subpanel" aria-live="polite"></div>
+                aria-label="Documents RAG"
+                title="Documents RAG"
+                data-open-upload-dialog
+                data-upload-context="rag"
+        >
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
         </div>
 
         {# Fichiers #}
@@ -90,25 +163,34 @@
                     hx-swap="innerHTML"
                 >0</span>
             </div>
-            <div id="claire-files-list" class="claire-embed-toolbar__subpanel claire-files-root" aria-live="polite"></div>
+            <div id="claire-files-list" class="claire-embed-toolbar__subpanel claire-files-root" aria-live="polite" style="min-width: 280px;"></div>
         </div>
 
-        {# Documents RAG #}
-        <div
-            class="claire-embed-toolbar__item"
-            id="claire-rag-toggle"
-            role="button"
-            tabindex="0"
-            aria-label="Documents RAG"
-            title="Documents RAG"
-            data-open-upload-dialog
-            data-upload-context="rag"
-        >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+        {# Historique #}
+        <div class="claire-embed-toolbar__dropdown">
+            <div
+                    class="claire-embed-toolbar__item"
+                    id="claire-history-toggle"
+                    role="button"
+                    tabindex="0"
+                    aria-expanded="false"
+                    aria-controls="claire-history-list"
+                    aria-label="Historique"
+                    title="Historique"
+            >
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                    <path d="M12 7v5l3 3M12 22C6.5 22 2 17.5 2 12S6.5 2 12 2s10 4.5 10 10-4.5 10-10 10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span
+                        class="claire-embed-toolbar__badge"
+                        id="claire-history-count-badge"
+                        hx-get="{{ base_url }}/history/count"
+                        hx-swap="innerHTML"
+                >0</span>
+            </div>
+            <div id="claire-history-list" class="claire-embed-toolbar__subpanel" aria-live="polite" style="min-width: 310px;"></div>
         </div>
+
 
         {# Préférences #}
         <div class="claire-embed-toolbar__dropdown">
@@ -155,85 +237,6 @@
             </div>
         </div>
 
-        {# Compte #}
-        {% if (uinfo is defined) and (uinfo.id != 'default') %}
-            <div class="claire-embed-toolbar__dropdown">
-                <div
-                    class="claire-embed-toolbar__item"
-                    role="button"
-                    tabindex="0"
-                    aria-expanded="false"
-                    aria-label="Compte"
-                    title="Compte"
-                >
-                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <circle cx="12" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </div>
-                <div class="claire-embed-toolbar__subpanel claire-embed-toolbar__subpanel--account">
-                    <div class="claire-embed-toolbar__subpanel-section" aria-current="true">
-                        <span class="claire-embed-toolbar__subpanel-title">{{ uinfo.displayName }}</span>
-                    </div>
-                    <div
-                        class="claire-embed-toolbar__subpanel-section"
-                        role="button"
-                        tabindex="0"
-                        hx-get="{{ base_url }}/config/telegram_form"
-                        hx-target="#claire-modal-body"
-                        hx-swap="innerHTML"
-                        hx-on::after-request="
-                            document.getElementById('claire-modal-title').textContent = 'Configuration Telegram';
-                            const confirmBtn = document.getElementById('claire-modal-confirm');
-                            const cancelBtn = document.getElementById('claire-modal-cancel');
-                            confirmBtn.textContent = 'Enregistrer';
-                            const form = document.getElementById('claire-telegram-config-form');
-                            confirmBtn.disabled = false;
-                            confirmBtn.onclick = function(e) {
-                                e.preventDefault();
-                                e.stopImmediatePropagation();
-                                confirmBtn.disabled = true;
-                                if (form && window.htmx) {
-                                    const formData = new FormData(form);
-                                    const values = {};
-                                    for (const [key, value] of formData) {
-                                        values[key] = value;
-                                    }
-                                    window.htmx.ajax('POST', form.getAttribute('hx-post'), {
-                                        target: '#claire-modal-body',
-                                        swap: 'innerHTML',
-                                        values: values
-                                    });
-                                }
-                            };
-                            cancelBtn.onclick = function() {
-                                confirmBtn.blur();
-                                document.getElementById('claire-modal-root').classList.remove('claire-is-open');
-                                document.getElementById('claire-modal-backdrop').classList.remove('claire-is-visible');
-                                document.body.classList.remove('claire-modal-open');
-                                document.getElementById('claire-modal-root').setAttribute('aria-hidden', 'true');
-                                confirmBtn.onclick = null;
-                            };
-                            document.getElementById('claire-modal-backdrop').classList.add('claire-is-visible');
-                            document.getElementById('claire-modal-root').classList.add('claire-is-open');
-                            document.getElementById('claire-modal-root').setAttribute('aria-hidden', 'false');
-                            document.getElementById('claire-modal-root').setAttribute('aria-autoclose', 'false');
-                            document.body.classList.add('claire-modal-open');
-                        "
-                    >
-                        <span class="claire-embed-toolbar__subpanel-title">Configuration Telegram</span>
-                    </div>
-                    <div
-                        class="claire-embed-toolbar__subpanel-section"
-                        role="button"
-                        tabindex="0"
-                        hx-on:click="if (window.claireSession && typeof window.claireSession.clearSession === 'function') { window.claireSession.clearSession(); } sessionStorage.clear(); if (typeof window.destroyClaireEmbed === 'function') { window.destroyClaireEmbed(); }"
-                        hx-on:keydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); this.click(); }"
-                    >
-                        <span class="claire-embed-toolbar__subpanel-title">Se déconnecter</span>
-                    </div>
-                </div>
-            </div>
-        {% endif %}
+
     </div>
 </nav>
