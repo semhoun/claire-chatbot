@@ -10,6 +10,7 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 ## Fonctionnalités
 
 - Interface web de chat avec streaming SSE, horodatage, suppression du dernier message
+- Mode widget embarqué (`/embed`) injecté via `window.claireEmbed(...)` pour intégration sur site tiers
 - API REST `POST /brain/messages` et healthcheck `GET /health`
 - Multi-brain : sélection dynamique d'agents IA (Claire, Einstein, Calliope...)
 - Création d'agents personnalisés via fichiers YAML dans `/opt/addons/agents/`
@@ -185,6 +186,32 @@ docker compose exec claire ./console queue:work
 --max-jobs=100
 ```
 
+## Mode embarqué (Widget)
+
+Claire expose un mode widget prêt à intégrer dans une page externe.
+
+- Endpoint HTML : `GET /embed`
+- Bootstrap JS : `public/js/embed.js`
+- Échange SSO -> session Claire : `POST /auth/embed/exchange`
+- Fonction globale d'initialisation : `window.claireEmbed({ baseUrl, target, token|ssoToken })`
+- Fonction de teardown : `window.destroyClaireEmbed()`
+
+Exemple minimal :
+
+```html
+<div id="claire-root"></div>
+<script src="https://claire.example.com/js/embed.js"></script>
+<script>
+  window.claireEmbed({
+    baseUrl: 'https://claire.example.com',
+    target: '#claire-root',
+    ssoToken: '<TOKEN_SSO>'
+  });
+</script>
+```
+
+Une page de validation locale est fournie dans `public/embed.html`.
+
 ## API
 
 ### Authentification session (JWT)
@@ -192,6 +219,7 @@ docker compose exec claire ./console queue:work
 - Le frontend envoie le JWT de session via l'en-tête `X-Claire-Auth`.
 - Le backend peut renvoyer un JWT rafraîchi via `X-Claire-Token` et un mini-token via `X-Claire-Minitoken`.
 - Endpoint de refresh silencieux: `GET /auth/refresh` (retour `204` avec en-têtes de session si renouvellement).
+- Endpoint d'échange SSO pour le widget: `POST /auth/embed/exchange`.
 - Les ressources protégées (fichiers servis) acceptent un paramètre de query `token` pour les liens/images signés côté client.
 
 ### Healthcheck
