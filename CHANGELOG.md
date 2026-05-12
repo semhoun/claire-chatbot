@@ -7,6 +7,11 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-05-12
+
+### Fixed
+- **Observability** : Correction de la compatibilité avec `NeuronAI\Observability\ObserverInterface` — ajout du paramètre manquant `?string $branchId = null` dans les méthodes `onEvent()` de `App\Brain\Observability\Observer` et `App\Brain\Event\TimestampObserver`
+
 ## [1.5.0] - 2026-05-07
 
 ### Added
@@ -487,7 +492,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.5.0...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.5.1...HEAD
+[1.5.1]: https://github.com/semhoun/claire-chatbot/compare/1.5.0...1.5.1
 [1.5.0]: https://github.com/semhoun/claire-chatbot/compare/1.4.8...1.5.0
 [1.4.7]: https://github.com/semhoun/claire-chatbot/compare/1.4.6...1.4.7
 [1.4.6]: https://github.com/semhoun/claire-chatbot/compare/1.4.5...1.4.6

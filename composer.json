@@ -75,7 +75,6 @@
     "phpunit/phpunit": "^12.5"
   },
   "scripts": {
-    "start": "php -S localhost:8080 -t public public/index.php",
     "rector-check": "rector process --dry-run",
     "rector-fix": "rector process",
     "insights-check": "phpinsights --config-path=./phpinsights.php",

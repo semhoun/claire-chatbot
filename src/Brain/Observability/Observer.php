@@ -87,7 +87,7 @@ class Observer implements ObserverInterface
         $this->instrumentation = new \OpenTelemetry\API\Instrumentation\CachedInstrumentation(self::SPAN_TYPE);
     }
 
-    public function onEvent(string $event, object $source, mixed $data = null): void
+    public function onEvent(string $event, object $source, mixed $data = null, ?string $branchId = null): void
     {
         if (\array_key_exists($event, $this->methodsMap)) {
             $method = $this->methodsMap[$event];

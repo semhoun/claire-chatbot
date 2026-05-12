@@ -12,7 +12,7 @@ use NeuronAI\Observability\ObserverInterface;
 
 final class TimestampObserver implements ObserverInterface
 {
-    public function onEvent(string $event, object $source, mixed $data = null): void
+    public function onEvent(string $event, object $source, mixed $data = null, ?string $branchId = null): void
     {
         if ($event === 'message-saving' && $data instanceof MessageSaving) {
             $this->addTimestampToMessage($data->message);
