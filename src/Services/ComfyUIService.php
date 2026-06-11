@@ -12,6 +12,7 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
+use Psr\Log\LoggerInterface;
 use RuntimeException;
 
 final readonly class ComfyUIService
@@ -23,6 +24,7 @@ final readonly class ComfyUIService
         private Filesystem $filesystem,
         private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
         private EntityManagerInterface $entityManager,
+        private LoggerInterface $logger,
     ) {
         $this->httpClient = new Client([
             'base_uri' => $this->settings->get('tools.comfyui.url'),
@@ -32,19 +34,31 @@ final readonly class ComfyUIService
 
     public function generateImage(SessionInterface $session, string $threadId, string $prompt): string
     {
+        $this->logger->info('Starting image generation', ['prompt' => $prompt, 'threadId' => $threadId]);
         try {
             $workflow = $this->getWorkflow($session, $prompt);
+            $this->logger->debug('Workflow prepared for image generation');
             $promptId = $this->queuePrompt($workflow);
+            $this->logger->info('Prompt queued', ['promptId' => $promptId]);
             $imageData = $this->waitForResult($promptId);
+            $this->logger->info('Workflow execution completed', ['imageData' => $imageData]);
 
             return $this->saveImage($session, $threadId, $imageData, $prompt);
         } catch (GuzzleException $e) {
+            $this->logger->error('ComfyUI API error', [
+                'exception' => $e,
+                'prompt' => $prompt,
+            ]);
             throw new RuntimeException(
                 'ComfyUI API error: ' . $e->getMessage(),
                 (int) $e->getCode(),
                 $e
             );
         } catch (FilesystemException $e) {
+            $this->logger->error('Failed to save generated image', [
+                'exception' => $e,
+                'prompt' => $prompt,
+            ]);
             throw new RuntimeException(
                 'Failed to save generated image: ' . $e->getMessage(),
                 (int) $e->getCode(),
@@ -167,8 +181,13 @@ final readonly class ComfyUIService
             return null;
         }
 
-        if ($this->isPromptError($promptData)) {
-            throw new RuntimeException('ComfyUI workflow execution failed');
+        $errorDetail = $this->isPromptError($promptData);
+        if ($errorDetail !== null) {
+            $this->logger->error('ComfyUI workflow execution failed', [
+                'promptId' => $promptId,
+                'error' => $errorDetail,
+            ]);
+            throw new RuntimeException('ComfyUI workflow execution failed: ' . $errorDetail);
         }
 
         if (empty($promptData['outputs'])) {
@@ -199,10 +218,17 @@ final readonly class ComfyUIService
     /**
      * @param array<string, mixed> $promptData
      */
-    private function isPromptError(array $promptData): bool
+    private function isPromptError(array $promptData): ?string
     {
-        return isset($promptData['status']['status_str'])
-            && $promptData['status']['status_str'] === 'error';
+        if (isset($promptData['status']['status_str'])
+            && $promptData['status']['status_str'] === 'error') {
+            $errorMessages = $promptData['status']['messages'] ?? [];
+            return implode('; ', array_map(
+                static fn($m) => is_array($m) ? implode(': ', $m) : (string) $m,
+                $errorMessages
+            )) ?: 'ComfyUI workflow execution failed';
+        }
+        return null;
     }
 
     /**

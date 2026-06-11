@@ -13,6 +13,7 @@ use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
 use NeuronAI\Tools\ToolProperty;
+use Psr\Log\LoggerInterface;
 
 class GenerateImageTool extends Tool implements MessagePostProcessorInterface
 {
@@ -21,6 +22,7 @@ class GenerateImageTool extends Tool implements MessagePostProcessorInterface
         private readonly Settings $settings,
         private readonly SessionInterface $session,
         private readonly string $threadId,
+        private readonly LoggerInterface $logger,
     ) {
         $description = <<<EOT
 Generates an image from a text description. The generated image will be sent to the user.
@@ -57,6 +59,11 @@ EOT;
                 'id' => $imgId,
             ], JSON_THROW_ON_ERROR);
         } catch (\Exception $exception) {
+            $this->logger->error('Image generation failed', [
+                'exception' => $exception,
+                'prompt' => $prompt,
+                'threadId' => $this->threadId,
+            ]);
             return json_encode([
                 'status' => 'error',
                 'message' => 'Error generating image: ' . $exception->getMessage(),

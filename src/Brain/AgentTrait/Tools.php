@@ -30,6 +30,7 @@ trait Tools
                 $this->container->get(Settings::class),
                 $this->session,
                 $this->threadId,
+                $this->logger,
             );
         }
 

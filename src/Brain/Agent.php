@@ -11,6 +11,7 @@ class Agent extends \NeuronAI\Agent\Agent
     use AgentTrait\AIProvider;
     use AgentTrait\UserChatHistory;
     use AgentTrait\Middleware;
+
     use AgentTrait\Constructor;
 
     public function getOpeningText(): string
@@ -26,8 +27,10 @@ PROMPT
         try {
             $agentMessage = $this->chat($userMessage)->getMessage();
             return $agentMessage->getContent();
-        } catch (\Throwable) {
-            // En cas d'erreur, retourner un message par défaut
+        } catch (\Throwable $throwable) {
+            $this->logger->error('Opening text generation failed', [
+                'exception' => $throwable,
+            ]);
             return "Bonjour ! Comment puis-je vous aider aujourd'hui ?";
         }
     }

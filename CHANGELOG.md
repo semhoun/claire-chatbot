@@ -7,6 +7,17 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-06-11
+
+### Added
+- **Observabilité** : Ajout de journaux (logs) détaillés dans `GenerateImageTool` et `ComfyUIService` pour améliorer le débogage de la génération d'images
+
+### Changed
+- **Markdown** : Remplacement de l'extension de coloration syntaxique `Spatie\CommonMarkHighlighter` par `Tempest\Highlight\CommonMark\HighlightExtension`
+
+### Fixed
+- **Image** : Meilleure gestion des erreurs de workflow ComfyUI avec affichage des détails d'erreur spécifiques au lieu d'un message générique
+
 ## [1.5.1] - 2026-05-12
 
 ### Fixed
@@ -492,7 +503,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.5.1...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.5.2...HEAD
+[1.5.2]: https://github.com/semhoun/claire-chatbot/compare/1.5.1...1.5.2
 [1.5.1]: https://github.com/semhoun/claire-chatbot/compare/1.5.0...1.5.1
 [1.5.0]: https://github.com/semhoun/claire-chatbot/compare/1.4.8...1.5.0
 [1.4.7]: https://github.com/semhoun/claire-chatbot/compare/1.4.6...1.4.7

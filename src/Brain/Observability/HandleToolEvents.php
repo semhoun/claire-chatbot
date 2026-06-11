@@ -63,6 +63,10 @@ trait HandleToolEvents
             return;
         }
 
+        if (! isset($this->toolBootstrap)) {
+            return;
+        }
+
         $output = null;
         try {
             $output = $toolCalled->tool->getResult();
