@@ -213,5 +213,4 @@ final readonly class AuthController
             ->withStatus($status)
             ->withHeader('Content-Type', 'application/json');
     }
-
 }

@@ -60,13 +60,13 @@
     "1tomany/twig-filesize": "^0.0.1",
     "league/flysystem": "^3.0",
     "iamgerwin/php-pdf-to-markdown-parser": "^0.0.1",
-    "spatie/commonmark-highlighter": "^3.0",
     "phptg/bot-api": "^0.19",
     "lcobucci/jwt": "^5.5",
     "ramsey/uuid": "^4.9",
     "symfony/yaml": "^8.0",
     "lcobucci/clock": "^3.6",
-    "mpdf/mpdf": "^8.3"
+    "mpdf/mpdf": "^8.3",
+    "tempest/highlight": "^2.24"
   },
   "require-dev": {
     "roave/security-advisories": "dev-latest",
@@ -75,20 +75,20 @@
     "phpunit/phpunit": "^12.5"
   },
   "scripts": {
-    "rector-check": "rector process --dry-run",
-    "rector-fix": "rector process",
-    "insights-check": "phpinsights --config-path=./phpinsights.php",
-    "insights-fix": "phpinsights --config-path=./phpinsights.php -- fix",
-    "pre-commit-line-endings": "find . \\( -name '*.php' -o -name '*.css' -o -name '*.js' -o -name '*.twig' \\) ! -path './vendor/*' ! -path './var/*' -print0 | xargs -0 dos2unix -l -k -q -s",
-    "pre-commit-permissions-files": "git ls-files | grep -v '^console$' | grep -v 'docker' | xargs -I {} sh -c 'chmod 664 \"{}\"'",
-    "pre-commit-permissions-dirs": "find . -type d ! -path './.git/*' ! -path './vendor/*' ! -path './var/*' -print0 | xargs -0 -I {} sh -c 'git check-ignore -q \"{}\" 2>/dev/null || chmod 775 \"{}\"'",
+    "rector:check": "rector process --dry-run",
+    "rector:fix": "rector process",
+    "insights:check": "phpinsights --config-path=./phpinsights.php",
+    "insights:fix": "phpinsights --config-path=./phpinsights.php -- fix",
+    "pre-commit:line-endings": "find . \\( -name '*.php' -o -name '*.css' -o -name '*.js' -o -name '*.twig' \\) ! -path './vendor/*' ! -path './var/*' -print0 | xargs -0 dos2unix -l -k -q -s",
+    "pre-commit:permissions-files": "git ls-files | grep -v '^console$' | grep -v 'docker' | xargs -I {} sh -c 'chmod 664 \"{}\"'",
+    "pre-commit:permissions-dirs": "find . -type d ! -path './.git/*' ! -path './vendor/*' ! -path './var/*' -print0 | xargs -0 -I {} sh -c 'git check-ignore -q \"{}\" 2>/dev/null || chmod 775 \"{}\"'",
     "test": "phpunit",
     "pre-commit": [
-      "@pre-commit-line-endings",
-      "@pre-commit-permissions-files",
-      "@pre-commit-permissions-dirs",
-      "@rector-fix",
-      "@insights-fix"
+      "@pre-commit:line-endings",
+      "@pre-commit:permissions-files",
+      "@pre-commit:permissions-dirs",
+      "@rector:fix",
+      "@insights:fix"
     ]
   },
   "config": {

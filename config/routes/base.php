@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Controller\HomeController;
 use App\Controller\EmbedController;
+use App\Controller\HomeController;
 use Slim\App;
 
 return static function (

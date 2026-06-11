@@ -14,7 +14,7 @@ RUN CGO_ENABLED=1 \
         --with github.com/dunglas/frankenphp=./ \
         --with github.com/dunglas/frankenphp/caddy=./caddy/ \
         --with github.com/dunglas/caddy-cbrotli \
-        # Add extra Caddy modules here
+        # Add extra Caddy modules here \
         --with github.com/caddyserver/transform-encoder
 
 FROM dunglas/frankenphp:php8.5-trixie AS base

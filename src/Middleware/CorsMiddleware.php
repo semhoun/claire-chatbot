@@ -14,10 +14,10 @@ use Slim\Psr7\NonBufferedBody;
 /**
  * Middleware pour gérer CORS (Cross-Origin Resource Sharing).
  */
-final class CorsMiddleware implements MiddlewareInterface
+final readonly class CorsMiddleware implements MiddlewareInterface
 {
     public function __construct(
-        private readonly Settings $settings
+        private Settings $settings
     ) {
     }
 
@@ -37,7 +37,7 @@ final class CorsMiddleware implements MiddlewareInterface
     private function addCorsHeaders(Request $request, Response $response): Response
     {
         $origin = $request->getHeaderLine('Origin');
-        $allowedOrigins = $this->settings->get('security.cors.allowed_origins', ['*']);
+        $allowedOrigins = $this->settings->get('security.cors.allowed_origins');
 
         $allowOrigin = '*';
         $allowCredentials = 'false';

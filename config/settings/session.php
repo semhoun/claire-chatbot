@@ -17,7 +17,7 @@ return [
     ],
 
     // Token lifetime in seconds (default: 15 min)
-    'lifetime' =>  (int) Env::get('SESSION_LIFETIME', 900),
+    'lifetime' => (int) Env::get('SESSION_LIFETIME', 900),
     // Refresh margins in seconds
     'refresh_before_expire' => (int) Env::get('SESSION_REFRESH_BEFORE_EXPIRE', 120),
     'refresh_min_interval' => (int) Env::get('SESSION_REFRESH_MIN_INTERVAL', 30),

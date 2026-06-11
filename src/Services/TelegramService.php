@@ -857,6 +857,7 @@ class TelegramService implements QueueDoer
             $this->sendMessage($telegramChatId, 'Workflow ComfyUI inconnu.');
             return;
         }
+
         $success = $this->updateUserSetting('comfyui_workflow', $workflow);
 
         if ($success) {

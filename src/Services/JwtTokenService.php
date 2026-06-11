@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Services\Session\SessionInterface;
-use App\Services\Session\SessionManagerInterface;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use Lcobucci\JWT\Encoding\ChainedFormatter;
@@ -127,8 +126,7 @@ final readonly class JwtTokenService
         array $claims,
         int $lifetime,
         string $audience,
-    ): string
-    {
+    ): string {
         $inMemory = InMemory::plainText($this->settings->get('session.jwt.secret'));
         $sha256 = new Sha256();
         $now = new DateTimeImmutable();

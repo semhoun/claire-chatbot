@@ -7,15 +7,13 @@ namespace App\Services;
 use Iamgerwin\PdfToMarkdownParser\PdfToMarkdownParser;
 use League\CommonMark\Environment\Environment;
 use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
-use League\CommonMark\Extension\CommonMark\Node\Block\IndentedCode;
-use League\CommonMark\Extension\Highlight\HighlightExtension;
 use League\CommonMark\Extension\SmartPunct\SmartPunctExtension;
 use League\CommonMark\Extension\Strikethrough\StrikethroughExtension;
 use League\CommonMark\Extension\Table\TableExtension;
 use League\CommonMark\MarkdownConverter;
 use League\HTMLToMarkdown\Converter\TableConverter;
 use League\HTMLToMarkdown\HtmlConverter;
-use Spatie\CommonMarkHighlighter\IndentedCodeRenderer;
+use Tempest\Highlight\CommonMark\HighlightExtension;
 use Twig\Extra\Markdown\MarkdownInterface;
 
 readonly class Markdown implements MarkdownInterface
@@ -28,10 +26,9 @@ readonly class Markdown implements MarkdownInterface
 
         $environment->addExtension(new SmartPunctExtension());
         $environment->addExtension(new StrikethroughExtension());
-        $environment->addExtension(new HighlightExtension());
         $environment->addExtension(new TableExtension());
         $environment->addExtension(new CommonMarkCoreExtension());
-        $environment->addRenderer(IndentedCode::class, new IndentedCodeRenderer());
+        $environment->addExtension(new HighlightExtension());
 
         $this->markdownConverter = new MarkdownConverter($environment);
     }

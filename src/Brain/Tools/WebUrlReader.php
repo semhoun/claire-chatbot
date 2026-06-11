@@ -225,6 +225,7 @@ class WebUrlReader extends Tool
             if (! filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
                 throw new ToolException('SSRF protection: Private or reserved IP range is not allowed.');
             }
+
             return;
         }
 

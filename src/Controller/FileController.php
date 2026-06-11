@@ -277,20 +277,20 @@ final readonly class FileController
         $store->addDocuments($embedder->embedDocuments($documents));
     }
 
-    private function validateUploadedFile(UploadedFileInterface $file): bool
+    private function validateUploadedFile(UploadedFileInterface $uploadedFile): bool
     {
-        $filename = $file->getClientFilename() ?? '';
+        $filename = $uploadedFile->getClientFilename() ?? '';
         $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
 
-        $forbiddenExtensions = $this->settings->get('files.upload.forbidden_extensions', []);
+        $forbiddenExtensions = $this->settings->get('files.upload.forbidden_extensions');
         if (in_array($extension, $forbiddenExtensions, true)) {
             return false;
         }
 
-        $mimeType = $file->getClientMediaType();
-        
+        $mimeType = $uploadedFile->getClientMediaType();
+
         // Use finfo to check the real mime type if possible
-        $tmpFile = $file->getStream()->getMetadata('uri');
+        $tmpFile = $uploadedFile->getStream()->getMetadata('uri');
         if ($tmpFile !== null && is_string($tmpFile) && file_exists($tmpFile)) {
             $finfo = new \finfo(FILEINFO_MIME_TYPE);
             $realMimeType = $finfo->file($tmpFile);
@@ -299,7 +299,7 @@ final readonly class FileController
             }
         }
 
-        $allowedMimeTypes = $this->settings->get('files.upload.allowed_mime_types', []);
+        $allowedMimeTypes = $this->settings->get('files.upload.allowed_mime_types');
         if ($mimeType !== null && ! in_array($mimeType, $allowedMimeTypes, true)) {
             return false;
         }

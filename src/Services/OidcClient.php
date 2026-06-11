@@ -182,10 +182,10 @@ final class OidcClient
         return json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
     }
 
-    private function validateToken(UnencryptedToken $token): bool
+    private function validateToken(UnencryptedToken $unencryptedToken): bool
     {
-        $kid = $token->headers()->get('kid');
-        $alg = $token->headers()->get('alg');
+        $kid = $unencryptedToken->headers()->get('kid');
+        $alg = $unencryptedToken->headers()->get('alg');
 
         if (! is_string($alg) || $alg === '') {
             $this->logger->error('Missing ID token algorithm');
@@ -193,7 +193,7 @@ final class OidcClient
         }
 
         $signer = $this->resolveSigner($alg);
-        if ($signer === null) {
+        if (! $signer instanceof \Lcobucci\JWT\Signer) {
             $this->logger->error('Unsupported ID token algorithm', ['alg' => $alg]);
             return false;
         }
@@ -222,18 +222,18 @@ final class OidcClient
         $key = InMemory::plainText($publicKey);
 
         $validator = new Validator();
-        if (! $validator->validate($token, new SignedWith($signer, $key))) {
+        if (! $validator->validate($unencryptedToken, new SignedWith($signer, $key))) {
             $this->logger->info('Invalid ID token signature');
             return false;
         }
 
-        if (! $validator->validate($token, new LooseValidAt(SystemClock::fromUTC()))) {
+        if (! $validator->validate($unencryptedToken, new LooseValidAt(SystemClock::fromUTC()))) {
             $this->logger->info('ID token is not valid at current time');
             return false;
         }
 
         $expectedAudience = (string) $this->settings->get('oidc.client_id');
-        if (! $this->hasExpectedAudience($token, $expectedAudience)) {
+        if (! $this->hasExpectedAudience($unencryptedToken, $expectedAudience)) {
             $this->logger->info('Unexpected ID token audience', [
                 'expected_audience' => $expectedAudience,
             ]);
@@ -243,7 +243,7 @@ final class OidcClient
         $expectedIssuer = (string) ($this->discovery['issuer'] ?? '');
         if (
             $expectedIssuer !== ''
-            && $token->claims()->get('iss', '') !== $expectedIssuer
+            && $unencryptedToken->claims()->get('iss', '') !== $expectedIssuer
         ) {
             $this->logger->info('Unexpected ID token issuer', [
                 'expected_issuer' => $expectedIssuer,
@@ -545,14 +545,14 @@ final class OidcClient
     }
 
     private function hasExpectedAudience(
-        UnencryptedToken $token,
+        UnencryptedToken $unencryptedToken,
         string $expectedAudience
     ): bool {
-        if (! $token->claims()->has('aud')) {
+        if (! $unencryptedToken->claims()->has('aud')) {
             return false;
         }
 
-        $audience = $token->claims()->get('aud');
+        $audience = $unencryptedToken->claims()->get('aud');
         if (is_string($audience)) {
             return $audience === $expectedAudience;
         }
