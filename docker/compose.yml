@@ -23,7 +23,7 @@ services:
       OTEL_SERVICE_NAME: claire
       OTEL_PHP_EXCLUDED_URLS: /health
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-gui:4318
       OTEL_EXPORTER_OTLP_HEADERS: ""
       OTEL_PROPAGATORS: baggage,tracecontext
       OTEL_TRACES_EXPORTER: none
@@ -82,6 +82,14 @@ services:
     image: redis:7-alpine
     container_name: claire-redis
     restart: unless-stopped
+
+ # === otel gui ===
+  otel-gui:
+    image: ghcr.io/semhoun/otel-gui
+    container_name: claire-otel-gui
+    restart: unless-stopped
+    ports:
+      - 4318:4318
 
   # # === Service MariaDB (optionnel) ===
   # # Décommenter pour utiliser MariaDB au lieu de SQLite
