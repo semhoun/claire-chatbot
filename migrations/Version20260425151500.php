@@ -35,7 +35,7 @@ final class Version20260425151500 extends BaseMigration
             $this->addSql('DROP TABLE chat_history_file');
 
             $this->addSql('UPDATE file SET file_path = file_id WHERE file_path IS NULL');
-            $this->addSql('ALTER TABLE file CHANGE file_path file_path VARCHAR(512) NOT NULL;');
+            // SQLite cannot alter nullability in place; data is backfilled above.
 
             return;
         }
@@ -59,8 +59,8 @@ final class Version20260425151500 extends BaseMigration
 
             $this->addSql('DROP TABLE chat_history_file');
 
-            $this->addSql('UPDATE file SET file_path = file_id WHERE file_path IS NULL');
-            $this->addSql('ALTER TABLE file CHANGE file_path file_path VARCHAR(512) NOT NULL;');
+            $this->addSql('UPDATE "file" SET file_path = file_id WHERE file_path IS NULL');
+            $this->addSql('ALTER TABLE "file" ALTER COLUMN file_path SET NOT NULL');
 
             return;
         }

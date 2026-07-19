@@ -8,6 +8,7 @@ services:
       - claire-addons:/opt/addons
     depends_on:
       - redis
+      - otel-gui
     ports:
       - "80:80"
       - "443:443"
@@ -85,7 +86,7 @@ services:
 
  # === otel gui ===
   otel-gui:
-    image: ghcr.io/semhoun/otel-gui
+    image: ghcr.io/metafab/otel-gui:latest
     container_name: claire-otel-gui
     restart: unless-stopped
     ports:
