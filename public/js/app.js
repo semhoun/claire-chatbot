@@ -709,15 +709,19 @@
             updateComposerToggleState(input);
         };
 
-        window.claireUpdatePersistentChatStream = function claireUpdatePersistentChatStream(threadId) {
+        window.claireUpdatePersistentChatStream = function claireUpdatePersistentChatStream(
+            threadId,
+            sessionId = window.claireStreamSessionId
+        ) {
             const chatStreamContainer =$('#claire-chat-stream');
-            const streamSessionId = window.claireStreamSessionId;
-            if (!chatStreamContainer || !threadId || !streamSessionId) return;
+            if (!chatStreamContainer || !threadId || !sessionId) return;
+            window.claireStreamSessionId = sessionId;
+            window.sessionStorage.setItem('claireStreamSessionId', sessionId);
             chatStreamContainer.setAttribute('data-thread-id', threadId);
-            chatStreamContainer.setAttribute('data-stream-session-id', streamSessionId);
+            chatStreamContainer.setAttribute('data-stream-session-id', sessionId);
             $('#claire-thread-id-input').value = threadId;
-            $('#claire-session-id-input').value = streamSessionId;
-            void initChatEventSource(streamSessionId);
+            $('#claire-session-id-input').value = sessionId;
+            void initChatEventSource(sessionId);
         };
 
         window.claireHandleLastExchangeResponse = function claireHandleLastExchangeResponse(event) {

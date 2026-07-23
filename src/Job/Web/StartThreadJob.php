@@ -66,6 +66,11 @@ final class StartThreadJob implements QueueDoer
             ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
         $chatHistory = $this->agent->getChatHistory();
 
+        // getOpeningText() may use the LLM and therefore mutate the chat history
+        // with its technical prompt and generated response. A new conversation
+        // must start with an empty LLM context; only the welcome message is
+        // retained for display.
+        $chatHistory->replaceMessages([]);
         $chatHistory->replaceDisplayMessages([$assistantMessage]);
 
         $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [

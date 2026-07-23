@@ -21,7 +21,7 @@
                     try {
                         const payload = JSON.parse(event.detail.xhr.responseText || '{}');
                         if (payload.threadId && window.claireUpdatePersistentChatStream) {
-                            window.claireUpdatePersistentChatStream(payload.threadId);
+                            window.claireUpdatePersistentChatStream(payload.threadId, payload.sessionId);
                         }
                     } catch (e) {}
                     const panel = document.getElementById('claire-options-panel');

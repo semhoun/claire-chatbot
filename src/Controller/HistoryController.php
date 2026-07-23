@@ -45,7 +45,9 @@ final readonly class HistoryController
     public function create(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
-        $sessionId = trim((string) ($request->getParsedBody()['sessionId'] ?? $request->getQueryParams()['sessionId'] ?? ''));
+        // A new stream channel prevents the previous SSE connection from
+        // consuming events intended for the conversation being created.
+        $sessionId = uniqid('sess-', true);
 
         // Nettoyage des conversations vides de l'utilisateur
         $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations((string) $session->get(Auth::USERID));
@@ -67,6 +69,7 @@ final readonly class HistoryController
 
         $response->getBody()->write(json_encode([
             'threadId' => $threadId,
+            'sessionId' => $sessionId,
         ], JSON_THROW_ON_ERROR));
 
         return $response->withHeader('Content-Type', 'application/json');
