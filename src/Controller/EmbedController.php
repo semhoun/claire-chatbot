@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
+use App\Brain\LongTermMemory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Job\Web\StartThreadJob;
 use App\Services\Auth;
@@ -80,6 +81,7 @@ final readonly class EmbedController
                 $session->get('brain_avatar')
             ),
             'current_brain' => $session->get('brain_avatar'),
+            'long_term_memory_enabled' => $session->get(LongTermMemory::SESSION_KEY, false),
             'brains' => $this->brainRegistry->list(),
             'comfyui_enabled' => $comfyuiEnabled,
             'comfyui_workflows' => $comfyuiEnabled

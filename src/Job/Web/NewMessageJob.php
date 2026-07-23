@@ -337,7 +337,13 @@ final class NewMessageJob implements QueueDoer
         }
 
         $messages = $chatHistory->getDisplayMessages();
-        if ($messages !== [] && count($messages) >= $this->settings->get('llm.summary.minMessages')
+        $longTermMemoryEnabled = $this->inMemorySession->get(
+            \App\Brain\LongTermMemory::SESSION_KEY,
+            false
+        ) === true;
+
+        if (! $longTermMemoryEnabled
+            && $messages !== [] && count($messages) >= $this->settings->get('llm.summary.minMessages')
             && count($messages) <= $this->settings->get('llm.summary.maxMessages')
             && $chatHistory->getSummary() !== null && $chatHistory->getSummary() !== '') {
             return;

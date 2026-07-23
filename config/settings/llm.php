@@ -24,6 +24,9 @@ return [
         'messageToKeep' => 3,
         'maxTokens' => (int) Env::get('OPENAPI_CONTEXT_WINDOW', 50000) / 2,
     ],
+    'longTermMemory' => [
+        'maxCharacters' => (int) Env::get('LONG_TERM_MEMORY_MAX_CHARACTERS', 4000),
+    ],
     'summary' => [
         'minMessages' => 2,
         'maxMessages' => 8,

@@ -118,6 +118,29 @@
         });
     })();
 
+    (function() {
+        const toggle = document.getElementById('claire-long-term-memory');
+        if (!toggle) return;
+        toggle.addEventListener('change', async function() {
+            toggle.disabled = true;
+            window.claireSetGlobalActionIndicatorState(true);
+            try {
+                const response = await fetch(baseUrl + '/config/long_term_memory', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ enabled: String(toggle.checked) }).toString(),
+                });
+                if (!response.ok) throw new Error('Unable to save long-term memory setting');
+            } catch (e) {
+                toggle.checked = !toggle.checked;
+                console.error(e);
+            } finally {
+                toggle.disabled = false;
+                window.claireSetGlobalActionIndicatorState(false);
+            }
+        });
+    })();
+
     // --- Toggle Utility ---
     function createToggle(btnId, panelId, onExpand) {
         const btn = document.getElementById(btnId);

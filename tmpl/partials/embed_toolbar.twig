@@ -234,6 +234,17 @@
                         </span>
                     </div>
                 {% endif %}
+                <div class="claire-embed-toolbar__subpanel-section">
+                    <label for="claire-long-term-memory" class="claire-embed-toolbar__subpanel-title">
+                        Mémoire longue durée
+                    </label>
+                    <input
+                            id="claire-long-term-memory"
+                            type="checkbox"
+                            role="switch"
+                            {{ long_term_memory_enabled|default(false) ? 'checked' : '' }}
+                    >
+                </div>
             </div>
         </div>
 
