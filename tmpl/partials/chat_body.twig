@@ -57,6 +57,7 @@
                     hx-swap="none"
                     hx-indicator="#claire-global-action-indicator"
                     hx-vals="js:{sessionId: window.claireStreamSessionId || ''}"
+                    hx-params="threadId,sessionId"
                     hx-on::after-request="window.claireHandleLastExchangeResponse(event)"
             >
                 <svg viewBox="0 0 24 24" aria-hidden="true">

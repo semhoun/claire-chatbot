@@ -206,17 +206,33 @@ final readonly class HistoryController
             return $response->withStatus(403);
         }
 
-        $threadId = (string) $session->get('threadId');
+        $body = (array) ($request->getParsedBody() ?? []);
+        $query = $request->getQueryParams();
+        $threadId = trim((string) (
+            $body['threadId']
+            ?? $query['threadId']
+            ?? $session->get('threadId')
+            ?? ''
+        ));
         if ($threadId === '') {
             return $response->withStatus(400);
         }
 
+        $history = $this->entityManager
+            ->getRepository(ChatHistoryEntity::class)
+            ->getCurrentUserChatHistory($session, $threadId);
+        if (! $history instanceof ChatHistoryEntity) {
+            return $response->withStatus(404);
+        }
+
+        $session->set('threadId', $threadId);
+
         $userChatHistory = new UserChatHistory(
             session: $session,
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
-            contextWindow: $this->settings->get('llm.openai.contextWindow')
+            contextWindow: $this->settings->get('llm.openai.contextWindow'),
+            threadId: $threadId
         );
-        $userChatHistory->setThreadId($threadId);
 
         $removedMessage = $userChatHistory->removeLastExchange();
         if ($removedMessage === null) {
@@ -224,18 +240,29 @@ final readonly class HistoryController
         }
 
         // sessionId from request (per-tab SSE binding key)
-        $sessionId = trim((string) ($request->getParsedBody()['sessionId'] ?? $request->getQueryParams()['sessionId'] ?? ''));
-        $this->publishSnapshot($threadId, $userChatHistory, $sessionId);
+        $sessionId = trim((string) ($body['sessionId'] ?? $query['sessionId'] ?? ''));
+        $messagesHtml = $this->publishSnapshot(
+            $threadId,
+            $userChatHistory,
+            $sessionId,
+            $removedMessage
+        );
 
         $response->getBody()->write(json_encode([
             'threadId' => $threadId,
             'removedMessage' => $removedMessage,
+            'html' => $messagesHtml,
         ], JSON_THROW_ON_ERROR));
 
         return $response->withHeader('Content-Type', 'application/json');
     }
 
-    private function publishSnapshot(string $threadId, ?UserChatHistory $userChatHistory, string $sessionId): void
+    private function publishSnapshot(
+        string $threadId,
+        ?UserChatHistory $userChatHistory,
+        string $sessionId,
+        ?string $restoredMessage = null
+    ): string
     {
         $messages = null;
         if ($userChatHistory instanceof \App\Brain\ChatHistory\UserChatHistory) {
@@ -252,6 +279,9 @@ final readonly class HistoryController
             'threadId' => $threadId,
             'sessionId' => $sessionId,
             'html' => $messagesHtml,
+            'restoredMessage' => $restoredMessage,
         ]);
+
+        return $messagesHtml;
     }
 }

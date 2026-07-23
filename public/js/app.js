@@ -512,6 +512,18 @@
             if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
         }
 
+        function restoreComposerMessage(message) {
+            if (typeof message !== 'string') return;
+            const input = document.querySelector(
+                '#claire-brain-chat [name="message"]'
+            );
+            if (!input) return;
+            input.value = message;
+            autoResizeComposer(input);
+            updateComposerToggleState(input);
+            input.focus();
+        }
+
         function finalizeAssistantResponse() {
             const messages = document.getElementById('claire-messages');
             if (messages) {
@@ -564,6 +576,7 @@
 
             if (eventType === 'chat.snapshot') {
                 chatStream.innerHTML = html;
+                restoreComposerMessage(update.restoredMessage);
                 finalizeAssistantResponse();
                 return;
             }
@@ -727,6 +740,14 @@
         window.claireHandleLastExchangeResponse = function claireHandleLastExchangeResponse(event) {
             const detail = event.detail || {};
             if (!detail.successful) { setComposerBusyState(false); return; }
+            try {
+                const payload = JSON.parse(detail.xhr.responseText || '{}');
+                const messages = document.getElementById('claire-messages');
+                if (messages && typeof payload.html === 'string') {
+                    messages.innerHTML = payload.html;
+                }
+                restoreComposerMessage(payload.removedMessage);
+            } catch (error) {}
             scrollChatToBottom();
             setComposerBusyState(false);
         };
