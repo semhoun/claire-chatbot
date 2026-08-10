@@ -7,6 +7,34 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-08-10
+
+### Added
+- **Mémoire long terme** : ajout d'une mémoire utilisateur optionnelle et évolutive, partagée entre les conversations
+- **Mémoire long terme** : reconstruction de la mémoire depuis les résumés des conversations existantes
+- **Configuration** : ajout des variables `LONG_TERM_MEMORY_MAX_CHARACTERS`, `LONG_TERM_MEMORY_UPDATE_EVERY_USER_MESSAGES` et `LONG_TERM_MEMORY_REBUILD_BATCH_SIZE`
+- **UI** : activation et reconstruction de la mémoire long terme depuis l'interface web, le widget et la Mini-App Telegram
+- **Base de données** : ajout de la table `long_term_memory`, avec prise en charge de SQLite, PostgreSQL et MySQL
+
+### Changed
+- **Résumé** : la génération des résumés fait désormais évoluer périodiquement la mémoire durable lorsque celle-ci est activée
+- **Conversations** : chaque nouvelle conversation utilise un canal SSE distinct et démarre avec un contexte LLM vide après la génération du message d'accueil
+
+### Fixed
+- **Historique** : la suppression du dernier échange cible explicitement la bonne conversation et replace le message utilisateur dans le champ de saisie
+- **Historique** : rafraîchissement immédiat de l'affichage après la suppression du dernier échange, y compris sans flux SSE actif
+
+## [1.5.3] - 2026-07-19
+
+### Added
+- **Observabilité** : ajout d'otel-gui à l'exemple Docker Compose pour consulter localement les traces, métriques et logs OpenTelemetry
+
+### Changed
+- **Docker** : utilisation de l'image `ghcr.io/metafab/otel-gui:latest`
+
+### Fixed
+- **Migrations** : correction de la migration des fichiers pour assurer la compatibilité SQL avec SQLite et PostgreSQL
+
 ## [1.5.2] - 2026-06-11
 
 ### Added

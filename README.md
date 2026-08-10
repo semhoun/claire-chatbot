@@ -15,6 +15,7 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 - Multi-brain : sélection dynamique d'agents IA (Claire, Einstein, Calliope...)
 - Création d'agents personnalisés via fichiers YAML dans `/opt/addons/agents/`
 - Mémoire courte avec résumé automatique de l'historique
+- Mémoire long terme optionnelle, évolutive entre les conversations et reconstructible depuis les résumés
 - Recherche web via SearXNG et RAG fichier via embeddings
 - Génération d'images avec ComfyUI (workflows multiples)
 - Génération de documents PDF depuis HTML ou Markdown
@@ -55,6 +56,9 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 |----------|-------------|---------------------------|
 | `OPENAPI_MODEL_SUMMARY` | Modèle pour les résumés | valeur de `OPENAPI_MODEL` |
 | `OPENAPI_MODEL_EMBED` | Modèle pour embeddings (RAG) | désactivé                 |
+| `LONG_TERM_MEMORY_MAX_CHARACTERS` | Taille maximale de la mémoire long terme | `4000`                    |
+| `LONG_TERM_MEMORY_UPDATE_EVERY_USER_MESSAGES` | Fréquence de mise à jour, en messages utilisateur | `5`                       |
+| `LONG_TERM_MEMORY_REBUILD_BATCH_SIZE` | Nombre de résumés traités par lot lors d'une reconstruction | `20`                      |
 | `OPENAPI_REQUEST_TIMEOUT` | Timeout des requêtes API (secondes) | `180`                     |
 | `SESSION_LIFETIME` | Durée de vie des JWT de session (secondes) | `900`                     |
 | `SESSION_REFRESH_BEFORE_EXPIRE` | Marge avant expiration pour déclencher le refresh (secondes) | `120`                     |
@@ -123,6 +127,18 @@ instruction: |
 ```
 
 Les cerveaux par défaut : `claire` (généraliste), `einstein` (scientifique), `calliope` (conteuse).
+
+## Mémoire long terme
+
+Depuis la version 1.6.0, Claire peut conserver une synthèse durable des informations utiles d'un utilisateur entre ses conversations. Cette fonctionnalité est désactivée par défaut et s'active dans les préférences de l'interface web, du widget ou de la Mini-App Telegram.
+
+Lorsque la mémoire est active, elle évolue périodiquement à partir des échanges et est ajoutée au contexte des nouvelles requêtes. L'utilisateur peut également la reconstruire à partir des résumés de ses conversations existantes. Les données sont isolées par utilisateur dans la table `long_term_memory` et supprimées en cascade avec le compte.
+
+Après une mise à niveau vers la version 1.6.0, appliquez la migration correspondante :
+
+```bash
+docker compose exec claire ./console migrations:migrate
+```
 
 ## ComfyUI (Génération d'images)
 
