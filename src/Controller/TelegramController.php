@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Brain\BrainRegistry;
+use App\Brain\LongTermMemory;
 use App\Job\Telegram\StartThreadJob;
 use App\Renderer\JsonRenderer;
 use App\Services\ComfyUIWorkflowRegistry;
@@ -85,7 +86,7 @@ final readonly class TelegramController
 
     /**
      * API endpoint to get/update user settings.
-     * If brain_avatar or comfyui_workflow provided -> update
+     * If a supported setting is provided, update it.
      * Otherwise -> get current settings.
      */
     public function api(Request $request, Response $response): Response
@@ -105,8 +106,18 @@ final readonly class TelegramController
             $this->telegramService->manageSession($telegramUserId);
 
             // Check if this is an update request
-            $isUpdate = isset($body['brain_avatar']) || isset($body['comfyui_workflow']);
+            $isUpdate = isset($body['brain_avatar'])
+                || isset($body['comfyui_workflow'])
+                || isset($body[LongTermMemory::SESSION_KEY]);
             $isNewChat = isset($body['action']) && $body['action'] === 'new_chat';
+            $isMemoryRebuild = isset($body['action'])
+                && $body['action'] === 'rebuild_long_term_memory';
+
+            if ($isMemoryRebuild) {
+                $this->telegramService->rebuildLongTermMemory();
+
+                return $this->jsonRenderer->json($response, ['success' => true]);
+            }
 
             if ($isNewChat) {
                 // In private chats, chatId equals userId
@@ -146,6 +157,20 @@ final readonly class TelegramController
                         return $this->jsonRenderer->json(
                             $response,
                             ['error' => 'Invalid workflow'],
+                            400,
+                        );
+                    }
+                }
+
+                if (isset($body[LongTermMemory::SESSION_KEY])) {
+                    $success = $this->telegramService->updateUserSetting(
+                        LongTermMemory::SESSION_KEY,
+                        $body[LongTermMemory::SESSION_KEY]
+                    );
+                    if (! $success) {
+                        return $this->jsonRenderer->json(
+                            $response,
+                            ['error' => 'Invalid long-term memory setting'],
                             400,
                         );
                     }

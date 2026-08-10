@@ -6,6 +6,8 @@ namespace App\Services;
 
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
+use App\Brain\LongTermMemory;
+use App\Brain\LongTermMemoryRebuilder;
 use App\Brain\Tools\GenerateImageTool;
 use App\Entity\File;
 use App\Entity\User;
@@ -106,7 +108,38 @@ class TelegramService implements QueueDoer
             return false;
         }
 
+        if ($key === LongTermMemory::SESSION_KEY && is_bool($value)) {
+            $this->telegramSession->set(LongTermMemory::SESSION_KEY, $value);
+
+            $userId = (string) $this->telegramSession->get(Auth::USERID, '');
+            $user = $this->entityManager->getRepository(User::class)->find($userId);
+            if ($user instanceof User) {
+                $params = $user->getParams() ?? [];
+                $params[LongTermMemory::SESSION_KEY] = $value;
+                $user->setParams($params);
+            }
+
+            $this->telegramSession->flush();
+
+            return true;
+        }
+
         return false;
+    }
+
+    public function rebuildLongTermMemory(): void
+    {
+        $this->telegramSession->ensureLoaded();
+
+        if ($this->telegramSession->get(LongTermMemory::SESSION_KEY, false) !== true) {
+            throw new \RuntimeException('Long-term memory is disabled');
+        }
+
+        new LongTermMemoryRebuilder(
+            connection: $this->entityManager->getConnection(),
+            settings: $this->settings,
+            session: $this->telegramSession,
+        )->rebuild();
     }
 
     /**
@@ -223,6 +256,10 @@ class TelegramService implements QueueDoer
 
         $settings = [
             'brain_avatar' => $this->telegramSession->get('brain_avatar'),
+            LongTermMemory::SESSION_KEY => $this->telegramSession->get(
+                LongTermMemory::SESSION_KEY,
+                false
+            ),
         ];
 
         if ($this->comfyUIWorkflowRegistry->isEnabled()) {

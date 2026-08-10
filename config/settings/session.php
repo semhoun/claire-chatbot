@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Brain\LongTermMemory;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Env;
 
@@ -25,6 +26,7 @@ return [
     'defaultParams' => [
         'brain_avatar' => 'claire',
         'layout_mode' => 'full',
+        LongTermMemory::SESSION_KEY => false,
         ComfyUIWorkflowRegistry::SESSION_KEY => null,
     ],
 ];

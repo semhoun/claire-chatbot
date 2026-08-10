@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Brain\BrainRegistry;
+use App\Brain\LongTermMemory;
+use App\Brain\LongTermMemoryRebuilder;
 use App\Entity\User;
 use App\Services\Auth;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Session\Trait\SessionFromRequest;
+use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -23,6 +26,7 @@ readonly class ConfigController
         private EntityManagerInterface $entityManager,
         private BrainRegistry $brainRegistry,
         private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
+        private Settings $settings,
     ) {
     }
 
@@ -81,6 +85,46 @@ readonly class ConfigController
         }
 
         // No content, HTMX-friendly
+        return $response->withStatus(204);
+    }
+
+    public function longTermMemory(Request $request, Response $response): Response
+    {
+        $session = $this->getSession($request);
+        $data = (array) ($request->getParsedBody() ?? []);
+        $enabled = filter_var($data['enabled'] ?? null, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
+
+        if ($enabled === null) {
+            return $response->withStatus(400);
+        }
+
+        $session->set(LongTermMemory::SESSION_KEY, $enabled);
+        $user = $this->entityManager->getRepository(User::class)->find($session->get(Auth::USERID));
+        if ($user === null) {
+            return $response->withStatus(404);
+        }
+
+        $params = $user->getParams() ?? [];
+        $params[LongTermMemory::SESSION_KEY] = $enabled;
+        $user->setParams($params);
+        $this->entityManager->flush();
+
+        return $response->withStatus(204);
+    }
+
+    public function rebuildLongTermMemory(Request $request, Response $response): Response
+    {
+        $session = $this->getSession($request);
+        if ($session->get(LongTermMemory::SESSION_KEY, false) !== true) {
+            return $response->withStatus(409);
+        }
+
+        new LongTermMemoryRebuilder(
+            connection: $this->entityManager->getConnection(),
+            settings: $this->settings,
+            session: $session,
+        )->rebuild();
+
         return $response->withStatus(204);
     }
 

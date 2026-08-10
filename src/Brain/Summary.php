@@ -31,9 +31,19 @@ class Summary extends \NeuronAI\Agent\Agent
         $this->observe(new \App\Brain\Observability\Observer());
     }
 
-    public function generateAndPersist(): void
+    public function generateAndPersist(bool $evolveLongTermMemory = false): void
     {
-        $userMessage = new UserMessage("Génère 'title' et 'summary'.");
+        $longTermMemory = new LongTermMemory(
+            connection: $this->connection,
+            session: $this->session,
+            maxCharacters: $this->settings->get('llm.longTermMemory.maxCharacters'),
+        );
+        $currentMemory = $longTermMemory->recall();
+        $userMessage = new UserMessage(
+            "Génère 'title', 'summary' et 'memory'.\n\n"
+            . "Mémoire actuelle à faire évoluer :\n"
+            . ($currentMemory === '' ? '(vide)' : $currentMemory)
+        );
         $message = $this->chat($userMessage)->getMessage();
         $jsonContent = $this->extractJsonContent($message->getContent());
 
@@ -44,6 +54,10 @@ class Summary extends \NeuronAI\Agent\Agent
             'user_id' => $this->session->get(Auth::USERID),
             'thread_id' => $this->threadId,
         ]);
+
+        if ($evolveLongTermMemory) {
+            $longTermMemory->store((string) ($jsonContent['memory'] ?? ''));
+        }
     }
 
     #[\Override]
@@ -61,12 +75,19 @@ class Summary extends \NeuronAI\Agent\Agent
     protected function instructions(): string
     {
         return <<<EOF
-Tu es un assistant qui génère un titre (title) concis et un résumé (summary) bref pour une conversation.
+Tu génères le titre et le résumé d'une conversation, puis tu fais évoluer la mémoire durable de l'utilisateur.
 Règles:
-  1) Réponds exclusivement avec un JSON avec les clés "title" et "summary".
+  1) Réponds exclusivement avec un JSON avec les clés "title", "summary" et "memory".
   2) Le titre "title" en français, clair, <= 80 caractères, sans guillemets décoratifs.
   3) Le résumé "summary" en français, 1 à 3 phrases, <= 400 caractères, pas de balises Markdown.
-  4 ) Si le contenu est vide, mets title="Nouvelle conversation" et summary="".
+  4) "memory" est une synthèse évolutive de la mémoire actuelle et des informations durables de la conversation.
+  5) Mémorise seulement les préférences, objectifs, contraintes, décisions et faits personnels utiles à l'avenir.
+  6) Mets à jour ou supprime les informations obsolètes ou contradictoires.
+     N'accumule pas un journal chronologique.
+  7) N'inclus jamais de secrets, mots de passe, jetons, données bancaires ou informations temporaires.
+  8) "memory" doit respecter la taille maximale suivante :
+     {$this->settings->get('llm.longTermMemory.maxCharacters')} caractères.
+  9) Si le contenu est vide, mets title="Nouvelle conversation", summary="" et conserve la mémoire actuelle.
 EOF;
     }
 

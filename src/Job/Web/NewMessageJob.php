@@ -337,12 +337,28 @@ final class NewMessageJob implements QueueDoer
         }
 
         $messages = $chatHistory->getDisplayMessages();
-        if ($messages !== [] && count($messages) >= $this->settings->get('llm.summary.minMessages')
+        $longTermMemory = new \App\Brain\LongTermMemory(
+            connection: $this->connection,
+            session: $this->inMemorySession,
+            maxCharacters: $this->settings->get('llm.longTermMemory.maxCharacters'),
+            updateEveryUserMessages: $this->settings->get(
+                'llm.longTermMemory.updateEveryUserMessages'
+            ),
+        );
+        $userMessageCount = count(array_filter(
+            $messages,
+            static fn (\NeuronAI\Chat\Messages\Message $message): bool =>
+                $message instanceof UserMessage
+        ));
+        $shouldEvolveLongTermMemory = $longTermMemory->shouldEvolve($userMessageCount);
+
+        if (! $shouldEvolveLongTermMemory
+            && $messages !== [] && count($messages) >= $this->settings->get('llm.summary.minMessages')
             && count($messages) <= $this->settings->get('llm.summary.maxMessages')
             && $chatHistory->getSummary() !== null && $chatHistory->getSummary() !== '') {
             return;
         }
 
-        $summary->generateAndPersist();
+        $summary->generateAndPersist($shouldEvolveLongTermMemory);
     }
 }
