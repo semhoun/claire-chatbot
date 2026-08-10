@@ -85,6 +85,8 @@ final class FileControllerTest extends TestCase
                     'upload' => [
                         'path' => 'uploads',
                         'acceptedExt' => '.txt',
+                        'forbidden_extensions' => [],
+                        'allowed_mime_types' => ['text/plain'],
                     ],
                 ],
             ]),
