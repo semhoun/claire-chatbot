@@ -40,4 +40,37 @@ final class LongTermMemoryTest extends TestCase
         $otherSession = new InMemorySession([Auth::USERID => 'other', LongTermMemory::SESSION_KEY => true]);
         $this->assertSame('', new LongTermMemory($this->connection, $otherSession)->recall());
     }
+
+    public function testEvolutionIsDueOnlyAtConfiguredUserMessageInterval(): void
+    {
+        $session = new InMemorySession([
+            Auth::USERID => 'user-1',
+            LongTermMemory::SESSION_KEY => true,
+        ]);
+        $memory = new LongTermMemory(
+            connection: $this->connection,
+            session: $session,
+            updateEveryUserMessages: 3,
+        );
+
+        $this->assertFalse($memory->shouldEvolve(1));
+        $this->assertFalse($memory->shouldEvolve(2));
+        $this->assertTrue($memory->shouldEvolve(3));
+        $this->assertFalse($memory->shouldEvolve(4));
+        $this->assertTrue($memory->shouldEvolve(6));
+    }
+
+    public function testReplaceOverwritesExistingMemory(): void
+    {
+        $session = new InMemorySession([
+            Auth::USERID => 'user-1',
+            LongTermMemory::SESSION_KEY => true,
+        ]);
+        $memory = new LongTermMemory($this->connection, $session);
+        $memory->store('Ancienne mémoire');
+
+        $memory->replace('Mémoire reconstruite');
+
+        $this->assertSame('Mémoire reconstruite', $memory->recall());
+    }
 }

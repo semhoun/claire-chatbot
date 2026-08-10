@@ -9,7 +9,7 @@ return [
     'template_path' => Settings::getAppRoot() . '/tmpl',
     'config' => [
         'cache' => Settings::getAppRoot() . '/var/cache/twig',
-        'debug' => true,
+        'debug' => Env::get('DEBUG_MODE', false),
         'auto_reload' => Env::get('DEBUG_MODE', false),
     ],
 ];

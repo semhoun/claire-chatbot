@@ -31,7 +31,7 @@ class Summary extends \NeuronAI\Agent\Agent
         $this->observe(new \App\Brain\Observability\Observer());
     }
 
-    public function generateAndPersist(): void
+    public function generateAndPersist(bool $evolveLongTermMemory = false): void
     {
         $longTermMemory = new LongTermMemory(
             connection: $this->connection,
@@ -55,7 +55,9 @@ class Summary extends \NeuronAI\Agent\Agent
             'thread_id' => $this->threadId,
         ]);
 
-        $longTermMemory->store((string) ($jsonContent['memory'] ?? ''));
+        if ($evolveLongTermMemory) {
+            $longTermMemory->store((string) ($jsonContent['memory'] ?? ''));
+        }
     }
 
     #[\Override]

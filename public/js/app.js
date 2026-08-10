@@ -141,6 +141,70 @@
         });
     })();
 
+    (function() {
+        const button = document.getElementById('claire-rebuild-long-term-memory');
+        const toggle = document.getElementById('claire-long-term-memory');
+        if (!button) return;
+
+        async function rebuildMemory() {
+            if (button.getAttribute('aria-busy') === 'true') return;
+
+            if (!toggle || !toggle.checked) {
+                window.alert('Activez d’abord la mémoire longue durée.');
+                return;
+            }
+
+            if (!window.claireDialog) {
+                console.error('Confirmation dialog is unavailable');
+                return;
+            }
+
+            window.claireDialog.open({
+                title: 'Confirmer la reconstruction',
+                message: 'Remplacer la mémoire actuelle à partir de tout votre historique ?',
+                variant: 'danger',
+                confirmLabel: 'Reconstruire',
+                cancelLabel: 'Annuler',
+                onConfirm: performRebuild,
+            });
+        }
+
+        async function performRebuild() {
+            const originalContent = button.innerHTML;
+            button.setAttribute('aria-busy', 'true');
+            button.textContent = 'Reconstruction en cours…';
+            window.claireSetGlobalActionIndicatorState(true);
+            try {
+                const response = await fetch(baseUrl + '/config/long_term_memory/rebuild', {
+                    method: 'POST',
+                });
+                if (!response.ok) throw new Error('Unable to rebuild long-term memory');
+                window.claireShowNotification?.(
+                    'La mémoire longue durée a été reconstruite.',
+                    'success'
+                );
+            } catch (e) {
+                console.error(e);
+                window.claireShowNotification?.(
+                    'La reconstruction de la mémoire a échoué.',
+                    'error'
+                );
+            } finally {
+                button.removeAttribute('aria-busy');
+                button.innerHTML = originalContent;
+                window.claireSetGlobalActionIndicatorState(false);
+            }
+        }
+
+        button.addEventListener('click', rebuildMemory);
+        button.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                rebuildMemory();
+            }
+        });
+    })();
+
     // --- Toggle Utility ---
     function createToggle(btnId, panelId, onExpand) {
         const btn = document.getElementById(btnId);
@@ -359,9 +423,11 @@
     (function() {
         const banner = document.getElementById('claire-history-tooltip-banner');
         if (!banner) return;
+        let notificationTimer = null;
         function showBannerFrom(el) {
             const text = el.getAttribute('data-tooltip') || '';
             if (!text) return;
+            banner.removeAttribute('data-variant');
             banner.textContent = text;
             banner.classList.add('claire-is-visible');
             banner.setAttribute('aria-hidden', 'false');
@@ -370,6 +436,18 @@
             banner.classList.remove('claire-is-visible');
             banner.setAttribute('aria-hidden', 'true');
         }
+        window.claireShowNotification = function(message, variant = 'success') {
+            if (notificationTimer) window.clearTimeout(notificationTimer);
+            banner.textContent = message;
+            banner.setAttribute('data-variant', variant);
+            banner.classList.add('claire-is-visible');
+            banner.setAttribute('aria-hidden', 'false');
+            notificationTimer = window.setTimeout(function() {
+                hideBanner();
+                banner.removeAttribute('data-variant');
+                notificationTimer = null;
+            }, 4000);
+        };
         function wireTooltips(root) {
             const scope = root || document;
             const nodes = scope.querySelectorAll('.claire-history-item__content[data-tooltip]');

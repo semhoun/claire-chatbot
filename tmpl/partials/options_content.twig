@@ -39,7 +39,7 @@
     </div>
     <div class="claire-options-list">
         <div
-                class="claire-options-item"
+                class="claire-options-item claire-memory-rebuild"
                 id="claire-history-toggle"
                 role="button"
                 tabindex="0"
@@ -135,6 +135,14 @@
                     role="switch"
                     {{ long_term_memory_enabled|default(false) ? 'checked' : '' }}
             >
+        </div>
+        <div
+                class="claire-options-item"
+                id="claire-rebuild-long-term-memory"
+                role="button"
+                tabindex="0"
+        >
+            <span class="claire-options-item__label">Reconstruire la mémoire depuis l'historique</span>
         </div>
         <div
                 class="claire-options-item"

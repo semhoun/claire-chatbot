@@ -540,10 +540,26 @@
     </div>
     {% endif %}
 
+    <!-- Long-term memory -->
+    <div class="claire-glass-card">
+        <div class="claire-card-title">Mémoire</div>
+        <div class="claire-selection-item" id="claire-memory-selector">
+            <div class="claire-selection-avatar">🧠</div>
+            <div class="claire-selection-info">
+                <div class="claire-selection-name" id="claire-memory-name">Chargement...</div>
+                <div class="claire-selection-desc">Conserver les informations utiles entre les conversations</div>
+            </div>
+            <div class="claire-selection-check">✓</div>
+        </div>
+    </div>
+
     <!-- Actions -->
     <div class="claire-action-grid">
         <button class="claire-action-btn claire-btn-primary" id="claire-new-chat-btn" style="grid-column: span 2;">
             <span>💬</span> Nouvelle conversation
+        </button>
+        <button class="claire-action-btn" id="claire-rebuild-memory-btn" style="grid-column: span 2;">
+            <span>🧠</span> Reconstruire la mémoire depuis l'historique
         </button>
     </div>
 
@@ -581,8 +597,11 @@
         const brainDesc = document.getElementById('claire-brain-desc');
         const workflowSelector = document.getElementById('claire-workflow-selector');
         const workflowName = document.getElementById('claire-workflow-name');
+        const memorySelector = document.getElementById('claire-memory-selector');
+        const memoryName = document.getElementById('claire-memory-name');
         const closeBtn = document.getElementById('claire-close-btn');
         const newChatBtn = document.getElementById('claire-new-chat-btn');
+        const rebuildMemoryBtn = document.getElementById('claire-rebuild-memory-btn');
         const modalOverlay = document.getElementById('claire-modal-overlay');
         const modalTitle = document.getElementById('claire-modal-title');
         const modalBody = document.getElementById('claire-modal-body');
@@ -642,6 +661,10 @@
                 workflowName.textContent = workflow ? workflow.label : 'Non défini';
                 if (workflow) workflowSelector.classList.add('claire-active');
             }
+
+            const memoryEnabled = settings.long_term_memory_enabled === true;
+            memoryName.textContent = memoryEnabled ? 'Activée' : 'Désactivée';
+            memorySelector.classList.toggle('claire-active', memoryEnabled);
         }
 
         function getAvatarHtml(avatar) {
@@ -707,6 +730,21 @@
             });
         }
 
+        memorySelector.addEventListener('click', () => {
+            const options = [
+                { value: true, label: 'Activée', avatar: '🧠' },
+                { value: false, label: 'Désactivée', avatar: '⏸️' }
+            ];
+            openModal(
+                'Mémoire longue durée',
+                options,
+                currentSettings.long_term_memory_enabled === true,
+                async (value) => {
+                    await saveSetting('long_term_memory_enabled', value);
+                }
+            );
+        });
+
         // Save setting
         async function saveSetting(key, value) {
             try {
@@ -731,6 +769,37 @@
                 console.error(error);
             }
         }
+
+        // New chat
+        rebuildMemoryBtn.addEventListener('click', () => {
+            if (currentSettings.long_term_memory_enabled !== true) {
+                showToast('Activez d’abord la mémoire longue durée');
+                return;
+            }
+
+            tg.showConfirm(
+                'Remplacer la mémoire actuelle à partir de tout votre historique ?',
+                async (confirmed) => {
+                    if (!confirmed) return;
+                    rebuildMemoryBtn.disabled = true;
+                    showToast('Reconstruction en cours…');
+                    try {
+                        const response = await fetch(`${baseUrl}/telegram/webapp/api`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ initData, action: 'rebuild_long_term_memory' })
+                        });
+                        const data = await response.json();
+                        showToast(data.success ? 'Mémoire reconstruite ✓' : (data.error || 'Erreur'));
+                    } catch (error) {
+                        showToast('Erreur de connexion');
+                        console.error(error);
+                    } finally {
+                        rebuildMemoryBtn.disabled = false;
+                    }
+                }
+            );
+        });
 
         // New chat
         newChatBtn.addEventListener('click', async () => {

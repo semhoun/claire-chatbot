@@ -845,6 +845,22 @@ body.claire-compact .claire-chat-input {
     border-color: var(--claire-accent-border);
 }
 
+.claire-memory-rebuild {
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+
+.claire-embed-toolbar__subpanel .claire-memory-rebuild {
+    border: 0;
+    background: transparent;
+}
+
 .claire-options-item__label {
     font-size: 14px;
     font-weight: 500;
@@ -1179,6 +1195,21 @@ body.claire-modal-open {
     opacity: 1;
     visibility: visible;
     transition: opacity 90ms ease-out;
+}
+
+#claire-history-tooltip-banner[data-variant="success"] {
+    border-color: var(--claire-success);
+    box-shadow: 0 8px 28px var(--claire-tooltip-shadow),
+        0 0 0 1px var(--claire-success) inset;
+}
+
+#claire-history-tooltip-banner[data-variant="error"] {
+    background: linear-gradient(
+        135deg,
+        var(--claire-danger-1),
+        var(--claire-danger-2),
+        var(--claire-danger-3)
+    );
 }
 
 @media (prefers-reduced-motion: reduce) {

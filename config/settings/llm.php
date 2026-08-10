@@ -26,10 +26,12 @@ return [
     ],
     'longTermMemory' => [
         'maxCharacters' => (int) Env::get('LONG_TERM_MEMORY_MAX_CHARACTERS', 4000),
+        'updateEveryUserMessages' => (int) Env::get('LONG_TERM_MEMORY_UPDATE_EVERY_USER_MESSAGES', 5),
+        'rebuildBatchSize' => (int) Env::get('LONG_TERM_MEMORY_REBUILD_BATCH_SIZE', 20),
     ],
     'summary' => [
-        'minMessages' => 2,
-        'maxMessages' => 8,
+        'minMessages' => (int) Env::get('SUMMARY_MIN_MESSAGES', 2),
+        'maxMessages' => (int) Env::get('SUMMARY_MAX_MESSAGES', 8),
     ],
     'workflow' => [
         'timeout' => (int) Env::get('OPENAPI_WORKFLOW_TIMEOUT', 300),

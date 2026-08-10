@@ -16,7 +16,15 @@ final readonly class LongTermMemory
         private Connection $connection,
         private SessionInterface $session,
         private int $maxCharacters = 4000,
+        private int $updateEveryUserMessages = 5,
     ) {
+    }
+
+    public function shouldEvolve(int $userMessageCount): bool
+    {
+        return $this->session->get(self::SESSION_KEY, false) === true
+            && $userMessageCount > 0
+            && $userMessageCount % max(1, $this->updateEveryUserMessages) === 0;
     }
 
     public function recall(): string
@@ -62,5 +70,18 @@ final readonly class LongTermMemory
                 'updated_at' => new \DateTimeImmutable(),
             ], ['updated_at' => 'datetime_immutable']);
         }
+    }
+
+    public function replace(string $content): void
+    {
+        $userId = (string) $this->session->get(Auth::USERID, '');
+        if ($userId === '') {
+            return;
+        }
+
+        $this->connection->transactional(function () use ($userId, $content): void {
+            $this->connection->delete('long_term_memory', ['user_id' => $userId]);
+            $this->store($content);
+        });
     }
 }
