@@ -97,13 +97,6 @@ final class GeneratedFileExtensionTest extends TestCase
         $this->assertStringContainsString('claire-generated-image-placeholder', $result);
     }
 
-    public function testExtractGeneratedFilesReturnsAllMatches(): void
-    {
-        // Cette méthode n'existe pas dans GeneratedFileExtension.php !
-        // Je vais la commenter ou la supprimer si elle n'est pas nécessaire.
-        $this->markTestSkipped('extractGeneratedFiles does not exist in GeneratedFileExtension');
-    }
-
     public function testGeneratedFilePatternMatchesPdfExtension(): void
     {
         $this->assertSame(1, preg_match(File::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.pdf@@'));

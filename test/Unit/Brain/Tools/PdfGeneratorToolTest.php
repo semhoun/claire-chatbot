@@ -67,7 +67,6 @@ final class PdfGeneratorToolTest extends TestCase
 
         $reflection = new \ReflectionClass($tool);
         $method = $reflection->getMethod('properties');
-        $method->setAccessible(true);
         $properties = $method->invoke($tool);
 
         $names = array_map(static fn ($p) => $p->getName(), $properties);

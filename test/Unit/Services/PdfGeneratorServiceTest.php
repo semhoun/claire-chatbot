@@ -77,7 +77,7 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $reflection = new \ReflectionClass($service);
         $method = $reflection->getMethod('resolveGeneratedImages');
-        $method->setAccessible(true);
+
 
         $html = '<p>Here is an image: @@GENERATED@@user-123@image-uuid.png@@</p>';
         [$result, $tempFiles] = $method->invoke($service, $html, $user);
@@ -124,7 +124,7 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $reflection = new \ReflectionClass($service);
         $method = $reflection->getMethod('resolveGeneratedImages');
-        $method->setAccessible(true);
+
 
         $user = new User();
         $user->setId('user-123');
@@ -168,7 +168,7 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $reflection = new \ReflectionClass($service);
         $method = $reflection->getMethod('resolveGeneratedImages');
-        $method->setAccessible(true);
+
 
         $user = new User();
         $user->setId('user-123');
@@ -207,7 +207,7 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $reflection = new \ReflectionClass($service);
         $method = $reflection->getMethod('resolveGeneratedImages');
-        $method->setAccessible(true);
+
 
         $user = new User();
         $user->setId('user-123');
@@ -278,7 +278,7 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $reflection = new \ReflectionClass($service);
         $method = $reflection->getMethod('resolveGeneratedImages');
-        $method->setAccessible(true);
+
 
         $html = '<p>First: @@GENERATED@@user-123@image1-uuid.png@@</p><p>Second: @@GENERATED@@user-123@image2-uuid.jpg@@</p>';
         [$result, $tempFiles] = $method->invoke($service, $html, $user);
@@ -325,7 +325,7 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $reflection = new \ReflectionClass($service);
         $method = $reflection->getMethod('resolveGeneratedImages');
-        $method->setAccessible(true);
+
 
         $user = new User();
         $user->setId('user-123');
@@ -371,7 +371,7 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $reflection = new \ReflectionClass($service);
         $method = $reflection->getMethod('cleanupTempFiles');
-        $method->setAccessible(true);
+
         $method->invoke($service, [$file1, $file2, '/nonexistent/file.txt']);
 
         $this->assertFileDoesNotExist($file1);
