@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Job\Web\StartThreadJob;
@@ -17,7 +16,6 @@ use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
-use Psr\Log\LoggerInterface as Logger;
 use Slim\Views\Twig;
 
 final readonly class HistoryController
@@ -25,10 +23,8 @@ final readonly class HistoryController
     use SessionFromRequest;
 
     public function __construct(
-        private Logger $logger,
         private Twig $twig,
         private EntityManagerInterface $entityManager,
-        private BrainRegistry $brainRegistry,
         private Settings $settings,
         private ChatStreamPublisher $chatStreamPublisher,
         private QueueDispatcherInterface $queueDispatcher,
@@ -208,12 +204,10 @@ final readonly class HistoryController
 
         $body = (array) ($request->getParsedBody() ?? []);
         $query = $request->getQueryParams();
-        $threadId = trim((string) (
-            $body['threadId']
+        $threadId = trim((string) ($body['threadId']
             ?? $query['threadId']
             ?? $session->get('threadId')
-            ?? ''
-        ));
+            ?? ''));
         if ($threadId === '') {
             return $response->withStatus(400);
         }
@@ -262,8 +256,7 @@ final readonly class HistoryController
         ?UserChatHistory $userChatHistory,
         string $sessionId,
         ?string $restoredMessage = null
-    ): string
-    {
+    ): string {
         $messages = null;
         if ($userChatHistory instanceof \App\Brain\ChatHistory\UserChatHistory) {
             $messages = $userChatHistory->getFormattedMessages();

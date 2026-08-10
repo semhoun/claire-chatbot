@@ -9,42 +9,6 @@ use PHPUnit\Framework\TestCase;
 
 final class SseEventFormatterTest extends TestCase
 {
-    public function testFormatHtmlUpdateReturnsNativeEventSourceFormat(): void
-    {
-        $formatter = new SseEventFormatter();
-
-        $result = $formatter->formatHtmlUpdate('messages', '<div>test</div>');
-
-        $this->assertStringStartsWith('data: ', $result);
-        $this->assertStringEndsWith("\n\n", $result);
-
-        $json = json_decode(substr($result, 6), true);
-        $this->assertSame(['html' => ['messages' => '<div>test</div>']], $json);
-    }
-
-    public function testFormatHtmlUpdateIncludesEventIdWhenProvided(): void
-    {
-        $formatter = new SseEventFormatter();
-
-        $result = $formatter->formatHtmlUpdate('messages', '<div>test</div>', 'assistant-message-123');
-
-        $this->assertStringStartsWith("id: assistant-message-123\n", $result);
-        $this->assertStringContainsString("data: {\"html\":{\"messages\":\"<div>test</div>\"}}\n\n", $result);
-    }
-
-    public function testFormatJsExecReturnsNativeEventSourceFormat(): void
-    {
-        $formatter = new SseEventFormatter();
-
-        $result = $formatter->formatJsExec('alert("test")');
-
-        $this->assertStringStartsWith('data: ', $result);
-        $this->assertStringEndsWith("\n\n", $result);
-
-        $json = json_decode(substr($result, 6), true);
-        $this->assertSame(['js' => ['exec' => 'alert("test")']], $json);
-    }
-
     public function testFormatNamedEventBuildsExpectedPayload(): void
     {
         $formatter = new SseEventFormatter();

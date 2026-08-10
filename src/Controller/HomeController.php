@@ -17,7 +17,6 @@ use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
-use Psr\Log\LoggerInterface as Logger;
 use Slim\Views\Twig;
 
 final readonly class HomeController
@@ -25,7 +24,6 @@ final readonly class HomeController
     use SessionFromRequest;
 
     public function __construct(
-        private Logger $logger,
         private Twig $twig,
         private BrainRegistry $brainRegistry,
         private EntityManagerInterface $entityManager,

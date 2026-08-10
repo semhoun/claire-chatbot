@@ -347,8 +347,7 @@ final class NewMessageJob implements QueueDoer
         );
         $userMessageCount = count(array_filter(
             $messages,
-            static fn (\NeuronAI\Chat\Messages\Message $message): bool =>
-                $message instanceof UserMessage
+            static fn (\NeuronAI\Chat\Messages\Message $message): bool => $message instanceof UserMessage
         ));
         $shouldEvolveLongTermMemory = $longTermMemory->shouldEvolve($userMessageCount);
 

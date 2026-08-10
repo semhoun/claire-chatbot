@@ -224,10 +224,11 @@ final readonly class ComfyUIService
             && $promptData['status']['status_str'] === 'error') {
             $errorMessages = $promptData['status']['messages'] ?? [];
             return implode('; ', array_map(
-                static fn($m) => is_array($m) ? implode(': ', $m) : (string) $m,
+                static fn ($m): string => is_array($m) ? implode(': ', $m) : (string) $m,
                 $errorMessages
             )) ?: 'ComfyUI workflow execution failed';
         }
+
         return null;
     }
 

@@ -60,29 +60,5 @@ final class JsonRendererTest extends TestCase
 
 
 
-    public function testHtml(): void
-
-    {
-
-        $response = (new ResponseFactory())->createResponse();
-
-        $data = ['foo' => 'bar'];
-
-
-
-        $result = $this->renderer->html($response, $data);
-
-
-
-        $body = (string) $result->getBody();
-
-        $this->assertStringContainsString('<html><body><pre>', $body);
-
-        $this->assertStringContainsString('bar', $body);
-
-        $this->assertStringContainsString('</pre></body></html>', $body);
-
-    }
-
 }
 

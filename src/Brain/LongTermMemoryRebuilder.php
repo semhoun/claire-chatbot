@@ -31,7 +31,7 @@ final class LongTermMemoryRebuilder extends \NeuronAI\Agent\Agent
         }
 
         $summaries = $this->connection->fetchFirstColumn(
-            "SELECT summary FROM chat_history WHERE user_id = :user_id "
+            'SELECT summary FROM chat_history WHERE user_id = :user_id '
             . "AND summary IS NOT NULL AND summary <> '' ORDER BY id ASC",
             ['user_id' => $userId]
         );
@@ -51,27 +51,6 @@ final class LongTermMemoryRebuilder extends \NeuronAI\Agent\Agent
         $longTermMemory->replace($memory);
 
         return $memory;
-    }
-
-    /** @param array<int, string> $summaries */
-    private function consolidate(string $memory, array $summaries): string
-    {
-        $prompt = "Mémoire consolidée jusqu'ici :\n"
-            . ($memory === '' ? '(vide)' : $memory)
-            . "\n\nNouveaux résumés historiques à intégrer :\n- "
-            . implode("\n- ", $summaries);
-        $content = $this->chat(new UserMessage($prompt))->getMessage()->getContent();
-        $result = $this->extractMemory($content);
-
-        if ($result === '') {
-            throw new RuntimeException('The model returned an empty long-term memory');
-        }
-
-        return mb_substr(
-            $result,
-            0,
-            $this->settings->get('llm.longTermMemory.maxCharacters')
-        );
     }
 
     #[\Override]
@@ -97,6 +76,27 @@ PROMPT;
             key: $this->settings->get('llm.openai.key'),
             model: $this->settings->get('llm.openai.modelSummary'),
             rawMimeTypes: $this->settings->get('llm.rawMimeTypes'),
+        );
+    }
+
+    /** @param array<int, string> $summaries */
+    private function consolidate(string $memory, array $summaries): string
+    {
+        $prompt = "Mémoire consolidée jusqu'ici :\n"
+            . ($memory === '' ? '(vide)' : $memory)
+            . "\n\nNouveaux résumés historiques à intégrer :\n- "
+            . implode("\n- ", $summaries);
+        $content = $this->chat(new UserMessage($prompt))->getMessage()->getContent();
+        $result = $this->extractMemory($content);
+
+        if ($result === '') {
+            throw new RuntimeException('The model returned an empty long-term memory');
+        }
+
+        return mb_substr(
+            $result,
+            0,
+            $this->settings->get('llm.longTermMemory.maxCharacters')
         );
     }
 

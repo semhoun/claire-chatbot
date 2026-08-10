@@ -13,9 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
-use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Psr\Log\LoggerInterface;
 use Slim\Psr7\Factory\ResponseFactory;
 use Slim\Views\Twig;
 
@@ -98,10 +96,8 @@ final class HistoryControllerTest extends TestCase
         $publisher = new \App\Services\ChatStreamPublisher($redis, $subscriber, $settings);
 
         $controller = new HistoryController(
-            $this->createMock(LoggerInterface::class),
             $twig,
             $entityManager,
-            new \App\Brain\BrainRegistry($settings, $this->createMock(ContainerInterface::class)),
             $settings,
             $publisher,
             $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class),
@@ -133,7 +129,6 @@ final class HistoryControllerTest extends TestCase
 
     public function testOpenReturnsJsonChatIdForPersistentReconnect(): void
     {
-        $logger = $this->createMock(LoggerInterface::class);
         $twig = $this->createMock(Twig::class);
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $settings = new Settings([
@@ -151,14 +146,11 @@ final class HistoryControllerTest extends TestCase
         ]);
         $session = $this->createMock(SessionInterface::class);
         $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
-        $container = $this->createMock(ContainerInterface::class);
         $pdo = new \PDO('sqlite::memory:');
 
         $pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT, display_messages TEXT, display_messages_count INTEGER, title TEXT NULL, summary TEXT NULL)');
         $pdo->prepare('INSERT INTO chat_history (user_id, thread_id, messages, display_messages, display_messages_count) VALUES (?, ?, ?, ?, ?)')
             ->execute(['user-1', 'thread-1', '[]', '[{"role":"assistant","content":"Bonjour","metadata":{"timestamp":"2026-01-01T00:00:00+00:00"}}]', 1]);
-
-        $brainRegistry = new \App\Brain\BrainRegistry($settings, $container);
 
         $session->method('get')->willReturnCallback(static function (string $key) {
             return match ($key) {
@@ -196,7 +188,7 @@ final class HistoryControllerTest extends TestCase
         $filesystem = $this->createMock(Filesystem::class);
         $queueDispatcher = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);
 
-        $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher, $queueDispatcher, $filesystem);
+        $controller = new HistoryController($twig, $entityManager, $settings, $chatStreamPublisher, $queueDispatcher, $filesystem);
 
         $request = $this->createMock(ServerRequestInterface::class);
         $request->method('getAttribute')->willReturnCallback(fn (string $name) => match ($name) {
@@ -214,7 +206,6 @@ final class HistoryControllerTest extends TestCase
 
     public function testOpenPublishesSnapshotToSessionIdWhenProvided(): void
     {
-        $logger = $this->createMock(LoggerInterface::class);
         $twig = $this->createMock(Twig::class);
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $settings = new Settings([
@@ -232,14 +223,11 @@ final class HistoryControllerTest extends TestCase
         ]);
         $session = $this->createMock(SessionInterface::class);
         $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
-        $container = $this->createMock(ContainerInterface::class);
         $pdo = new \PDO('sqlite::memory:');
 
         $pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT, display_messages TEXT, display_messages_count INTEGER, title TEXT NULL, summary TEXT NULL)');
         $pdo->prepare('INSERT INTO chat_history (user_id, thread_id, messages, display_messages, display_messages_count) VALUES (?, ?, ?, ?, ?)')
             ->execute(['user-1', 'thread-1', '[]', '[{"role":"assistant","content":"Bonjour","metadata":{"timestamp":"2026-01-01T00:00:00+00:00"}}]', 1]);
-
-        $brainRegistry = new \App\Brain\BrainRegistry($settings, $container);
 
         $session->method('get')->willReturnCallback(static function (string $key) {
             return match ($key) {
@@ -279,7 +267,7 @@ final class HistoryControllerTest extends TestCase
         $filesystem = $this->createMock(Filesystem::class);
         $queueDispatcher = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);
 
-        $controller = new HistoryController($logger, $twig, $entityManager, $brainRegistry, $settings, $chatStreamPublisher, $queueDispatcher, $filesystem);
+        $controller = new HistoryController($twig, $entityManager, $settings, $chatStreamPublisher, $queueDispatcher, $filesystem);
 
         $request = $this->createMock(ServerRequestInterface::class);
         $request->method('getAttribute')->willReturnCallback(fn (string $name) => match ($name) {

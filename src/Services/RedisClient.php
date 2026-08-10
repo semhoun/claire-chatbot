@@ -29,46 +29,6 @@ class RedisClient
         $this->redis = new \Redis();
     }
 
-    public function publish(string $channel, string $message): int|false
-    {
-        return $this->redis->publish($channel, $message);
-    }
-
-    /**
-     * @param array<int, string> $channels
-     * @param callable(string, string): void $callback
-     * @param callable(): bool $shouldContinue
-     */
-    public function subscribeWithHeartbeat(
-        array $channels,
-        callable $callback,
-        float $heartbeatSeconds,
-        callable $shouldContinue,
-    ): void {
-        $this->setReadTimeout($heartbeatSeconds);
-
-        while ($shouldContinue()) {
-            try {
-                $this->redis->subscribe($channels, static function ($redis, string $channel, string $message) use ($channels, $callback, $shouldContinue): void {
-                    $callback($channel, $message);
-
-                    if (! $shouldContinue()) {
-                        $redis->unsubscribe($channels);
-                    }
-                });
-
-                return;
-            } catch (\RedisException $exception) {
-                if (! $shouldContinue() || ! str_contains(strtolower($exception->getMessage()), 'read error')) {
-                    throw $exception;
-                }
-
-                $this->reconnect();
-                $this->setReadTimeout($heartbeatSeconds);
-            }
-        }
-    }
-
     /**
      * @param array<string, scalar|null> $hash
      */
@@ -193,21 +153,5 @@ class RedisClient
     public function rpush(string $key, array $values): int|false
     {
         return $this->redis->rPush($key, ...$values);
-    }
-
-    public function incr(string $key): int
-    {
-        return $this->redis->incr($key);
-    }
-
-    public function ltrim(string $key, int $start, int $stop): bool
-    {
-        return $this->redis->lTrim($key, $start, $stop);
-    }
-
-    /** @return array<int, string>|false */
-    public function lrange(string $key, int $start, int $stop): array|false
-    {
-        return $this->redis->lRange($key, $start, $stop);
     }
 }
