@@ -27,7 +27,7 @@ trait HandleWorkflowEvents
         }
 
         $span = $this->spans[$workflow::class];
-        $this->spanSetAttributes($this->message, 'neuron.State', $workflowEnd->state->all());
+        $this->spanSetAttributes($span, 'neuron.State', $workflowEnd->state->all());
         $span->end();
     }
 
@@ -46,7 +46,7 @@ trait HandleWorkflowEvents
         }
 
         $span = $this->spans[$workflowNodeEnd->node];
-        $this->spanSetAttributes($this->message, 'neuron.After', $workflowNodeEnd->state->all());
+        $this->spanSetAttributes($span, 'neuron.After', $workflowNodeEnd->state->all());
         $span->end();
     }
 }

@@ -10,6 +10,7 @@ use NeuronAI\Observability\Events\AgentError;
 use NeuronAI\Observability\ObserverInterface;
 use OpenTelemetry\API\Logs\LogRecord;
 use OpenTelemetry\API\Trace\SpanInterface as Span;
+use OpenTelemetry\API\Trace\StatusCode;
 
 class Observer implements ObserverInterface
 {
@@ -32,7 +33,7 @@ class Observer implements ObserverInterface
      */
     protected array $spans = [];
 
-    protected \OpenTelemetry\API\Instrumentation\CachedInstrumentation $instrumentation;
+    protected object $instrumentation;
 
     /**
      * @var array<string, string>
@@ -82,9 +83,10 @@ class Observer implements ObserverInterface
         'workflow-node-end' => 'workflowNodeEnd',
     ];
 
-    public function __construct()
+    public function __construct(?object $instrumentation = null)
     {
-        $this->instrumentation = new \OpenTelemetry\API\Instrumentation\CachedInstrumentation(self::SPAN_TYPE);
+        $this->instrumentation = $instrumentation
+            ?? new \OpenTelemetry\API\Instrumentation\CachedInstrumentation(self::SPAN_TYPE);
     }
 
     public function onEvent(string $event, object $source, mixed $data = null, ?string $branchId = null): void
@@ -102,6 +104,17 @@ class Observer implements ObserverInterface
     {
         $logRecord = new LogRecord($agentError->exception->getMessage(), $agentError->exception->getTrace());
         $this->instrumentation->logger()->emit($logRecord);
+
+        $attributes = [
+            'error.message' => $agentError->exception->getMessage(),
+            'error.type' => $agentError->exception::class,
+            'error.stacktrace' => $agentError->exception->getTraceAsString(),
+        ];
+
+        foreach ($this->getActiveSpans() as $span) {
+            $span->setStatus(StatusCode::STATUS_ERROR, $agentError->exception->getMessage());
+            $span->recordException($agentError->exception, $attributes);
+        }
     }
 
     public function getEventPrefix(string $event): string
@@ -109,9 +122,29 @@ class Observer implements ObserverInterface
         return \explode('-', $event)[0];
     }
 
+    /** @return array<Span> */
+    protected function getActiveSpans(): array
+    {
+        return \array_filter([
+            ...\array_values($this->agentSpans ?? []),
+            ...\array_values($this->toolCalls ?? []),
+            ...[
+                $this->toolBootstrap ?? null,
+                $this->inference ?? null,
+                $this->message ?? null,
+                $this->schema ?? null,
+                $this->extract ?? null,
+                $this->deserialize ?? null,
+                $this->validate ?? null,
+            ],
+            ...\array_values($this->spans ?? []),
+        ], static fn (?Span $span): bool => $span !== null);
+    }
+
     protected function getBaseClassName(string $class): string
     {
-        return \substr(\strrchr($class, '\\'), 1);
+        $pos = \strrpos($class, '\\');
+        return $pos !== false ? \substr($class, $pos + 1) : $class;
     }
 
     /** @return array<string, mixed> */
