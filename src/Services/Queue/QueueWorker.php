@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Queue;
 
+use App\Brain\Observability\HasInstrumentation;
+use OpenTelemetry\API\Trace\StatusCode;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
 use RuntimeException;
@@ -11,6 +13,8 @@ use Throwable;
 
 final class QueueWorker
 {
+    use HasInstrumentation;
+
     private bool $running = true;
 
     private readonly int $startedAt;
@@ -96,9 +100,16 @@ final class QueueWorker
     ): void {
         $job = $this->reserveJob($queueWorkerOptions, $workerId);
 
-        if (! $job instanceof \App\Services\Queue\QueueMessage) {
+        if (! $job instanceof QueueMessage) {
             return;
         }
+
+        $this->otelStartSpan('queue.process');
+        $this->activeSpan->setAttribute('messaging.system', 'redis');
+        $this->activeSpan->setAttribute('messaging.destination', $queueWorkerOptions->queueName);
+        $this->activeSpan->setAttribute('messaging.message.id', $job->id);
+        $this->activeSpan->setAttribute('messaging.job_class', $job->jobClass);
+        $this->activeSpan->setAttribute('worker.id', $workerId);
 
         try {
             $this->logger->info('Processing job', [
@@ -109,7 +120,14 @@ final class QueueWorker
 
             $this->processedJobs++;
             $this->processJob($job);
+
+            $this->activeSpan?->setStatus(StatusCode::STATUS_OK);
         } catch (Throwable $throwable) {
+            if ($this->activeSpan !== null) {
+                $this->activeSpan->setStatus(StatusCode::STATUS_ERROR, $throwable->getMessage());
+                $this->activeSpan->recordException($throwable);
+            }
+
             $this->logger->error('Failed to execute job', [
                 'worker_id' => $workerId,
                 'error' => $throwable,
@@ -119,6 +137,7 @@ final class QueueWorker
         }
 
         $this->queueBackend->delete($job);
+        $this->otelStopSpan();
     }
 
     private function reserveJob(
