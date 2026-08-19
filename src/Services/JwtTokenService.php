@@ -37,11 +37,11 @@ final readonly class JwtTokenService
     ) {
     }
 
-    public function generateSessionToken(SessionManagerInterface $session, ?int $lifetime = null): string
+    public function generateSessionToken(SessionManagerInterface $sessionManager, ?int $lifetime = null): string
     {
-        $sessionData = $session->getStorageAsArray();
+        $sessionData = $sessionManager->getStorageAsArray();
 
-        $sessionId = $session->getId();
+        $sessionId = $sessionManager->getId();
 
         $ttl = $lifetime ?? $this->ttl();
 

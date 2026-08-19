@@ -139,7 +139,7 @@ export class SessionClient {
   private async refresh(): Promise<void> {
     try {
       const response = await this.request('/auth/refresh', {
-        headers: { Accept: 'text/plain, */*', 'X-Requested-With': 'XMLHttpRequest' },
+        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       })
       if (response.status === 401 || response.status === 403) this.clear()
     } catch {

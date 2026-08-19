@@ -50,6 +50,17 @@ final class MarkdownTest extends TestCase
 
     }
 
+    public function testConvertStripsUnsafeHtmlAndLinks(): void
+    {
+        $html = $this->markdown->convert(
+            '<img src=x onerror=alert(1)> [link](javascript:alert(1))'
+        );
+
+        $this->assertStringNotContainsString('<img', $html);
+        $this->assertStringNotContainsString('onerror', $html);
+        $this->assertStringNotContainsString('javascript:', $html);
+    }
+
 
 
     public function testFromHtmlToMarkdown(): void
@@ -69,4 +80,3 @@ final class MarkdownTest extends TestCase
     }
 
 }
-

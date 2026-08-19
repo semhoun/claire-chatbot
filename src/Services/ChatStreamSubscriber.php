@@ -23,9 +23,4 @@ final readonly class ChatStreamSubscriber
 
         return $result !== null ? $result[1] : null;
     }
-
-    public function clearQueue(string $threadId): void
-    {
-        $this->redisClient->del([$this->channel($threadId) . ':queue']);
-    }
 }

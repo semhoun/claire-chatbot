@@ -12,7 +12,10 @@ function token(audience = 'session'): string {
 
 describe('SessionClient', () => {
   beforeEach(() => sessionStorage.clear())
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
 
   it('adds the session header only to its own requests', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
@@ -33,6 +36,28 @@ describe('SessionClient', () => {
 
     expect(client.protectedUrl('/files/serve/file-1')).toContain('token=')
     expect(client.protectedUrl('/history/list')).not.toContain('token=')
+    client.destroy()
+  })
+
+  it('clears an expired server session after a rejected refresh', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 401 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient('https://claire.test', 3590, 1)
+    client.initialize(token())
+
+    await vi.advanceTimersByTimeAsync(11000)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://claire.test/auth/refresh',
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    )
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(new Headers(init.headers).get('Accept')).toBe('application/json')
+    expect(sessionStorage.getItem('claire_session_token')).toBeNull()
+    expect(sessionStorage.getItem('claire_mini_token')).toBeNull()
     client.destroy()
   })
 })

@@ -10,6 +10,7 @@ use App\Job\Web\NewMessageJob;
 use App\Renderer\ChatHtmlRenderer;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
+use App\Services\CorsHeaders;
 use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
@@ -41,6 +42,7 @@ final readonly class BrainController
         private ChatStreamPublisher $chatStreamPublisher,
         private ChatStreamSubscriber $chatStreamSubscriber,
         private SseEventFormatter $sseEventFormatter,
+        private CorsHeaders $corsHeaders,
     ) {
     }
 
@@ -115,16 +117,14 @@ final readonly class BrainController
             return $response->withStatus(400);
         }
 
-        $response = $response
-            ->withBody(new NonBufferedBody())
+        $response = $response->withBody(new NonBufferedBody());
+        $response = $this->corsHeaders->apply($request, $response)
             ->withHeader('Content-Type', 'text/event-stream')
             ->withHeader('Cache-Control', 'no-cache')
             ->withHeader('Connection', 'keep-alive')
             ->withHeader('X-Accel-Buffering', 'no');
 
         $stream = $response->getBody();
-
-        $this->chatStreamSubscriber->clearQueue($sessionId);
 
         $threadId = trim((string) ($queryParams['threadId']));
         if ($threadId !== '') {

@@ -76,6 +76,10 @@ final readonly class AuthMiddleware implements MiddlewareInterface
     private function isPublicRoute(Request $request): bool
     {
         $path = $request->getUri()->getPath();
+        if ($path === '/auth/refresh') {
+            return false;
+        }
+
         $publicRoutes = $this->settings->get('security.public_routes');
 
         return array_any($publicRoutes, static fn ($prefix): bool => $path === $prefix || str_starts_with($path, rtrim((string) $prefix, '/') . '/'));
@@ -83,9 +87,13 @@ final readonly class AuthMiddleware implements MiddlewareInterface
 
     private function handleUnauthorized(Request $request): Response
     {
-        if (str_contains($request->getHeaderLine('Accept'), 'application/json')) {
+        $route = RouteContext::fromRequest($request)->getRoute();
+        if ($route?->getName() !== 'home') {
             $response = new SlimResponse(401);
-            $response->getBody()->write((string) json_encode(['error' => 'unauthorized']));
+            $response->getBody()->write(json_encode(
+                ['error' => 'unauthorized'],
+                JSON_THROW_ON_ERROR
+            ));
 
             return $response->withHeader('Content-Type', 'application/json');
         }

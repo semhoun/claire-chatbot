@@ -44,20 +44,4 @@ final class ChatStreamSubscriberTest extends TestCase
         $this->assertNull($subscriber->popMessage('sess-123', 15));
     }
 
-    public function testClearQueueCallsDelOnCorrectChannel(): void
-    {
-        $settings = new Settings([
-            'redis' => [
-                'prefix' => 'claire:',
-            ],
-        ]);
-        $redis = $this->createMock(RedisClient::class);
-
-        $redis->expects($this->once())
-            ->method('del')
-            ->with(['claire:sse:chat:sess-123:queue']);
-
-        $subscriber = new ChatStreamSubscriber($redis, $settings);
-        $subscriber->clearQueue('sess-123');
-    }
 }

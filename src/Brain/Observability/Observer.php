@@ -138,7 +138,7 @@ class Observer implements ObserverInterface
                 $this->validate ?? null,
             ],
             ...\array_values($this->spans ?? []),
-        ], static fn (?Span $span): bool => $span !== null);
+        ], static fn (?Span $span): bool => $span instanceof Span);
     }
 
     protected function getBaseClassName(string $class): string

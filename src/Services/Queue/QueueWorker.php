@@ -123,7 +123,7 @@ final class QueueWorker
 
             $this->activeSpan?->setStatus(StatusCode::STATUS_OK);
         } catch (Throwable $throwable) {
-            if ($this->activeSpan !== null) {
+            if ($this->activeSpan instanceof \OpenTelemetry\API\Trace\SpanInterface) {
                 $this->activeSpan->setStatus(StatusCode::STATUS_ERROR, $throwable->getMessage());
                 $this->activeSpan->recordException($throwable);
             }

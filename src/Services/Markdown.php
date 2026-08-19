@@ -21,7 +21,10 @@ readonly class Markdown
 
     public function __construct()
     {
-        $environment = new Environment();
+        $environment = new Environment([
+            'html_input' => 'strip',
+            'allow_unsafe_links' => false,
+        ]);
 
         $environment->addExtension(new SmartPunctExtension());
         $environment->addExtension(new StrikethroughExtension());

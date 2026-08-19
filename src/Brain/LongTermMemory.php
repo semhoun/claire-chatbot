@@ -43,7 +43,11 @@ final readonly class LongTermMemory
             ['user_id' => $userId]
         );
 
-        return mb_substr((string) ($memory ? $memory : ''), 0, max(0, $this->maxCharacters));
+        return mb_substr(
+            is_string($memory) ? $memory : '',
+            0,
+            max(0, $this->maxCharacters)
+        );
     }
 
     public function store(string $content): void
