@@ -4,7 +4,7 @@
 
 > **Claire** — Chatbot IA Vue/TypeScript multi-brain avec Telegram, ComfyUI, PDF et OpenTelemetry
 
-Claire est une application de chat IA construite avec Slim 4, Vue 3 et Neuron AI. Elle s'exécute dans un conteneur Docker basé sur FrankenPHP/Caddy et fournit une interface web, une API REST, une intégration Telegram et une observabilité complète via OpenTelemetry.
+Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript et Neuron AI. Elle s'exécute dans un conteneur Docker basé sur FrankenPHP/Caddy et fournit une interface web, une API REST, une intégration Telegram et une observabilité complète via OpenTelemetry.
 
 
 ## Fonctionnalités
@@ -28,8 +28,8 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3 et Neuron AI
 
 - **Runtime** : FrankenPHP + Caddy (PHP 8.5)
 - **Framework** : Slim 4 avec PHP-DI
-- **Rendu HTML** : templates Twig et composants Vue
 - **Frontend** : Vue 3, TypeScript et Vite
+- **Rendu HTML** : Twig pour les pages et fragments ; messages SSE rendus côté PHP (`ChatHtmlRenderer`)
 - **ORM** : Doctrine ORM/DBAL (SQLite, MySQL, PostgreSQL)
 - **LLM** : Neuron AI avec support OpenAI-compatible
 - **Queue** : Redis (BRPOP/LPUSH)
@@ -208,7 +208,7 @@ docker compose exec claire ./console queue:work
 Claire expose un mode widget prêt à intégrer dans une page externe.
 
 - Endpoint HTML : `GET /embed`
-- Bootstrap JS : `public/js/embed.js`
+- Bootstrap JS : `public/js/embed.js` (IIFE autonome, pas de dépendance externe)
 - Échange SSO -> session Claire : `POST /auth/embed/exchange`
 - Fonction globale d'initialisation : `window.claireEmbed({ baseUrl, target, token|ssoToken })`
 - Fonction de teardown : `window.destroyClaireEmbed()`
@@ -229,7 +229,7 @@ Exemple minimal :
 
 Une page de validation locale est fournie dans `public/embed.html`.
 
-Le widget est distribué comme un Custom Element Vue autonome avec Shadow DOM. La commande `npm run build` génère l’application normale dans `public/build/` et reconstruit le script compatible `<script>` dans `public/js/embed.js`.
+Le widget est distribué comme un **Custom Element Vue** (`<claire-chat-widget>`) avec **Shadow DOM**. Il reste isolé de la page hôte : il ne modifie pas `window.fetch`, n'écrit pas de configuration sur `document.body` et ne sort jamais de son conteneur racine. La commande `npm run build` génère l’application normale dans `public/build/` et reconstruit le script compatible `<script>` dans `public/js/embed.js`.
 
 ## API
 
@@ -361,6 +361,7 @@ Pour contribuer ou modifier le code :
 git clone https://github.com/semhoun/claire-chatbot.git
 cd claire-chatbot
 composer install
+npm install
 
 # Exporter les variables
 export OPENAPI_KEY=votre-clé-api
@@ -370,18 +371,35 @@ export SESSION_JWT_SECRET=$(openssl rand -hex 32)
 
 # Initialiser et lancer
 ./console migrations:migrate
+npm run build            # Compiler les bundles Vue (normal + embed)
 composer start
 ```
+
+### Développement frontend
+
+```bash
+npm run dev              # Serveur Vite avec rechargement à chaud
+npm run build            # Type-check + build normal + build embed
+npm test                 # Tests Vitest
+```
+
+Les sources du frontend se trouvent dans `frontend/` :
+
+- `main.ts` : point d'entrée de l'application web complète
+- `embed.ts` : point d'entrée du widget embarqué (Custom Element)
+- `components/` : composants Vue partagés (`ClaireApp.vue`, `ClaireIcon.vue`)
+- `services/session-client.ts` : gestion du JWT côté navigateur
 
 ### Qualité du code
 
 ```bash
-composer rector-check    # Vérifier
-composer rector-fix      # Appliquer
-composer insights-check  # Analyser
-composer insights-fix    # Corriger
-vendor/bin/phpunit       # Tests
-composer pre-commit      # Tous les checks
+composer rector:check      # Vérifier
+composer rector:fix        # Appliquer
+composer insights:check    # Analyser
+composer insights:fix      # Corriger
+vendor/bin/phpunit         # Tests PHP
+npm test                   # Tests frontend
+composer pre-commit        # Tous les checks
 ```
 
 ## Dépannage

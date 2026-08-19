@@ -7,15 +7,18 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-19
+
 ### Added
 - **Frontend** : application partagée Vue 3 et TypeScript, compilée avec Vite
 - **Tests** : tests Vitest du bootstrap, de la session et du cycle de vie du widget
+- **Docker** : étape de build Node dédiée pour compiler les bundles Vue dans l'image Docker
 
 ### Changed
-- **Embed** : distribution sous forme de Custom Element avec Shadow DOM et bundle autonome
+- **Embed** : distribution sous forme de Custom Element (`<claire-chat-widget>`) avec Shadow DOM et bundle IIFE autonome
 - **Session** : authentification et rafraîchissement JWT limités aux requêtes Claire, sans remplacement global de `window.fetch`
-- **Docker** : compilation des bundles frontend dans une étape Node dédiée
-- **Rendu HTML** : pages et fragments produits avec Twig, messages SSE rendus côté PHP
+- **Rendu HTML** : pages et fragments produits avec Twig, messages SSE rendus côté PHP (`ChatHtmlRenderer`)
+- **Qualité** : audit et nettoyage du code LLM, refonte des en-têtes CORS et amélioration des tests unitaires
 
 ### Removed
 - **Frontend historique** : suppression de htmx et des scripts JavaScript globaux remplacés par Vue
