@@ -17,6 +17,7 @@ use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
+use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\Stream\Chunks\ReasoningChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
 use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
@@ -156,7 +157,9 @@ class TelegramService implements QueueDoer
         $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession, $threadId);
         $openingText = $agent->getOpeningText();
         $chatHistory = $agent->getChatHistory();
-        $chatHistory->replaceDisplayMessages([]);
+        $assistantMessage = new AssistantMessage($openingText)
+            ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
+        $chatHistory->initializeWithOpeningMessage($assistantMessage, false);
 
         // Handle files in welcome message
         $fileIds = $this->extractFileIds($openingText);
@@ -426,7 +429,7 @@ class TelegramService implements QueueDoer
 
         $handled = $this->handleCommand($telegramChatId, $text);
         if (! $handled) {
-            $this->sendMessage($telegramChatId, '⚠ Commande inconnue');
+            $this->sendMessage($telegramChatId, 'Commande inconnue');
         }
     }
 

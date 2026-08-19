@@ -48,7 +48,9 @@ final readonly class FileController
         $files = $this->entityManager->getRepository(File::class)->listByUser($userId);
         return $this->twig->render($response, 'partials/files_list.twig', [
             'files' => $files,
-        ]);
+            'base_url' => (string) $request->getAttribute('base_url'),
+            'accepted_ext' => $this->settings->get('files.upload.acceptedExt'),
+        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
     /**

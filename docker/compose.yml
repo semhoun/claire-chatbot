@@ -61,7 +61,8 @@ services:
       # OPENID_CLIENT_SECRET: votre_secret_ici
 
       # === Sécurité ===
-      SESSION_JWT_SECRET: changeme00changeme00changeme00changeme00changeme00changeme00
+      # Générer avec : openssl rand -hex 32
+      SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?SESSION_JWT_SECRET is required}
 
       # === Bot Telegram (optionnel) ===
       TELEGRAM_BOT_TOKEN: ""

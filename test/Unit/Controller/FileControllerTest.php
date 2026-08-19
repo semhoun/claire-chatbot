@@ -26,8 +26,6 @@ use Slim\Views\Twig;
 #[AllowMockObjectsWithoutExpectations]
 final class FileControllerTest extends TestCase
 {
-    private Twig $twig;
-
     private SessionInterface $session;
 
     private EntityManagerInterface $entityManager;
@@ -48,7 +46,6 @@ final class FileControllerTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->twig = $this->createMock(Twig::class);
         $this->session = $this->createMock(SessionInterface::class);
         $this->entityManager = $this->createMock(EntityManagerInterface::class);
         $this->filesystem = $this->createMock(Filesystem::class);
@@ -76,7 +73,7 @@ final class FileControllerTest extends TestCase
             ->willReturn($this->user);
 
         $this->controller = new FileController(
-            $this->twig,
+            Twig::create(\App\Services\Settings::getAppRoot() . '/tmpl'),
             $this->entityManager,
             $this->filesystem,
             $this->container,
@@ -121,19 +118,11 @@ final class FileControllerTest extends TestCase
             ->with($userId)
             ->willReturn([]);
 
-        $this->twig->expects($this->once())
-            ->method('render')
-            ->with(
-                $this->isInstanceOf(\Psr\Http\Message\ResponseInterface::class),
-                'partials/files_list.twig',
-                ['files' => []],
-            )
-            ->willReturn($this->responseFactory->createResponse());
-
-        $this->controller->list(
+        $result = $this->controller->list(
             $this->createRequestWithSession(),
             $this->responseFactory->createResponse(),
         );
+        $this->assertStringContainsString('Aucun fichier', (string) $result->getBody());
     }
 
     public function testCountReturnsNumber(): void
@@ -188,8 +177,6 @@ final class FileControllerTest extends TestCase
         $this->entityManager->expects($this->once())->method('flush');
 
         $this->fileRepository->method('listByUser')->with($userId)->willReturn([]);
-        $this->twig->method('render')->willReturn($this->responseFactory->createResponse());
-
         $this->controller->upload($request, $this->responseFactory->createResponse());
     }
 
@@ -223,8 +210,6 @@ final class FileControllerTest extends TestCase
             ->method('remove')
             ->with($file);
         $this->entityManager->expects($this->once())->method('flush');
-        $this->twig->method('render')->willReturn($this->responseFactory->createResponse());
-
         $this->controller->delete($request, $this->responseFactory->createResponse());
     }
 

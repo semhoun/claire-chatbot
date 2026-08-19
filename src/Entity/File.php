@@ -108,11 +108,6 @@ class File
         $this->mimeType = $mimeType;
     }
 
-    public function getSizeBytes(): int
-    {
-        return $this->sizeBytes;
-    }
-
     public function setSizeBytes(int $size): void
     {
         $this->sizeBytes = $size;
@@ -152,12 +147,6 @@ class File
     public function getMetadata(): array
     {
         return $this->metadata;
-    }
-
-    /** @param array<string, mixed> $metadata */
-    public function setMetadata(array $metadata): void
-    {
-        $this->metadata = $metadata;
     }
 
     public function getCreatedAt(): \DateTimeImmutable

@@ -7,6 +7,7 @@ namespace App\Brain\ChatHistory;
 use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\History\AbstractChatHistory;
+use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
@@ -73,6 +74,13 @@ class UserChatHistory extends AbstractChatHistory
     public function replaceDisplayMessages(array $messages): void
     {
         $this->setDisplayMessages($messages);
+    }
+
+    public function initializeWithOpeningMessage(AssistantMessage $assistantMessage, bool $display = true): void
+    {
+        $this->history = [$this->openingContextMessage(), $assistantMessage];
+        $this->displayHistory = $display ? [$assistantMessage] : [];
+        $this->persistHistories();
     }
 
     /** @return array<Message> */
@@ -187,6 +195,11 @@ class UserChatHistory extends AbstractChatHistory
 
         $this->history = $this->deserializeMessages($llmPayload);
         $this->displayHistory = $this->deserializeMessages($displayPayload);
+
+        if (($this->history[0] ?? null) instanceof AssistantMessage) {
+            array_unshift($this->history, $this->openingContextMessage());
+            $this->persistHistories();
+        }
     }
 
     #[\Override]
@@ -304,6 +317,21 @@ class UserChatHistory extends AbstractChatHistory
             ),
             'display_messages_count' => count($this->displayHistory),
         ]);
+    }
+
+    private function openingContextMessage(): UserMessage
+    {
+        $userMessage = new UserMessage(
+            <<<'CONTEXT'
+[OC]
+Le message assistant suivant est le message d’ouverture déjà envoyé à l’utilisateur.
+Prends-le en compte dans la suite de la conversation.
+[/OC]
+CONTEXT
+        );
+        $userMessage->addMetadata('message_type', 'out_of_context');
+
+        return $userMessage;
     }
 
     /**

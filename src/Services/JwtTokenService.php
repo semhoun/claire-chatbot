@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Services\Session\SessionInterface;
+use App\Services\Session\SessionManagerInterface;
 use DateTimeImmutable;
 use InvalidArgumentException;
 use Lcobucci\JWT\Encoding\ChainedFormatter;
@@ -36,7 +37,7 @@ final readonly class JwtTokenService
     ) {
     }
 
-    public function generateSessionToken(SessionInterface $session, ?int $lifetime = null): string
+    public function generateSessionToken(SessionManagerInterface $session, ?int $lifetime = null): string
     {
         $sessionData = $session->getStorageAsArray();
 

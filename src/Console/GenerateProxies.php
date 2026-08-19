@@ -25,7 +25,7 @@ final class GenerateProxies extends Command
         $metadata = $this->entityManager->getMetadataFactory()->getAllMetadata();
 
         if ($metadata === []) {
-            $output->writeln('⚠️  Aucune entité détectée, rien à générer.');
+            $output->writeln('Aucune entité détectée, rien à générer.');
             return Command::SUCCESS;
         }
 
@@ -38,7 +38,7 @@ final class GenerateProxies extends Command
         // Génère les proxys
         $this->entityManager->getProxyFactory()->generateProxyClasses($metadata);
 
-        $output->writeln(sprintf('✅ Proxys générés dans : <info>%s</info>', $proxyDir));
+        $output->writeln(sprintf('Proxys générés dans : <info>%s</info>', $proxyDir));
 
         return Command::SUCCESS;
     }

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Claire</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#ff3cac">
+    <link rel="icon" href="{{ base_url }}/image/icon-192.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap">
+    <link rel="stylesheet" href="{{ base_url }}/css/style.css">
+    {% if config.brainInfo.css %}
+        <link rel="stylesheet" href="{{ base_url }}/css/{{ config.brainInfo.css }}">
+    {% endif %}
+    {% if config.brainInfo.cssInline %}<style>{{ config.brainInfo.cssInline|raw }}</style>{% endif %}
+    <link rel="stylesheet" href="{{ base_url }}/css/highlight.min.css">
+</head>
+<body id="claire-body"{% if config.layoutMode == 'compact' %} class="claire-compact"{% endif %}
+      data-base-url="{{ base_url }}" data-accepted-ext="{{ config.acceptedExt }}"
+      style="margin:0;min-height:100%;height:100%">
+    <div class="claire-app">
+        <div id="claire-vue-app" data-base-url="{{ base_url }}"
+             data-bootstrap="{{ config|json_encode|e('html_attr') }}"></div>
+    </div>
+    <script type="module" src="{{ base_url }}/build/js/app.js"></script>
+</body>
+</html>

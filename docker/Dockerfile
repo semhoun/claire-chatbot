@@ -17,6 +17,15 @@ RUN CGO_ENABLED=1 \
         # Add extra Caddy modules here \
         --with github.com/caddyserver/transform-encoder
 
+FROM node:24-bookworm-slim AS frontend-build
+
+WORKDIR /src
+COPY package.json package-lock.json tsconfig.json vite.config.ts vite.embed.config.ts ./
+COPY frontend ./frontend
+COPY public/css ./public/css
+RUN npm ci \
+    && npm run build
+
 FROM dunglas/frankenphp:php8.5-trixie AS base
 
 COPY --from=frankenphp-builder /usr/local/bin/frankenphp /usr/local/bin/frankenphp
@@ -78,6 +87,9 @@ RUN mkdir /rootfs \
     && mv /src/docker/rootfs/* /rootfs/ \
     && rm -rf /src/docker /src/.dockerignore /src/.git \
     && mv /src /rootfs/opt/www
+
+COPY --from=frontend-build /src/public/build /rootfs/opt/www/public/build
+COPY --from=frontend-build /src/public/js/embed.js /rootfs/opt/www/public/js/embed.js
 
 RUN cd /rootfs/opt/www \
     && COMPOSER_ALLOW_SUPERUSER=1 php /usr/bin/composer \

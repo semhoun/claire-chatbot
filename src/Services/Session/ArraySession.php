@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Session;
 
-final class ArraySession implements SessionInterface, SessionManagerInterface
+final class ArraySession implements SessionManagerInterface
 {
     private const string FLASH_KEY = '__flash';
 
@@ -19,10 +19,6 @@ final class ArraySession implements SessionInterface, SessionManagerInterface
 
     private readonly ArrayFlash $arrayFlash;
 
-    /**
-     * The Singleton's constructor should always be private to prevent direct
-     * construction calls with the `new` operator.
-     */
     public function __construct()
     {
         $this->arrayFlash = new ArrayFlash();
@@ -121,23 +117,6 @@ final class ArraySession implements SessionInterface, SessionManagerInterface
         $this->started = true;
     }
 
-    public function isStarted(): bool
-    {
-        return $this->started;
-    }
-
-    public function regenerateId(): void
-    {
-        $this->sessionId = $this->generateSessionId();
-    }
-
-    public function destroy(): void
-    {
-        $this->clear();
-        $this->sessionId = '';
-        $this->started = false;
-    }
-
     public function getId(): string
     {
         return $this->sessionId;
@@ -148,9 +127,9 @@ final class ArraySession implements SessionInterface, SessionManagerInterface
         $this->sessionId = $id;
     }
 
-    public function getName(): string
+    private function regenerateId(): void
     {
-        return 'array_session';
+        $this->sessionId = $this->generateSessionId();
     }
 
     private function generateSessionId(): string

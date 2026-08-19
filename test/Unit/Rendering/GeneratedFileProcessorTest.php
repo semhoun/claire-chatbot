@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace App\Test\Unit\Twig;
+namespace App\Test\Unit\Rendering;
 
 use App\Entity\File;
 use App\Services\Settings;
-use App\Services\Twig\GeneratedFileExtension;
+use App\Services\Rendering\GeneratedFileProcessor;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
-final class GeneratedFileExtensionTest extends TestCase
+final class GeneratedFileProcessorTest extends TestCase
 {
-    private GeneratedFileExtension $extension;
+    private GeneratedFileProcessor $processor;
     private Settings $settings;
     private EntityManagerInterface&MockObject $entityManager;
     private EntityRepository&MockObject $repository;
@@ -29,7 +29,10 @@ final class GeneratedFileExtensionTest extends TestCase
             ->with(File::class)
             ->willReturn($this->repository);
 
-        $this->extension = new GeneratedFileExtension($this->settings, $this->entityManager);
+        $this->processor = new GeneratedFileProcessor(
+            $this->settings,
+            $this->entityManager
+        );
     }
 
     public function testProcessGeneratedFilesWithImageId(): void
@@ -45,7 +48,7 @@ final class GeneratedFileExtensionTest extends TestCase
             ->with(['fileId' => $placeholder])
             ->willReturn($file);
 
-        $result = $this->extension->processGeneratedFiles($content);
+        $result = $this->processor->process($content);
 
         $this->assertStringContainsString('http://localhost/files/serve/uuid-123', $result);
         $this->assertStringContainsString('class="claire-generated-image"', $result);
@@ -66,7 +69,7 @@ final class GeneratedFileExtensionTest extends TestCase
             ->with(['fileId' => $placeholder])
             ->willReturn($file);
 
-        $result = $this->extension->processGeneratedFiles($content);
+        $result = $this->processor->process($content);
 
         $this->assertStringContainsString('http://localhost/files/serve/uuid-456', $result);
         $this->assertStringContainsString('class="claire-generated-file"', $result);
@@ -76,7 +79,7 @@ final class GeneratedFileExtensionTest extends TestCase
     public function testProcessGeneratedFilesPlaceholderWithPdfId(): void
     {
         $content = 'Here is a PDF: @@GENERATED@@user123@abc-def.pdf@@';
-        $result = $this->extension->processGeneratedFilesPlaceholder($content);
+        $result = $this->processor->processPlaceholder($content);
 
         // La logique actuelle utilise str_ends_with sur le match complet incluant @@
         // Donc .pdf@@ finit par @@, pas par .pdf.
@@ -92,7 +95,7 @@ final class GeneratedFileExtensionTest extends TestCase
     public function testProcessGeneratedFilesPlaceholderWithImageId(): void
     {
         $content = 'Here is an image: @@GENERATED@@user123@abc-def.png@@';
-        $result = $this->extension->processGeneratedFilesPlaceholder($content);
+        $result = $this->processor->processPlaceholder($content);
 
         $this->assertStringContainsString('claire-generated-image-placeholder', $result);
     }
@@ -156,7 +159,7 @@ final class GeneratedFileExtensionTest extends TestCase
             [['fileId' => $placeholder3], $file3],
         ]);
 
-        $result = $this->extension->processGeneratedFiles($content);
+        $result = $this->processor->process($content);
 
         $this->assertStringContainsString('http://localhost/files/serve/uuid-1', $result);
         $this->assertStringContainsString('http://localhost/files/serve/uuid-2', $result);
@@ -180,7 +183,7 @@ final class GeneratedFileExtensionTest extends TestCase
             ->with(['fileId' => $placeholder])
             ->willReturn($file);
 
-        $result = $this->extension->processGeneratedFiles($content);
+        $result = $this->processor->process($content);
 
         // Devrait être <a href="http://localhost/files/serve/uuid-pdf">Download</a>
         // ou au moins <a href=http://localhost/files/serve/uuid-pdf>Download</a>
@@ -202,7 +205,7 @@ final class GeneratedFileExtensionTest extends TestCase
             ->with(['fileId' => $placeholder])
             ->willReturn($file);
 
-        $result = $this->extension->processGeneratedFiles($content);
+        $result = $this->processor->process($content);
 
         $this->assertStringContainsString('src="http://localhost/files/serve/uuid-img"', $result);
         $this->assertStringContainsString('class="claire-generated-image"', $result);

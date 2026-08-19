@@ -1,5 +1,6 @@
 \.ac-php-conf\.json
 vendor/
+node_modules/
 var/*
 composer.lock
 .cache
@@ -12,3 +13,4 @@ composer.lock
 /.phpunit.result.cache
 /.kilo
 /.junie
+/public/build

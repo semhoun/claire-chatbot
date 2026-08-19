@@ -33,13 +33,7 @@ return [
         'minMessages' => (int) Env::get('SUMMARY_MIN_MESSAGES', 2),
         'maxMessages' => (int) Env::get('SUMMARY_MAX_MESSAGES', 8),
     ],
-    'workflow' => [
-        'timeout' => (int) Env::get('OPENAPI_WORKFLOW_TIMEOUT', 300),
-    ],
     'rag' => [
-        'type' => 'file', // Could be 'file'
-
-        // Used only for file
         'path' => Settings::getDataPath() . '/rag',
     ],
     // Liste des assistants disponibles (slug => FQCN)

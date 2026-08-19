@@ -14,9 +14,8 @@ use League\CommonMark\MarkdownConverter;
 use League\HTMLToMarkdown\Converter\TableConverter;
 use League\HTMLToMarkdown\HtmlConverter;
 use Tempest\Highlight\CommonMark\HighlightExtension;
-use Twig\Extra\Markdown\MarkdownInterface;
 
-readonly class Markdown implements MarkdownInterface
+readonly class Markdown
 {
     private MarkdownConverter $markdownConverter;
 

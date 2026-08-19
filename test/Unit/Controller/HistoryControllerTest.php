@@ -6,7 +6,10 @@ namespace App\Test\Unit\Controller;
 
 use App\Controller\HistoryController;
 use App\Middleware\JwtSessionMiddleware;
+use App\Renderer\ChatHtmlRenderer;
 use App\Services\Auth;
+use App\Services\Markdown;
+use App\Services\Rendering\GeneratedFileProcessor;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
@@ -14,8 +17,8 @@ use League\Flysystem\Filesystem;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ServerRequestInterface;
-use Slim\Psr7\Factory\ResponseFactory;
 use Slim\Views\Twig;
+use Slim\Psr7\Factory\ResponseFactory;
 
 #[AllowMockObjectsWithoutExpectations]
 final class HistoryControllerTest extends TestCase
@@ -72,12 +75,6 @@ final class HistoryControllerTest extends TestCase
         $entityManager->method('getConnection')->willReturn($connection);
         $entityManager->method('getRepository')->willReturn($repository);
 
-        $twig = $this->createMock(Twig::class);
-        $twig->expects($this->once())
-            ->method('fetch')
-            ->with('partials/messages_list.twig', ['messages' => []])
-            ->willReturn('<div></div>');
-
         $redis = $this->createMock(\App\Services\RedisClient::class);
         $redis->expects($this->once())
             ->method('rpush')
@@ -96,7 +93,8 @@ final class HistoryControllerTest extends TestCase
         $publisher = new \App\Services\ChatStreamPublisher($redis, $subscriber, $settings);
 
         $controller = new HistoryController(
-            $twig,
+            $this->chatRenderer($settings, $entityManager),
+            Twig::create(\App\Services\Settings::getAppRoot() . '/tmpl'),
             $entityManager,
             $settings,
             $publisher,
@@ -121,15 +119,14 @@ final class HistoryControllerTest extends TestCase
         );
 
         $this->assertSame(200, $result->getStatusCode());
-        $this->assertSame(
-            '{"threadId":"current-thread","removedMessage":"Question","html":"<div><\/div>"}',
-            (string) $result->getBody()
-        );
+        $payload = json_decode((string) $result->getBody(), true);
+        $this->assertSame('current-thread', $payload['threadId']);
+        $this->assertSame('Question', $payload['removedMessage']);
+        $this->assertStringContainsString('claire-typing-indicator', $payload['html']);
     }
 
     public function testOpenReturnsJsonChatIdForPersistentReconnect(): void
     {
-        $twig = $this->createMock(Twig::class);
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $settings = new Settings([
             'llm' => [
@@ -163,10 +160,6 @@ final class HistoryControllerTest extends TestCase
 
         $entityManager->method('getConnection')->willReturn($connection);
         $connection->method('getNativeConnection')->willReturn($pdo);
-        $twig->expects($this->once())
-            ->method('fetch')
-            ->with('partials/messages_list.twig', $this->isArray())
-            ->willReturn('<div>snapshot</div>');
         $redis = $this->createMock(\App\Services\RedisClient::class);
         $redis->expects($this->once())
             ->method('rpush')
@@ -179,7 +172,7 @@ final class HistoryControllerTest extends TestCase
                     return is_array($data)
                         && $data['event'] === 'chat.snapshot'
                         && $data['threadId'] === 'thread-1'
-                        && $data['payload']['html'] === '<div>snapshot</div>';
+                        && str_contains($data['payload']['html'], 'Bonjour');
                 })
             )
             ->willReturn(1);
@@ -188,7 +181,15 @@ final class HistoryControllerTest extends TestCase
         $filesystem = $this->createMock(Filesystem::class);
         $queueDispatcher = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);
 
-        $controller = new HistoryController($twig, $entityManager, $settings, $chatStreamPublisher, $queueDispatcher, $filesystem);
+        $controller = new HistoryController(
+            $this->chatRenderer($settings, $entityManager),
+            Twig::create(\App\Services\Settings::getAppRoot() . '/tmpl'),
+            $entityManager,
+            $settings,
+            $chatStreamPublisher,
+            $queueDispatcher,
+            $filesystem
+        );
 
         $request = $this->createMock(ServerRequestInterface::class);
         $request->method('getAttribute')->willReturnCallback(fn (string $name) => match ($name) {
@@ -206,7 +207,6 @@ final class HistoryControllerTest extends TestCase
 
     public function testOpenPublishesSnapshotToSessionIdWhenProvided(): void
     {
-        $twig = $this->createMock(Twig::class);
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $settings = new Settings([
             'llm' => [
@@ -239,10 +239,6 @@ final class HistoryControllerTest extends TestCase
 
         $entityManager->method('getConnection')->willReturn($connection);
         $connection->method('getNativeConnection')->willReturn($pdo);
-        $twig->expects($this->once())
-            ->method('fetch')
-            ->with('partials/messages_list.twig', $this->isArray())
-            ->willReturn('<div>snapshot</div>');
         $redis = $this->createMock(\App\Services\RedisClient::class);
         // Snapshot should be pushed to sessionId queue, not threadId
         $redis->expects($this->once())
@@ -258,7 +254,7 @@ final class HistoryControllerTest extends TestCase
                         && $data['threadId'] === 'sess-abc123'
                         && $data['payload']['threadId'] === 'thread-1'
                         && $data['payload']['sessionId'] === 'sess-abc123'
-                        && $data['payload']['html'] === '<div>snapshot</div>';
+                        && str_contains($data['payload']['html'], 'Bonjour');
                 })
             )
             ->willReturn(1);
@@ -267,7 +263,15 @@ final class HistoryControllerTest extends TestCase
         $filesystem = $this->createMock(Filesystem::class);
         $queueDispatcher = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);
 
-        $controller = new HistoryController($twig, $entityManager, $settings, $chatStreamPublisher, $queueDispatcher, $filesystem);
+        $controller = new HistoryController(
+            $this->chatRenderer($settings, $entityManager),
+            Twig::create(\App\Services\Settings::getAppRoot() . '/tmpl'),
+            $entityManager,
+            $settings,
+            $chatStreamPublisher,
+            $queueDispatcher,
+            $filesystem
+        );
 
         $request = $this->createMock(ServerRequestInterface::class);
         $request->method('getAttribute')->willReturnCallback(fn (string $name) => match ($name) {
@@ -283,5 +287,15 @@ final class HistoryControllerTest extends TestCase
 
         $this->assertSame('application/json', $result->getHeaderLine('Content-Type'));
         $this->assertSame('{"threadId":"thread-1"}', (string) $result->getBody());
+    }
+
+    private function chatRenderer(
+        Settings $settings,
+        EntityManagerInterface $entityManager,
+    ): ChatHtmlRenderer {
+        return new ChatHtmlRenderer(
+            new Markdown(),
+            new GeneratedFileProcessor($settings, $entityManager)
+        );
     }
 }

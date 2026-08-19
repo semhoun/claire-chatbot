@@ -90,6 +90,8 @@ final readonly class AuthMiddleware implements MiddlewareInterface
             return $response->withHeader('Content-Type', 'application/json');
         }
 
-        return $this->twig->render(new SlimResponse(200), 'welcome.twig');
+        return $this->twig->render(new SlimResponse(200), 'welcome.twig', [
+            'base_url' => (string) $request->getAttribute('base_url'),
+        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 }

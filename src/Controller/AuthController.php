@@ -8,6 +8,7 @@ use App\Services\Auth;
 use App\Services\JwtTokenService;
 use App\Services\OidcClient;
 use App\Services\Session\SessionInterface;
+use App\Services\Session\SessionManagerInterface;
 use App\Services\Session\Trait\SessionFromRequest;
 use JsonException;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -38,7 +39,7 @@ final readonly class AuthController
     public function ssoCallback(Request $request, Response $response): Response
     {
         $session = $request->getAttribute('session');
-        if (! $session instanceof SessionInterface) {
+        if (! $session instanceof SessionManagerInterface) {
             return $response->withStatus(500);
         }
 
@@ -49,11 +50,13 @@ final readonly class AuthController
             if (isset($result['error'])) {
                 $errorDescription = $result['error_description'] ?? 'Authorization failed';
 
-                return $this->twig->render($response, 'error/default.twig', [
+                return $this->twig->render($response, 'error.twig', [
+                    'base_url' => (string) $request->getAttribute('base_url'),
                     'code' => 403,
                     'title' => 'Accès refusé: ' . $result['error'],
-                    'message' => $errorDescription,
-                ])->withStatus(403);
+                    'details' => ['message' => $errorDescription],
+                ])->withHeader('Content-Type', 'text/html; charset=utf-8')
+                    ->withStatus(403);
             }
 
             // Auth uniquement via SSO: en cas d'échec, on renvoie vers l'init SSO
@@ -74,10 +77,11 @@ final readonly class AuthController
         // This avoids losing tokens on a 302 redirect while keeping
         // sensitive JWT values out of the URL.
         return $this->twig->render($response, 'auth_callback.twig', [
-            'redirect_url' => '/',
+            'base_url' => (string) $request->getAttribute('base_url'),
             'session_token' => $sessionToken,
             'mini_token' => $miniToken,
-        ]);
+            'redirect_url' => '/',
+        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
     public function logout(Request $request, Response $response): Response
@@ -94,7 +98,7 @@ final readonly class AuthController
     public function embedExchange(Request $request, Response $response): Response
     {
         $session = $request->getAttribute('session');
-        if (! $session instanceof SessionInterface) {
+        if (! $session instanceof SessionManagerInterface) {
             return $this->jsonResponse(
                 $response,
                 ['error' => 'session_unavailable'],

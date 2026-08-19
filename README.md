@@ -2,9 +2,9 @@
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.5%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-> **Claire** — Chatbot IA multi-brain avec Telegram, ComfyUI, PDF et OpenTelemetry
+> **Claire** — Chatbot IA Vue/TypeScript multi-brain avec Telegram, ComfyUI, PDF et OpenTelemetry
 
-Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI. Elle s'exécute dans un conteneur Docker basé sur FrankenPHP/Caddy et fournit une interface web, une API REST, une intégration Telegram et une observabilité complète via OpenTelemetry.
+Claire est une application de chat IA construite avec Slim 4, Vue 3 et Neuron AI. Elle s'exécute dans un conteneur Docker basé sur FrankenPHP/Caddy et fournit une interface web, une API REST, une intégration Telegram et une observabilité complète via OpenTelemetry.
 
 
 ## Fonctionnalités
@@ -28,7 +28,8 @@ Claire est une application de chat IA construite avec Slim 4, Twig et Neuron AI.
 
 - **Runtime** : FrankenPHP + Caddy (PHP 8.5)
 - **Framework** : Slim 4 avec PHP-DI
-- **Templates** : Twig
+- **Rendu HTML** : templates Twig et composants Vue
+- **Frontend** : Vue 3, TypeScript et Vite
 - **ORM** : Doctrine ORM/DBAL (SQLite, MySQL, PostgreSQL)
 - **LLM** : Neuron AI avec support OpenAI-compatible
 - **Queue** : Redis (BRPOP/LPUSH)
@@ -227,6 +228,8 @@ Exemple minimal :
 ```
 
 Une page de validation locale est fournie dans `public/embed.html`.
+
+Le widget est distribué comme un Custom Element Vue autonome avec Shadow DOM. La commande `npm run build` génère l’application normale dans `public/build/` et reconstruit le script compatible `<script>` dans `public/js/embed.js`.
 
 ## API
 

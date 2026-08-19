@@ -1,19 +1,2 @@
-{% if brain_info.css %}
-<link rel="stylesheet" href="{{ base_url }}/css/{{ brain_info.css }}">
-{% endif %}
-{% if brain_info.css_inline %}
-<style>{{ brain_info.css_inline|raw }}</style>
-{% endif %}
-
-<div class="claire-embed-wrapper" data-accepted-ext="{{ settings.get('files.upload.acceptedExt') }}">
-    <div class="claire-embed is-collapsed">
-        {% include 'partials/embed_toolbar.twig' %}
-        <section class="claire-chat-panel">
-            <div class="claire-chat-shell">
-                {% include 'partials/chat_body.twig' %}
-            </div>
-        </section>
-    </div>
-</div>
-
-{% include 'partials/modal_dialog.twig' %}
+<div class="claire-embed-bootstrap" data-base-url="{{ base_url }}"
+     data-bootstrap="{{ config|json_encode|e('html_attr') }}"></div>

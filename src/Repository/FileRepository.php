@@ -35,27 +35,8 @@ class FileRepository extends EntityRepository
         return (int) $queryBuilder->getQuery()->getSingleScalarResult();
     }
 
-    /**
-     * @return array<File>
-     */
-    public function findByHistoryId(string $historyId): array
-    {
-        return $this->createQueryBuilder('f')
-            ->where('IDENTITY(f.chatHistory) = :historyId')
-            ->setParameter('historyId', $historyId)
-            ->getQuery()
-            ->getResult();
-    }
-
     public function findOneByFilePath(string $filePath): ?File
     {
         return $this->findOneBy(['filePath' => $filePath]);
-    }
-
-    public function findDisplayNameByFilePath(string $filePath): ?string
-    {
-        $file = $this->findOneByFilePath($filePath);
-
-        return $file?->getFilename();
     }
 }

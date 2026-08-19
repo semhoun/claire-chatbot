@@ -1,76 +1,25 @@
-{% extends 'layout_base.twig' %}
-
+{% extends 'public_base.twig' %}
 {% block content %}
-    <div class="claire-panel claire-is-centered" role="status" aria-live="polite">
-        <div class="claire-spinner" aria-hidden="true"></div>
-        <h1>Connexion en cours...</h1>
-        <p>Redirection automatique</p>
+    <div class="claire-panel claire-is-centered">
+        <div class="claire-spinner"></div><h1>Connexion en cours...</h1><p>Redirection automatique</p>
     </div>
 {% endblock %}
-
-{% block script %}
+{% block scripts %}
 <script>
-    (function() {
-        'use strict';
-
-        const STORAGE_KEY = 'claire_session_token';
-        const MINI_STORAGE_KEY = 'claire_mini_token';
-        const SESSION_TOKEN = '{{ session_token|e('js') }}';
-        const MINI_TOKEN = '{{ mini_token|default('')|e('js') }}';
-
-        function readJwtExp(token) {
-            try {
-                const parts = String(token).split('.');
-                if (parts.length !== 3) {
-                    return null;
-                }
-
-                const payloadPart = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-                const padded = payloadPart + '==='.slice((payloadPart.length + 3) % 4);
-                const payload = JSON.parse(atob(padded));
-
-                return payload && typeof payload.exp === 'number' ? payload.exp : null;
-            } catch (_error) {
-                return null;
-            }
-        }
-
-        function storeTokenAndRedirect() {
-            if (SESSION_TOKEN || MINI_TOKEN) {
-                try {
-                    if (SESSION_TOKEN) {
-                        const exp = readJwtExp(SESSION_TOKEN);
-                        const expiresAt = typeof exp === 'number'
-                            ? exp * 1000
-                            : Date.now();
-
-                        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
-                            token: SESSION_TOKEN,
-                            expiresAt: expiresAt,
-                        }));
-                    }
-
-                    if (MINI_TOKEN) {
-                        const exp = readJwtExp(MINI_TOKEN);
-                        const expiresAt = typeof exp === 'number'
-                            ? exp * 1000
-                            : Date.now();
-
-                        sessionStorage.setItem(MINI_STORAGE_KEY, JSON.stringify({
-                            token: MINI_TOKEN,
-                            expiresAt: expiresAt,
-                        }));
-                    }
-                } catch (e) {
-                    console.warn('Failed to store token in sessionStorage:', e);
-                }
-            }
-
-            const targetUrl = '{{ redirect_url|default("/")|e('js') }}';
-            window.location.replace(targetUrl);
-        }
-
-        storeTokenAndRedirect();
-    })();
+(() => {
+    const tokens = [
+        ['claire_session_token', {{ session_token|json_encode|raw }}],
+        ['claire_mini_token', {{ mini_token|json_encode|raw }}]
+    ];
+    for (const [key, token] of tokens) {
+        if (!token) continue;
+        try {
+            const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+            const data = JSON.parse(atob(part + '==='.slice((part.length + 3) % 4)));
+            sessionStorage.setItem(key, JSON.stringify({token, expiresAt: data.exp * 1000}));
+        } catch {}
+    }
+    location.replace({{ redirect_url|json_encode|raw }});
+})();
 </script>
 {% endblock %}

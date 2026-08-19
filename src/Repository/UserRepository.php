@@ -23,15 +23,6 @@ class UserRepository extends EntityRepository
             ->getOneOrNullResult();
     }
 
-    public function updateBrainAvatar(User $user, string $brainName): void
-    {
-        $params = $user->getParams() ?? [];
-        $params['brain'] = $brainName;
-        $user->setParams($params);
-
-        $this->getEntityManager()->flush();
-    }
-
     public function getCurrentUser(SessionInterface $session): ?User
     {
         $userId = (string) $session->get(Auth::USERID);

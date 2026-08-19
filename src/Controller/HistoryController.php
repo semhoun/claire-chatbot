@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Job\Web\StartThreadJob;
+use App\Renderer\ChatHtmlRenderer;
 use App\Services\Auth;
 use App\Services\ChatStreamPublisher;
 use App\Services\Queue\QueueDispatcherInterface;
@@ -23,6 +24,7 @@ final readonly class HistoryController
     use SessionFromRequest;
 
     public function __construct(
+        private ChatHtmlRenderer $chatHtmlRenderer,
         private Twig $twig,
         private EntityManagerInterface $entityManager,
         private Settings $settings,
@@ -110,7 +112,8 @@ final readonly class HistoryController
         $histories = $this->entityManager->getRepository(ChatHistoryEntity::class)->getHistoryList($userId);
         return $this->twig->render($response, 'partials/history_list.twig', [
             'histories' => $histories,
-        ]);
+            'base_url' => (string) $request->getAttribute('base_url'),
+        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
     /**
@@ -262,9 +265,7 @@ final readonly class HistoryController
             $messages = $userChatHistory->getFormattedMessages();
         }
 
-        $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-            'messages' => $messages,
-        ]);
+        $messagesHtml = $this->chatHtmlRenderer->messages($messages);
 
         // Use sessionId as channel if provided, otherwise fall back to threadId
         $channelId = $sessionId !== '' ? $sessionId : $threadId;

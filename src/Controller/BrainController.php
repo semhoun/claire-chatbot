@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Job\Web\NewMessageJob;
+use App\Renderer\ChatHtmlRenderer;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\Queue\QueueDispatcherInterface;
@@ -24,7 +25,6 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Message\UploadedFileInterface;
 use Psr\Log\LoggerInterface as Logger;
 use Slim\Psr7\NonBufferedBody;
-use Slim\Views\Twig;
 
 final readonly class BrainController
 {
@@ -32,7 +32,7 @@ final readonly class BrainController
 
     public function __construct(
         private Logger $logger,
-        private Twig $twig,
+        private ChatHtmlRenderer $chatHtmlRenderer,
         private BrainRegistry $brainRegistry,
         private EntityManagerInterface $entityManager,
         private Filesystem $filesystem,
@@ -135,9 +135,7 @@ final readonly class BrainController
                 threadId: $threadId,
             );
             $messages = $userChatHistory->getFormattedMessages();
-            $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-                'messages' => $messages,
-            ]);
+            $messagesHtml = $this->chatHtmlRenderer->messages($messages);
             $stream->write($this->sseEventFormatter->formatJsonEvent([
                 'html' => $messagesHtml,
                 'threadId' => $threadId,

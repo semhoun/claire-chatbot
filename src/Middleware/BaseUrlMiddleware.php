@@ -9,7 +9,6 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Slim\App;
-use Slim\Views\Twig;
 
 /**
  * Middleware.
@@ -21,10 +20,8 @@ final readonly class BaseUrlMiddleware implements MiddlewareInterface
      */
     private string $basePath;
 
-    public function __construct(
-        App $app,
-        private Twig $twig
-    ) {
+    public function __construct(App $app)
+    {
         $this->basePath = $app->getBasePath();
     }
 
@@ -39,7 +36,6 @@ final readonly class BaseUrlMiddleware implements MiddlewareInterface
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $baseUrl = $this->getBaseUrl($request);
-        $this->twig->getEnvironment()->addGlobal('base_url', $baseUrl);
         $request = $request->withAttribute('base_url', $baseUrl);
 
         return $handler->handle($request);

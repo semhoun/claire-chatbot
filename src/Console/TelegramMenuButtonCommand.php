@@ -24,7 +24,7 @@ final class TelegramMenuButtonCommand extends Command
 {
     private const string WEBAPP_PATH = '/telegram/webapp';
 
-    private const string WEBAPP_TEXT = '⚙️ Options';
+    private const string WEBAPP_TEXT = 'Options';
 
     public function __construct(
         private readonly TelegramBotApi $telegramBotApi,

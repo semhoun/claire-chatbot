@@ -7,6 +7,20 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+### Added
+- **Frontend** : application partagée Vue 3 et TypeScript, compilée avec Vite
+- **Tests** : tests Vitest du bootstrap, de la session et du cycle de vie du widget
+
+### Changed
+- **Embed** : distribution sous forme de Custom Element avec Shadow DOM et bundle autonome
+- **Session** : authentification et rafraîchissement JWT limités aux requêtes Claire, sans remplacement global de `window.fetch`
+- **Docker** : compilation des bundles frontend dans une étape Node dédiée
+- **Rendu HTML** : pages et fragments produits avec Twig, messages SSE rendus côté PHP
+
+### Removed
+- **Frontend historique** : suppression de htmx et des scripts JavaScript globaux remplacés par Vue
+- **Rendu historique** : suppression du moteur de templates, de son middleware, de ses extensions et de ses caches
+
 ## [1.6.0] - 2026-08-10
 
 ### Added
@@ -58,17 +72,17 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Session/Auth** : Nouvel endpoint `GET /auth/refresh` pour déclencher un rafraîchissement silencieux de session côté navigateur
 - **Session/Auth** : Nouvel endpoint `POST /auth/embed/exchange` pour échanger un token SSO contre un token de session Claire (mode widget)
 - **Session/Auth** : Nouvelles options de configuration `SESSION_REFRESH_BEFORE_EXPIRE` et `SESSION_REFRESH_MIN_INTERVAL`
-- **UI** : Nouveau template partagé `tmpl/layout_base.twig` pour harmoniser les pages d'accueil, callback d'authentification et erreurs
+- **UI** : Nouveau rendu partagé pour harmoniser les pages d'accueil, callback d'authentification et erreurs
 - **Embed** : Nouveau mode widget avec endpoint `GET /embed`, bootstrap JS `window.claireEmbed(...)` et teardown `window.destroyClaireEmbed()`
 - **Embed** : Nouvelle page de test `public/embed.html` pour valider l'intégration dans un site tiers
-- **UI** : Nouveaux partiels partagés `tmpl/partials/chat_body.twig`, `tmpl/partials/options_content.twig`, `tmpl/partials/modal_dialog.twig` et `tmpl/partials/embed_toolbar.twig`
+- **UI** : Nouveaux composants partagés pour le chat, les options, les modales et la barre embed
 
 ### Changed
 - **Session/Auth** : Refonte du cycle de vie des tokens (stockage structuré en `sessionStorage`, refresh planifié, backoff, propagation via en-têtes)
 - **Session/Auth** : Unification du paramètre de query des ressources protégées (`token` remplace l'ancien `minitoken` dans les URLs)
 - **Middleware** : `AuthMiddleware` et `JwtSessionMiddleware` ignorent explicitement la route 404 nommée pour éviter les effets de bord sur la page non trouvée
-- **Twig** : Les templates d'erreur et de callback SSO utilisent désormais `layout_base.twig` ; suppression de `tmpl/error/layout.twig`
-- **UI** : Refonte de la structure Twig pour séparer le mode normal (`layout.twig` + `chat.twig`) et le mode embed (`embed.twig`) sans duplication
+- **Rendu HTML** : Les pages d'erreur et de callback SSO utilisent un layout partagé
+- **UI** : Séparation du mode normal et du mode embed sans duplication
 - **CSS** : Normalisation des sélecteurs et des variables CSS avec préfixe `claire-` pour limiter les collisions côté intégration
 - **Styles** : Optimisations de `public/css/style.css` et ajustements de styles des brains (`public/css/einstein.css`, addons YAML)
 
@@ -89,7 +103,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Image/PDF** : Post-traitement amélioré des messages contenant des fichiers générés
 - **Queue** : Amélioration du `QueueWorker` avec meilleure gestion des événements de terminaison
 - **Redis** : Ajout de la méthode `clearList()` pour purger efficacement les files Redis
-- **Twig** : Amélioration de l'extension `GeneratedFileExtension` pour supporter les deux types de fichiers (images et PDF)
+- **Rendu HTML** : Amélioration du traitement des fichiers générés pour les images et PDF
 
 ### Fixed
 - **Telegram** : Correction de l'envoi des images dans les messages Telegram (gestion améliorée des fichiers générés)
@@ -110,16 +124,16 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Génération de PDF** : Nouveau outil `generate_pdf` pour créer des documents PDF depuis du HTML ou du Markdown
   - Service `PdfGeneratorService` basé sur mPDF avec support des marges, orientation et formats de page (A4, Letter, A3, A5)
   - Tool `PdfGeneratorTool` intégré aux agents IA avec post-processing automatique des messages
-  - Extension Twig `GeneratedFileExtension` (remplace `GeneratedImageExtension`) pour l'affichage des fichiers générés (images et PDF)
+  - Processeur de fichiers générés pour l'affichage des images et PDF
   - Variables d'environnement : `PDF_ENABLED`, `PDF_DEFAULT_FORMAT`, `PDF_DEFAULT_PAGE_SIZE`, `PDF_TEMP_DIR`
   - Service `GeneratedFileService` pour la gestion centralisée des fichiers générés
-- Tests unitaires pour `PdfGeneratorTool` et `GeneratedFileExtension`
+- Tests unitaires pour `PdfGeneratorTool` et le processeur de fichiers générés
 
 ### Changed
 - **Configuration** : Consolidation des settings d'outils dans `config/settings/tools.php` (searXNG, ComfyUI, PDF)
 - **Queue** : Force flush des logs OpenTelemetry après chaque traitement de job worker
 - **Docker** : Suppression des modules Caddy Mercure et Vulcain du Dockerfile
-- Remplacement de `GeneratedImageExtension` par `GeneratedFileExtension` pour supporter les images et les PDF
+- Remplacement de l'ancien traitement d'images par un processeur prenant en charge images et PDF
 
 ### Removed
 - Suppression du fichier de configuration `config/settings/comfyui.php` (fusionné dans `tools.php`)
@@ -130,7 +144,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Nouvelle entité `ChatHistoryFile` pour lier les fichiers générés aux conversations (suppression en cascade)
 - Migration de base de données pour la table `chat_history_file`
 - Architecture de jobs séparés : `StartThreadJob` et `NewMessageJob` pour web et Telegram
-- Template `tmpl/partials/toolscall.twig` pour l'affichage des appels d'outils
+- Rendu dédié pour l'affichage des appels d'outils
 
 ### Changed
 - Optimisation du filtrage des messages OutOfContext (OC) pour éviter les messages vides ou mal formatés
@@ -186,7 +200,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Mini-App Telegram** : Interface web complète embarquée dans Telegram avec authentification automatique
   - Contrôleur `TelegramWebAppController` avec validation des données WebApp
   - Service `TelegramWebAppValidator` pour vérifier l'intégrité des données Telegram
-  - Template `tmpl/telegram_webapp/index.twig` avec interface de chat dédiée
+  - Ressource HTML avec interface Telegram dédiée
   - Support de la configuration utilisateur (brain, workflow ComfyUI) dans la mini-app
   - Endpoint API sécurisé pour la mini-app (`/telegram/webapp/*`)
 - Commande `telegram:set-menu-button` pour configurer le bouton du menu Telegram pointant vers la Mini-App
@@ -335,7 +349,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Generation automatique du titre et du resume de conversation si absents (pour les sessions Telegram)
 
 ### Changed
-- Amelioration visuelle des themes de chat, de la feuille de style principale et du template `tmpl/chat.twig`
+- Amelioration visuelle des themes de chat et de la feuille de style principale
 - Harmonisation des valeurs de session Telegram avec les parametres utilisateur et les valeurs par defaut de `session.defaultParams`
 
 ### Fixed
@@ -381,13 +395,13 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Mise à jour du README pour refléter la version courante 1.2.3 dans les exemples et l'introduction
 
 ### Added
-- Filtre Twig `OCFilterExtension` avec filtre `filter_oc_tags` pour retirer les blocs internes `[OC]...[/OC]` avant rendu
+- Filtrage des blocs internes `[OC]...[/OC]` avant rendu
 - Tests unitaires pour le filtrage des balises `[OC]`
 - Option de configuration `OPENAPI_CONTEXT_WINDOW` pour ajuster la fenêtre de contexte LLM
 - Injection automatique de la date et de l'heure courantes dans les instructions système des agents et du RAG
 
 ### Changed
-- Le template `tmpl/partials/message.twig` filtre désormais les balises `[OC]` avant conversion Markdown et n'affiche plus les messages vides après nettoyage
+- Le rendu des messages filtre désormais les balises `[OC]` avant conversion Markdown et n'affiche plus les messages vides après nettoyage
 - Le service Telegram filtre aussi les balises `[OC]` avant l'envoi des messages et légendes
 - Le message d'accueil généré par l'agent encapsule désormais son prompt interne dans des balises `[OC]`
 
@@ -398,7 +412,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Added
 - Horodatage des messages avec affichage relatif (il y a X min) et tooltip date complète
-- Extension Twig `TimestampExtension` pour le formatage des dates
+- Formatage des dates dans le renderer de messages
 - Observer `TimestampObserver` pour l'ajout automatique des timestamps
 - Tests unitaires pour le système d'horodatage des messages
 - Ajout de la date courante dans le prompt système pour une meilleure contextualisation
@@ -418,7 +432,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - Support OpenTelemetry dans l'image Docker
 - Génération d'images avec ComfyUI (outil `generate_image`)
 - Service `ComfyUIService` pour l'intégration avec ComfyUI
-- Extension Twig `GeneratedImageExtension` pour l'affichage des images générées
+- Traitement des images générées dans le renderer HTML
 - Post-processing des messages avec `PostProcessChatNode` et `PostProcessStreamingNode`
 - Endpoint `/files/generated/{filename}` pour servir les images générées
 - Support de deux styles de prompts pour ComfyUI : SDXL (keywords) et Flux (natural language)
@@ -503,7 +517,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
   - Export OTLP
   - Auto-instrumentation Slim, PSR-18, Doctrine, cURL, Guzzle
 - **Interface** :
-  - Templates Twig avec support Markdown
+  - Rendu HTML avec support Markdown
   - Mise en forme du code avec coloration syntaxique
   - Support des diagrammes Mermaid
   - Affichage optimisé pour mobile

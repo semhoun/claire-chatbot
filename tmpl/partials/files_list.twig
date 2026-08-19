@@ -1,117 +1,64 @@
-{% set total = files|length %}
-{# OOB update of the files counter badge so it refreshes after each upload/delete #}
-<span id="claire-files-count-badge" hx-swap-oob="innerHTML">{{ total }}</span>
+{% import '_icon.twig' as icon %}
 <div class="claire-option-list claire-files-root">
-    <div class="claire-option-list__actions" style="display:flex; gap:8px; align-items:center; margin: 0 0 8px 0; flex-wrap: wrap;">
-        <form
-            hx-post="{{ base_url }}/files/upload"
-            hx-encoding="multipart/form-data"
-            hx-target="closest .claire-files-root"
-            hx-swap="innerHTML"
-            hx-indicator="#claire-files-upload-indicator"
-            class="claire-file-upload"
-            style="display:flex; gap:8px; align-items:center; min-width:0; flex: 1 1 auto; position: relative;"
-        >
-            {# Indicateur de chargement (sablier) pendant l'upload #}
-            <div id="claire-files-upload-indicator" class="htmx-indicator" aria-hidden="true"
-                 style="position:absolute; inset:0; display:none; background:rgba(8,0,14,0.55); backdrop-filter:blur(2px); border-radius:10px; align-items:center; justify-content:center; z-index:5;">
-                <div style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(30,0,50,0.9); border:1px solid rgba(255,255,255,0.08); border-radius:999px; box-shadow:0 10px 26px rgba(26,0,41,0.35);">
-                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style="color:#ff7ce5;">
-                        <path d="M7 2h10v4a5 5 0 0 1-2.1 4.1L12 12l2.9 1.9A5 5 0 0 1 17 18v4H7v-4a5 5 0 0 1 2.1-4.1L12 12l-2.9-1.9A5 5 0 0 1 7 6V2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-                        <path d="M8 4h8M8 20h8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-                    </svg>
-                    <span style="color:#fff0fe; font-size:14px;">Téléversement en cours…</span>
-                </div>
-            </div>
-            {# Input fichier masqué visuellement, label stylé « Parcourir » #}
-            <input
-                class="claire-file-upload__input"
-                id="claire-file-upload-input"
-                type="file"
-                name="file"
-                accept="{{ settings.get('files.upload.acceptedExt') }}"
-                required
-                onchange="(function(inp){var f=inp.files&&inp.files[0]?inp.files[0].name:'Aucun fichier';var form=inp.closest('form');if(!form) return;var nameEl=form.querySelector('.claire-file-upload__name');if(nameEl){nameEl.textContent=f;nameEl.title=f;}var submit=form.querySelector('button[type=submit]');if(submit){submit.disabled=!(inp.files&&inp.files.length);} })(this)"
-            >
-            <div class="claire-file-upload__icons" aria-label="Actions fichier">
-                <label class="claire-btn claire-btn--secondary claire-file-upload__label" for="claire-file-upload-input" aria-label="Parcourir" title="Parcourir">
-                    <svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18">
-                        <path d="M10 4l2 2h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-                        <path d="M8 13h8M8 10h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-                    </svg>
+    <div class="claire-option-list__actions">
+        <form action="{{ base_url }}/files/upload" method="post" enctype="multipart/form-data"
+              class="claire-file-upload">
+            <input class="claire-file-upload__input" id="claire-file-upload-input"
+                   type="file" name="file" accept="{{ accepted_ext }}" required>
+            <div class="claire-file-upload__icons">
+                <label class="claire-btn claire-btn--secondary claire-file-upload__label"
+                       for="claire-file-upload-input" aria-label="Parcourir">
+                    {{ icon.draw('M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5') }}
                 </label>
-                <button type="submit" class="claire-btn claire-btn--primary" aria-label="Envoyer" title="Envoyer" disabled>
-                    <svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18">
-                        <path d="M22 2L11 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        <path d="M22 2l-7 20-4-9-9-4 20-7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                    </svg>
+                <button type="submit" class="claire-btn claire-btn--primary"
+                        aria-label="Envoyer" disabled>
+                    {{ icon.draw('M4 4l17 8-17 8 3-8zm3 8h14') }}
                 </button>
             </div>
             <span class="claire-file-upload__name" aria-live="polite">Aucun fichier</span>
         </form>
     </div>
-
-    {% if total == 0 %}
-        <div class="claire-option-list__empty">
-            <svg class="claire-option-list__empty-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6 2h7l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-                <path d="M13 2v6h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-            </svg>
-            <div class="claire-option-list__empty-text">Aucun fichier</div>
-            <div class="claire-option-list__empty-help">Ajoutez un fichier à l’aide du bouton ci-dessus.</div>
+{% if files is empty %}
+    <div class="claire-option-list__empty">
+        <div class="claire-option-list__empty-icon">
+            {{ icon.draw('M7 3h7l4 4v14H7zM14 3v5h5') }}
         </div>
-    {% else %}
-        <ul class="claire-option-list__items">
-            {% for file in files %}
-                <li class="claire-option-item claire-file-item" id="claire-file-{{ file.fileId }}">
-                    <div class="claire-option-item__icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24">
-                            <path d="M6 2h7l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-                            <path d="M13 2v6h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-                        </svg>
-                    </div>
-                    <div class="claire-option-item__content">
-                        <div class="claire-option-item__title">{{ file.filename }}</div>
-                        <div class="claire-option-item__meta">
-                            {{ file.mimeType }} • {{ file.sizeBytes |filesize(2) }}
-                            {% if file.createdAt is defined %}
-                                • Ajouté le {{ file.createdAt|date('d/m/Y') }}
-                            {% endif %}
-                        </div>
-                    </div>
-                    <div class="claire-option-item__actions">
-                        <button class="claire-option-item__button"
-                                type="button"
-                                aria-label="Ajouter ce fichier à la conversation"
-                                title="Ajouter à la conversation"
-                                data-add-file-id="{{ file.fileId }}"
-                                data-add-file-name="{{ file.filename }}"
-                        >
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            </svg>
-                        </button>
-                        <button class="claire-option-item__button claire-files-item__delete"
-                                type="button"
-                                aria-label="Supprimer ce fichier"
-                                title="Supprimer"
-                                hx-delete="{{ base_url }}/files/delete/{{ file.fileId }}"
-                                hx-target="closest .claire-files-root"
-                                hx-swap="innerHTML"
-                                hx-indicator="#claire-global-action-indicator"
-                                data-dialog-confirm="Supprimer ce fichier ? Cette action est irréversible."
-                                data-dialog-title="Confirmer la suppression"
-                                data-dialog-variant="danger"
-                                data-dialog-confirm-label="Supprimer"
-                                data-dialog-cancel-label="Annuler"
-                        >
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M9 3h6m-9 3h12M8 9v9m4-9v9m4-9v9M6 6l1 15a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                        </button>
-                    </div>
-                </li>
-            {% endfor %}
-        </ul>
-    {% endif %}
+        <div class="claire-option-list__empty-text">Aucun fichier</div>
+        <div class="claire-option-list__empty-help">Ajoutez un fichier à l’aide du bouton ci-dessus.</div>
+    </div>
+{% else %}
+    <ul class="claire-option-list__items">
+    {% for file in files %}
+        <li class="claire-option-item claire-file-item" id="claire-file-{{ file.fileId }}">
+            <div class="claire-option-item__icon">{{ icon.draw('M7 3h7l4 4v14H7zM14 3v5h5') }}</div>
+            <div class="claire-option-item__content">
+                <div class="claire-option-item__title">{{ file.filename }}</div>
+                <div class="claire-option-item__meta">
+                    {{ file.mimeType }} •
+                    {% if file.sizeBytes < 1024 %}
+                        {{ file.sizeBytes }} o
+                    {% elseif file.sizeBytes < 1048576 %}
+                        {{ (file.sizeBytes / 1024)|number_format(2, ',', ' ') }} Ko
+                    {% else %}
+                        {{ (file.sizeBytes / 1048576)|number_format(2, ',', ' ') }} Mo
+                    {% endif %}
+                    • Ajouté le {{ file.createdAt|date('d/m/Y') }}
+                </div>
+            </div>
+            <div class="claire-option-item__actions">
+                <button class="claire-option-item__button" type="button"
+                        aria-label="Ajouter ce fichier à la conversation"
+                        data-add-file-id="{{ file.fileId }}" data-add-file-name="{{ file.filename }}">
+                    {{ icon.draw('M12 5v14M5 12h14') }}
+                </button>
+                <button class="claire-option-item__button claire-files-item__delete" type="button"
+                        aria-label="Supprimer ce fichier"
+                        data-file-delete="{{ base_url }}/files/delete/{{ file.fileId }}">
+                    {{ icon.draw('M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7M10 11v6M14 11v6') }}
+                </button>
+            </div>
+        </li>
+    {% endfor %}
+    </ul>
+{% endif %}
 </div>

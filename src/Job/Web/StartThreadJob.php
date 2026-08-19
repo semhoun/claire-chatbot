@@ -6,12 +6,12 @@ namespace App\Job\Web;
 
 use App\Brain\Agent;
 use App\Brain\BrainRegistry;
+use App\Renderer\ChatHtmlRenderer;
 use App\Services\ChatStreamPublisher;
 use App\Services\Queue\QueueDoer;
 use App\Services\Session\InMemorySession;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use Psr\Container\ContainerInterface;
-use Slim\Views\Twig;
 
 /**
  * Handles the processing of streaming chat messages in a web-based real-time chat system.
@@ -30,14 +30,14 @@ use Slim\Views\Twig;
  */
 final class StartThreadJob implements QueueDoer
 {
-    private string $threadId;
+    private string $threadId = '';
 
-    private string $sessionId;
+    private string $sessionId = '';
 
     private ?Agent $agent = null;
 
     public function __construct(
-        private readonly Twig $twig,
+        private readonly ChatHtmlRenderer $chatHtmlRenderer,
         private readonly BrainRegistry $brainRegistry,
         private readonly ChatStreamPublisher $chatStreamPublisher,
     ) {
@@ -66,16 +66,13 @@ final class StartThreadJob implements QueueDoer
             ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
         $chatHistory = $this->agent->getChatHistory();
 
-        // getOpeningText() may use the LLM and therefore mutate the chat history
-        // with its technical prompt and generated response. A new conversation
-        // must start with an empty LLM context; only the welcome message is
-        // retained for display.
-        $chatHistory->replaceMessages([]);
-        $chatHistory->replaceDisplayMessages([$assistantMessage]);
+        // Replace the technical generation exchange with a valid hidden
+        // context followed by the opening message actually shown to the user.
+        $chatHistory->initializeWithOpeningMessage($assistantMessage);
 
-        $messagesHtml = $this->twig->fetch('partials/messages_list.twig', [
-            'messages' => $chatHistory->getFormattedMessages(),
-        ]);
+        $messagesHtml = $this->chatHtmlRenderer->messages(
+            $chatHistory->getFormattedMessages()
+        );
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.snapshot', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
@@ -86,7 +83,7 @@ final class StartThreadJob implements QueueDoer
     /** @param array<string, mixed> $payload */
     private function initContext(array $payload): void
     {
-        $this->threadId = (string) ($payload['threadId'] ?? $payload['threadId'] ?? '');
+        $this->threadId = (string) ($payload['threadId'] ?? '');
         if ($this->threadId === '') {
             throw new \InvalidArgumentException('Thread ID cannot be empty');
         }
@@ -99,5 +96,18 @@ final class StartThreadJob implements QueueDoer
         $inMemorySession = new InMemorySession($payload['session']);
         $brainAvatar = $inMemorySession->get('brain_avatar');
         $this->agent = $this->brainRegistry->get($brainAvatar, $inMemorySession, $this->threadId);
+    }
+
+    private function handleChatError(\Throwable $throwable): void
+    {
+        if ($this->sessionId === '') {
+            throw $throwable;
+        }
+
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.error', [
+            'threadId' => $this->threadId,
+            'sessionId' => $this->sessionId,
+            'message' => 'Impossible de démarrer la conversation.',
+        ]);
     }
 }

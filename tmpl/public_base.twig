@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Claire</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <link rel="icon" href="{{ base_url }}/image/icon-192.png">
+    <link rel="stylesheet" href="{{ base_url }}/css/style.css">
+    <style>
+        .claire-app-base,.welcome-page{width:100%;min-height:100vh}
+        .welcome-page{position:relative;background:#000 url("{{ base_url }}/image/background.png") center/cover no-repeat}
+        .claire-panel,.claire-error-panel{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(90vw,520px);text-align:center;background:rgba(0,0,0,.55);color:#fff;border-radius:16px;padding:40px}
+        .claire-spinner{width:48px;height:48px;border:3px solid #ffffff33;border-top-color:#0d6efd;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 20px}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .claire-is-hidden{display:none}
+        .claire-sso-btn,.claire-error-btn{display:inline-flex;padding:12px 24px;border-radius:8px;background:#0d6efd;color:#fff;text-decoration:none}
+        .claire-error-title{font-size:72px;margin:0}
+        .claire-error-debug{max-width:960px;margin:40px auto;background:#000c;color:#fff;padding:20px;border-radius:12px}
+        .claire-error-debug pre{overflow:auto;max-height:50vh;white-space:pre-wrap}
+    </style>
+</head>
+<body id="claire-body" style="margin:0">
+    <div class="claire-app-base"><div class="welcome-page">{% block content %}{% endblock %}</div></div>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

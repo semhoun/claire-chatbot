@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Renderer;
 
 use Psr\Log\LoggerInterface as Logger;
-use Slim\Interfaces\ErrorRendererInterface;
 use Slim\Views\Twig;
+use Slim\Interfaces\ErrorRendererInterface;
 use Throwable;
 
 final readonly class HtmlErrorRenderer implements ErrorRendererInterface
@@ -22,24 +22,20 @@ final readonly class HtmlErrorRenderer implements ErrorRendererInterface
         bool $displayErrorDetails
     ): string {
         if ($exception->getCode() === 404) {
-            return $this->twig->fetch('error/404.twig', [
-                'title' => is_a($exception, '\Slim\Exception\HttpException') ?
-                    $exception->getTitle() : '500 - ' .  $exception::class,
-                'code' => $exception->getCode(),
-                'message' => $exception->getMessage(),
+            return $this->twig->fetch('error.twig', [
+                'base_url' => '',
+                'code' => 404,
+                'title' => 'Oups ! La page que vous recherchez est introuvable.',
+                'details' => null,
             ]);
         }
 
-        $data = [
-            'title' => is_a($exception, '\Slim\Exception\HttpException') ?
-                $exception->getTitle() : '500 - ' .  $exception::class,
-            'code' => $exception->getCode(),
-            'message' => $exception->getMessage(),
-        ];
+        $title = is_a($exception, '\Slim\Exception\HttpException')
+            ? $exception->getTitle() : '500 - ' . $exception::class;
 
         $details = [
-            'debug' => $displayErrorDetails,
             'type' => $exception::class,
+            'message' => $exception->getMessage(),
             'file' => $exception->getFile(),
             'line' => $exception->getLine(),
             'trace' => $exception->getTraceAsString(),
@@ -47,6 +43,11 @@ final readonly class HtmlErrorRenderer implements ErrorRendererInterface
 
         $this->logger->error('[' . $exception->getCode() . '] ' . $exception->getMessage(), ['exception' => $exception]);
 
-        return $this->twig->fetch('error/default.twig', $displayErrorDetails ? array_merge($data, $details) : $data);
+        return $this->twig->fetch('error.twig', [
+            'base_url' => '',
+            'code' => $exception->getCode(),
+            'title' => $title,
+            'details' => $displayErrorDetails ? $details : null,
+        ]);
     }
 }

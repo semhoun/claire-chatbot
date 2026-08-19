@@ -1,6 +1,7 @@
-/* Thème Flashy: overrides par-dessus style.css pour un rendu néon très contrasté */
+/* Thème Einstein : surcharges néon de style.css pour la page et l'embed. */
 
-:root {
+:root,
+:host {
     --claire-body-background:
         /* éclat principal rouge-feu */
         radial-gradient(600px 600px at 18% 24%, rgba(255, 59, 0, 0.34), rgba(255, 120, 0, 0.24) 35%, transparent 62%),
@@ -25,7 +26,6 @@
     --claire-bg-panel-alt: rgba(6, 0, 20, 0.96);
     --claire-bg-input: rgba(24, 0, 68, 0.86);
     --claire-accent: #39ff14;                /* vert électrique */
-    --claire-accent-soft: rgba(57, 255, 20, 0.22);
     --claire-accent-light: #00f7ff;          /* cyan néon */
     --claire-text-primary: #f8faff;          /* quasi blanc légèrement bleuté */
     --claire-text-secondary: rgba(248, 250, 255, 0.72);
@@ -66,12 +66,6 @@
     --claire-hero-end: #5d00ff;     /* violet néon */
     --claire-accent-2: #00f7ff;
     --claire-accent-3: #39ff14;
-}
-
-/* Fond global: « feu d'artifice » statique (plusieurs explosions colorées) */
-html, body {
-    /* Empilement de halos radiaux pour simuler des gerbes multicolores */
-
 }
 
 /* Retirer l’overlay sombre de style.css et ajouter des halos « éclats » discrets */
@@ -137,8 +131,6 @@ html, body {
     box-shadow: 0 -18px 38px var(--claire-elevation-panel-dark);
 }
 
-/* (rien à surcharger ici) */
-
 .claire-chat-input__form:focus-within {
     border-color: var(--claire-focus-ring);
     box-shadow: 0 0 0 5px var(--claire-focus-glow), 0 0 24px var(--claire-accent-shadow-soft);
@@ -200,25 +192,7 @@ html, body {
     border-color: var(--claire-accent);
 }
 
-/* Dialogs intégrés */
-.claire-dialog-backdrop { background: rgba(0, 0, 0, .55); }
-
-.claire-dialog-panel {
-    background: rgba(10, 0, 28, 0.94);
-    color: var(--claire-text-primary);
-}
-
-.claire-dialog-panel-btn {
-    background: rgba(0, 0, 0, 0.28);
-    color: var(--claire-text-primary);
-}
-
-.claire-dialog-panel-btn:hover {
-    background: rgba(0, 0, 0, 0.38);
-    border-color: var(--claire-accent);
-}
-
-.claire-scroll-down-button  {
+.claire-scroll-down-button {
     background: linear-gradient(135deg, var(--claire-accent), var(--claire-accent-light));
     color: #0a0014;
 }

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Brain\Middleware;
 
 use App\Brain\ChatHistory\UserChatHistory;
-use App\Brain\Observability\HasInstrumentation;
 use function array_slice;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\Events\AIInferenceEvent;
@@ -24,8 +23,6 @@ use Psr\Log\LoggerInterface as Logger;
 
 class ShortMemory extends Summarization
 {
-    use HasInstrumentation;
-
     protected TokenCounter $tokenCounter;
 
     public function __construct(

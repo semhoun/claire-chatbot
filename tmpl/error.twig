@@ -1,0 +1,21 @@
+{% extends 'public_base.twig' %}
+{% block content %}
+    <div class="claire-error-panel">
+        <h1 class="claire-error-title">{{ code }}</h1>
+        <p class="claire-error-subtitle">{{ title }}</p>
+        <a href="{{ base_url }}/" class="claire-error-btn">Retour à l’accueil</a>
+    </div>
+    {% if details %}
+        <div class="claire-error-debug">
+            <h3>Détails</h3>
+            <ul>
+                <li><b>Type : </b>{{ details.type|default('') }}</li>
+                <li><b>Code : </b>{{ code }}</li>
+                <li><b>Message : </b>{{ details.message|default('') }}</li>
+                <li><b>Fichier : </b>{{ details.file|default('') }}</li>
+                <li><b>Ligne : </b>{{ details.line|default('') }}</li>
+            </ul>
+            <h3>Trace</h3><pre>{{ details.trace|default('') }}</pre>
+        </div>
+    {% endif %}
+{% endblock %}

@@ -6,15 +6,17 @@ use App\Brain\LongTermMemory;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Env;
 
-Env::require([
+$jwtSecret = Env::getSecret(
     'SESSION_JWT_SECRET',
-]);
+    disallowedValues: [
+        'changeme00changeme00changeme00changeme00changeme00changeme00',
+    ],
+);
 
 return [
     // JWT signing (REQUIRED)
     'jwt' => [
-        'secret' => Env::get('SESSION_JWT_SECRET'),
-        'algorithm' => Env::get('SESSION_JWT_ALGORITHM', 'HS256'),
+        'secret' => $jwtSecret,
     ],
 
     // Token lifetime in seconds (default: 15 min)

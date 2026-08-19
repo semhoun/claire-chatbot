@@ -7,6 +7,7 @@ namespace App\Job\Web;
 use App\Brain\Agent;
 use App\Brain\BrainRegistry;
 use App\Brain\Summary;
+use App\Renderer\ChatHtmlRenderer;
 use App\Services\ChatStreamPublisher;
 use App\Services\Queue\QueueDoer;
 use App\Services\Session\InMemorySession;
@@ -21,7 +22,6 @@ use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
 use NeuronAI\Chat\Messages\UserMessage;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
-use Slim\Views\Twig;
 
 /**
  * Handles the processing of streaming chat messages in a web-based real-time chat system.
@@ -64,7 +64,7 @@ final class NewMessageJob implements QueueDoer
 
     public function __construct(
         private readonly Logger $logger,
-        private readonly Twig $twig,
+        private readonly ChatHtmlRenderer $chatHtmlRenderer,
         private readonly BrainRegistry $brainRegistry,
         private readonly ChatStreamPublisher $chatStreamPublisher,
         private readonly Connection $connection,
@@ -202,9 +202,7 @@ final class NewMessageJob implements QueueDoer
 
         $this->toolsCall[$id] = $toolData;
 
-        $toolsHtml = $this->twig->fetch('partials/toolscall.twig', [
-            'toolsCall' => $this->toolsCall,
-        ]);
+        $toolsHtml = $this->chatHtmlRenderer->tools($this->toolsCall);
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.tool.update', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
@@ -221,10 +219,7 @@ final class NewMessageJob implements QueueDoer
 
         $this->streamedText .= $chunk->content;
 
-        $html = $this->twig->fetch('partials/md.twig', [
-            'message' => $this->streamedText,
-            'streaming_placeholder_images' => true,
-        ]);
+        $html = $this->chatHtmlRenderer->markdown($this->streamedText, true);
 
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
             'threadId' => $this->threadId,
@@ -258,8 +253,9 @@ final class NewMessageJob implements QueueDoer
             return;
         }
 
-        $placeholderHtml = $this->twig->fetch('partials/message.twig', [
-            'message' => ['id' => $this->messageId, 'message' => ''],
+        $placeholderHtml = $this->chatHtmlRenderer->message([
+            'id' => $this->messageId,
+            'message' => '',
             'time' => new DateTimeImmutable()->format(DateTimeInterface::ATOM),
             'sent' => false,
         ]);
@@ -273,10 +269,7 @@ final class NewMessageJob implements QueueDoer
 
     private function publishContent(string $content): void
     {
-        $html = $this->twig->fetch('partials/md.twig', [
-            'message' => $content,
-            'streaming_placeholder_images' => false,
-        ]);
+        $html = $this->chatHtmlRenderer->markdown($content);
 
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
             'threadId' => $this->threadId,

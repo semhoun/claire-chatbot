@@ -77,11 +77,11 @@ final readonly class TelegramController
         $comfyUIEnabled = $this->comfyUIWorkflowRegistry->isEnabled();
 
         return $this->twig->render($response, 'telegram/webapp.twig', [
+            'base_url' => (string) $baseUrl,
             'brains' => $brains,
             'workflows' => $workflows,
             'comfyui_enabled' => $comfyUIEnabled,
-            'base_url' => $baseUrl,
-        ]);
+        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
     /**

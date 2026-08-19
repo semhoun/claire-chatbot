@@ -12,8 +12,6 @@ use App\Services\Queue\RedisQueueBackend;
 use App\Services\RedisClient;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
-use App\Services\Twig\GeneratedFileExtension;
-use App\Services\Twig\TimestampExtension;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\Configuration;
@@ -21,17 +19,11 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\ORMSetup;
 use League\Flysystem\Filesystem;
-use OneToMany\Twig\FilesizeExtension;
 use Phptg\BotApi\TelegramBotApi;
 use Psr\Log\LoggerInterface as Logger;
 use Slim\Views\Twig;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
-use Twig\Extension\DebugExtension;
-use Twig\Extension\ProfilerExtension;
-use Twig\Extra\Markdown\MarkdownExtension;
-use Twig\Extra\Markdown\MarkdownRuntime;
-use Twig\Profiler\Profile;
 
 return [
     // Doctrine Dbal connection
@@ -95,32 +87,13 @@ return [
 
         return $logger;
     },
-    Twig::class => static function (Settings $settings, Profile $profile, EntityManager $entityManager): Twig {
-        $twig = Twig::create($settings->get('twig.template_path'), $settings->get('twig.config'));
-        if ($settings->get('debug')) {
-            // Add extensions
-            $twig->addExtension(new ProfilerExtension($profile));
-            $twig->addExtension(new DebugExtension());
-        }
-
-        $twig->addExtension(new MarkdownExtension());
-        $twig->addExtension(new FilesizeExtension());
-        $twig->addExtension(new GeneratedFileExtension($settings, $entityManager));
-        $twig->addExtension(new TimestampExtension());
-        $twig->addRuntimeLoader(new class() implements \Twig\RuntimeLoader\RuntimeLoaderInterface {
-            /** @param class-string $class */
-            public function load(string $class): ?MarkdownRuntime
-            {
-                if ($class === MarkdownRuntime::class) {
-                    // Provide the Markdown runtime with a default League/CommonMark-based implementation
-                    return new MarkdownRuntime(new \App\Services\Markdown());
-                }
-
-                return null;
-            }
-        });
-        // Expose settings to Twig templates
+    Twig::class => static function (Settings $settings): Twig {
+        $twig = Twig::create(
+            $settings->get('twig.template_path'),
+            $settings->get('twig.config')
+        );
         $twig->getEnvironment()->addGlobal('settings', $settings);
+
         return $twig;
     },
     Filesystem::class => static function (Settings $settings): FileSystem {

@@ -143,11 +143,10 @@ readonly class ConfigController
         $user->setTelegramId($telegramId === '' ? null : $telegramId);
         $this->entityManager->flush();
 
-        // Return form with success message for HTMX
         return $this->twig->render($response, 'partials/telegram_config.twig', [
             'telegram_id' => $telegramId,
             'success' => 'Configuration Telegram enregistrée avec succès',
-        ]);
+        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
     public function telegramForm(Request $request, Response $response): Response
@@ -167,7 +166,8 @@ readonly class ConfigController
 
         return $this->twig->render($response, 'partials/telegram_config.twig', [
             'telegram_id' => $user->getTelegramId(),
-        ]);
+            'success' => null,
+        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
     public function comfyuiWorkflow(Request $request, Response $response): Response

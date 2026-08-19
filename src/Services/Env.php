@@ -31,6 +31,20 @@ final class Env
         };
     }
 
+    /** @param list<string> $disallowedValues */
+    public static function getSecret(
+        string $key,
+        int $minimumLength = 32,
+        array $disallowedValues = [],
+    ): string {
+        return SecretValidator::validate(
+            $key,
+            getenv($key),
+            $minimumLength,
+            $disallowedValues,
+        );
+    }
+
     /** @param array<int, string>|string $keys */
     public static function require(array|string $keys): void
     {

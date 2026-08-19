@@ -1,5 +1,0 @@
-{% if streaming_placeholder_images ?? false %}
-{{ message|markdown_to_html|process_generated_files_placeholder }}
-{% else %}
-{{ message|markdown_to_html|process_generated_files }}
-{% endif %}

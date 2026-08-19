@@ -89,11 +89,6 @@ class ChatHistory
         $this->user = $user;
     }
 
-    public function getThreadId(): string
-    {
-        return $this->threadId;
-    }
-
     public function setThreadId(string $threadId): void
     {
         $this->threadId = $threadId;
@@ -119,34 +114,14 @@ class ChatHistory
         $this->displayMessages = $displayMessages;
     }
 
-    public function getDisplayMessagesCount(): int
-    {
-        return $this->displayMessagesCount;
-    }
-
-    public function setDisplayMessagesCount(int $displayMessagesCount): void
-    {
-        $this->displayMessagesCount = $displayMessagesCount;
-    }
-
     public function getTitle(): ?string
     {
         return $this->title;
     }
 
-    public function setTitle(?string $title): void
-    {
-        $this->title = $title;
-    }
-
     public function getSummary(): ?string
     {
         return $this->summary;
-    }
-
-    public function setSummary(?string $summary): void
-    {
-        $this->summary = $summary;
     }
 
     public function getCreatedAt(): \DateTimeImmutable
@@ -173,13 +148,5 @@ class ChatHistory
     public function getFiles(): \Doctrine\Common\Collections\Collection
     {
         return $this->files;
-    }
-
-    public function addFile(File $file): void
-    {
-        if (! $this->files->contains($file)) {
-            $this->files->add($file);
-            $file->setChatHistory($this);
-        }
     }
 }

@@ -100,16 +100,6 @@ class User
         $this->email = $email;
     }
 
-    public function getPicture(): ?string
-    {
-        return $this->picture;
-    }
-
-    public function setPicture(?string $picture): void
-    {
-        $this->picture = $picture;
-    }
-
     public function getTelegramId(): ?string
     {
         return $this->telegramId;

@@ -77,14 +77,6 @@
             cursor: pointer;
         }
 
-        #claire-test-target {
-            min-height: 640px;
-            border: 2px dashed #94a3b8;
-            border-radius: 12px;
-            background: #ffffff;
-            overflow: hidden;
-        }
-
         #status {
             background: #0f172a;
             color: #e2e8f0;
@@ -126,15 +118,15 @@
         <h2>Logs</h2>
         <textarea id="status" readonly></textarea>
     </section>
+
 </div>
 
-<script src="/js/embed.js"></script>
+<script src="/js/embed.js?v=20260816-2"></script>
 <script>
     (function () {
         const baseUrlEl = document.getElementById('baseUrl');
         const tokenEl = document.getElementById('token');
         const statusEl = document.getElementById('status');
-        const targetSelector = '#claire-test-target';
 
         function detectBaseUrl() {
             try {
@@ -172,20 +164,39 @@
             return String(el.value || '').trim();
         }
 
+        function readStoredToken(key) {
+            try {
+                const value = JSON.parse(sessionStorage.getItem(key) || 'null');
+                if (!value || typeof value.token !== 'string') {
+                    return '';
+                }
+                if (typeof value.expiresAt === 'number' && Date.now() >= value.expiresAt) {
+                    sessionStorage.removeItem(key);
+                    return '';
+                }
+                return value.token;
+            } catch (_error) {
+                sessionStorage.removeItem(key);
+                return '';
+            }
+        }
+
         baseUrlEl.value = detectBaseUrl();
+        tokenEl.value = readStoredToken('claire_session_token')
+            || readStoredToken('claire_mini_token');
 
         document.getElementById('btnEmbed').addEventListener('click', async function () {
             const baseUrl = trimValue(baseUrlEl) || detectBaseUrl();
             const token = trimValue(tokenEl);
 
+            if (token === '') {
+                log('Erreur embed: un token Claire ou SSO est requis');
+                return;
+            }
+
             const config = {
                 baseUrl: baseUrl,
-                target: targetSelector,
             };
-
-            if (token !== '') {
-                config.token = token;
-            }
 
             if (token !== '') {
                 config.token = token;
