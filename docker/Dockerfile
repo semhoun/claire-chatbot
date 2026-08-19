@@ -1,9 +1,10 @@
+# syntax=docker/dockerfile:1.7
+
 FROM dunglas/frankenphp:builder-php8.5-trixie AS frankenphp-builder
 
-# Copy xcaddy in the builder image
 COPY --from=caddy:builder /usr/bin/xcaddy /usr/bin/xcaddy
 
-# CGO must be enabled to build FrankenPHP
+# CGO must be enabled to build FrankenPHP.
 RUN CGO_ENABLED=1 \
     XCADDY_SETCAP=1 \
     XCADDY_GO_BUILD_FLAGS="-ldflags='-w -s' -tags=nobadger,nomysql,nopgx" \
@@ -14,135 +15,153 @@ RUN CGO_ENABLED=1 \
         --with github.com/dunglas/frankenphp=./ \
         --with github.com/dunglas/frankenphp/caddy=./caddy/ \
         --with github.com/dunglas/caddy-cbrotli \
-        # Add extra Caddy modules here \
         --with github.com/caddyserver/transform-encoder
 
 FROM node:24-bookworm-slim AS frontend-build
 
 WORKDIR /src
+
 COPY package.json package-lock.json tsconfig.json vite.config.ts vite.embed.config.ts ./
 COPY frontend ./frontend
 COPY public/css ./public/css
-RUN npm ci \
+
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci \
     && npm run build
 
 FROM dunglas/frankenphp:php8.5-trixie AS base
 
 COPY --from=frankenphp-builder /usr/local/bin/frankenphp /usr/local/bin/frankenphp
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TERM=linux
+ENV DEBIAN_FRONTEND=noninteractive \
+    TERM=linux
 
-RUN apt-get update -y \
-    && apt-get install -y --no-install-recommends curl wget ca-certificates bash dos2unix git unzip gpg \
-        iputils-ping iproute2 less vim \
-        locales aspell-fr \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        locales \
         supervisor \
-    \
-    # Dev packages \
-    && apt-get install -y zlib1g-dev libmagickwand-dev \
-    \
-    \
-    # Configure locales \
+        vim \
+        wget \
     && sed \
         -e 's/# fr_FR.UTF-8 UTF-8/fr_FR.UTF-8 UTF-8/' \
         -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' \
         -i /etc/locale.gen \
-    && /usr/sbin/locale-gen en_US.UTF-8 \
-    \
-    \
-    # Install php addons \
-    && install-php-extensions bcmath bz2 curl exif gd gmp intl mbstring opcache pcntl \
-        pdo_mysql pdo_pgsql pdo_sqlite redis \
-        sodium xsl zip opentelemetry \
-    \
-    \
-    # Install composer \
-    && cd /tmp \
-    && php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
-    && php composer-setup.php \
-    && install composer.phar /usr/bin/composer \
-    \
-    \
-    # Install ember \
-    && EMBER_LATEST_TAG=$(curl -fsSL https://api.github.com/repos/alexandre-daubois/ember/releases/latest | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//') \
-    && curl -fsSL -o /tmp/ember.tar.gz https://github.com/alexandre-daubois/ember/releases/download/${EMBER_LATEST_TAG}/ember_${EMBER_LATEST_TAG#v}_linux_amd64.tar.gz \
-    && tar -xzf  /tmp/ember.tar.gz -C /tmp \
-    && install ember /usr/local/bin/ \
-    \
-    \
-# Clean \
-    && apt-get -y autoremove \
+    && locale-gen en_US.UTF-8 \
+    && install-php-extensions \
+        bcmath \
+        bz2 \
+        curl \
+        exif \
+        gd \
+        gmp \
+        intl \
+        mbstring \
+        opcache \
+        opentelemetry \
+        pcntl \
+        pdo_mysql \
+        pdo_pgsql \
+        pdo_sqlite \
+        redis \
+        sodium \
+        xsl \
+        zip \
+    && EMBER_LATEST_TAG=$(curl -fsSL \
+        https://api.github.com/repos/alexandre-daubois/ember/releases/latest \
+        | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' \
+        | head -1) \
+    && EMBER_RELEASE_URL="https://github.com/alexandre-daubois/ember/releases/download/${EMBER_LATEST_TAG}" \
+    && wget -q -O /tmp/ember.tar.gz \
+        "${EMBER_RELEASE_URL}/ember_${EMBER_LATEST_TAG#v}_linux_amd64.tar.gz" \
+    && tar -xzf /tmp/ember.tar.gz -C /tmp \
+    && install /tmp/ember /usr/local/bin/ember \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
 
 RUN mkdir -p /var/www \
-    && chown -R www-data:www-data /var/www \
+    && chown www-data:www-data /var/www \
     && usermod www-data -s /bin/bash -d /var/www
 
-FROM base AS build
+FROM base AS php-dependencies
 
-COPY . /src
-RUN mkdir /rootfs \
-    && mv /src/docker/rootfs/* /rootfs/ \
-    && rm -rf /src/docker /src/.dockerignore /src/.git \
-    && mv /src /rootfs/opt/www
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-COPY --from=frontend-build /src/public/build /rootfs/opt/www/public/build
-COPY --from=frontend-build /src/public/js/embed.js /rootfs/opt/www/public/js/embed.js
+WORKDIR /app
 
-RUN cd /rootfs/opt/www \
-    && COMPOSER_ALLOW_SUPERUSER=1 php /usr/bin/composer \
-        --no-cache \
-        --optimize-autoloader \
-        --apcu-autoloader \
+COPY composer.json composer.lock ./
+
+RUN --mount=type=cache,target=/root/.composer/cache \
+    COMPOSER_ALLOW_SUPERUSER=1 composer install \
         --no-dev \
-        install
+        --no-interaction \
+        --no-scripts \
+        --no-autoloader \
+        --prefer-dist
+
+COPY src ./src
+COPY migrations ./migrations
+
+RUN COMPOSER_ALLOW_SUPERUSER=1 composer dump-autoload \
+    --no-dev \
+    --optimize \
+    --apcu
 
 FROM base AS final
-COPY --from=build /rootfs /
 
-# Encoding fix
-ENV LANG=en_US.UTF-8
-ENV LANGUAGE=en_US:en
-ENV LC_ALL=en_US.UTF-8
+ARG VERSION=dev
 
-# Default env values
-ENV DEBUG_MODE="false"
-ENV ENABLE_LETSENCRYPT="false"
-ENV ACME_EMAIL=""
-ENV QUEUE_WORKERS="8"
+COPY docker/rootfs /
+COPY LICENSE composer.json composer.lock console /opt/www/
+COPY config /opt/www/config
+COPY migrations /opt/www/migrations
+COPY public /opt/www/public
+COPY src /opt/www/src
+COPY tmpl /opt/www/tmpl
+COPY --from=php-dependencies /app/vendor /opt/www/vendor
+COPY --from=frontend-build /src/public/build /opt/www/public/build
+COPY --from=frontend-build /src/public/js/embed.js /opt/www/public/js/embed.js
 
-ENV CLAIRE_APP_VERSION="$VERSION"
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    DEBUG_MODE=false \
+    ENABLE_LETSENCRYPT=false \
+    ACME_EMAIL="" \
+    QUEUE_WORKERS=8 \
+    CLAIRE_APP_VERSION=${VERSION} \
+    DATA_PATH=/opt/data \
+    ADDONS_PATH=/opt/addons
 
-# Manage permissions
 RUN mkdir -p \
         /config/caddy \
         /data/caddy \
         /etc/caddy \
         /usr/share/caddy \
+        /opt/data \
+        /opt/addons \
+        /opt/www/var/cache \
+        /opt/www/var/tmp \
     && touch /etc/caddy/Caddyfile \
     && chown -R www-data:www-data \
         /config/caddy \
         /data/caddy \
         /etc/caddy \
         /usr/share/caddy \
-    && setcap -r /usr/local/bin/frankenphp \
-## Application directories \
-    && mkdir -p /opt/data \
-    && chown -R www-data:www-data /opt/data /opt/www \
-    && chmod +x /opt/bin/*
+        /opt/data \
+        /opt/addons \
+        /opt/www/var \
+    && setcap -r /usr/local/bin/frankenphp
 
-# DATA dir
-ENV DATA_PATH=/opt/data
-ENV ADDONS_PATH=/opt/addons
 VOLUME ["/opt/data", "/opt/addons"]
-WORKDIR "/opt/www"
+WORKDIR /opt/www
 
-#Expose port
 EXPOSE 80 443
 
-# Docker starting params
-CMD ["/usr/bin/supervisord","-c","/etc/supervisor/supervisord.conf"]
+HEALTHCHECK --start-period=30s --interval=15s --timeout=5s --retries=3 \
+    CMD curl --fail http://localhost/health || exit 1
+
 ENTRYPOINT ["/opt/bin/entrypoint.sh"]
-HEALTHCHECK --start-period=30s --interval=15s --timeout=5s --retries=3 CMD curl --fail http://localhost/health || exit 1
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
