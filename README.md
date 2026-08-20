@@ -16,7 +16,7 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript 
 - Création d'agents personnalisés via fichiers YAML dans `/opt/addons/agents/`
 - Mémoire courte avec résumé automatique de l'historique
 - Mémoire long terme optionnelle, évolutive entre les conversations et reconstructible depuis les résumés
-- Recherche web via SearXNG et RAG fichier via embeddings
+- Recherche web via SearXNG et RAG par documents (fichiers, texte, URL) avec embeddings
 - Génération d'images avec ComfyUI (workflows multiples)
 - Génération de documents PDF depuis HTML ou Markdown
 - Intégration Telegram complète (messages, photos, documents, Mini-App)
@@ -57,6 +57,8 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript 
 |----------|-------------|---------------------------|
 | `OPENAPI_MODEL_SUMMARY` | Modèle pour les résumés | valeur de `OPENAPI_MODEL` |
 | `OPENAPI_MODEL_EMBED` | Modèle pour embeddings (RAG) | désactivé                 |
+| `RAG_CHUNK_SIZE` | Taille maximale des segments RAG | `1000`                    |
+| `RAG_TOP_K` | Nombre de résultats retournés par recherche RAG | `4`                       |
 | `LONG_TERM_MEMORY_MAX_CHARACTERS` | Taille maximale de la mémoire long terme | `4000`                    |
 | `LONG_TERM_MEMORY_UPDATE_EVERY_USER_MESSAGES` | Fréquence de mise à jour, en messages utilisateur | `5`                       |
 | `LONG_TERM_MEMORY_REBUILD_BATCH_SIZE` | Nombre de résumés traités par lot lors d'une reconstruction | `20`                      |
@@ -165,6 +167,18 @@ Activez par défaut (`PDF_ENABLED=true`). Les agents peuvent générer des docum
 
 Les fichiers générés sont liés à la conversation et accessibles dans l'historique de chat.
 
+## RAG (Recherche augmentée)
+
+Claire indexe des documents par utilisateur pour enrichir les réponses de l'agent (retrieval-augmented generation). Depuis l'interface web, l'utilisateur peut ajouter un document (fichier, texte collé ou URL), l'activer/désactiver, le supprimer ou consulter ses segments.
+
+Lorsqu'au moins un document actif existe, l'outil `rag_search` est automatiquement mis à la disposition de l'agent pour interroger ces documents. Les embeddings sont calculés via le modèle `OPENAPI_MODEL_EMBED` (requis), et le découpage en segments ainsi que le nombre de résultats sont réglables via `RAG_CHUNK_SIZE` et `RAG_TOP_K`.
+
+Les documents sont stockés par utilisateur dans le volume `/opt/data` (répertoire `rag/`) et référencés dans la table `rag_document`. Après une mise à niveau vers la version 2.0.0, appliquez la migration correspondante :
+
+```bash
+docker compose exec claire ./console migrations:migrate
+```
+
 ## Telegram Bot
 
 ### Configuration
@@ -188,6 +202,8 @@ docker compose exec claire ./console telegram:menu-button --set
 ```
 
 Le bot supporte les commandes `/start`, `/help`, `/brain`, `/comfyui`.
+
+Depuis l'interface web, chaque utilisateur peut associer son identifiant Telegram (User ID) à son compte pour recevoir les notifications. L'identifiant est validé (numérique uniquement) et doit être unique ; il peut être dissocié à tout moment en effaçant le champ.
 
 ## Queue Redis
 
@@ -268,6 +284,13 @@ sess-abc123
 - `POST /files/upload`, `POST /files/upload_rag`
 - `DELETE /files/delete/{id}`
 - `GET /files/img_serve/{id}` (images et PDF générés)
+
+### RAG
+
+- `GET /rag/list`, `GET /rag/count`
+- `GET /rag/segments/{id}`
+- `POST /rag/upload` (fichier), `POST /rag/text`, `POST /rag/url`
+- `POST /rag/toggle/{id}` (activer/désactiver), `DELETE /rag/delete/{id}`
 
 ### Historique
 

@@ -5,24 +5,32 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
-## [Unreleased]
-
-## [2.0.0] - 2026-08-19
+## [2.0.0] - 2026-08-20
 
 ### Added
 - **Frontend** : application partagée Vue 3 et TypeScript, compilée avec Vite
 - **Tests** : tests Vitest du bootstrap, de la session et du cycle de vie du widget
 - **Docker** : étape de build Node dédiée pour compiler les bundles Vue dans l'image Docker
+- **RAG** : nouvelle entité `RagDocument` et repository dédiés, avec migration créant la table `rag_document` pour gérer les documents indexés par utilisateur
+- **RAG** : service `RagService` centralisant l'indexation, le découpage et la recherche, ainsi que les endpoints `/rag/*` (liste, upload, texte, URL, activation, suppression, segments)
+- **RAG** : outil agent `rag_search` pour interroger les documents actifs de l'utilisateur
+- **RAG** : variables `RAG_CHUNK_SIZE` et `RAG_TOP_K` pour régler le découpage des segments et le nombre de résultats
+- **Telegram** : validation de l'identifiant Telegram (numérique uniquement) et détection d'un identifiant déjà associé à un autre compte
 
 ### Changed
 - **Embed** : distribution sous forme de Custom Element (`<claire-chat-widget>`) avec Shadow DOM et bundle IIFE autonome
 - **Session** : authentification et rafraîchissement JWT limités aux requêtes Claire, sans remplacement global de `window.fetch`
 - **Rendu HTML** : pages et fragments produits avec Twig, messages SSE rendus côté PHP (`ChatHtmlRenderer`)
 - **Qualité** : audit et nettoyage du code LLM, refonte des en-têtes CORS et amélioration des tests unitaires
+- **RAG** : vector stores désormais isolés par utilisateur et reconstruits automatiquement après modification
+- **Telegram** : refonte de l'interface de configuration (statut, alertes succès/erreur) avec possibilité de dissocier un compte
+- **Docker** : optimisation du build et suivi de `composer.lock` pour des builds reproductibles
+- **CI** : correction du workflow GitHub Actions de build Docker
 
 ### Removed
 - **Frontend historique** : suppression de htmx et des scripts JavaScript globaux remplacés par Vue
 - **Rendu historique** : suppression du moteur de templates, de son middleware, de ses extensions et de ses caches
+- **RAG** : suppression de l'indexation RAG monolithique dans `FileController`, remplacée par `RagService`
 
 ## [1.6.0] - 2026-08-10
 
@@ -548,7 +556,9 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/1.5.2...HEAD
+[2.0.0]: https://github.com/semhoun/claire-chatbot/compare/1.6.0...HEAD
+[1.6.0]: https://github.com/semhoun/claire-chatbot/compare/1.5.3...1.6.0
+[1.5.3]: https://github.com/semhoun/claire-chatbot/compare/1.5.2...1.5.3
 [1.5.2]: https://github.com/semhoun/claire-chatbot/compare/1.5.1...1.5.2
 [1.5.1]: https://github.com/semhoun/claire-chatbot/compare/1.5.0...1.5.1
 [1.5.0]: https://github.com/semhoun/claire-chatbot/compare/1.4.8...1.5.0
