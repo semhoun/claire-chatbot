@@ -9,6 +9,7 @@ use App\Enums\TelegramAction;
 use App\Services\Audio\AudioServiceInterface;
 use Phptg\BotApi\FailResult;
 use Phptg\BotApi\TelegramBotApi;
+use Phptg\BotApi\Type\Audio;
 use Phptg\BotApi\Type\InputFile;
 use Phptg\BotApi\Type\Voice;
 use Psr\Log\LoggerInterface as Logger;
@@ -24,18 +25,23 @@ final readonly class TelegramAudioService
     ) {
     }
 
-    public function transcribe(Voice $voice): string
+    public function transcribe(Voice|Audio $audio): string
     {
-        $file = $this->telegramBotApi->getFile(fileId: $voice->fileId);
+        $this->assertAllowedSize($audio->fileSize);
+
+        $file = $this->telegramBotApi->getFile(fileId: $audio->fileId);
         if ($file instanceof FailResult) {
-            throw new RuntimeException('Telegram could not resolve the voice file');
+            throw new RuntimeException('Telegram could not resolve the audio file');
         }
 
-        $audio = $this->telegramBotApi->downloadFile($file)->getBody();
+        $this->assertAllowedSize($file->fileSize);
+
+        $content = $this->telegramBotApi->downloadFile($file)->getBody();
+        $this->assertAllowedSize(strlen($content));
         $transcription = $this->audioService->transcribe(
-            $audio,
-            'voice.ogg',
-            $voice->mimeType ?? 'audio/ogg',
+            $content,
+            $this->filename($audio),
+            $audio->mimeType ?? 'audio/ogg',
         );
         $text = trim((string) ($transcription['text'] ?? ''));
         if ($text === '') {
@@ -66,6 +72,28 @@ final readonly class TelegramAudioService
                 'exception' => $throwable,
             ]);
         }
+    }
+
+    private function assertAllowedSize(?int $size): void
+    {
+        if ($size !== null && $size > $this->audioService->maxUploadBytes()) {
+            throw new RuntimeException('The Telegram audio file is too large');
+        }
+    }
+
+    private function filename(Voice|Audio $audio): string
+    {
+        if ($audio instanceof Audio && trim((string) $audio->fileName) !== '') {
+            return (string) $audio->fileName;
+        }
+
+        return match ($audio->mimeType) {
+            'audio/mpeg' => 'audio.mp3',
+            'audio/mp4', 'audio/x-m4a' => 'audio.m4a',
+            'audio/wav', 'audio/x-wav' => 'audio.wav',
+            'audio/webm' => 'audio.webm',
+            default => 'audio.ogg',
+        };
     }
 
     private function sendVoice(int $telegramChatId, string $audio): void

@@ -27,8 +27,11 @@ use NeuronAI\Chat\Messages\UserMessage;
 use Phptg\BotApi\Constant\ParseMode;
 use Phptg\BotApi\FailResult;
 use Phptg\BotApi\TelegramBotApi;
+use Phptg\BotApi\Type\Audio;
+use Phptg\BotApi\Type\InputFile;
 use Phptg\BotApi\Type\Message;
 use Phptg\BotApi\Type\Update\Update;
+use Phptg\BotApi\Type\Voice;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
 
@@ -419,8 +422,8 @@ class TelegramService implements QueueDoer
 
     private function processMessageByType(int $telegramChatId, Message $message): void
     {
-        if ($message->voice instanceof \Phptg\BotApi\Type\Voice) {
-            $this->handleVoice($telegramChatId, $message);
+        if ($this->hasAudio($message)) {
+            $this->handleAudio($telegramChatId, $message);
             return;
         }
 
@@ -436,33 +439,36 @@ class TelegramService implements QueueDoer
 
         $text = $message->text;
         if ($text === null) {
-            $this->sendMessage($telegramChatId, 'Je ne peux traiter que du texte, des photos et des documents.');
+            $this->sendMessage(
+                $telegramChatId,
+                'Je ne peux traiter que du texte, de l’audio, des photos et des documents.',
+            );
             return;
         }
 
         $this->processTextMessage($telegramChatId, $text);
     }
 
-    private function handleVoice(int $telegramChatId, Message $message): void
+    private function handleAudio(int $telegramChatId, Message $message): void
     {
         if (! $this->audioService->isAvailable()) {
             $this->sendMessage($telegramChatId, 'La fonction audio n’est pas configurée.');
             return;
         }
 
-        $voice = $message->voice;
-        if (! $voice instanceof \Phptg\BotApi\Type\Voice) {
+        $audio = $message->voice ?? $message->audio;
+        if (! $audio instanceof Voice && ! $audio instanceof Audio) {
             return;
         }
 
         try {
-            $text = $this->telegramAudioService->transcribe($voice);
+            $text = $this->telegramAudioService->transcribe($audio);
             $this->processChatMessage($telegramChatId, $text, voiceResponse: true);
         } catch (\Throwable $throwable) {
-            $this->logger->error('Voice handling error: ' . $throwable->getMessage(), [
+            $this->logger->error('Audio handling error: ' . $throwable->getMessage(), [
                 'exception' => $throwable,
             ]);
-            $this->sendMessage($telegramChatId, 'Désolé, je n’ai pas pu transcrire ce message vocal.');
+            $this->sendMessage($telegramChatId, 'Désolé, je n’ai pas pu transcrire ce message audio.');
         }
     }
 
@@ -474,6 +480,11 @@ class TelegramService implements QueueDoer
     private function hasDocument(Message $message): bool
     {
         return $message->document instanceof \Phptg\BotApi\Type\Document;
+    }
+
+    private function hasAudio(Message $message): bool
+    {
+        return $message->voice instanceof Voice || $message->audio instanceof Audio;
     }
 
     private function processTextMessage(int $telegramChatId, string $text): void
@@ -692,9 +703,60 @@ class TelegramService implements QueueDoer
 
             if ($file->fileType() === File::FILE_TYPE_IMAGE) {
                 $this->sendPhoto($telegramChatId, $file, $fileCaption);
+            } elseif ($file->fileType() === File::FILE_TYPE_AUDIO) {
+                $this->sendAudio($telegramChatId, $file, $fileCaption);
             } else {
                 $this->sendDocument($telegramChatId, $file, $fileCaption);
             }
+        }
+    }
+
+    private function sendAudio(int $telegramChatId, File $file, ?string $caption = null): void
+    {
+        try {
+            $this->sendChatAction($telegramChatId, TelegramAction::VOICE);
+            $tempFile = $this->prepareTempFile(
+                $telegramChatId,
+                $file->getFilePath(),
+                'fichier audio',
+            );
+            if ($tempFile === null) {
+                return;
+            }
+
+            $formattedCaption = $this->formatCaption($caption);
+            $inputFile = new InputFile($tempFile, $file->getFilename());
+            if ($this->shouldSendWithCaption($formattedCaption)) {
+                $result = $this->telegramBotApi->sendAudio(
+                    chatId: $telegramChatId,
+                    audio: $inputFile,
+                    caption: $formattedCaption,
+                    parseMode: ParseMode::MARKDOWN_V2,
+                );
+                $formattedCaption = null;
+            } else {
+                $result = $this->telegramBotApi->sendAudio(
+                    chatId: $telegramChatId,
+                    audio: $inputFile,
+                );
+            }
+
+            $this->handleFileSendResult(
+                $result,
+                $telegramChatId,
+                $file->getFilePath(),
+                $formattedCaption,
+                'fichier audio',
+            );
+        } catch (\Throwable $throwable) {
+            $this->handleFileSendError(
+                $throwable,
+                $telegramChatId,
+                $file->getFilePath(),
+                'fichier audio',
+            );
+        } finally {
+            $this->cleanupTempFile($tempFile ?? null);
         }
     }
 
