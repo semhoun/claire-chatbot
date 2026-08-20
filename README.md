@@ -63,6 +63,14 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript 
 | `LONG_TERM_MEMORY_UPDATE_EVERY_USER_MESSAGES` | Fréquence de mise à jour, en messages utilisateur | `5`                       |
 | `LONG_TERM_MEMORY_REBUILD_BATCH_SIZE` | Nombre de résumés traités par lot lors d'une reconstruction | `20`                      |
 | `OPENAPI_REQUEST_TIMEOUT` | Timeout des requêtes API (secondes) | `180`                     |
+| `MISTRAL_AUDIO_ENABLED` | Active transcription et synthèse vocale | `false` |
+| `MISTRAL_AUDIO_API_URL` | URL de l'API audio Mistral | `https://api.mistral.ai/v1` |
+| `MISTRAL_AUDIO_API_KEY` | Clé dédiée à l'API audio Mistral | - |
+| `MISTRAL_AUDIO_TRANSCRIPTION_MODEL` | Modèle de transcription imposé côté serveur | `voxtral-mini-latest` |
+| `MISTRAL_AUDIO_SPEECH_MODEL` | Modèle de synthèse imposé côté serveur | `voxtral-mini-tts-2603` |
+| `MISTRAL_AUDIO_VOICES` | Liste JSON des voix, ex. `[{"id":"voice-id","label":"Claire"}]` | `[]` |
+| `MISTRAL_AUDIO_DEFAULT_VOICE` | Identifiant de la voix par défaut | première voix configurée |
+| `MISTRAL_AUDIO_MAX_RECORDING_SECONDS` | Durée maximale d'une dictée web | `300` |
 | `SESSION_LIFETIME` | Durée de vie des JWT de session (secondes) | `900`                     |
 | `SESSION_REFRESH_BEFORE_EXPIRE` | Marge avant expiration pour déclencher le refresh (secondes) | `120`                     |
 | `SESSION_REFRESH_MIN_INTERVAL` | Intervalle minimal entre deux tentatives de refresh (secondes) | `30`                      |
@@ -83,6 +91,32 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript 
 | `QUEUE_WORKER_MAX_TIME` | Durée de vie max d'un worker (secondes) | `0` (illimité)            |
 | `SSE_QUEUE_TTL` | Durée de vie des messages SSE en file d'attente (secondes) | `60`                      |
 | `SSE_POP_TIMEOUT` | Timeout de lecture bloquante SSE (secondes) | `15`                      |
+
+### API audio
+
+Lorsque l'audio est configuré, Claire expose deux routes authentifiées par la
+session Claire et compatibles avec les requêtes OpenAI usuelles :
+
+- `POST /v1/audio/transcriptions` accepte un formulaire multipart avec `file`
+  et `model`, et renvoie `json`, `verbose_json` ou `text` ;
+- `POST /v1/audio/speech` accepte `input`, `model`, `voice` et
+  `response_format`, puis renvoie directement le flux audio.
+
+Les modèles réellement appelés restent ceux configurés côté serveur. La valeur
+`voice` doit correspondre à un identifiant présent dans `MISTRAL_AUDIO_VOICES`.
+Le streaming natif du fournisseur audio n'est pas activé.
+
+Dans l'interface web et l'embed, la synthèse peut être générée automatiquement
+pour chaque nouvelle réponse, ou à la demande avec le bouton du message. Dans
+les deux modes, le worker livre le résultat en Base64 par l'événement SSE
+`chat.audio.ready`. Pendant une génération, le bouton reste désactivé jusqu'à
+la réception de cet événement, puis la lecture démarre automatiquement lorsque
+la politique d'autoplay du navigateur l'autorise.
+
+Lorsque l'audio Mistral est disponible, les agents disposent également de
+l'outil `generate_speech`. Il transforme jusqu'à 4096 caractères en fichier
+MP3, avec une voix et un nom de fichier optionnels. Le fichier est conservé
+avec la conversation et affiché directement dans un lecteur audio protégé.
 
 Voir [`docker/compose.yml`](docker/compose.yml) pour un exemple complet avec toutes les variables.
 

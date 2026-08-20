@@ -11,6 +11,7 @@ return static function (
 ): void {
     $app->group('/config', static function (Group $group): void {
         $group->post('/layout_mode', [ConfigController::class, 'layoutMode'])->setName('config.layout');
+        $group->post('/audio', [ConfigController::class, 'audio'])->setName('config.audio');
         $group->post('/brain_avatar', [ConfigController::class, 'brainAvatar'])->setName('config.brain_avatar');
         $group->post(
             '/long_term_memory',

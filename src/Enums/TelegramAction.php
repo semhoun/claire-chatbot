@@ -10,4 +10,5 @@ enum TelegramAction: string
     case GENERATE = 'record_video';
     case PHOTO = 'upload_photo';
     case DOCUMENT = 'upload_document';
+    case VOICE = 'record_voice';
 }

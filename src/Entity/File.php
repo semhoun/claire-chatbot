@@ -26,6 +26,8 @@ class File
 
     public const string FILE_TYPE_PDF = 'pdf';
 
+    public const string FILE_TYPE_AUDIO = 'audio';
+
     public const string FILE_TYPE_UNKNOWN = 'unknown';
 
     #[ORM\Id]
@@ -164,6 +166,10 @@ class File
             return self::FILE_TYPE_PDF;
         }
 
+        if (str_starts_with($this->mimeType, 'audio/')) {
+            return self::FILE_TYPE_AUDIO;
+        }
+
         return self::FILE_TYPE_UNKNOWN;
     }
 
@@ -174,6 +180,7 @@ class File
         match ($extension) {
             'png', 'jpg', 'jpeg', 'gif', 'webp' => $this->mimeType = 'image/' . $extension,
             'pdf' => $this->mimeType = 'application/pdf',
+            'mp3' => $this->mimeType = 'audio/mpeg',
             default => throw new \InvalidArgumentException('Unsupported file extension: ' . $extension),
         };
 

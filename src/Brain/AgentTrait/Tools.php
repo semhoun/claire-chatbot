@@ -7,7 +7,10 @@ namespace App\Brain\AgentTrait;
 use App\Brain\Tools\GenerateImageTool;
 use App\Brain\Tools\PdfGeneratorTool;
 use App\Brain\Tools\RagSearchTool;
+use App\Brain\Tools\TextToSpeechTool;
 use App\Brain\Tools\WebToolkit;
+use App\Services\Audio\AudioServiceInterface;
+use App\Services\AudioGeneratorService;
 use App\Services\ComfyUIService;
 use App\Services\PdfGeneratorService;
 use App\Services\RagService;
@@ -45,6 +48,16 @@ trait Tools
             $tools[] = PdfGeneratorTool::make(
                 $this->container->get(PdfGeneratorService::class),
                 $this->container->get(Settings::class),
+                $this->session,
+                $this->threadId,
+            );
+        }
+
+        $audioService = $this->container->get(AudioServiceInterface::class);
+        if ($audioService->isAvailable()) {
+            $tools[] = TextToSpeechTool::make(
+                $this->container->get(AudioGeneratorService::class),
+                $audioService,
                 $this->session,
                 $this->threadId,
             );

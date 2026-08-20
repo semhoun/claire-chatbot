@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Brain\LongTermMemory;
+use App\Services\Audio\AudioServiceInterface;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Env;
 
@@ -30,5 +31,8 @@ return [
         'layout_mode' => 'full',
         LongTermMemory::SESSION_KEY => false,
         ComfyUIWorkflowRegistry::SESSION_KEY => null,
+        AudioServiceInterface::ENABLED_SESSION_KEY => false,
+        AudioServiceInterface::AUTO_GENERATE_SESSION_KEY => false,
+        AudioServiceInterface::DICTATION_MODE_SESSION_KEY => 'review',
     ],
 ];

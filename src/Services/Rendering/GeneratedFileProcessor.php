@@ -57,6 +57,11 @@ final readonly class GeneratedFileProcessor
                         . '" alt="Generated image" class="claire-generated-image">';
                 }
 
+                if ($file->fileType() === File::FILE_TYPE_AUDIO) {
+                    return '<audio controls preload="none" data-protected-src="'
+                        . $url . '" class="claire-generated-audio"></audio>';
+                }
+
                 return '<a href="' . $url
                     . '" class="claire-generated-file" target="_blank">'
                     . htmlspecialchars($file->getFilename(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')

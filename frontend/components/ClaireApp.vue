@@ -13,7 +13,8 @@ import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 import { SessionClient } from '../services/session-client'
-import type { ClaireBootstrap, SseUpdate } from '../types'
+import { BrowserAudio } from '../services/browser-audio'
+import type { AudioDictationMode, ClaireBootstrap, SseUpdate } from '../types'
 import ClaireIcon from './ClaireIcon.vue'
 
 const props = defineProps<{ config: ClaireBootstrap }>()
@@ -36,6 +37,7 @@ const client = new SessionClient(
   props.config.refreshMinInterval,
 )
 client.initialize(props.config.sessionToken, props.config.miniToken)
+const browserAudio = new BrowserAudio(client, props.config.audioMaxRecordingSeconds)
 
 const rootElement = ref<HTMLElement | null>(null)
 const messagesElement = ref<HTMLElement | null>(null)
@@ -61,6 +63,17 @@ const dynamicCss = ref(props.config.dynamicCss ?? '')
 const currentWorkflow = ref(props.config.currentWorkflow)
 const longTermMemory = ref(props.config.longTermMemoryEnabled)
 const layoutMode = ref(props.config.layoutMode)
+const audioEnabled = ref(props.config.audioEnabled)
+const audioAutoGenerate = ref(props.config.audioAutoGenerate)
+const audioDictationMode = ref<AudioDictationMode>(props.config.audioDictationMode)
+const audioVoice = ref(props.config.audioVoice)
+const recording = ref(false)
+const transcribing = ref(false)
+const playingMessageId = ref<string | null>(null)
+const readyAudio = new Map<string, Blob>()
+const pendingAudio = new Set<string>()
+const failedAudio = new Set<string>()
+const autoPlayedAudio = new Set<string>()
 const localFiles = ref<File[]>([])
 const storedFiles = ref<Array<{ id: string; name: string }>>([])
 const notification = ref<{ text: string; variant: string } | null>(null)
@@ -185,6 +198,8 @@ function connectStream(): void {
     'chat.assistant.placeholder',
     'chat.assistant.update',
     'chat.assistant.done',
+    'chat.audio.ready',
+    'chat.audio.error',
     'chat.tool.update',
   ]
   for (const type of events) {
@@ -218,9 +233,14 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     article.appendChild(bubble)
     messages.appendChild(article)
   } else if (type === 'chat.snapshot') {
+    readyAudio.clear()
+    pendingAudio.clear()
+    failedAudio.clear()
+    autoPlayedAudio.clear()
     messages.innerHTML = update.html ?? ''
     if (typeof update.restoredMessage === 'string') message.value = update.restoredMessage
     finishResponse()
+    void nextTick(enhanceRenderedMessages)
   } else if (type === 'chat.assistant.placeholder') {
     const existing = findMessage(update.messageId)
     if (existing === null) {
@@ -228,14 +248,30 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
       if (loader instanceof HTMLElement) loader.outerHTML = update.html ?? ''
       else messages.insertAdjacentHTML('beforeend', update.html ?? '')
     }
+    void nextTick(() => ensureAudioAction(
+      update.messageId,
+      audioAutoGenerate.value,
+    ))
   } else if (type === 'chat.assistant.update') {
     const element = rootElement.value?.querySelector(`#claire-message-${CSS.escape(update.messageId ?? '')}`)
     if (element instanceof HTMLElement) element.innerHTML = update.html ?? ''
+    ensureAudioAction(update.messageId, audioAutoGenerate.value)
   } else if (type === 'chat.tool.update') {
     const element = rootElement.value?.querySelector(`#claire-toolscall-${CSS.escape(update.messageId ?? '')}`)
     if (element instanceof HTMLElement) element.innerHTML = update.html ?? ''
   } else if (type === 'chat.assistant.done') {
     finishResponse()
+    void nextTick(() => ensureAudioAction(
+      update.messageId,
+      audioAutoGenerate.value,
+    ))
+  } else if (type === 'chat.audio.ready') {
+    receiveReadyAudio(update)
+  } else if (type === 'chat.audio.error' && update.messageId) {
+    pendingAudio.delete(update.messageId)
+    failedAudio.add(update.messageId)
+    ensureAudioAction(update.messageId)
+    updateAudioActionStates()
   }
   void nextTick(enhanceRenderedMessages)
   scrollToBottom()
@@ -262,8 +298,113 @@ function enhanceRenderedMessages(): void {
     const src = image.dataset.protectedSrc ?? image.getAttribute('src') ?? ''
     image.src = client.protectedUrl(src)
   }
+  for (const audio of rootElement.value.querySelectorAll<HTMLAudioElement>('audio.claire-generated-audio')) {
+    const src = audio.dataset.protectedSrc ?? ''
+    if (src !== '' && audio.src === '') audio.src = client.protectedUrl(src)
+  }
   for (const code of rootElement.value.querySelectorAll<HTMLElement>('pre code:not(.hljs)')) {
     hljs.highlightElement(code)
+  }
+  if (!audioEnabled.value) {
+    for (const action of rootElement.value.querySelectorAll('[data-audio-listen]')) action.remove()
+    return
+  }
+  for (const article of rootElement.value.querySelectorAll<HTMLElement>(
+    '.claire-message--received[id^="claire-"]',
+  )) {
+    ensureAudioAction(article.id.slice('claire-'.length))
+  }
+}
+
+function ensureAudioAction(messageId?: string, autoPending = false): void {
+  if (!audioEnabled.value || !messageId || rootElement.value === null) return
+  const article = rootElement.value.querySelector<HTMLElement>(
+    `#claire-${CSS.escape(messageId)}`,
+  )
+  if (article === null || !article.classList.contains('claire-message--received')) return
+  if (article.querySelector('[data-audio-listen]') !== null) {
+    updateAudioActionStates()
+    return
+  }
+  const meta = article.querySelector<HTMLElement>('.claire-message__meta')
+  if (meta === null) return
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'claire-message__audio-action'
+  button.dataset.audioListen = 'true'
+  button.dataset.audioMessageId = messageId
+  button.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    void toggleSpeech(button)
+  })
+  meta.appendChild(button)
+  if (autoPending
+    && !readyAudio.has(messageId)
+    && !failedAudio.has(messageId)) {
+    pendingAudio.add(messageId)
+  }
+  updateAudioActionStates()
+}
+
+function updateAudioActionStates(): void {
+  for (const action of rootElement.value?.querySelectorAll<HTMLButtonElement>('[data-audio-listen]') ?? []) {
+    const messageId = action.dataset.audioMessageId ?? ''
+    const active = messageId === playingMessageId.value
+    const ready = readyAudio.has(messageId)
+    const pending = pendingAudio.has(messageId)
+    const failed = failedAudio.has(messageId)
+    action.disabled = pending
+    if (active) setAudioActionIcon(action, 'stop', 'Arrêter la lecture')
+    else if (ready) setAudioActionIcon(action, 'play', 'Lire la réponse')
+    else if (pending) setAudioActionIcon(action, 'pending', 'Génération audio en cours')
+    else if (failed) setAudioActionIcon(action, 'retry', 'Réessayer la génération audio')
+    else setAudioActionIcon(action, 'generate', 'Générer l’audio')
+    action.classList.toggle('is-playing', active)
+  }
+}
+
+function setAudioActionIcon(
+  action: HTMLButtonElement,
+  icon: 'generate' | 'pending' | 'play' | 'retry' | 'stop',
+  label: string,
+): void {
+  const paths = {
+    generate: '<path d="M5 10v4h3l4 4V6L8 10H5zm10-1a4 4 0 0 1 0 6m3-8a7 7 0 0 1 0 10"/>',
+    pending: '<path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/>',
+    play: '<path class="claire-icon__fill" d="M8 5v14l11-7z"/>',
+    retry: '<path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/>',
+    stop: '<path class="claire-icon__fill" d="M7 7h10v10H7z"/>',
+  }
+  action.title = label
+  action.setAttribute('aria-label', label)
+  action.classList.toggle('is-loading', icon === 'pending')
+  action.innerHTML = `<svg class="claire-icon" viewBox="0 0 24 24" aria-hidden="true">${paths[icon]}</svg>`
+}
+
+function receiveReadyAudio(update: SseUpdate): void {
+  if (!update.messageId || !update.audioData) return
+  let audio: Blob | null = null
+  try {
+    const binary = atob(update.audioData)
+    const bytes = Uint8Array.from(binary, character => character.charCodeAt(0))
+    audio = new Blob(
+      [bytes],
+      { type: update.mimeType || 'audio/mpeg' },
+    )
+    readyAudio.set(update.messageId, audio)
+    pendingAudio.delete(update.messageId)
+    failedAudio.delete(update.messageId)
+  } catch (error) {
+    console.error(error)
+    pendingAudio.delete(update.messageId)
+    failedAudio.add(update.messageId)
+  }
+  ensureAudioAction(update.messageId)
+  updateAudioActionStates()
+  if (audio !== null && !autoPlayedAudio.has(update.messageId)) {
+    autoPlayedAudio.add(update.messageId)
+    void playSpeech(update.messageId, audio)
   }
 }
 
@@ -315,6 +456,114 @@ async function submitMessage(): Promise<void> {
     console.error(error)
     finishResponse()
     notify('Le message n’a pas pu être envoyé.', 'error')
+  }
+}
+
+async function toggleRecording(): Promise<void> {
+  if (recording.value) {
+    browserAudio.stopRecording()
+    return
+  }
+  if (!browserAudio.supported()) {
+    notify('L’enregistrement audio n’est pas pris en charge par ce navigateur.', 'error')
+    return
+  }
+
+  try {
+    recording.value = true
+    await browserAudio.startRecording(async (audio, mediaType) => {
+      recording.value = false
+      transcribing.value = true
+      try {
+        const transcription = await browserAudio.transcribe(
+          audio,
+          mediaType,
+          props.config.audioTranscriptionModel,
+        )
+        message.value = transcription
+        await nextTick()
+        messageInput.value?.focus()
+        if (audioDictationMode.value === 'auto_send') await submitMessage()
+      } catch (error) {
+        console.error(error)
+        notify('La transcription audio a échoué.', 'error')
+      } finally {
+        transcribing.value = false
+      }
+    })
+  } catch (error) {
+    recording.value = false
+    console.error(error)
+    notify('L’accès au microphone a été refusé ou a échoué.', 'error')
+  }
+}
+
+async function toggleSpeech(action: HTMLElement): Promise<void> {
+  const article = action.closest<HTMLElement>('.claire-message')
+  const text = article?.querySelector<HTMLElement>('.claire-message__text')?.textContent?.trim() ?? ''
+  const messageId = action.dataset.audioMessageId ?? ''
+  const audio = readyAudio.get(messageId)
+  if (text === '' || messageId === '') return
+
+  if (playingMessageId.value === messageId) {
+    browserAudio.stopPlayback()
+    playingMessageId.value = null
+    updateAudioActionStates()
+    return
+  }
+
+  if (audio === undefined) {
+    await requestSpeech(messageId, text)
+    return
+  }
+
+  await playSpeech(messageId, audio)
+}
+
+async function playSpeech(messageId: string, audio: Blob): Promise<void> {
+  try {
+    playingMessageId.value = messageId
+    updateAudioActionStates()
+    await browserAudio.playReady(
+      audio,
+      (error) => {
+        playingMessageId.value = null
+        updateAudioActionStates()
+        if (error !== undefined) {
+          console.error(error)
+          notify('Le navigateur n’a pas pu lire le fichier audio généré.', 'error')
+        }
+      },
+    )
+  } catch (error) {
+    console.error(error)
+    browserAudio.stopPlayback()
+    playingMessageId.value = null
+    updateAudioActionStates()
+    notify('La synthèse vocale a échoué.', 'error')
+  }
+}
+
+async function requestSpeech(messageId: string, text: string): Promise<void> {
+  pendingAudio.add(messageId)
+  failedAudio.delete(messageId)
+  updateAudioActionStates()
+  try {
+    await checkedRequest('/brain/audio', {
+      method: 'POST',
+      body: new URLSearchParams({
+        threadId: threadId.value,
+        sessionId: sessionId.value,
+        messageId,
+        text,
+      }),
+    })
+  } catch (error) {
+    console.error(error)
+    pendingAudio.delete(messageId)
+    failedAudio.add(messageId)
+    updateAudioActionStates()
+    notify('La génération audio n’a pas pu démarrer.', 'error')
   }
 }
 
@@ -634,6 +883,32 @@ async function changeMemory(): Promise<void> {
   await postSetting('/config/long_term_memory', { enabled: String(longTermMemory.value) })
 }
 
+async function changeAudioEnabled(): Promise<void> {
+  await postSetting('/config/audio', { enabled: String(audioEnabled.value) })
+  if (!audioEnabled.value) {
+    recording.value = false
+    browserAudio.destroy()
+  }
+  enhanceRenderedMessages()
+}
+
+async function changeAudioAutoGenerate(): Promise<void> {
+  await postSetting('/config/audio', {
+    auto_generate: String(audioAutoGenerate.value),
+  })
+}
+
+async function changeAudioDictationMode(): Promise<void> {
+  await postSetting('/config/audio', { dictation_mode: audioDictationMode.value })
+}
+
+async function changeAudioVoice(): Promise<void> {
+  browserAudio.stopPlayback()
+  playingMessageId.value = null
+  updateAudioActionStates()
+  await postSetting('/config/audio', { voice: audioVoice.value })
+}
+
 function rebuildMemory(): void {
   if (!longTermMemory.value) {
     notify('Activez d’abord la mémoire longue durée.', 'error')
@@ -663,6 +938,12 @@ function logout(): void {
 
 function onRootClick(event: MouseEvent): void {
   const target = event.target as Element
+  const audioAction = target.closest<HTMLElement>('[data-audio-listen]')
+  if (audioAction !== null) {
+    event.preventDefault()
+    void toggleSpeech(audioAction)
+    return
+  }
   const image = target.closest<HTMLImageElement>('.claire-generated-image')
   if (image !== null) {
     event.preventDefault()
@@ -688,6 +969,11 @@ onBeforeUnmount(() => {
   eventSource?.close()
   if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
   if (notificationTimer !== null) window.clearTimeout(notificationTimer)
+  browserAudio.destroy()
+  readyAudio.clear()
+  pendingAudio.clear()
+  failedAudio.clear()
+  autoPlayedAudio.clear()
   client.destroy()
 })
 </script>
@@ -735,6 +1021,14 @@ onBeforeUnmount(() => {
                 </label>
                 <label class="claire-embed-toolbar__subpanel-section">Mémoire longue durée <input id="claire-long-term-memory" v-model="longTermMemory" type="checkbox" role="switch" @change="changeMemory"></label>
                 <button id="claire-rebuild-long-term-memory" class="claire-embed-toolbar__subpanel-section claire-memory-rebuild" type="button" @click="rebuildMemory">Reconstruire depuis l’historique</button>
+                <label v-if="config.audioAvailable" class="claire-embed-toolbar__subpanel-section">Audio <input v-model="audioEnabled" type="checkbox" role="switch" @change="changeAudioEnabled"></label>
+                <label v-if="config.audioAvailable && audioEnabled" class="claire-embed-toolbar__subpanel-section">Voix
+                  <select v-model="audioVoice" @change="changeAudioVoice"><option v-for="voice in config.audioVoices" :key="voice.id" :value="voice.id">{{ voice.label }}</option></select>
+                </label>
+                <label v-if="config.audioAvailable && audioEnabled" class="claire-embed-toolbar__subpanel-section">Génération automatique <input v-model="audioAutoGenerate" type="checkbox" role="switch" @change="changeAudioAutoGenerate"></label>
+                <label v-if="config.audioAvailable && audioEnabled" class="claire-embed-toolbar__subpanel-section">Après dictée
+                  <select v-model="audioDictationMode" @change="changeAudioDictationMode"><option value="review">Relire avant envoi</option><option value="auto_send">Envoyer automatiquement</option></select>
+                </label>
               </div>
             </div>
             <div v-if="openMenu === 'account' && config.user" class="claire-embed-toolbar__subpanel claire-embed-toolbar__subpanel--account is-visible">
@@ -755,6 +1049,7 @@ onBeforeUnmount(() => {
             <input id="claire-chat-upload" ref="chatFileInput" class="claire-chat-input__file" type="file" multiple :accept="config.acceptedExt" @change="selectLocalFiles">
             <span id="claire-chat-attached-files-chat" class="claire-chat-attached"><span v-for="(file, index) in localFiles" :key="`${file.name}-${file.lastModified}`" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" @click="removeLocalFile(index)"><ClaireIcon name="close" /></button></span><span v-for="file in storedFiles" :key="file.id" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" @click="removeStoredFile(file.id)"><ClaireIcon name="close" /></button></span></span>
             <textarea ref="messageInput" v-model="message" class="claire-chat-input__field claire-chat-input__field--multiline" placeholder="Écrivez votre message..." rows="1" required :disabled="busy" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
+            <button v-if="config.audioAvailable && audioEnabled" class="claire-chat-icon-btn claire-chat-input__toggleable" :class="{ 'claire-is-recording': recording }" type="button" :aria-label="recording ? 'Arrêter l’enregistrement' : 'Dicter un message'" :disabled="busy || transcribing" @click="toggleRecording"><ClaireIcon name="microphone" /></button>
             <div class="claire-chat-input__actions"><button class="claire-chat-icon-btn claire-chat-input__toggleable" type="button" aria-label="Annuler le dernier échange" :disabled="busy" @click="deleteLastExchange"><ClaireIcon name="undo" /></button><button class="claire-chat-icon-btn" type="submit" aria-label="Envoyer" :disabled="busy || message.trim() === ''"><ClaireIcon name="send" /></button></div>
           </form></footer>
         </div></section>
@@ -785,6 +1080,7 @@ onBeforeUnmount(() => {
             <input id="claire-chat-upload" ref="chatFileInput" class="claire-chat-input__file" type="file" multiple :accept="config.acceptedExt" @change="selectLocalFiles">
             <span id="claire-chat-attached-files-chat" class="claire-chat-attached"><span v-for="(file, index) in localFiles" :key="`${file.name}-${file.lastModified}`" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" @click="removeLocalFile(index)"><ClaireIcon name="close" /></button></span><span v-for="file in storedFiles" :key="file.id" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" @click="removeStoredFile(file.id)"><ClaireIcon name="close" /></button></span></span>
             <textarea ref="messageInput" v-model="message" class="claire-chat-input__field claire-chat-input__field--multiline" placeholder="Écrivez votre message..." rows="1" required :disabled="busy" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
+            <button v-if="config.audioAvailable && audioEnabled" class="claire-chat-icon-btn claire-chat-input__toggleable" :class="{ 'claire-is-recording': recording }" type="button" :aria-label="recording ? 'Arrêter l’enregistrement' : 'Dicter un message'" :disabled="busy || transcribing" @click="toggleRecording"><ClaireIcon name="microphone" /></button>
             <div class="claire-chat-input__actions"><button class="claire-chat-icon-btn claire-chat-input__toggleable" type="button" aria-label="Annuler le dernier échange" :disabled="busy" @click="deleteLastExchange"><ClaireIcon name="undo" /></button><button class="claire-chat-icon-btn" type="submit" aria-label="Envoyer" :disabled="busy || message.trim() === ''"><ClaireIcon name="send" /></button></div>
           </form></footer>
         </div>
@@ -808,6 +1104,10 @@ onBeforeUnmount(() => {
           <label v-if="config.comfyuiEnabled" class="claire-options-item"><span class="claire-options-item__label">Workflow ComfyUI</span><select id="claire-comfyui-workflow-selector" v-model="currentWorkflow" @change="changeWorkflow"><option v-for="workflow in config.workflows" :key="workflow.slug" :value="workflow.slug">{{ workflow.label }}</option></select></label>
           <label class="claire-options-item"><span class="claire-options-item__label">Mémoire longue durée</span><input id="claire-long-term-memory" v-model="longTermMemory" type="checkbox" role="switch" @change="changeMemory"></label>
           <button id="claire-rebuild-long-term-memory" class="claire-options-item" type="button" @click="rebuildMemory"><span class="claire-options-item__label">Reconstruire la mémoire depuis l’historique</span></button>
+          <label v-if="config.audioAvailable" class="claire-options-item"><span class="claire-options-item__label">Audio</span><input v-model="audioEnabled" type="checkbox" role="switch" @change="changeAudioEnabled"></label>
+          <label v-if="config.audioAvailable && audioEnabled" class="claire-options-item"><span class="claire-options-item__label">Voix</span><select v-model="audioVoice" @change="changeAudioVoice"><option v-for="voice in config.audioVoices" :key="voice.id" :value="voice.id">{{ voice.label }}</option></select></label>
+          <label v-if="config.audioAvailable && audioEnabled" class="claire-options-item"><span class="claire-options-item__label">Génération audio automatique</span><input v-model="audioAutoGenerate" type="checkbox" role="switch" @change="changeAudioAutoGenerate"></label>
+          <label v-if="config.audioAvailable && audioEnabled" class="claire-options-item"><span class="claire-options-item__label">Après dictée</span><select v-model="audioDictationMode" @change="changeAudioDictationMode"><option value="review">Relire avant envoi</option><option value="auto_send">Envoyer automatiquement</option></select></label>
           <button id="claire-toggle-layout-mode" class="claire-options-item" type="button" @click="toggleLayout"><span class="claire-options-item__label">Mode largeur</span><span class="claire-options-item__badge">{{ layoutLabel }}</span></button>
         </section>
         <section v-if="config.user" class="claire-options-panel__section"><span class="claire-options-panel__title">Compte</span>
@@ -826,7 +1126,7 @@ onBeforeUnmount(() => {
         <div class="claire-modal__footer"><button class="claire-btn claire-btn--secondary" type="button" @click="modal = null">Annuler</button><button class="claire-btn claire-btn--primary" type="button" :disabled="busy" @click="confirmModal">{{ modal.confirmLabel }}</button></div>
       </div>
     </div>
-    <div v-if="busy" class="claire-global-action-indicator claire-is-requesting" role="status"><div class="claire-global-action-indicator__pill"><span class="claire-global-action-indicator__spinner"></span><span>Action en cours...</span></div></div>
+    <div v-if="busy || transcribing" class="claire-global-action-indicator claire-is-requesting" role="status"><div class="claire-global-action-indicator__pill"><span class="claire-global-action-indicator__spinner"></span><span>{{ transcribing ? 'Transcription en cours...' : 'Action en cours...' }}</span></div></div>
     <div v-if="notification" class="claire-is-visible" id="claire-history-tooltip-banner" :data-variant="notification.variant">{{ notification.text }}</div>
     <div v-if="lightboxUrl" class="claire-image-lightbox claire-is-open" role="dialog" aria-modal="true" @click="lightboxUrl = null"><div class="claire-image-lightbox__backdrop"></div><div class="claire-image-lightbox__content"><img class="claire-image-lightbox__img" :src="lightboxUrl" alt="Image agrandie"></div></div>
   </div>

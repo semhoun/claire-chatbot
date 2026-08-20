@@ -76,6 +76,26 @@ final class GeneratedFileProcessorTest extends TestCase
         $this->assertStringNotContainsString('@@GENERATED@@', $result);
     }
 
+    public function testProcessGeneratedAudioAsPlayer(): void
+    {
+        $placeholder = '@@GENERATED@@audio-id@@';
+        $file = $this->createMock(File::class);
+        $file->method('getFileId')->willReturn('audio-id');
+        $file->method('fileType')->willReturn(File::FILE_TYPE_AUDIO);
+        $this->repository->method('findOneBy')
+            ->with(['fileId' => $placeholder])
+            ->willReturn($file);
+
+        $result = $this->processor->process($placeholder);
+
+        self::assertStringContainsString('<audio controls', $result);
+        self::assertStringContainsString('class="claire-generated-audio"', $result);
+        self::assertStringContainsString(
+            'data-protected-src="http://localhost/files/serve/audio-id"',
+            $result,
+        );
+    }
+
     public function testProcessGeneratedFilesPlaceholderWithPdfId(): void
     {
         $content = 'Here is a PDF: @@GENERATED@@user123@abc-def.pdf@@';
@@ -108,6 +128,14 @@ final class GeneratedFileProcessorTest extends TestCase
     public function testGeneratedFilePatternMatchesPngExtension(): void
     {
         $this->assertSame(1, preg_match(File::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.png@@'));
+    }
+
+    public function testGeneratedFilePatternMatchesMp3Extension(): void
+    {
+        self::assertSame(
+            1,
+            preg_match(File::GENERATED_FILE_PATTERN, '@@GENERATED@@user123@abc-def.mp3@@'),
+        );
     }
 
     public function testGeneratedFilePatternMatchesTxtExtension(): void

@@ -568,6 +568,21 @@
         </div>
     </div>
 
+    {% if audio_available and audio_voices is not empty %}
+    <!-- Audio voice -->
+    <div class="claire-glass-card">
+        <div class="claire-card-title">Voix</div>
+        <div class="claire-selection-item" id="claire-voice-selector">
+            <div class="claire-selection-avatar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10v4h3l4 4V6L8 10zm10-1a4 4 0 0 1 0 6m2-8a7 7 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="claire-selection-info">
+                <div class="claire-selection-name" id="claire-voice-name">Chargement...</div>
+                <div class="claire-selection-desc">Voix des réponses aux notes vocales</div>
+            </div>
+            <div class="claire-selection-check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4L19 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Actions -->
     <div class="claire-action-grid">
         <button class="claire-action-btn claire-btn-primary" id="claire-new-chat-btn" style="grid-column: span 2;">
@@ -597,6 +612,8 @@
         const brains = {{ brains|json_encode|raw }};
         const workflows = {{ workflows|json_encode|raw }};
         const comfyuiEnabled = {{ comfyui_enabled|json_encode|raw }};
+        const audioAvailable = {{ audio_available|json_encode|raw }};
+        const audioVoices = {{ audio_voices|json_encode|raw }};
         const svgIcon = (path) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
         const icons = {
             brain: svgIcon('M9 4a3 3 0 0 0-3 3v1a3 3 0 0 0-1 5v1a3 3 0 0 0 3 3h1v3m6-16a3 3 0 0 1 3 3v1a3 3 0 0 1 1 5v1a3 3 0 0 1-3 3h-1v3M9 4a3 3 0 0 1 3 3v13M15 4a3 3 0 0 0-3 3'),
@@ -622,6 +639,8 @@
         const workflowName = document.getElementById('claire-workflow-name');
         const memorySelector = document.getElementById('claire-memory-selector');
         const memoryName = document.getElementById('claire-memory-name');
+        const voiceSelector = document.getElementById('claire-voice-selector');
+        const voiceName = document.getElementById('claire-voice-name');
         const closeBtn = document.getElementById('claire-close-btn');
         const newChatBtn = document.getElementById('claire-new-chat-btn');
         const rebuildMemoryBtn = document.getElementById('claire-rebuild-memory-btn');
@@ -688,6 +707,12 @@
             const memoryEnabled = settings.long_term_memory_enabled === true;
             memoryName.textContent = memoryEnabled ? 'Activée' : 'Désactivée';
             memorySelector.classList.toggle('claire-active', memoryEnabled);
+
+            if (audioAvailable && voiceSelector && voiceName) {
+                const voice = audioVoices.find(v => v.id === settings.audio_voice);
+                voiceName.textContent = voice ? voice.label : 'Voix par défaut';
+                voiceSelector.classList.toggle('claire-active', Boolean(voice));
+            }
         }
 
         function getAvatarHtml(avatar) {
@@ -767,6 +792,15 @@
                 }
             );
         });
+
+        if (voiceSelector) {
+            voiceSelector.addEventListener('click', () => {
+                const options = audioVoices.map(v => ({ value: v.id, label: v.label }));
+                openModal('Choisir une voix', options, currentSettings.audio_voice || '', async (value) => {
+                    await saveSetting('audio_voice', value);
+                });
+            });
+        }
 
         // Save setting
         async function saveSetting(key, value) {

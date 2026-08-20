@@ -49,6 +49,24 @@ services:
       OPENAPI_MODEL: mistral-large-latest
       OPENAPI_MODEL_SUMMARY: mistral-small-latest
       OPENAPI_MODEL_EMBED: mistral-embed
+      OPENAPI_CONTEXT_WINDOW: 256000
+      OPENAPI_REQUEST_TIMEOUT: 600.0
+
+      MISTRAL_AUDIO_ENABLED: true
+      MISTRAL_AUDIO_API_URL: https://api.mistral.ai/v1
+      MISTRAL_AUDIO_API_KEY: ""
+      MISTRAL_AUDIO_TRANSCRIPTION_MODEL: voxtral-mini-latest
+      MISTRAL_AUDIO_SPEECH_MODEL: voxtral-mini-tts-latest
+      MISTRAL_AUDIO_VOICES: >-
+        [
+          {"id":"fr_marie_neutral","label":"Marie — Neutre"},
+          {"id":"fr_marie_happy","label":"Marie — Joyeuse"},
+          {"id":"fr_marie_excited","label":"Marie — Enthousiaste"},
+          {"id":"fr_marie_curious","label":"Marie — Curieuse"},
+          {"id":"fr_marie_sad","label":"Marie — Triste"},
+          {"id":"fr_marie_angry","label":"Marie — En colère"}
+        ]
+      MISTRAL_AUDIO_DEFAULT_VOICE: fr_marie_neutral
 
       # === Recherche web (optionnel) ===
       SEARXNG_URL: ""

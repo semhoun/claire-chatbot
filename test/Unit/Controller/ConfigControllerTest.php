@@ -9,6 +9,7 @@ use App\Controller\ConfigController;
 use App\Entity\User;
 use App\Middleware\JwtSessionMiddleware;
 use App\Services\Auth;
+use App\Services\Audio\AudioServiceInterface;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
@@ -60,6 +61,11 @@ final class ConfigControllerTest extends TestCase
         ]);
 
         $container = $this->createMock(ContainerInterface::class);
+        $audioService = $this->createStub(AudioServiceInterface::class);
+        $audioService->method('defaultVoice')->willReturn('voice-1');
+        $audioService->method('isAllowedVoice')->willReturnCallback(
+            static fn (string $voice): bool => $voice === 'voice-1',
+        );
 
         $this->controller = new ConfigController(
             Twig::create(Settings::getAppRoot() . '/tmpl'),
@@ -67,6 +73,7 @@ final class ConfigControllerTest extends TestCase
             new BrainRegistry($settings, $container),
             new ComfyUIWorkflowRegistry($settings),
             $settings,
+            $audioService,
         );
     }
 
@@ -80,6 +87,48 @@ final class ConfigControllerTest extends TestCase
         $result = $this->controller->telegramForm($request, $response);
 
         self::assertSame(401, $result->getStatusCode());
+    }
+
+    public function testAudioPreferencesArePersisted(): void
+    {
+        $this->session->method('get')->with(Auth::USERID)->willReturn('user-123');
+        $this->userRepository->method('find')->with('user-123')->willReturn($this->user);
+        $this->user->method('getParams')->willReturn([]);
+
+        $this->session->expects(self::exactly(4))->method('set');
+        $this->user->expects(self::once())->method('setParams')->with([
+            AudioServiceInterface::ENABLED_SESSION_KEY => true,
+            AudioServiceInterface::AUTO_GENERATE_SESSION_KEY => true,
+            AudioServiceInterface::DICTATION_MODE_SESSION_KEY => 'auto_send',
+            AudioServiceInterface::VOICE_SESSION_KEY => 'voice-1',
+        ]);
+        $this->entityManager->expects(self::once())->method('flush');
+
+        $request = $this->createRequestWithSession(parsedBody: [
+            'enabled' => true,
+            'auto_generate' => true,
+            'dictation_mode' => 'auto_send',
+            'voice' => 'voice-1',
+        ]);
+        $result = $this->controller->audio(
+            $request,
+            $this->responseFactory->createResponse(),
+        );
+
+        self::assertSame(204, $result->getStatusCode());
+    }
+
+    public function testAudioPreferencesRejectUnknownVoice(): void
+    {
+        $request = $this->createRequestWithSession(parsedBody: [
+            'voice' => 'unknown',
+        ]);
+        $result = $this->controller->audio(
+            $request,
+            $this->responseFactory->createResponse(),
+        );
+
+        self::assertSame(400, $result->getStatusCode());
     }
 
     public function testTelegramFormReturnsHtmlForm(): void

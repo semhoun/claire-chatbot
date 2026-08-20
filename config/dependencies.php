@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Exception;
+use App\Services\Audio\AudioServiceInterface;
+use App\Services\Audio\MistralAudioService;
 use App\Services\ComfyUIService;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\PdfGeneratorService;
@@ -115,6 +117,8 @@ return [
     TelegramBotApi::class => static fn (Settings $settings): TelegramBotApi => new TelegramBotApi($settings->get('telegram.bot_token')),
     ComfyUIWorkflowRegistry::class => static fn (Settings $settings): ComfyUIWorkflowRegistry => new ComfyUIWorkflowRegistry($settings),
     ComfyUIService::class => static fn (Settings $settings, Filesystem $filesystem, ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry, EntityManagerInterface $entityManager, \Psr\Log\LoggerInterface $logger): ComfyUIService => new ComfyUIService($settings, $filesystem, $comfyUIWorkflowRegistry, $entityManager, $logger),
+    MistralAudioService::class => static fn (Settings $settings): MistralAudioService => new MistralAudioService($settings),
+    AudioServiceInterface::class => DI\get(MistralAudioService::class),
     PdfGeneratorService::class => static fn (Settings $settings, Filesystem $filesystem, EntityManagerInterface $entityManager, \App\Services\Markdown $markdown): PdfGeneratorService => new PdfGeneratorService($settings, $filesystem, $entityManager, $markdown),
     RedisClient::class => static function (Settings $settings): RedisClient {
         $client = new RedisClient();

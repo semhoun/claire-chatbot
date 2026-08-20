@@ -6,8 +6,10 @@ namespace App\Controller;
 
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
+use App\Job\Web\GenerateAudioJob;
 use App\Job\Web\NewMessageJob;
 use App\Renderer\ChatHtmlRenderer;
+use App\Services\Audio\AudioServiceInterface;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\CorsHeaders;
@@ -38,6 +40,7 @@ final readonly class BrainController
         private EntityManagerInterface $entityManager,
         private Filesystem $filesystem,
         private Settings $settings,
+        private AudioServiceInterface $audioService,
         private QueueDispatcherInterface $queueDispatcher,
         private ChatStreamPublisher $chatStreamPublisher,
         private ChatStreamSubscriber $chatStreamSubscriber,
@@ -104,6 +107,57 @@ final readonly class BrainController
             ->withHeader('Content-Type', 'application/json');
     }
 
+    public function generateAudio(Request $request, Response $response): Response
+    {
+        $session = $this->getSession($request);
+        if (! $this->audioService->isAvailable()) {
+            return $response->withStatus(503);
+        }
+
+        if ($session->get(AudioServiceInterface::ENABLED_SESSION_KEY, false) !== true) {
+            return $response->withStatus(409);
+        }
+
+        $data = (array) ($request->getParsedBody() ?? []);
+        $threadId = trim((string) ($data['threadId'] ?? ''));
+        $sessionId = trim((string) ($data['sessionId'] ?? ''));
+        $messageId = trim((string) ($data['messageId'] ?? ''));
+        $text = trim((string) ($data['text'] ?? ''));
+        if ($threadId === '' || $sessionId === '' || $messageId === '') {
+            return $response->withStatus(400);
+        }
+
+        if ($text === '' || mb_strlen($text) > 4096) {
+            return $response->withStatus(422);
+        }
+
+        $user = $this->entityManager->getRepository(\App\Entity\User::class)
+            ->getCurrentUser($session);
+        if ($user === null) {
+            return $response->withStatus(401);
+        }
+
+        $history = $this->entityManager->getRepository(\App\Entity\ChatHistory::class)
+            ->findOneBy(['threadId' => $threadId]);
+        if ($history !== null && $history->getUser()->getId() !== $user->getId()) {
+            return $response->withStatus(403);
+        }
+
+        $this->queueDispatcher->dispatch(
+            GenerateAudioJob::class,
+            [
+                'threadId' => $threadId,
+                'sessionId' => $sessionId,
+                'messageId' => $messageId,
+                'text' => $text,
+                'session' => $session->all(),
+            ],
+            $this->settings->get('queue.defaultQueue'),
+        );
+
+        return $response->withStatus(202);
+    }
+
     public function stream(Request $request, Response $response): Response
     {
         set_time_limit(0);
@@ -166,7 +220,7 @@ final readonly class BrainController
                 return;
             }
 
-            if (! in_array($eventName, ['chat.snapshot', 'chat.assistant.start', 'chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update', 'chat.assistant.done', 'chat.error'], true)) {
+            if (! in_array($eventName, ['chat.snapshot', 'chat.assistant.start', 'chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update', 'chat.assistant.done', 'chat.audio.ready', 'chat.audio.error', 'chat.error'], true)) {
                 $this->logger->warning('Invalid SSE event', ['event' => $eventName]);
                 return;
             }
@@ -174,7 +228,9 @@ final readonly class BrainController
             $eventId = match ($eventName) {
                 'chat.snapshot' => 'thread::' . $payload['threadId'],
                 'chat.assistant.start', 'chat.assistant.done' ,
-                'chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update' => 'message::' . $payload['messageId'],
+                'chat.assistant.placeholder', 'chat.assistant.update',
+                'chat.tool.update', 'chat.audio.ready',
+                'chat.audio.error' => 'message::' . $payload['messageId'],
                 'chat.error' => 'error:;' . $payload['threadId'],
                 default => ''
             };

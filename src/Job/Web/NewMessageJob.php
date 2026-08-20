@@ -8,6 +8,8 @@ use App\Brain\Agent;
 use App\Brain\BrainRegistry;
 use App\Brain\Summary;
 use App\Renderer\ChatHtmlRenderer;
+use App\Services\Audio\AudioServiceInterface;
+use App\Services\ChatAudioPublisher;
 use App\Services\ChatStreamPublisher;
 use App\Services\Queue\QueueDoer;
 use App\Services\Session\InMemorySession;
@@ -67,6 +69,7 @@ final class NewMessageJob implements QueueDoer
         private readonly ChatHtmlRenderer $chatHtmlRenderer,
         private readonly BrainRegistry $brainRegistry,
         private readonly ChatStreamPublisher $chatStreamPublisher,
+        private readonly ChatAudioPublisher $chatAudioPublisher,
         private readonly Connection $connection,
         private readonly Settings $settings
     ) {
@@ -150,13 +153,24 @@ final class NewMessageJob implements QueueDoer
         }
 
         $finalText = $agentHandler->getMessage()->getContent();
-        if ($finalText !== '' && $finalText !== null) {
-            $this->publishContent($finalText);
-        } else {
-            $this->publishContent($this->streamedText);
-        }
+        $responseText = $finalText !== '' && $finalText !== null
+            ? $finalText
+            : $this->streamedText;
+        $this->publishContent($responseText);
 
         $this->publishDoneMessages();
+        if ($this->inMemorySession->get(
+            AudioServiceInterface::AUTO_GENERATE_SESSION_KEY,
+            false,
+        ) === true) {
+            $this->chatAudioPublisher->publish(
+                $this->sessionId,
+                $this->threadId,
+                $this->messageId,
+                $responseText,
+                $this->inMemorySession,
+            );
+        }
     }
 
     private function processChunk(mixed $chunk): void

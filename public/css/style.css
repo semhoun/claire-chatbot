@@ -335,6 +335,59 @@ body.claire-compact .claire-chat-body {
     color: var(--claire-text-secondary);
 }
 
+.claire-message__audio-action {
+    margin-left: 10px;
+    width: 26px;
+    height: 26px;
+    padding: 4px;
+    border: 1px solid var(--claire-border);
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+}
+
+.claire-message__audio-action .claire-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.claire-message__audio-action .claire-icon path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.claire-message__audio-action .claire-icon .claire-icon__fill {
+    fill: currentColor;
+    stroke: none;
+}
+
+.claire-message__audio-action.is-loading .claire-icon {
+    animation: claire-audio-spin 0.9s linear infinite;
+}
+
+@keyframes claire-audio-spin {
+    to { transform: rotate(360deg); }
+}
+
+.claire-message__audio-action:hover,
+.claire-message__audio-action.is-playing {
+    color: var(--claire-text-primary);
+    border-color: var(--claire-focus-ring);
+}
+
+.claire-message__audio-action:disabled {
+    cursor: wait;
+    opacity: 0.65;
+}
+
 .claire-message--sent {
     align-self: flex-end;
     text-align: right;
@@ -672,6 +725,17 @@ body.claire-compact .claire-chat-input {
 
 .claire-chat-icon-btn:active {
     transform: scale(0.95);
+}
+
+.claire-chat-icon-btn.claire-is-recording {
+    background: var(--claire-danger, #ff4757);
+    animation: claire-recording-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes claire-recording-pulse {
+    50% {
+        box-shadow: 0 0 0 8px rgba(255, 71, 87, 0.18);
+    }
 }
 
 .claire-chat-icon-btn svg {
@@ -2371,6 +2435,12 @@ body.claire-compact .claire-chat-input {
     color: var(--accent-primary);
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.claire-generated-audio {
+    display: block;
+    width: min(100%, 360px);
+    margin-top: 10px;
 }
 
 /* Image lightbox modal */

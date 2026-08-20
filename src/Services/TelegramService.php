@@ -12,6 +12,7 @@ use App\Brain\Tools\GenerateImageTool;
 use App\Entity\File;
 use App\Entity\User;
 use App\Enums\TelegramAction;
+use App\Services\Audio\AudioServiceInterface;
 use App\Services\Queue\QueueDoer;
 use App\Services\Session\TelegramSession;
 use Doctrine\ORM\EntityManager;
@@ -26,7 +27,6 @@ use NeuronAI\Chat\Messages\UserMessage;
 use Phptg\BotApi\Constant\ParseMode;
 use Phptg\BotApi\FailResult;
 use Phptg\BotApi\TelegramBotApi;
-use Phptg\BotApi\Type\InputFile;
 use Phptg\BotApi\Type\Message;
 use Phptg\BotApi\Type\Update\Update;
 use Psr\Container\ContainerInterface;
@@ -54,6 +54,8 @@ class TelegramService implements QueueDoer
         private readonly Filesystem $filesystem,
         private readonly TelegramBotApi $telegramBotApi,
         private readonly TelegramMarkdown $telegramMarkdown,
+        private readonly AudioServiceInterface $audioService,
+        private readonly TelegramAudioService $telegramAudioService,
     ) {
         $this->telegramSession = new TelegramSession($entityManager);
     }
@@ -117,6 +119,25 @@ class TelegramService implements QueueDoer
             if ($user instanceof User) {
                 $params = $user->getParams() ?? [];
                 $params[LongTermMemory::SESSION_KEY] = $value;
+                $user->setParams($params);
+            }
+
+            $this->telegramSession->flush();
+
+            return true;
+        }
+
+        if ($key === AudioServiceInterface::VOICE_SESSION_KEY && is_string($value)) {
+            if (! $this->audioService->isAllowedVoice($value)) {
+                return false;
+            }
+
+            $this->telegramSession->set(AudioServiceInterface::VOICE_SESSION_KEY, $value);
+            $userId = (string) $this->telegramSession->get(Auth::USERID, '');
+            $user = $this->entityManager->getRepository(User::class)->find($userId);
+            if ($user instanceof User) {
+                $params = $user->getParams() ?? [];
+                $params[AudioServiceInterface::VOICE_SESSION_KEY] = $value;
                 $user->setParams($params);
             }
 
@@ -271,6 +292,13 @@ class TelegramService implements QueueDoer
             );
         }
 
+        $voice = (string) $this->telegramSession->get(
+            AudioServiceInterface::VOICE_SESSION_KEY,
+            $this->audioService->defaultVoice(),
+        );
+        $settings[AudioServiceInterface::VOICE_SESSION_KEY] = $this->audioService
+            ->isAllowedVoice($voice) ? $voice : $this->audioService->defaultVoice();
+
         return $settings;
     }
 
@@ -391,6 +419,11 @@ class TelegramService implements QueueDoer
 
     private function processMessageByType(int $telegramChatId, Message $message): void
     {
+        if ($message->voice instanceof \Phptg\BotApi\Type\Voice) {
+            $this->handleVoice($telegramChatId, $message);
+            return;
+        }
+
         if ($this->hasPhoto($message)) {
             $this->handlePhoto($telegramChatId, $message);
             return;
@@ -408,6 +441,29 @@ class TelegramService implements QueueDoer
         }
 
         $this->processTextMessage($telegramChatId, $text);
+    }
+
+    private function handleVoice(int $telegramChatId, Message $message): void
+    {
+        if (! $this->audioService->isAvailable()) {
+            $this->sendMessage($telegramChatId, 'La fonction audio n’est pas configurée.');
+            return;
+        }
+
+        $voice = $message->voice;
+        if (! $voice instanceof \Phptg\BotApi\Type\Voice) {
+            return;
+        }
+
+        try {
+            $text = $this->telegramAudioService->transcribe($voice);
+            $this->processChatMessage($telegramChatId, $text, voiceResponse: true);
+        } catch (\Throwable $throwable) {
+            $this->logger->error('Voice handling error: ' . $throwable->getMessage(), [
+                'exception' => $throwable,
+            ]);
+            $this->sendMessage($telegramChatId, 'Désolé, je n’ai pas pu transcrire ce message vocal.');
+        }
     }
 
     private function hasPhoto(Message $message): bool
@@ -465,11 +521,29 @@ class TelegramService implements QueueDoer
         }
     }
 
-    private function processChatMessage(int $telegramChatId, string $text): void
-    {
+    private function processChatMessage(
+        int $telegramChatId,
+        string $text,
+        bool $voiceResponse = false,
+    ): void {
         try {
             $responseText = $this->generateChatResponse($telegramChatId, $text);
             $this->sendChatResponse($telegramChatId, $responseText);
+            if ($voiceResponse) {
+                $voice = (string) $this->telegramSession->get(
+                    AudioServiceInterface::VOICE_SESSION_KEY,
+                    $this->audioService->defaultVoice(),
+                );
+                if (! $this->audioService->isAllowedVoice($voice)) {
+                    $voice = $this->audioService->defaultVoice();
+                }
+
+                $this->telegramAudioService->sendResponse(
+                    $telegramChatId,
+                    $responseText,
+                    $voice,
+                );
+            }
         } catch (\Throwable $throwable) {
             $this->logger->error('Chat processing error: ' . $throwable->getMessage());
             $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors du traitement de votre message.');

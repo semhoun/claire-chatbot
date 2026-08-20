@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Brain\BrainRegistry;
 use App\Brain\LongTermMemory;
+use App\Services\Audio\AudioServiceInterface;
 use App\Services\Session\SessionInterface;
 
 final readonly class FrontendConfigFactory
@@ -14,6 +15,7 @@ final readonly class FrontendConfigFactory
         private BrainRegistry $brainRegistry,
         private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
         private Settings $settings,
+        private AudioServiceInterface $audioService,
     ) {
     }
 
@@ -29,6 +31,13 @@ final readonly class FrontendConfigFactory
         $userInfo = $session->get(Auth::USERINFO);
         $comfyuiEnabled = $this->settings->get('tools.comfyui.enabled') === true;
         $currentWorkflow = $this->currentWorkflow($session, $comfyuiEnabled);
+        $audioVoice = (string) $session->get(
+            AudioServiceInterface::VOICE_SESSION_KEY,
+            $this->audioService->defaultVoice(),
+        );
+        if (! $this->audioService->isAllowedVoice($audioVoice)) {
+            $audioVoice = $this->audioService->defaultVoice();
+        }
 
         return [
             'mode' => $mode,
@@ -64,6 +73,24 @@ final readonly class FrontendConfigFactory
                 false
             ),
             'layoutMode' => $session->get('layout_mode', 'full'),
+            'audioAvailable' => $this->audioService->isAvailable(),
+            'audioEnabled' => $session->get(
+                AudioServiceInterface::ENABLED_SESSION_KEY,
+                false,
+            ) === true,
+            'audioAutoGenerate' => $session->get(
+                AudioServiceInterface::AUTO_GENERATE_SESSION_KEY,
+                false,
+            ) === true,
+            'audioDictationMode' => $session->get(
+                AudioServiceInterface::DICTATION_MODE_SESSION_KEY,
+                'review',
+            ),
+            'audioVoice' => $audioVoice,
+            'audioVoices' => $this->audioService->voices(),
+            'audioTranscriptionModel' => $this->audioService->transcriptionModel(),
+            'audioSpeechModel' => $this->audioService->speechModel(),
+            'audioMaxRecordingSeconds' => $this->audioService->maxRecordingSeconds(),
             'user' => is_array($userInfo) ? [
                 'id' => (string) $session->get(Auth::USERID),
                 'displayName' => (string) ($userInfo['displayName'] ?? ''),

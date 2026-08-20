@@ -8,6 +8,7 @@ use App\Brain\BrainRegistry;
 use App\Brain\LongTermMemory;
 use App\Brain\LongTermMemoryRebuilder;
 use App\Entity\User;
+use App\Services\Audio\AudioServiceInterface;
 use App\Services\Auth;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Session\Trait\SessionFromRequest;
@@ -27,7 +28,81 @@ final readonly class ConfigController
         private BrainRegistry $brainRegistry,
         private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
         private Settings $settings,
+        private AudioServiceInterface $audioService,
     ) {
+    }
+
+    public function audio(Request $request, Response $response): Response
+    {
+        $session = $this->getSession($request);
+        $data = (array) ($request->getParsedBody() ?? []);
+        $updates = [];
+
+        if (array_key_exists('enabled', $data)) {
+            $enabled = filter_var(
+                $data['enabled'],
+                FILTER_VALIDATE_BOOL,
+                FILTER_NULL_ON_FAILURE,
+            );
+            if ($enabled === null) {
+                return $response->withStatus(400);
+            }
+
+            $updates[AudioServiceInterface::ENABLED_SESSION_KEY] = $enabled;
+        }
+
+        if (array_key_exists('auto_generate', $data)) {
+            $autoGenerate = filter_var(
+                $data['auto_generate'],
+                FILTER_VALIDATE_BOOL,
+                FILTER_NULL_ON_FAILURE,
+            );
+            if ($autoGenerate === null) {
+                return $response->withStatus(400);
+            }
+
+            $updates[AudioServiceInterface::AUTO_GENERATE_SESSION_KEY] = $autoGenerate;
+        }
+
+        if (array_key_exists('dictation_mode', $data)) {
+            $mode = (string) $data['dictation_mode'];
+            if (! in_array($mode, ['review', 'auto_send'], true)) {
+                return $response->withStatus(400);
+            }
+
+            $updates[AudioServiceInterface::DICTATION_MODE_SESSION_KEY] = $mode;
+        }
+
+        if (array_key_exists('voice', $data)) {
+            $voice = (string) $data['voice'];
+            if (! $this->audioService->isAllowedVoice($voice)) {
+                return $response->withStatus(400);
+            }
+
+            $updates[AudioServiceInterface::VOICE_SESSION_KEY] = $voice;
+        }
+
+        if ($updates === []) {
+            return $response->withStatus(400);
+        }
+
+        $user = $this->entityManager->getRepository(User::class)->find(
+            $session->get(Auth::USERID),
+        );
+        if ($user === null) {
+            return $response->withStatus(404);
+        }
+
+        $params = $user->getParams() ?? [];
+        foreach ($updates as $key => $value) {
+            $session->set($key, $value);
+            $params[$key] = $value;
+        }
+
+        $user->setParams($params);
+        $this->entityManager->flush();
+
+        return $response->withStatus(204);
     }
 
     /**

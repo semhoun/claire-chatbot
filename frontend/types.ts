@@ -27,6 +27,12 @@ export interface UserInfo {
 
 export type DisplayMode = 'normal' | 'embed'
 export type LayoutMode = 'full' | 'compact'
+export type AudioDictationMode = 'review' | 'auto_send'
+
+export interface AudioVoice {
+  id: string
+  label: string
+}
 
 export interface ClaireBootstrap {
   mode: DisplayMode
@@ -42,6 +48,15 @@ export interface ClaireBootstrap {
   currentWorkflow: string
   longTermMemoryEnabled: boolean
   layoutMode: LayoutMode
+  audioAvailable: boolean
+  audioEnabled: boolean
+  audioAutoGenerate: boolean
+  audioDictationMode: AudioDictationMode
+  audioVoice: string
+  audioVoices: AudioVoice[]
+  audioTranscriptionModel: string
+  audioSpeechModel: string
+  audioMaxRecordingSeconds: number
   user: UserInfo | null
   refreshBeforeExpire: number
   refreshMinInterval: number
@@ -51,9 +66,11 @@ export interface ClaireBootstrap {
 }
 
 export interface SseUpdate {
+  audioData?: string
   html?: string
   message?: string
   messageId?: string
+  mimeType?: string
   restoredMessage?: string | null
   sessionId?: string
   threadId?: string

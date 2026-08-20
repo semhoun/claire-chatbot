@@ -20,10 +20,18 @@ final class MessageFormatter
     public function format(): array
     {
         $data = [];
+        $messageIndex = 0;
 
         while (count($this->displayHistory) > 0) {
             $message = array_shift($this->displayHistory);
-            $data[] = $this->formatMessage($message);
+            $formattedMessage = $this->formatMessage($message);
+            if ($formattedMessage === null) {
+                continue;
+            }
+
+            $formattedMessage['id'] = sprintf('history-message-%d', $messageIndex);
+            $data[] = $formattedMessage;
+            $messageIndex++;
         }
 
         return $data;

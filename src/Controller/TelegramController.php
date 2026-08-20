@@ -8,6 +8,7 @@ use App\Brain\BrainRegistry;
 use App\Brain\LongTermMemory;
 use App\Job\Telegram\StartThreadJob;
 use App\Renderer\JsonRenderer;
+use App\Services\Audio\AudioServiceInterface;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\Settings;
@@ -32,6 +33,7 @@ final readonly class TelegramController
         private TelegramService $telegramService,
         private QueueDispatcherInterface $queueDispatcher,
         private Settings $settings,
+        private AudioServiceInterface $audioService,
     ) {
     }
 
@@ -81,6 +83,8 @@ final readonly class TelegramController
             'brains' => $brains,
             'workflows' => $workflows,
             'comfyui_enabled' => $comfyUIEnabled,
+            'audio_available' => $this->audioService->isAvailable(),
+            'audio_voices' => $this->audioService->voices(),
         ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
@@ -108,6 +112,7 @@ final readonly class TelegramController
             // Check if this is an update request
             $isUpdate = isset($body['brain_avatar'])
                 || isset($body['comfyui_workflow'])
+                || isset($body[AudioServiceInterface::VOICE_SESSION_KEY])
                 || isset($body[LongTermMemory::SESSION_KEY]);
             $isNewChat = isset($body['action']) && $body['action'] === 'new_chat';
             $isMemoryRebuild = isset($body['action'])
@@ -171,6 +176,20 @@ final readonly class TelegramController
                         return $this->jsonRenderer->json(
                             $response,
                             ['error' => 'Invalid long-term memory setting'],
+                            400,
+                        );
+                    }
+                }
+
+                if (isset($body[AudioServiceInterface::VOICE_SESSION_KEY])) {
+                    $success = $this->telegramService->updateUserSetting(
+                        AudioServiceInterface::VOICE_SESSION_KEY,
+                        $body[AudioServiceInterface::VOICE_SESSION_KEY],
+                    );
+                    if (! $success) {
+                        return $this->jsonRenderer->json(
+                            $response,
+                            ['error' => 'Invalid audio voice'],
                             400,
                         );
                     }
