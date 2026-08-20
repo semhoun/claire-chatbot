@@ -17,7 +17,7 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Views\Twig;
 
-readonly class ConfigController
+final readonly class ConfigController
 {
     use SessionFromRequest;
 
@@ -140,12 +140,32 @@ readonly class ConfigController
             return $response->withStatus(404);
         }
 
+        if ($telegramId !== '' && ! ctype_digit($telegramId)) {
+            return $this->twig->render($response, 'partials/telegram_config.twig', [
+                'telegram_id' => $telegramId,
+                'error' => 'L\'identifiant Telegram doit être composé uniquement de chiffres.',
+                'success' => null,
+            ])->withStatus(422)->withHeader('Content-Type', 'text/html; charset=utf-8');
+        }
+
+        if ($telegramId !== '') {
+            $existingUser = $this->entityManager->getRepository(User::class)->findByTelegramId($telegramId);
+            if ($existingUser !== null && $existingUser->getId() !== $user->getId()) {
+                return $this->twig->render($response, 'partials/telegram_config.twig', [
+                    'telegram_id' => $user->getTelegramId(),
+                    'error' => 'Cet identifiant Telegram est déjà associé à un autre compte.',
+                    'success' => null,
+                ])->withStatus(409)->withHeader('Content-Type', 'text/html; charset=utf-8');
+            }
+        }
+
         $user->setTelegramId($telegramId === '' ? null : $telegramId);
         $this->entityManager->flush();
 
         return $this->twig->render($response, 'partials/telegram_config.twig', [
-            'telegram_id' => $telegramId,
-            'success' => 'Configuration Telegram enregistrée avec succès',
+            'telegram_id' => $user->getTelegramId(),
+            'success' => $telegramId === '' ? 'Association Telegram supprimée avec succès.' : 'Configuration Telegram enregistrée avec succès.',
+            'error' => null,
         ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
@@ -167,6 +187,7 @@ readonly class ConfigController
         return $this->twig->render($response, 'partials/telegram_config.twig', [
             'telegram_id' => $user->getTelegramId(),
             'success' => null,
+            'error' => null,
         ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 

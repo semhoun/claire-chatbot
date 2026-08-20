@@ -1,22 +1,110 @@
+{% import '_icon.twig' as icon %}
 <form id="claire-telegram-config-form" class="claire-telegram-config" method="post">
     {% if success %}
-        <div class="claire-message claire-message--sent">
-            <div class="claire-message__bubble">{{ success }}</div>
+        <div class="claire-telegram-alert claire-telegram-alert--success" role="alert">
+            <div class="claire-telegram-alert__icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
+            <div class="claire-telegram-alert__content">
+                <div class="claire-telegram-alert__title">Succès</div>
+                <div class="claire-telegram-alert__message">{{ success }}</div>
+            </div>
         </div>
     {% endif %}
-    <div class="claire-telegram-config__section">
-        <label for="claire-telegram-id" class="claire-options-item__label">Votre identifiant Telegram</label>
-        <input type="number" id="claire-telegram-id" name="telegram_id"
-               class="claire-chat-input__field claire-telegram-config__input"
-               inputmode="numeric" placeholder="123456789" value="{{ telegram_id }}">
-        <p class="claire-telegram-config__help">Entrez votre identifiant numérique Telegram pour recevoir les notifications.</p>
+
+    {% if error %}
+        <div class="claire-telegram-alert claire-telegram-alert--error" role="alert">
+            <div class="claire-telegram-alert__icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            </div>
+            <div class="claire-telegram-alert__content">
+                <div class="claire-telegram-alert__title">Erreur</div>
+                <div class="claire-telegram-alert__message">{{ error }}</div>
+            </div>
+        </div>
+    {% endif %}
+
+    <div class="claire-telegram-status{% if telegram_id %} claire-telegram-status--linked{% else %} claire-telegram-status--unlinked{% endif %}">
+        <div class="claire-telegram-status__header">
+            <div class="claire-telegram-status__brand">
+                <div class="claire-telegram-status__logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                    </svg>
+                </div>
+                <div class="claire-telegram-status__title-group">
+                    <div class="claire-telegram-status__title">Intégration Telegram</div>
+                    <div class="claire-telegram-status__subtitle">Synchronisez Claire avec votre messagerie Telegram</div>
+                </div>
+            </div>
+            <div class="claire-telegram-badge{% if telegram_id %} claire-telegram-badge--success{% else %} claire-telegram-badge--neutral{% endif %}">
+                <span class="claire-telegram-badge__dot"></span>
+                <span>{% if telegram_id %}Compte associé{% else %}Non associé{% endif %}</span>
+            </div>
+        </div>
+        {% if telegram_id %}
+            <div class="claire-telegram-status__meta">
+                <span class="claire-telegram-status__meta-label">ID Telegram associé :</span>
+                <code class="claire-telegram-status__meta-value">{{ telegram_id }}</code>
+            </div>
+        {% endif %}
     </div>
-    <div class="claire-telegram-config__section">
-        <strong>Comment obtenir votre ID Telegram</strong>
-        <ol>
-            <li>Ouvrez Telegram et cherchez le bot <strong>@userinfobot</strong></li>
-            <li>Démarrez une conversation avec ce bot</li>
-            <li>Copiez l’identifiant numérique reçu et collez-le ci-dessus</li>
-        </ol>
+
+    <div class="claire-telegram-card">
+        <label for="claire-telegram-id" class="claire-telegram-card__title">
+            Identifiant Telegram (User ID)
+        </label>
+        <div class="claire-telegram-input-wrapper">
+            <div class="claire-telegram-input-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="16" rx="3"></rect>
+                    <circle cx="9" cy="10" r="2"></circle>
+                    <line x1="15" y1="8" x2="17" y2="8"></line>
+                    <line x1="15" y1="12" x2="17" y2="12"></line>
+                    <line x1="7" y1="16" x2="17" y2="16"></line>
+                </svg>
+            </div>
+            <input type="text" id="claire-telegram-id" name="telegram_id"
+                   class="claire-chat-input__field claire-telegram-input"
+                   inputmode="numeric" pattern="[0-9]*" placeholder="Ex : 123456789"
+                   value="{{ telegram_id|default('') }}" autocomplete="off">
+        </div>
+        <p class="claire-telegram-help">
+            {% if telegram_id %}
+                Pour dissocier votre compte Telegram, effacez ce champ et cliquez sur Enregistrer.
+            {% else %}
+                Saisissez votre identifiant numérique unique pour lier vos conversations Telegram.
+            {% endif %}
+        </p>
     </div>
+
+    <div class="claire-telegram-card">
+        <div class="claire-telegram-card__title">Comment obtenir votre ID Telegram ?</div>
+        <div class="claire-telegram-steps">
+            <div class="claire-telegram-step">
+                <div class="claire-telegram-step__number">1</div>
+                <div class="claire-telegram-step__text">
+                    Ouvrez Telegram et recherchez le bot
+                    <a href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer" class="claire-telegram-chip">
+                        @userinfobot
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                    </a>
+                    (ou <strong>@raw_data_bot</strong>).
+                </div>
+            </div>
+            <div class="claire-telegram-step">
+                <div class="claire-telegram-step__number">2</div>
+                <div class="claire-telegram-step__text">
+                    Démarrez la conversation avec <code>/start</code>. Le bot vous envoie instantanément votre <strong>Id</strong> (ex : <code>123456789</code>).
+                </div>
+            </div>
+            <div class="claire-telegram-step">
+                <div class="claire-telegram-step__number">3</div>
+                <div class="claire-telegram-step__text">
+                    Copiez cet identifiant numérique, collez-le dans le champ ci-dessus et cliquez sur <strong>Enregistrer</strong>.
+                </div>
+            </div>
+        </div>
+    </div>
+
 </form>

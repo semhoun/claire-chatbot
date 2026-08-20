@@ -78,6 +78,30 @@ final class WebTemplatesTest extends TestCase
         self::assertStringNotContainsString('Workflow ComfyUI', $html);
     }
 
+    public function testTelegramConfigPartialRendersLinkedAndUnlinkedStates(): void
+    {
+        $unlinkedHtml = $this->twig->fetch('partials/telegram_config.twig', [
+            'telegram_id' => null,
+            'success' => null,
+            'error' => null,
+        ]);
+
+        self::assertStringContainsString('Non associé', $unlinkedHtml);
+        self::assertStringContainsString('claire-telegram-status--unlinked', $unlinkedHtml);
+        self::assertStringContainsString('@userinfobot', $unlinkedHtml);
+
+        $linkedHtml = $this->twig->fetch('partials/telegram_config.twig', [
+            'telegram_id' => '123456789',
+            'success' => 'Configuration Telegram enregistrée avec succès.',
+            'error' => null,
+        ]);
+
+        self::assertStringContainsString('Compte associé', $linkedHtml);
+        self::assertStringContainsString('claire-telegram-status--linked', $linkedHtml);
+        self::assertStringContainsString('123456789', $linkedHtml);
+        self::assertStringContainsString('Configuration Telegram enregistrée avec succès.', $linkedHtml);
+    }
+
     /** @return array<string, mixed> */
     private function frontendConfig(): array
     {
