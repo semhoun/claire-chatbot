@@ -6,10 +6,13 @@ namespace App\Brain\AgentTrait;
 
 use App\Brain\Tools\GenerateImageTool;
 use App\Brain\Tools\PdfGeneratorTool;
+use App\Brain\Tools\RagSearchTool;
 use App\Brain\Tools\WebToolkit;
 use App\Services\ComfyUIService;
 use App\Services\PdfGeneratorService;
+use App\Services\RagService;
 use App\Services\Settings;
+use Doctrine\ORM\EntityManagerInterface;
 use NeuronAI\Tools\Toolkits\Calculator\CalculatorToolkit;
 use NeuronAI\Tools\Toolkits\Calendar\CalendarToolkit;
 
@@ -45,6 +48,55 @@ trait Tools
                 $this->session,
                 $this->threadId,
             );
+        }
+
+        return $this->appendRagSearchTool($tools);
+    }
+
+    /**
+     * @param array<int, object> $tools
+     *
+     * @return array<int, object>
+     */
+    private function appendRagSearchTool(array $tools): array
+    {
+        try {
+            $userId = (string) $this->session->get(\App\Services\Auth::USERID);
+            if ($userId === '') {
+                return $tools;
+            }
+
+            $user = $this->container->get(EntityManagerInterface::class)
+                ->getRepository(\App\Entity\User::class)
+                ->find($userId);
+            if ($user === null) {
+                return $tools;
+            }
+
+            $ragService = $this->container->get(RagService::class);
+            $documents = $ragService->listForUser($user);
+            $hasActive = false;
+            foreach ($documents as $document) {
+                if ($document->isActive()) {
+                    $hasActive = true;
+                    break;
+                }
+            }
+
+            if (! $hasActive) {
+                return $tools;
+            }
+
+            $tools[] = new RagSearchTool(
+                $ragService,
+                $this->container->get(EntityManagerInterface::class),
+                $this->session,
+                $this->logger,
+            );
+        } catch (\Throwable $throwable) {
+            $this->logger->warning('Failed to append RAG search tool', [
+                'exception' => $throwable,
+            ]);
         }
 
         return $tools;

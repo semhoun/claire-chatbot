@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Brain;
 
+use App\Entity\User;
+use App\Services\Auth;
+use App\Services\RagService;
+use Doctrine\ORM\EntityManagerInterface;
 use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
 use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 
@@ -29,19 +33,31 @@ class RAG extends \NeuronAI\RAG\RAG
     #[\Override]
     protected function embeddings(): EmbeddingsProviderInterface
     {
-        return new \NeuronAI\RAG\Embeddings\OpenAILikeEmbeddings(
-            baseUri: $this->settings->get('llm.openai.baseUri') . '/embeddings',
-            key: $this->settings->get('llm.openai.key'),
-            model: $this->settings->get('llm.openai.modelEmbed')
-        );
+        return $this->container->get(EmbeddingsProviderInterface::class);
     }
 
     #[\Override]
     protected function vectorStore(): VectorStoreInterface
     {
-        return new \NeuronAI\RAG\VectorStore\FileVectorStore(
-            directory: $this->settings->get('llm.rag.path'),
-            name: 'neuron-rag',
-        );
+        $user = $this->currentUser();
+        if (! $user instanceof \App\Entity\User) {
+            throw new \RuntimeException('No authenticated user for RAG vector store.');
+        }
+
+        $ragService = $this->container->get(RagService::class);
+
+        return $ragService->getActiveVectorStoreForUser($user);
+    }
+
+    private function currentUser(): ?User
+    {
+        $userId = (string) $this->session->get(Auth::USERID);
+        if ($userId === '') {
+            return null;
+        }
+
+        return $this->container->get(EntityManagerInterface::class)
+            ->getRepository(User::class)
+            ->find($userId);
     }
 }

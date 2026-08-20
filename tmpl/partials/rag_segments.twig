@@ -1,0 +1,20 @@
+<div class="claire-rag-segments">
+    <div class="claire-rag-segments__header">
+        <span class="claire-rag-segments__title">{{ document.name }}</span>
+        <span class="claire-rag-segments__count">{{ segments|length }} segment{{ segments|length > 1 ? 's' : '' }}</span>
+    </div>
+{% if segments is empty %}
+    <div class="claire-option-list__empty">
+        <div class="claire-option-list__empty-text">Aucun segment indexé</div>
+    </div>
+{% else %}
+    <ol class="claire-rag-segments__list">
+    {% for segment in segments %}
+        <li class="claire-rag-segments__item">
+            <div class="claire-rag-segments__item-index">{{ loop.index }}</div>
+            <div class="claire-rag-segments__item-content">{{ segment }}</div>
+        </li>
+    {% endfor %}
+    </ol>
+{% endif %}
+</div>

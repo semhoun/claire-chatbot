@@ -9,6 +9,8 @@ use App\Services\PdfGeneratorService;
 use App\Services\Queue\QueueBackendInterface;
 use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\Queue\RedisQueueBackend;
+use App\Services\RagService;
+use App\Services\RagServiceInterface;
 use App\Services\RedisClient;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
@@ -19,6 +21,10 @@ use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\ORMSetup;
 use League\Flysystem\Filesystem;
+use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
+use NeuronAI\RAG\Embeddings\OpenAILikeEmbeddings;
+use NeuronAI\RAG\VectorStore\FileVectorStore;
+use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 use Phptg\BotApi\TelegramBotApi;
 use Psr\Log\LoggerInterface as Logger;
 use Slim\Views\Twig;
@@ -131,4 +137,14 @@ return [
     },
     QueueBackendInterface::class => DI\get(RedisQueueBackend::class),
     QueueDispatcherInterface::class => DI\get(QueueBackendInterface::class),
+    RagServiceInterface::class => DI\get(RagService::class),
+    EmbeddingsProviderInterface::class => static fn (Settings $settings): EmbeddingsProviderInterface => new OpenAILikeEmbeddings(
+        baseUri: $settings->get('llm.openai.baseUri'),
+        key: $settings->get('llm.openai.key'),
+        model: $settings->get('llm.openai.modelEmbed'),
+    ),
+    VectorStoreInterface::class => static fn (Settings $settings): VectorStoreInterface => new FileVectorStore(
+        directory: $settings->get('llm.rag.path'),
+        name: 'neuron-rag',
+    ),
 ];

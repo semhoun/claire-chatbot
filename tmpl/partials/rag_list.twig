@@ -1,0 +1,75 @@
+{% import '_icon.twig' as icon %}
+<div class="claire-option-list claire-rag-root">
+    <div class="claire-option-list__actions">
+        <form action="{{ base_url }}/rag/upload" method="post" enctype="multipart/form-data"
+              class="claire-file-upload claire-rag-upload">
+            <input class="claire-file-upload__input" id="claire-rag-upload-input"
+                   type="file" name="file" accept="{{ accepted_ext }}" required>
+            <div class="claire-file-upload__icons">
+                <label class="claire-btn claire-btn--secondary claire-file-upload__label"
+                       for="claire-rag-upload-input" aria-label="Parcourir">
+                    {{ icon.draw('M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5') }}
+                </label>
+                <button type="submit" class="claire-btn claire-btn--primary"
+                        aria-label="Envoyer" disabled>
+                    {{ icon.draw('M4 4l17 8-17 8 3-8zm3 8h14') }}
+                </button>
+            </div>
+            <span class="claire-file-upload__name" aria-live="polite">Aucun document</span>
+        </form>
+        <div class="claire-rag-actions">
+            <button type="button" class="claire-btn claire-btn--secondary claire-rag-action-btn"
+                    data-rag-add-text>
+                {{ icon.draw('M12 5v14M5 12h14') }}
+                <span>Texte</span>
+            </button>
+            <button type="button" class="claire-btn claire-btn--secondary claire-rag-action-btn"
+                    data-rag-add-url>
+                {{ icon.draw('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71') }}
+                <span>URL</span>
+            </button>
+        </div>
+    </div>
+{% if documents is empty %}
+    <div class="claire-option-list__empty">
+        <div class="claire-option-list__empty-icon">
+            {{ icon.draw('M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253') }}
+        </div>
+        <div class="claire-option-list__empty-text">Aucun document RAG</div>
+        <div class="claire-option-list__empty-help">Ajoutez un fichier, du texte ou une URL.</div>
+    </div>
+{% else %}
+    <ul class="claire-option-list__items">
+    {% for document in documents %}
+        <li class="claire-option-item claire-rag-item{% if document.isActive %} is-active{% endif %}" id="claire-rag-{{ document.documentId }}">
+            <div class="claire-rag-item__header">
+                <div class="claire-option-item__icon">{{ icon.draw('M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253') }}</div>
+                <div class="claire-option-item__title">{{ document.name }}</div>
+                <div class="claire-option-item__actions">
+                    <button class="claire-option-item__button" type="button"
+                            aria-label="Voir les segments"
+                            data-rag-segments="{{ base_url }}/rag/segments/{{ document.documentId }}">
+                        {{ icon.draw('M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z') }}
+                    </button>
+                    <button class="claire-option-item__button" type="button"
+                            aria-label="{% if document.isActive %}Désactiver{% else %}Activer{% endif %} ce document"
+                            data-rag-toggle="{{ base_url }}/rag/toggle/{{ document.documentId }}">
+                        {{ icon.draw(document.isActive ? 'M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636' : 'M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z') }}
+                    </button>
+                    <button class="claire-option-item__button claire-rag-item__delete" type="button"
+                            aria-label="Supprimer ce document"
+                            data-rag-delete="{{ base_url }}/rag/delete/{{ document.documentId }}">
+                        {{ icon.draw('M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7M10 11v6M14 11v6') }}
+                    </button>
+                </div>
+            </div>
+            <div class="claire-option-item__meta">
+                {{ document.sourceType }} • {{ document.chunkCount }} segment{{ document.chunkCount > 1 ? 's' : '' }} •
+                {% if document.isActive %}Actif{% else %}Inactif{% endif %} •
+                Ajouté le {{ document.createdAt|date('d/m/Y') }}
+            </div>
+        </li>
+    {% endfor %}
+    </ul>
+{% endif %}
+</div>

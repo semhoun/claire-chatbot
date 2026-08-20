@@ -35,6 +35,8 @@ return [
     ],
     'rag' => [
         'path' => Settings::getDataPath() . '/rag',
+        'chunkSize' => (int) Env::get('RAG_CHUNK_SIZE', 1000),
+        'topK' => (int) Env::get('RAG_TOP_K', 4),
     ],
     // Liste des assistants disponibles (slug => FQCN)
     'brains' => [

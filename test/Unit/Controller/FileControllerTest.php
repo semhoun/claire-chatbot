@@ -10,13 +10,11 @@ use App\Entity\User;
 use App\Middleware\JwtSessionMiddleware;
 use App\Services\Auth;
 use App\Services\Session\SessionInterface;
+use App\Services\RagServiceInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
-use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
-use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
-use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Message\UploadedFileInterface;
@@ -32,7 +30,7 @@ final class FileControllerTest extends TestCase
 
     private Filesystem $filesystem;
 
-    private ContainerInterface $container;
+    private RagServiceInterface $ragService;
 
     private FileController $controller;
 
@@ -49,7 +47,7 @@ final class FileControllerTest extends TestCase
         $this->session = $this->createMock(SessionInterface::class);
         $this->entityManager = $this->createMock(EntityManagerInterface::class);
         $this->filesystem = $this->createMock(Filesystem::class);
-        $this->container = $this->createMock(ContainerInterface::class);
+        $this->ragService = $this->createMock(RagServiceInterface::class);
         $this->responseFactory = new ResponseFactory();
 
         $this->user = $this->createMock(User::class);
@@ -76,7 +74,6 @@ final class FileControllerTest extends TestCase
             Twig::create(\App\Services\Settings::getAppRoot() . '/tmpl'),
             $this->entityManager,
             $this->filesystem,
-            $this->container,
             new \App\Services\Settings([
                 'files' => [
                     'upload' => [
@@ -87,6 +84,7 @@ final class FileControllerTest extends TestCase
                     ],
                 ],
             ]),
+            $this->ragService,
         );
     }
 
@@ -269,8 +267,6 @@ final class FileControllerTest extends TestCase
         $userId = 'user-123';
         $uploadedFile = $this->createMock(UploadedFileInterface::class);
         $stream = $this->createMock(StreamInterface::class);
-        $embedder = $this->createMock(EmbeddingsProviderInterface::class);
-        $store = $this->createMock(VectorStoreInterface::class);
 
         $this->session->method('get')
             ->with(Auth::USERID)
@@ -286,13 +282,7 @@ final class FileControllerTest extends TestCase
         $stream->method('getContents')
             ->willReturn('file content. very long content to split.');
 
-        $this->container->method('get')->willReturnMap([
-            [EmbeddingsProviderInterface::class, $embedder],
-            [VectorStoreInterface::class, $store],
-        ]);
-
-        $embedder->method('embedDocuments')->willReturn([]);
-        $store->expects($this->once())->method('addDocuments')->with([]);
+        $this->ragService->expects($this->once())->method('createFromFile');
 
         $this->filesystem->expects($this->once())->method('write');
         $this->entityManager->expects($this->once())->method('persist');

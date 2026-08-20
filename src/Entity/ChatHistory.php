@@ -89,6 +89,11 @@ class ChatHistory
         $this->user = $user;
     }
 
+    public function getThreadId(): string
+    {
+        return $this->threadId;
+    }
+
     public function setThreadId(string $threadId): void
     {
         $this->threadId = $threadId;

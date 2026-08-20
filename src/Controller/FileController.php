@@ -8,15 +8,11 @@ use App\Entity\File;
 use App\Entity\User;
 use App\Services\Auth;
 use App\Services\Markdown;
+use App\Services\RagServiceInterface;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
-use NeuronAI\RAG\DataLoader\StringDataLoader;
-use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
-use NeuronAI\RAG\Splitter\DelimiterTextSplitter;
-use NeuronAI\RAG\VectorStore\VectorStoreInterface;
-use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Message\UploadedFileInterface;
@@ -31,8 +27,8 @@ final readonly class FileController
         private Twig $twig,
         private EntityManagerInterface $entityManager,
         private Filesystem $filesystem,
-        private ContainerInterface $container,
         private Settings $settings,
+        private RagServiceInterface $ragService,
     ) {
     }
 
@@ -133,7 +129,7 @@ final readonly class FileController
         $this->entityManager->flush();
 
         $processedData = $this->convertToMarkdown($file->getClientMediaType(), $data);
-        $this->indexInRag($processedData);
+        $this->ragService->createFromFile($entity, $user, $processedData);
 
         return $response->withStatus(201);
     }
@@ -259,24 +255,6 @@ final readonly class FileController
             'application/pdf' => Markdown::fromPdf($data),
             default => $data,
         };
-    }
-
-    private function indexInRag(string $data): void
-    {
-        $embedder = $this->container->get(EmbeddingsProviderInterface::class);
-        $store = $this->container->get(VectorStoreInterface::class);
-
-        $documents = StringDataLoader::for($data)
-            ->withSplitter(
-                new DelimiterTextSplitter(
-                    maxLength: 1000,
-                    separator: '.',
-                    wordOverlap: 0
-                )
-            )
-            ->getDocuments();
-
-        $store->addDocuments($embedder->embedDocuments($documents));
     }
 
     private function validateUploadedFile(UploadedFileInterface $uploadedFile): bool

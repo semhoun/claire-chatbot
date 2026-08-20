@@ -1310,7 +1310,8 @@ body.claire-compact .claire-chat-input {
 }
 
 /* Stack the browse and submit icons vertically and make them compact */
-.claire-files-root .claire-file-upload__icons {
+.claire-files-root .claire-file-upload__icons,
+.claire-rag-root .claire-file-upload__icons {
     display: inline-flex;
     flex-direction: column;
     gap: 6px;
@@ -1356,7 +1357,8 @@ body.claire-compact .claire-chat-input {
 }
 
 /* Center icons and reduce size for file upload actions */
-.claire-files-root .claire-file-upload button.claire-btn {
+.claire-files-root .claire-file-upload button.claire-btn,
+.claire-rag-root .claire-file-upload button.claire-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1368,16 +1370,194 @@ body.claire-compact .claire-chat-input {
 }
 
 .claire-files-root .claire-file-upload__label svg,
-.claire-files-root .claire-file-upload button.claire-btn svg {
+.claire-files-root .claire-file-upload button.claire-btn svg,
+.claire-rag-root .claire-file-upload__label svg,
+.claire-rag-root .claire-file-upload button.claire-btn svg {
     width: 16px;
     height: 16px;
 }
 
 /* Make the browse label look like the compact icon button too */
-.claire-files-root .claire-file-upload__label.claire-btn {
+.claire-files-root .claire-file-upload__label.claire-btn,
+.claire-rag-root .claire-file-upload__label.claire-btn {
     min-width: 0;
     width: 32px;
     padding: 2px 4px;
+}
+
+/* RAG custom action buttons (Texte, URL) */
+.claire-rag-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.claire-rag-action-btn.claire-btn {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    min-height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: 8px;
+}
+
+.claire-rag-action-btn.claire-btn svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+/* Modal form inputs (RAG text, URL, etc.) */
+.claire-modal__field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.claire-modal__field:last-child {
+    margin-bottom: 0;
+}
+
+.claire-modal__field input,
+.claire-modal__field textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--claire-border);
+    border-radius: 10px;
+    background: var(--claire-bg-input);
+    color: var(--claire-text-primary);
+    font: inherit;
+    font-size: 14px;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.claire-modal__field input:focus,
+.claire-modal__field textarea:focus {
+    border-color: var(--claire-focus-ring);
+    box-shadow: 0 0 0 3px var(--claire-focus-glow);
+}
+
+.claire-modal__field textarea {
+    resize: vertical;
+    min-height: 100px;
+}
+
+/* RAG segments list */
+.claire-rag-segments {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.claire-rag-segments__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.claire-rag-segments__title {
+    font-size: 14px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.claire-rag-segments__count {
+    flex: 0 0 auto;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(255, 124, 229, 0.24);
+    color: rgba(255, 240, 254, 0.9);
+}
+
+.claire-rag-segments__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.claire-rag-segments__item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--claire-border);
+}
+
+.claire-rag-segments__item-index {
+    flex: 0 0 auto;
+    min-width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(255, 124, 229, 0.24);
+    color: rgba(255, 240, 254, 0.9);
+}
+
+.claire-rag-segments__item-content {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--claire-text-primary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* RAG list item: icon + title + actions on a single top row */
+.claire-rag-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.claire-rag-item__header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.claire-rag-item .claire-option-item__title {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.claire-rag-item .claire-option-item__actions {
+    flex-direction: row;
+    margin-left: 0;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.claire-rag-item .claire-option-item__meta {
+    padding-left: 34px;
 }
 
 .claire-option-list__empty {

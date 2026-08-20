@@ -49,8 +49,10 @@ const optionsOpen = ref(false)
 const openMenu = ref<string | null>(null)
 const historyHtml = ref('')
 const filesHtml = ref('')
+const ragHtml = ref('')
 const historyCount = ref(0)
 const filesCount = ref(0)
+const ragCount = ref(0)
 const busy = ref(false)
 const message = ref('')
 const currentBrain = ref(props.config.currentBrain)
@@ -124,18 +126,23 @@ function toggleMenu(name: string): void {
   openMenu.value = openMenu.value === name ? null : name
   if (openMenu.value === 'history') void loadHistory()
   if (openMenu.value === 'files') void loadFiles()
+  if (openMenu.value === 'rag') void loadRag()
 }
 
 async function refreshCounters(): Promise<void> {
-  const [history, files] = await Promise.allSettled([
+  const [history, files, rag] = await Promise.allSettled([
     client.request('/history/count'),
     client.request('/files/count'),
+    client.request('/rag/count'),
   ])
   if (history.status === 'fulfilled' && history.value.ok) {
     historyCount.value = Number(await history.value.text()) || 0
   }
   if (files.status === 'fulfilled' && files.value.ok) {
     filesCount.value = Number(await files.value.text()) || 0
+  }
+  if (rag.status === 'fulfilled' && rag.value.ok) {
+    ragCount.value = Number(await rag.value.text()) || 0
   }
 }
 
@@ -148,6 +155,12 @@ async function loadHistory(): Promise<void> {
 async function loadFiles(): Promise<void> {
   await withBusy(async () => {
     filesHtml.value = await (await checkedRequest('/files/list')).text()
+  })
+}
+
+async function loadRag(): Promise<void> {
+  await withBusy(async () => {
+    ragHtml.value = await (await checkedRequest('/rag/list')).text()
   })
 }
 
@@ -451,16 +464,111 @@ async function confirmModal(): Promise<void> {
   }
 }
 
-function openRagUpload(): void {
+async function onRagClick(event: MouseEvent): Promise<void> {
+  const target = event.target as Element
+  const toggle = target.closest<HTMLElement>('[data-rag-toggle]')
+  if (toggle !== null) {
+    await withBusy(async () => {
+      await checkedRequest(toggle.dataset.ragToggle ?? '', { method: 'POST' })
+      await Promise.all([loadRag(), refreshCounters()])
+    })
+    return
+  }
+  const remove = target.closest<HTMLElement>('[data-rag-delete]')
+  if (remove !== null) {
+    confirmAction('Confirmer la suppression', 'Supprimer ce document RAG ? Cette action est irréversible.', 'Supprimer', async () => {
+      await checkedRequest(remove.dataset.ragDelete ?? '', { method: 'DELETE' })
+      await Promise.all([loadRag(), refreshCounters()])
+    })
+    return
+  }
+  const segments = target.closest<HTMLElement>('[data-rag-segments]')
+  if (segments !== null) {
+    await openRagSegmentsModal(segments.dataset.ragSegments ?? '')
+    return
+  }
+  const addText = target.closest<HTMLElement>('[data-rag-add-text]')
+  if (addText !== null) {
+    openRagTextModal()
+    return
+  }
+  const addUrl = target.closest<HTMLElement>('[data-rag-add-url]')
+  if (addUrl !== null) {
+    openRagUrlModal()
+  }
+}
+
+async function onRagSubmit(event: SubmitEvent): Promise<void> {
+  event.preventDefault()
+  const form = event.target as HTMLFormElement
+  await withBusy(async () => {
+    await checkedRequest(form.action, { method: 'POST', body: new FormData(form) })
+    form.reset()
+    const nameSpan = form.querySelector<HTMLElement>('.claire-file-upload__name')
+    const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]')
+    if (nameSpan !== null && nameSpan !== undefined) {
+      nameSpan.textContent = 'Aucun document'
+      nameSpan.title = ''
+    }
+    if (submitBtn !== null && submitBtn !== undefined) submitBtn.disabled = true
+    await Promise.all([loadRag(), refreshCounters()])
+  })
+}
+
+function onRagChange(event: Event): void {
+  const input = event.target
+  if (!(input instanceof HTMLInputElement) || input.type !== 'file') return
+  const form = input.closest('form')
+  const filename = input.files?.[0]?.name ?? 'Aucun document'
+  const name = form?.querySelector<HTMLElement>('.claire-file-upload__name')
+  const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]')
+  if (name !== null && name !== undefined) {
+    name.textContent = filename
+    name.title = filename
+  }
+  if (submit !== null && submit !== undefined) submit.disabled = !input.files?.length
+}
+
+async function openRagSegmentsModal(url: string): Promise<void> {
+  await withBusy(async () => {
+    const body = await (await checkedRequest(url)).text()
+    modal.value = {
+      title: 'Segments du document',
+      body,
+      confirmLabel: 'Fermer',
+      variant: 'default',
+      action: async () => {},
+    }
+  })
+}
+
+function openRagTextModal(): void {
   modal.value = {
-    title: 'Ajouter un document RAG',
-    body: `<form id="claire-rag-form"><input type="file" name="file" accept="${props.config.acceptedExt}" required></form>`,
-    confirmLabel: 'Téléverser',
+    title: 'Ajouter un document texte',
+    body: `<form id="claire-rag-text-form"><label class="claire-modal__field"><span>Nom</span><input type="text" name="name" required maxlength="255"></label><label class="claire-modal__field"><span>Contenu</span><textarea name="content" rows="6" required></textarea></label></form>`,
+    confirmLabel: 'Ajouter',
     variant: 'default',
     action: async () => {
-      const form = rootElement.value?.querySelector<HTMLFormElement>('#claire-rag-form')
-      if (form === null || form === undefined || !form.reportValidity()) throw new Error('Invalid file')
-      await checkedRequest('/files/upload_rag', { method: 'POST', body: new FormData(form) })
+      const form = rootElement.value?.querySelector<HTMLFormElement>('#claire-rag-text-form')
+      if (form === null || form === undefined || !form.reportValidity()) throw new Error('Invalid form')
+      await checkedRequest('/rag/text', { method: 'POST', body: new URLSearchParams(new FormData(form) as unknown as Record<string, string>) })
+      await Promise.all([loadRag(), refreshCounters()])
+      notify('Document ajouté au RAG.')
+    },
+  }
+}
+
+function openRagUrlModal(): void {
+  modal.value = {
+    title: 'Ajouter un document URL',
+    body: `<form id="claire-rag-url-form"><label class="claire-modal__field"><span>Nom</span><input type="text" name="name" required maxlength="255"></label><label class="claire-modal__field"><span>URL</span><input type="url" name="url" required></label></form>`,
+    confirmLabel: 'Ajouter',
+    variant: 'default',
+    action: async () => {
+      const form = rootElement.value?.querySelector<HTMLFormElement>('#claire-rag-url-form')
+      if (form === null || form === undefined || !form.reportValidity()) throw new Error('Invalid form')
+      await checkedRequest('/rag/url', { method: 'POST', body: new URLSearchParams(new FormData(form) as unknown as Record<string, string>) })
+      await Promise.all([loadRag(), refreshCounters()])
       notify('Document ajouté au RAG.')
     },
   }
@@ -603,9 +711,12 @@ onBeforeUnmount(() => {
           </button>
           <div class="claire-embed-toolbar__right">
             <button class="claire-embed-toolbar__item" type="button" title="Nouvelle conversation" aria-label="Nouvelle conversation" @click="createConversation"><ClaireIcon name="plus" /></button>
-            <button v-if="config.user" class="claire-embed-toolbar__item" type="button" title="Compte" aria-label="Compte" @click="toggleMenu('account')"><ClaireIcon name="user" /></button>
-            <button id="claire-rag-toggle" class="claire-embed-toolbar__item" type="button" title="Documents RAG" aria-label="Documents RAG" @click="openRagUpload"><ClaireIcon name="rag" /></button>
-            <div class="claire-embed-toolbar__dropdown">
+                <button v-if="config.user" class="claire-embed-toolbar__item" type="button" title="Compte" aria-label="Compte" @click="toggleMenu('account')"><ClaireIcon name="user" /></button>
+                <div class="claire-embed-toolbar__dropdown">
+                  <button id="claire-rag-toggle" class="claire-embed-toolbar__item" type="button" title="Documents RAG" aria-label="Documents RAG" @click="toggleMenu('rag')"><ClaireIcon name="rag" /><span id="claire-rag-count-badge" class="claire-embed-toolbar__badge">{{ ragCount }}</span></button>
+                  <div v-if="openMenu === 'rag'" id="claire-rag-list" class="claire-embed-toolbar__subpanel is-visible claire-rag-root" @click="onRagClick" @change="onRagChange" @submit="onRagSubmit" v-html="ragHtml"></div>
+                </div>
+                <div class="claire-embed-toolbar__dropdown">
               <button id="claire-files-toggle" class="claire-embed-toolbar__item" type="button" title="Fichiers" aria-label="Fichiers" @click="toggleMenu('files')"><ClaireIcon name="file" /><span id="claire-files-count-badge" class="claire-embed-toolbar__badge">{{ filesCount }}</span></button>
               <div v-if="openMenu === 'files'" id="claire-files-list" class="claire-embed-toolbar__subpanel is-visible claire-files-root" @click="onFilesClick" @change="onFilesChange" @submit="onFilesSubmit" v-html="filesHtml"></div>
             </div>
@@ -689,7 +800,8 @@ onBeforeUnmount(() => {
         <section class="claire-options-panel__section"><span class="claire-options-panel__title">Données</span>
           <button id="claire-files-toggle" class="claire-options-item" type="button" @click="toggleMenu('files')"><span class="claire-options-item__label">Fichiers</span><span id="claire-files-count-badge" class="claire-options-item__badge">{{ filesCount }}</span></button>
           <div v-if="openMenu === 'files'" id="claire-files-list" class="claire-options-subpanel claire-files-root" @click="onFilesClick" @change="onFilesChange" @submit="onFilesSubmit" v-html="filesHtml"></div>
-          <button id="claire-rag-toggle" class="claire-options-item" type="button" @click="openRagUpload"><span class="claire-options-item__label">Documents RAG</span></button>
+          <button id="claire-rag-toggle" class="claire-options-item" type="button" @click="toggleMenu('rag')"><span class="claire-options-item__label">Documents RAG</span><span id="claire-rag-count-badge" class="claire-options-item__badge">{{ ragCount }}</span></button>
+          <div v-if="openMenu === 'rag'" id="claire-rag-list" class="claire-options-subpanel claire-rag-root" @click="onRagClick" @change="onRagChange" @submit="onRagSubmit" v-html="ragHtml"></div>
         </section>
         <section class="claire-options-panel__section"><span class="claire-options-panel__title">Préférences</span>
           <label class="claire-options-item"><span class="claire-options-item__label">Assistant</span><select id="claire-brain-selector" v-model="currentBrain" @change="changeBrain"><option v-for="brain in config.brains" :key="brain.slug" :value="brain.slug">{{ brain.name }}</option></select></label>
