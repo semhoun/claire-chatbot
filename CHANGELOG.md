@@ -5,6 +5,27 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.0] - 2026-08-20
+
+### Added
+- **Audio & Voix** : intégration de l'API audio Mistral pour la transcription (STT / whisper) et la synthèse vocale (TTS)
+- **Audio & Voix** : routes compatibles OpenAI `POST /v1/audio/transcriptions` et `POST /v1/audio/speech` protégées par session Claire
+- **Audio & Voix** : outil agent `generate_speech` permettant aux agents de générer des fichiers audio MP3 intégrés dans la conversation
+- **Audio & Voix** : support de la dictée vocale dans l'interface web et le widget embarqué avec gestion de l'enregistrement et transcription
+- **Audio & Voix** : synthèse vocale automatique ou à la demande dans le chat web et l'embed avec diffusion en streaming SSE (`chat.audio.ready`) et lecteur audio intégré
+- **Audio & Voix** : panneau de préférences audio (activation, synthèse auto, mode dictée, choix de la voix) dans l'interface web, le widget et la Mini-App Telegram
+- **Audio & Voix** : nouvel endpoint `POST /config/audio` pour persister les préférences audio par utilisateur
+- **Audio & Voix** : nouvel endpoint `POST /brain/audio` pour demander la synthèse vocale d'un message spécifique
+- **Audio & Voix** : gestion du type de fichier `audio` (`File::FILE_TYPE_AUDIO`) et lecteur HTML dédié pour les fichiers audio générés (`.mp3`, `.ogg`, `.wav`, etc.)
+- **Telegram** : prise en charge des messages vocaux et fichiers audio entrants avec transcription automatique et réponse vocale générée
+- **Telegram** : envoi des fichiers audio générés par les agents sous forme de message audio/vocal Telegram
+- **Telegram** : sélection de la voix préférée dans la Mini-App Telegram
+- **Tests** : tests unitaires complets pour les services audio (`MistralAudioService`, `TelegramAudioService`, `AudioGeneratorService`, `ChatAudioPublisher`), les contrôleurs (`AudioController`, `ConfigController`), les jobs (`GenerateAudioJob`), le tool `TextToSpeechTool` et les composants frontend associés
+
+### Changed
+- **Messages** : attribution d'identifiants stables (`history-message-*`) aux messages d'historique dans `MessageFormatter`
+- **Docker Compose** : ajout des variables de configuration pour l'audio Mistral (`MISTRAL_AUDIO_*`)
+
 ## [2.0.0] - 2026-08-20
 
 ### Added
@@ -556,7 +577,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[2.0.0]: https://github.com/semhoun/claire-chatbot/compare/1.6.0...HEAD
+[2.1.0]: https://github.com/semhoun/claire-chatbot/compare/2.0.0...HEAD
+[2.0.0]: https://github.com/semhoun/claire-chatbot/compare/1.6.0...2.0.0
 [1.6.0]: https://github.com/semhoun/claire-chatbot/compare/1.5.3...1.6.0
 [1.5.3]: https://github.com/semhoun/claire-chatbot/compare/1.5.2...1.5.3
 [1.5.2]: https://github.com/semhoun/claire-chatbot/compare/1.5.1...1.5.2

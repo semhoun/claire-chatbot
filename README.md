@@ -17,6 +17,7 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript 
 - Mémoire courte avec résumé automatique de l'historique
 - Mémoire long terme optionnelle, évolutive entre les conversations et reconstructible depuis les résumés
 - Recherche web via SearXNG et RAG par documents (fichiers, texte, URL) avec embeddings
+- Transcription audio (dictée vocale) et synthèse vocale (TTS) avec l'API audio Mistral
 - Génération d'images avec ComfyUI (workflows multiples)
 - Génération de documents PDF depuis HTML ou Markdown
 - Intégration Telegram complète (messages, photos, documents, Mini-App)
@@ -317,7 +318,7 @@ sess-abc123
 - `GET /files/count`, `GET /files/list`
 - `POST /files/upload`, `POST /files/upload_rag`
 - `DELETE /files/delete/{id}`
-- `GET /files/img_serve/{id}` (images et PDF générés)
+- `GET /files/img_serve/{id}` ou `/files/serve/{id}` (images, audio et PDF générés)
 
 ### RAG
 
@@ -325,6 +326,13 @@ sess-abc123
 - `GET /rag/segments/{id}`
 - `POST /rag/upload` (fichier), `POST /rag/text`, `POST /rag/url`
 - `POST /rag/toggle/{id}` (activer/désactiver), `DELETE /rag/delete/{id}`
+
+### Audio
+
+- `POST /v1/audio/transcriptions` (transcription audio compatible OpenAI)
+- `POST /v1/audio/speech` (synthèse vocale compatible OpenAI)
+- `POST /brain/audio` (génération de synthèse vocale pour un message)
+- `POST /config/audio` (mise à jour des préférences audio utilisateur)
 
 ### Historique
 
