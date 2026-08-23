@@ -44,9 +44,15 @@ class TelegramService implements QueueDoer
         'comfyui' => 'Voir ou changer le workflow ComfyUI',
     ];
 
+    private const float CHAT_ACTION_REFRESH_INTERVAL = 4.0;
+
     private readonly TelegramSession $telegramSession;
 
-    private ?\DateTime $lastChatActionDate = null;
+    private float $lastChatActionAt = 0.0;
+
+    private ?int $lastChatActionChatId = null;
+
+    private ?TelegramAction $telegramAction = null;
 
     public function __construct(
         private readonly Logger $logger,
@@ -521,15 +527,47 @@ class TelegramService implements QueueDoer
         return true;
     }
 
-    private function sendChatAction(int $telegramChatId, TelegramAction $telegramAction): void
-    {
-        if (! $this->lastChatActionDate instanceof \DateTime || $this->lastChatActionDate->diff(new \DateTime())->s > 5) {
-            $this->lastChatActionDate = new \DateTime();
-            $res = $this->telegramBotApi->sendChatAction($telegramChatId, $telegramAction->value);
-            if ($res instanceof FailResult) {
-                $this->logger->error('Failed to send chat action', ['chatId' => $telegramChatId, 'error' => $res]);
-            }
+    private function sendChatAction(
+        int $telegramChatId,
+        TelegramAction $telegramAction,
+        bool $force = false,
+    ): void {
+        $now = hrtime(true) / 1_000_000_000;
+        if (! $this->shouldSendChatAction(
+            $telegramChatId,
+            $telegramAction,
+            $now,
+            $force,
+        )) {
+            return;
         }
+
+        $this->lastChatActionAt = $now;
+        $this->lastChatActionChatId = $telegramChatId;
+        $this->telegramAction = $telegramAction;
+
+        $res = $this->telegramBotApi->sendChatAction(
+            $telegramChatId,
+            $telegramAction->value,
+        );
+        if ($res instanceof FailResult) {
+            $this->logger->error('Failed to send chat action', [
+                'chatId' => $telegramChatId,
+                'error' => $res,
+            ]);
+        }
+    }
+
+    private function shouldSendChatAction(
+        int $telegramChatId,
+        TelegramAction $telegramAction,
+        float $now,
+        bool $force,
+    ): bool {
+        return $force
+            || $this->lastChatActionChatId !== $telegramChatId
+            || $this->telegramAction !== $telegramAction
+            || $now - $this->lastChatActionAt >= self::CHAT_ACTION_REFRESH_INTERVAL;
     }
 
     private function processChatMessage(
@@ -564,6 +602,8 @@ class TelegramService implements QueueDoer
     private function generateChatResponse(int $telegramChatId, string $text): string
     {
         $this->logger->info('Generating chat response for chat ID: ' . $telegramChatId, ['text' => $text, 'threadId' => $this->telegramSession->get('threadId')]);
+        $this->sendChatAction($telegramChatId, TelegramAction::TEXT, force: true);
+
         $currentBrain = $this->telegramSession->get('brain_avatar');
         $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession, $this->telegramSession->get('threadId'));
 
