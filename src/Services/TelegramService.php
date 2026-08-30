@@ -65,6 +65,7 @@ class TelegramService implements QueueDoer
         private readonly TelegramMarkdown $telegramMarkdown,
         private readonly AudioServiceInterface $audioService,
         private readonly TelegramAudioService $telegramAudioService,
+        private readonly TelegramChatActionHeartbeat $telegramChatActionHeartbeat,
     ) {
         $this->telegramSession = new TelegramSession($entityManager);
     }
@@ -610,18 +611,27 @@ class TelegramService implements QueueDoer
         $userMessage = new UserMessage($text);
         $userMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
 
-        $agentHandler = $agent->stream($userMessage);
-        foreach ($agentHandler->events() as $chunk) {
-            $action = $this->resolveChunkAction($chunk);
-            if ($action instanceof \App\Enums\TelegramAction) {
-                $this->sendChatAction($telegramChatId, $action);
+        return $this->telegramChatActionHeartbeat->run(
+            $telegramChatId,
+            TelegramAction::TEXT,
+            function () use ($agent, $userMessage, $telegramChatId): string {
+                $agentHandler = $agent->stream($userMessage);
+                foreach ($agentHandler->events() as $chunk) {
+                    $action = $this->resolveChunkAction($chunk);
+                    if ($action instanceof \App\Enums\TelegramAction) {
+                        $this->sendChatAction($telegramChatId, $action);
+                    }
+                }
+
+                $agentMessage = $agentHandler->getMessage();
+                $agentMessage->addMetadata(
+                    'timestamp',
+                    new \DateTimeImmutable()->format(\DateTimeInterface::ATOM),
+                );
+
+                return $agentMessage->getContent() ?? '';
             }
-        }
-
-        $agentMessage = $agentHandler->getMessage();
-        $agentMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-
-        return $agentMessage->getContent() ?? '';
+        );
     }
 
     private function resolveChunkAction(mixed $chunk): ?TelegramAction
