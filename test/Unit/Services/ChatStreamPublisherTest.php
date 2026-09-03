@@ -33,7 +33,7 @@ final class ChatStreamPublisherTest extends TestCase
             );
 
         $redis->expects($this->once())
-            ->method('rpush')
+            ->method('lpush')
             ->with(
                 $this->equalTo('claire:sse:chat:thread-1:queue'),
                 $this->callback(static function (array $payloadArr): bool {

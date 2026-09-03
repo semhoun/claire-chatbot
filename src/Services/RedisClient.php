@@ -124,8 +124,10 @@ class RedisClient
         try {
             $result = $this->redis->brPop($keys, (int) $timeout);
         } catch (\RedisException $redisException) {
-            // Timeout reached - Redis closes connection, this is normal
+            // Recover the connection so the next blocking read can proceed.
             if (str_contains(strtolower($redisException->getMessage()), 'read error')) {
+                $this->reconnect();
+
                 return null;
             }
 

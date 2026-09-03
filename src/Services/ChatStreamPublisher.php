@@ -27,7 +27,7 @@ readonly class ChatStreamPublisher
 
         // Push to a session-specific queue for reliable delivery (wait/notify pattern)
         $queueKey = $channel . ':queue';
-        $this->redisClient->rpush($queueKey, [$message]);
+        $this->redisClient->lpush($queueKey, [$message]);
         $this->redisClient->expire($queueKey, $this->settings->get('sse.queue_ttl')); // TTL from settings
     }
 }

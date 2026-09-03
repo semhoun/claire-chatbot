@@ -32,7 +32,7 @@ final class ChatAudioPublisherTest extends TestCase
             'sse' => ['queue_ttl' => 60],
         ]);
         $redis = $this->createMock(RedisClient::class);
-        $redis->expects(self::once())->method('rpush')->with(
+        $redis->expects(self::once())->method('lpush')->with(
             'claire:sse:chat:session-1:queue',
             self::callback(static function (array $messages): bool {
                 $event = json_decode((string) $messages[0], true, flags: JSON_THROW_ON_ERROR);

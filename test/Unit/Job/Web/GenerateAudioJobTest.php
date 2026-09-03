@@ -32,7 +32,7 @@ final class GenerateAudioJobTest extends TestCase
             'sse' => ['queue_ttl' => 60],
         ]);
         $redis = $this->createMock(RedisClient::class);
-        $redis->expects(self::once())->method('rpush');
+        $redis->expects(self::once())->method('lpush');
         $redis->method('expire')->willReturn(true);
         $chatAudioPublisher = new ChatAudioPublisher(
             $audioService,

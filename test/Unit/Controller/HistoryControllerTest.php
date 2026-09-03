@@ -77,7 +77,7 @@ final class HistoryControllerTest extends TestCase
 
         $redis = $this->createMock(\App\Services\RedisClient::class);
         $redis->expects($this->once())
-            ->method('rpush')
+            ->method('lpush')
             ->with(
                 'claire:sse:chat:sess-current:queue',
                 $this->callback(static function (array $messages): bool {
@@ -162,7 +162,7 @@ final class HistoryControllerTest extends TestCase
         $connection->method('getNativeConnection')->willReturn($pdo);
         $redis = $this->createMock(\App\Services\RedisClient::class);
         $redis->expects($this->once())
-            ->method('rpush')
+            ->method('lpush')
             ->with(
                 'claire:sse:chat:thread-1:queue',
                 $this->callback(static function (array $payloadArr): bool {
@@ -242,7 +242,7 @@ final class HistoryControllerTest extends TestCase
         $redis = $this->createMock(\App\Services\RedisClient::class);
         // Snapshot should be pushed to sessionId queue, not threadId
         $redis->expects($this->once())
-            ->method('rpush')
+            ->method('lpush')
             ->with(
                 'claire:sse:chat:sess-abc123:queue',
                 $this->callback(static function (array $payloadArr): bool {
