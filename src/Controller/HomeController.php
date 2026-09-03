@@ -34,18 +34,31 @@ final readonly class HomeController
     {
         $session = $this->getSession($request);
         $sessionId = uniqid('sess-', true);
-        $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
+        $userId = (string) $session->get(Auth::USERID);
+        $entityRepository = $this->entityManager->getRepository(ChatHistoryEntity::class);
 
-        $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations((string) $session->get(Auth::USERID));
-        $this->queueDispatcher->dispatch(
-            StartThreadJob::class,
-            [
-                'threadId' => $threadId,
-                'sessionId' => $sessionId,
-                'session' => $session->all(),
-            ],
-            $this->settings->get('queue.defaultQueue')
-        );
+        $entityRepository->deleteEmptyConversations($userId);
+
+        $currentThreadId = (string) $session->get('threadId');
+        $history = $currentThreadId !== ''
+            ? $entityRepository->getCurrentUserChatHistory($session, $currentThreadId)
+            : null;
+        $history ??= $entityRepository->getLatestHistory($userId);
+        $threadId = $history?->getThreadId()
+            ?? uniqid(UserChatHistory::CHAT_WEB, true);
+
+        $session->set('threadId', $threadId);
+        if ($history === null) {
+            $this->queueDispatcher->dispatch(
+                StartThreadJob::class,
+                [
+                    'threadId' => $threadId,
+                    'sessionId' => $sessionId,
+                    'session' => $session->all(),
+                ],
+                $this->settings->get('queue.defaultQueue')
+            );
+        }
 
         $config = $this->frontendConfigFactory->create(
             $session,

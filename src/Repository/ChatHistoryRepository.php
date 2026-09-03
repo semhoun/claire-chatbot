@@ -56,6 +56,23 @@ class ChatHistoryRepository extends EntityRepository
             ->getResult();
     }
 
+    public function getLatestHistory(string $userId): ?ChatHistory
+    {
+        $user = $this->getUser($userId);
+        if (! $user instanceof \App\Entity\User) {
+            return null;
+        }
+
+        return $this->createQueryBuilder('h')
+            ->where('h.user = :user')
+            ->andWhere('h.displayMessagesCount > ' . self::MIN_MESSAGES)
+            ->setParameter('user', $user)
+            ->orderBy('h.updatedAt', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
     /**
      * Supprime les conversations vides d'un utilisateur (titre par défaut et résumé vide/null).
      */
