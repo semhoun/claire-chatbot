@@ -61,7 +61,8 @@
     "symfony/yaml": "^8.0",
     "lcobucci/clock": "^3.6",
     "mpdf/mpdf": "^8.3",
-    "tempest/highlight": "^2.24"
+    "tempest/highlight": "^2.24",
+    "symfony/http-client": "^8.1"
   },
   "require-dev": {
     "roave/security-advisories": "dev-latest",
