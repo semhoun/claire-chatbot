@@ -288,7 +288,7 @@ body.claire-compact .claire-app {
 
 .claire-chat-body {
     flex: 1;
-    padding: 34px;
+    padding: 24px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -308,7 +308,7 @@ body.claire-compact .claire-app {
 }
 
 body.claire-compact .claire-chat-body {
-    padding: 28px;
+    padding: 20px;
 }
 
 .claire-message {
@@ -2237,7 +2237,7 @@ body.claire-compact .claire-chat-input {
 
 @media (max-width: 1180px) {
     .claire-chat-body {
-        padding: 30px;
+        padding: 22px;
     }
 
     .claire-chat-header,
@@ -2248,7 +2248,7 @@ body.claire-compact .claire-chat-input {
 
 @media (max-width: 980px) {
     .claire-chat-body {
-        padding: 26px;
+        padding: 20px;
     }
 
     .claire-message {
@@ -2331,8 +2331,9 @@ body.claire-compact .claire-chat-input {
         height: 17px;
     }
 
+    body.claire-compact .claire-chat-body,
     .claire-chat-body {
-        padding: 20px;
+        padding: 16px;
         gap: 18px;
     }
 
