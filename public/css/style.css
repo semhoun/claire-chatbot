@@ -719,12 +719,20 @@ body.claire-compact .claire-chat-input {
     flex-shrink: 0;
 }
 
-.claire-chat-icon-btn:hover {
+.claire-chat-icon-btn:not(:disabled):not([aria-disabled="true"]):hover {
     transform: translateY(-1px) scale(1.06);
 }
 
-.claire-chat-icon-btn:active {
+.claire-chat-icon-btn:not(:disabled):not([aria-disabled="true"]):active {
     transform: scale(0.95);
+}
+
+.claire-chat-icon-btn:disabled,
+.claire-chat-icon-btn[aria-disabled="true"] {
+    cursor: not-allowed;
+    filter: grayscale(0.7);
+    opacity: 0.45;
+    box-shadow: none;
 }
 
 .claire-chat-icon-btn.claire-is-recording {
@@ -2485,27 +2493,27 @@ body.claire-compact .claire-chat-input {
     cursor: zoom-out;
 }
 
-#claire-embed-container .claire-chat-body {
+#claire-embed-container[data-mode="embed"] .claire-chat-body {
     padding: 10px;
 }
 
-#claire-embed-container .claire-chat-input {
+#claire-embed-container[data-mode="embed"] .claire-chat-input {
     padding: 10px;
 }
 
-#claire-embed-container .claire-scroll-down-button {
+#claire-embed-container[data-mode="embed"] .claire-scroll-down-button {
     bottom: 106px;
 }
 
-#claire-embed-container .claire-message__bubble {
+#claire-embed-container[data-mode="embed"] .claire-message__bubble {
     padding: 12px;
 }
 
-#claire-embed-container .claire-message {
+#claire-embed-container[data-mode="embed"] .claire-message {
     max-width: 90%;
 }
 
-#claire-embed-container .claire-embed-toolbar__subpanel-section select {
+#claire-embed-container[data-mode="embed"] .claire-embed-toolbar__subpanel-section select {
     font-size: small;
 }
 

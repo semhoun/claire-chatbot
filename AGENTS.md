@@ -116,6 +116,13 @@ docker compose exec claire ./console cache:clear         # Clear cache
 
 ## Code Style Guidelines
 
+### Browser Testing
+
+- The agent can use Playwright with Chromium to inspect and test the live interface.
+- Validate frontend changes at desktop and mobile viewport sizes when relevant.
+- Store temporary screenshots and browser artifacts in `/tmp/kilo`, not in the repository.
+- The public interface is available at `https://claire.dune.tf`; authentication may limit tests to the SSO screen.
+
 ### PHP Standards
 - **PHP Version**: 8.5+ with strict typing (`declare(strict_types=1);`)
 - **Line Length**: 80 chars soft limit, 120 chars absolute limit (comments excluded)

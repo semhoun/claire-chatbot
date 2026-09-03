@@ -135,6 +135,56 @@ describe('embed public API', () => {
     expect(bundle).not.toContain('process.env.NODE_ENV')
   })
 
+  it('disables the composer during an assistant response without showing an action indicator', async () => {
+    const config = bootstrap()
+    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(config)}'></div>`
+    const miniToken = jwt('minitoken')
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).includes('/embed')) {
+        return new Response(html, {
+          status: 200,
+          headers: { 'X-Claire-Minitoken': miniToken },
+        })
+      }
+      return new Response('0', { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const element = await window.claireEmbed?.({
+      baseUrl: 'https://claire.test',
+      target: '#target',
+      token: miniToken,
+    })
+    const input = element?.shadowRoot?.querySelector<HTMLTextAreaElement>(
+      '.claire-chat-input__field',
+    )
+    const form = element?.shadowRoot?.querySelector<HTMLFormElement>('#claire-brain-chat')
+    const upload = form?.querySelector<HTMLInputElement>('.claire-chat-input__file')
+    const uploadButton = form?.querySelector<HTMLElement>('.claire-chat-icon-btn--upload')
+
+    FakeEventSource.instances[0].emit('chat.assistant.start', { threadId: 'thread-1' })
+    await Promise.resolve()
+
+    expect(input?.disabled).toBe(true)
+    expect(input?.placeholder).toBe('')
+    expect(upload?.disabled).toBe(true)
+    expect(uploadButton?.getAttribute('aria-disabled')).toBe('true')
+    expect(Array.from(form?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+      .every((button) => button.disabled)).toBe(true)
+    expect(element?.shadowRoot?.querySelector('.claire-global-action-indicator')).toBeNull()
+
+    FakeEventSource.instances[0].emit('chat.assistant.done', {
+      threadId: 'thread-1',
+      messageId: 'assistant-1',
+    })
+    await Promise.resolve()
+
+    expect(input?.disabled).toBe(false)
+    expect(input?.placeholder).toBe('Écrivez votre message...')
+    expect(upload?.disabled).toBe(false)
+    expect(uploadButton?.getAttribute('aria-disabled')).toBe('false')
+  })
+
   it('requests assistant audio on demand and enables playback after SSE', async () => {
     const config = bootstrap()
     config.audioAvailable = true
