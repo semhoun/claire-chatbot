@@ -104,7 +104,7 @@ class TelegramService implements QueueDoer
             }
 
             $this->telegramSession->set('brain_avatar', $brain);
-            $this->telegramSession->flush();
+            $this->telegramSession->save();
 
             return true;
         }
@@ -113,7 +113,7 @@ class TelegramService implements QueueDoer
             $workflow = (string) $value;
             if ($this->comfyUIWorkflowRegistry->has($workflow)) {
                 $this->telegramSession->set(ComfyUIWorkflowRegistry::SESSION_KEY, $workflow);
-                $this->telegramSession->flush();
+                $this->telegramSession->save();
 
                 return true;
             }
@@ -132,7 +132,7 @@ class TelegramService implements QueueDoer
                 $user->setParams($params);
             }
 
-            $this->telegramSession->flush();
+            $this->telegramSession->save();
 
             return true;
         }
@@ -151,7 +151,7 @@ class TelegramService implements QueueDoer
                 $user->setParams($params);
             }
 
-            $this->telegramSession->flush();
+            $this->telegramSession->save();
 
             return true;
         }
@@ -196,11 +196,12 @@ class TelegramService implements QueueDoer
         $fileIds = $this->extractFileIds($openingText);
         if ($fileIds !== []) {
             $this->handleFileResponse($telegramChatId, $openingText, $fileIds);
+            $this->telegramSession->save();
             return;
         }
 
         $this->sendMessage($telegramChatId, $openingText);
-        $this->telegramSession->flush();
+        $this->telegramSession->save();
     }
 
     public function processUpdate(Update $update): void
@@ -223,6 +224,7 @@ class TelegramService implements QueueDoer
                 'update_id' => $update->updateId,
             ]);
             $this->sendMessage($telegramChatId, 'Désolé, j\'ai un soucis.');
+            throw $throwable;
         }
     }
 
@@ -333,11 +335,13 @@ class TelegramService implements QueueDoer
                 $result = $this->telegramBotApi->sendMessage(chatId: $telegramChatId, text: $chunk, parseMode: ParseMode::MARKDOWN_V2);
                 if ($result instanceof FailResult) {
                     $this->logger->error('Failed to send message chunk', ['chatId' => $telegramChatId, 'chunk' => $chunk, 'error' => $result]);
+                    throw new \RuntimeException('Telegram rejected a message chunk');
                 }
             }
         } catch (\Throwable $throwable) {
             $msg = 'Failed to send message: ' . $throwable->getMessage();
             $this->logger->error($msg);
+            throw $throwable;
         }
     }
 
@@ -476,6 +480,7 @@ class TelegramService implements QueueDoer
                 'exception' => $throwable,
             ]);
             $this->sendMessage($telegramChatId, 'Désolé, je n’ai pas pu transcrire ce message audio.');
+            throw $throwable;
         }
     }
 
@@ -597,6 +602,7 @@ class TelegramService implements QueueDoer
         } catch (\Throwable $throwable) {
             $this->logger->error('Chat processing error: ' . $throwable->getMessage());
             $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors du traitement de votre message.');
+            throw $throwable;
         }
     }
 

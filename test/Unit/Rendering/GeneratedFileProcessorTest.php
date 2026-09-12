@@ -9,25 +9,28 @@ use App\Services\Settings;
 use App\Services\Rendering\GeneratedFileProcessor;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
-use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
 final class GeneratedFileProcessorTest extends TestCase
 {
     private GeneratedFileProcessor $processor;
     private Settings $settings;
-    private EntityManagerInterface&MockObject $entityManager;
-    private EntityRepository&MockObject $repository;
+    private EntityManagerInterface $entityManager;
+    private EntityRepository $repository;
 
     protected function setUp(): void
     {
+        $this->configureProcessor();
+    }
+
+    private function configureProcessor(?EntityRepository $repository = null): void
+    {
         $this->settings = new Settings(['base_url' => 'http://localhost']);
-        $this->entityManager = $this->createMock(EntityManagerInterface::class);
-        $this->repository = $this->createMock(EntityRepository::class);
+        $this->entityManager = $this->createStub(EntityManagerInterface::class);
+        $this->repository = $repository ?? $this->createStub(EntityRepository::class);
 
         $this->entityManager->method('getRepository')
-            ->with(File::class)
-            ->willReturn($this->repository);
+            ->willReturnMap([[File::class, $this->repository]]);
 
         $this->processor = new GeneratedFileProcessor(
             $this->settings,
@@ -37,10 +40,11 @@ final class GeneratedFileProcessorTest extends TestCase
 
     public function testProcessGeneratedFilesWithImageId(): void
     {
+        $this->configureProcessor($this->createMock(EntityRepository::class));
         $placeholder = '@@GENERATED@@user123@abc-def.png@@';
         $content = 'Here is an image: ' . $placeholder;
 
-        $file = $this->createMock(File::class);
+        $file = $this->createStub(File::class);
         $file->method('getFileId')->willReturn('uuid-123');
         $file->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
 
@@ -57,10 +61,11 @@ final class GeneratedFileProcessorTest extends TestCase
 
     public function testProcessGeneratedFilesWithPdfId(): void
     {
+        $this->configureProcessor($this->createMock(EntityRepository::class));
         $placeholder = '@@GENERATED@@user123@abc-def.pdf@@';
         $content = 'Here is a PDF: ' . $placeholder;
 
-        $file = $this->createMock(File::class);
+        $file = $this->createStub(File::class);
         $file->method('getFileId')->willReturn('uuid-456');
         $file->method('fileType')->willReturn(File::FILE_TYPE_PDF);
         $file->method('getFilename')->willReturn('test.pdf');
@@ -78,8 +83,9 @@ final class GeneratedFileProcessorTest extends TestCase
 
     public function testProcessGeneratedAudioAsPlayer(): void
     {
+        $this->configureProcessor($this->createMock(EntityRepository::class));
         $placeholder = '@@GENERATED@@audio-id@@';
-        $file = $this->createMock(File::class);
+        $file = $this->createStub(File::class);
         $file->method('getFileId')->willReturn('audio-id');
         $file->method('fileType')->willReturn(File::FILE_TYPE_AUDIO);
         $this->repository->method('findOneBy')
@@ -168,16 +174,16 @@ final class GeneratedFileProcessorTest extends TestCase
         $placeholder3 = '@@GENERATED@@u3@c.jpg@@';
         $content = "Image: $placeholder1 and PDF: $placeholder2 and another image: $placeholder3";
 
-        $file1 = $this->createMock(File::class);
+        $file1 = $this->createStub(File::class);
         $file1->method('getFileId')->willReturn('uuid-1');
         $file1->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
 
-        $file2 = $this->createMock(File::class);
+        $file2 = $this->createStub(File::class);
         $file2->method('getFileId')->willReturn('uuid-2');
         $file2->method('fileType')->willReturn(File::FILE_TYPE_PDF);
         $file2->method('getFilename')->willReturn('b.pdf');
 
-        $file3 = $this->createMock(File::class);
+        $file3 = $this->createStub(File::class);
         $file3->method('getFileId')->willReturn('uuid-3');
         $file3->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
 
@@ -199,10 +205,11 @@ final class GeneratedFileProcessorTest extends TestCase
 
     public function testProcessGeneratedFilesInsideHrefWithoutQuotes(): void
     {
+        $this->configureProcessor($this->createMock(EntityRepository::class));
         $placeholder = '@@GENERATED@@user123@abc-def.pdf@@';
         $content = '<a href=' . $placeholder . '>Download</a>';
 
-        $file = $this->createMock(File::class);
+        $file = $this->createStub(File::class);
         $file->method('getFileId')->willReturn('uuid-pdf');
         $file->method('fileType')->willReturn(File::FILE_TYPE_PDF);
         $file->method('getFilename')->willReturn('test.pdf');
@@ -222,10 +229,11 @@ final class GeneratedFileProcessorTest extends TestCase
 
     public function testProcessGeneratedFilesInsideSrcWithoutQuotes(): void
     {
+        $this->configureProcessor($this->createMock(EntityRepository::class));
         $placeholder = '@@GENERATED@@user123@abc-def.png@@';
         $content = '<img src=' . $placeholder . '>';
 
-        $file = $this->createMock(File::class);
+        $file = $this->createStub(File::class);
         $file->method('getFileId')->willReturn('uuid-img');
         $file->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
 

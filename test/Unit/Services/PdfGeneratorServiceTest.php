@@ -48,11 +48,10 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $filesystem = $this->createMock(Filesystem::class);
         $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $fileRepository = $this->createMock(\App\Repository\FileRepository::class);
-        $chatHistoryRepository = $this->createMock(\App\Repository\ChatHistoryRepository::class);
-        $markdown = $this->createMock(\App\Services\Markdown::class);
+        $fileRepository = $this->createStub(\App\Repository\FileRepository::class);
+        $markdown = $this->createStub(\App\Services\Markdown::class);
 
-        $file = $this->createMock(File::class);
+        $file = $this->createStub(File::class);
         $file->method('getFilePath')->willReturn('generated/user-123/image-uuid.png');
         $file->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
         $file->method('getFilename')->willReturn('image.png');
@@ -106,8 +105,8 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $filesystem = $this->createMock(Filesystem::class);
         $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $fileRepository = $this->createMock(\App\Repository\FileRepository::class);
-        $markdown = $this->createMock(\App\Services\Markdown::class);
+        $fileRepository = $this->createStub(\App\Repository\FileRepository::class);
+        $markdown = $this->createStub(\App\Services\Markdown::class);
 
         $fileRepository->method('findOneBy')->willReturn(null);
         $entityManager->method('getRepository')->with(File::class)->willReturn($fileRepository);
@@ -148,10 +147,10 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $filesystem = $this->createMock(Filesystem::class);
         $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $fileRepository = $this->createMock(\App\Repository\FileRepository::class);
-        $markdown = $this->createMock(\App\Services\Markdown::class);
+        $fileRepository = $this->createStub(\App\Repository\FileRepository::class);
+        $markdown = $this->createStub(\App\Services\Markdown::class);
 
-        $file = $this->createMock(File::class);
+        $file = $this->createStub(File::class);
         $file->method('fileType')->willReturn(File::FILE_TYPE_PDF);
         $fileRepository->method('findOneBy')->willReturn($file);
         $entityManager->method('getRepository')->with(File::class)->willReturn($fileRepository);
@@ -190,10 +189,10 @@ final class PdfGeneratorServiceTest extends TestCase
             ],
         ]);
 
-        $filesystem = $this->createMock(Filesystem::class);
+        $filesystem = $this->createStub(Filesystem::class);
         $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $fileRepository = $this->createMock(\App\Repository\FileRepository::class);
-        $markdown = $this->createMock(\App\Services\Markdown::class);
+        $fileRepository = $this->createStub(\App\Repository\FileRepository::class);
+        $markdown = $this->createStub(\App\Services\Markdown::class);
 
         $fileRepository->method('findOneBy')->willReturn(null);
         $entityManager->method('getRepository')->with(File::class)->willReturn($fileRepository);
@@ -231,15 +230,14 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $filesystem = $this->createMock(Filesystem::class);
         $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $fileRepository = $this->createMock(\App\Repository\FileRepository::class);
-        $chatHistoryRepository = $this->createMock(\App\Repository\ChatHistoryRepository::class);
-        $markdown = $this->createMock(\App\Services\Markdown::class);
+        $fileRepository = $this->createStub(\App\Repository\FileRepository::class);
+        $markdown = $this->createStub(\App\Services\Markdown::class);
 
-        $file1 = $this->createMock(File::class);
+        $file1 = $this->createStub(File::class);
         $file1->method('getFilePath')->willReturn('generated/user-123/image1-uuid.png');
         $file1->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
         $file1->method('getFilename')->willReturn('image1.png');
-        $file2 = $this->createMock(File::class);
+        $file2 = $this->createStub(File::class);
         $file2->method('getFilePath')->willReturn('generated/user-123/image2-uuid.jpg');
         $file2->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
         $file2->method('getFilename')->willReturn('image2.jpg');
@@ -309,9 +307,8 @@ final class PdfGeneratorServiceTest extends TestCase
         ]);
 
         $filesystem = $this->createMock(Filesystem::class);
-        $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $chatHistoryRepository = $this->createMock(\App\Repository\ChatHistoryRepository::class);
-        $markdown = $this->createMock(\App\Services\Markdown::class);
+        $entityManager = $this->createStub(\Doctrine\ORM\EntityManagerInterface::class);
+        $markdown = $this->createStub(\App\Services\Markdown::class);
 
         $service = new PdfGeneratorService(
             $settings,
@@ -346,10 +343,9 @@ final class PdfGeneratorServiceTest extends TestCase
             ],
         ]);
 
-        $filesystem = $this->createMock(Filesystem::class);
-        $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $chatHistoryRepository = $this->createMock(\App\Repository\ChatHistoryRepository::class);
-        $markdown = $this->createMock(\App\Services\Markdown::class);
+        $filesystem = $this->createStub(Filesystem::class);
+        $entityManager = $this->createStub(\Doctrine\ORM\EntityManagerInterface::class);
+        $markdown = $this->createStub(\App\Services\Markdown::class);
 
         $service = new PdfGeneratorService(
             $settings,

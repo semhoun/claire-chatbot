@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Job\Web;
 
+use App\Services\Auth;
 use App\Services\ChatAudioPublisher;
+use App\Services\ChatStreamSubscriber;
 use App\Services\Queue\QueueDoer;
 use App\Services\Session\InMemorySession;
 use InvalidArgumentException;
@@ -34,7 +36,7 @@ final readonly class GenerateAudioJob implements QueueDoer
         }
 
         $this->chatAudioPublisher->publish(
-            $sessionId,
+            ChatStreamSubscriber::scope((string) ($session[Auth::USERID] ?? ''), $sessionId),
             $threadId,
             $messageId,
             $text,

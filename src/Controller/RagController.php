@@ -136,7 +136,11 @@ final readonly class RagController
             return $response->withStatus(400);
         }
 
-        $this->ragService->createFromUrl($user, $name, $url);
+        try {
+            $this->ragService->createFromUrl($user, $name, $url);
+        } catch (\RuntimeException) {
+            return $response->withStatus(400);
+        }
 
         return $this->list($request, $response);
     }

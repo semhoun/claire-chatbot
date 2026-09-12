@@ -57,6 +57,7 @@ final readonly class TelegramController
             $this->logger->error('Telegram Webhook Error: ' . $throwable->getMessage(), [
                 'exception' => $throwable,
             ]);
+            return $response->withStatus(503)->withHeader('Retry-After', '5');
         }
 
         return $response->withStatus(204);
@@ -126,13 +127,21 @@ final readonly class TelegramController
 
             if ($isNewChat) {
                 // In private chats, chatId equals userId
-                $this->queueDispatcher->dispatch(
-                    StartThreadJob::class,
-                    [
-                        'telegramUserId' => $telegramUserId,
-                    ],
-                    $this->settings->get('queue.defaultQueue')
-                );
+                try {
+                    $this->queueDispatcher->dispatch(
+                        StartThreadJob::class,
+                        ['telegramUserId' => $telegramUserId],
+                        $this->settings->get('queue.defaultQueue')
+                    );
+                } catch (\Throwable $throwable) {
+                    $this->logger->error('Failed to enqueue Telegram new chat', ['exception' => $throwable]);
+                    return $this->jsonRenderer->json(
+                        $response->withHeader('Retry-After', '5'),
+                        ['success' => false, 'error' => 'Queue unavailable'],
+                        503,
+                    );
+                }
+
                 return $this->jsonRenderer->json($response, ['success' => true]);
             }
 

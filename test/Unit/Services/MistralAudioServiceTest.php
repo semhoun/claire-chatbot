@@ -85,7 +85,7 @@ final class MistralAudioServiceTest extends TestCase
 
     public function testTranscriptionToleratesHttpClientClosingUploadStream(): void
     {
-        $httpClient = $this->createMock(HttpClientInterface::class);
+        $httpClient = $this->createStub(HttpClientInterface::class);
         $this->configureClient($httpClient);
         $httpClient->method('request')->willReturnCallback(
             static function (HttpRequest $httpRequest): HttpResponse {

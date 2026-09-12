@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Services\Auth;
 use App\Services\JwtTokenService;
 use App\Services\OidcClient;
+use App\Services\OidcTransaction;
 use App\Services\Session\SessionInterface;
 use App\Services\Session\SessionManagerInterface;
 use App\Services\Session\Trait\SessionFromRequest;
@@ -25,6 +26,7 @@ final readonly class AuthController
         private Auth $auth,
         private JwtTokenService $jwtTokenService,
         private Twig $twig,
+        private OidcTransaction $oidcTransaction,
     ) {
     }
 
@@ -33,15 +35,34 @@ final readonly class AuthController
         $session = $this->getSession($request);
 
         $authUrl = $this->oidcClient->getAuthorizationUrl($session);
-        return $response->withHeader('Location', $authUrl)->withStatus(302);
+        $cookie = $this->oidcTransaction->issue((string) $session->get('oidc_state'));
+        $session->delete('oidc_state');
+        $session->delete('oidc_state_expires');
+        return $response->withHeader('Location', $authUrl)
+            ->withAddedHeader('Set-Cookie', $cookie)
+            ->withHeader('Cache-Control', 'no-store')->withStatus(302);
     }
 
     public function ssoCallback(Request $request, Response $response): Response
     {
+        $response = $response->withAddedHeader('Set-Cookie', $this->oidcTransaction->clearCookie())
+            ->withHeader('Cache-Control', 'no-store')
+            ->withHeader('Referrer-Policy', 'no-referrer');
         $session = $request->getAttribute('session');
         if (! $session instanceof SessionManagerInterface) {
             return $response->withStatus(500);
         }
+
+        $session->delete('oidc_state');
+        $session->delete('oidc_state_expires');
+
+        $state = $this->oidcTransaction->consume($request->getCookieParams()[OidcTransaction::COOKIE] ?? null);
+        if ($state === null) {
+            return $response->withStatus(403);
+        }
+
+        $session->set('oidc_state', $state);
+        $session->set('oidc_state_expires', time() + OidcTransaction::TTL);
 
         $result = $this->oidcClient->handleCallback($session, $request->getQueryParams());
 

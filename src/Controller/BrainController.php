@@ -10,10 +10,13 @@ use App\Job\Web\GenerateAudioJob;
 use App\Job\Web\NewMessageJob;
 use App\Renderer\ChatHtmlRenderer;
 use App\Services\Audio\AudioServiceInterface;
+use App\Services\Auth;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
+use App\Services\ChatThreadLock;
 use App\Services\CorsHeaders;
 use App\Services\Queue\QueueDispatcherInterface;
+use App\Services\Session\SessionInterface;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use App\Services\SseEventFormatter;
@@ -58,7 +61,7 @@ final readonly class BrainController
             return $response->withStatus(422);
         }
 
-        $threadId = trim((string) ($data['threadId']));
+        $threadId = trim((string) ($data['threadId'] ?? ''));
         if ($threadId === '') {
             return $response->withStatus(400);
         }
@@ -82,19 +85,39 @@ final readonly class BrainController
 
         $messageId = uniqid('assistant-message-', true);
         $attachments = $this->extractAttachments($request, $user, includeStoredFiles: true);
+        $userId = (string) $session->get(Auth::USERID);
+        try {
+            $chatThreadLock = new ChatThreadLock($this->entityManager->getConnection()->getNativeConnection(), $userId, $threadId);
+        } catch (\RuntimeException) {
+            return $response->withStatus(409);
+        }
 
-        $this->queueDispatcher->dispatch(
-            NewMessageJob::class,
-            [
-                'threadId' => $threadId,
-                'sessionId' => $sessionId,
-                'messageId' => $messageId,
-                'attachments' => $attachments,
-                'message' => $userStr,
-                'session' => $session->all(),
-            ],
-            $this->settings->get('queue.defaultQueue')
-        );
+        $chatGenerationState = $this->chatStreamPublisher->generationState();
+        $previous = $chatGenerationState->get($userId, $threadId);
+        if (in_array($previous['status'] ?? '', ['queued', 'running', 'deleted'], true)) {
+            return $response->withStatus(409);
+        }
+
+        $chatGenerationState->set($userId, $threadId, $messageId, 'queued', false);
+        try {
+            $this->queueDispatcher->dispatch(
+                NewMessageJob::class,
+                [
+                    'threadId' => $threadId,
+                    'sessionId' => $sessionId,
+                    'messageId' => $messageId,
+                    'attachments' => $attachments,
+                    'message' => $userStr,
+                    'session' => $session->all(),
+                ],
+                $this->settings->get('queue.defaultQueue')
+            );
+        } catch (\Throwable $throwable) {
+            $chatGenerationState->set($userId, $threadId, $messageId, 'error', false);
+            throw $throwable;
+        } finally {
+            $chatThreadLock->release();
+        }
 
         $response->getBody()->write(json_encode([
             'threadId' => $threadId,
@@ -164,6 +187,10 @@ final readonly class BrainController
 
         $session = $this->getSession($request);
         $queryParams = $request->getQueryParams();
+        $userId = (string) $session->get(Auth::USERID);
+        if ($userId === '') {
+            return $response->withStatus(401);
+        }
 
         // sessionId is the per-tab SSE binding key (stable across chat switches within the same tab)
         $sessionId = trim((string) ($queryParams['sessionId'] ?? ''));
@@ -180,18 +207,15 @@ final readonly class BrainController
 
         $stream = $response->getBody();
 
-        $threadId = trim((string) ($queryParams['threadId']));
+        $threadId = trim((string) ($queryParams['threadId'] ?? ''));
+        $generationSignature = function () use ($userId, $threadId): array {
+            $state = $this->chatStreamPublisher->generationState()->get($userId, $threadId);
+            return [$state['messageId'] ?? '', in_array($state['status'] ?? '', ['queued', 'running'], true)];
+        };
+        $lastGeneration = $threadId !== '' ? $generationSignature() : null;
         if ($threadId !== '') {
-            $userChatHistory = new UserChatHistory(
-                session: $session,
-                pdo: $this->entityManager->getConnection()->getNativeConnection(),
-                contextWindow: $this->settings->get('llm.openai.contextWindow'),
-                threadId: $threadId,
-            );
-            $messages = $userChatHistory->getFormattedMessages();
-            $messagesHtml = $this->chatHtmlRenderer->messages($messages);
             $stream->write($this->sseEventFormatter->formatJsonEvent([
-                'html' => $messagesHtml,
+                ...$this->readSnapshot($session, $threadId),
                 'threadId' => $threadId,
                 'sessionId' => $sessionId,
             ], eventId: 'thread::' . $threadId, eventName: 'chat.snapshot'));
@@ -199,7 +223,15 @@ final readonly class BrainController
 
         $stream->write($this->sseEventFormatter->keepalive());
 
-        $onMessage = function (string $message) use ($sessionId, $stream): void {
+        $onMessage = function (string $message) use (
+            $sessionId,
+            $stream,
+            $session,
+            $userId,
+            $threadId,
+            $generationSignature,
+            &$lastGeneration
+        ): void {
             if (connection_aborted() !== 0) {
                 return;
             }
@@ -209,7 +241,7 @@ final readonly class BrainController
                 return;
             }
 
-            $eventSessionId = (string) ($event['payload']['sessionId']);
+            $eventSessionId = (string) ($event['payload']['sessionId'] ?? '');
             if ($eventSessionId !== $sessionId) {
                 return;
             }
@@ -223,6 +255,32 @@ final readonly class BrainController
             if (! in_array($eventName, ['chat.snapshot', 'chat.assistant.start', 'chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update', 'chat.assistant.done', 'chat.audio.ready', 'chat.audio.error', 'chat.error'], true)) {
                 $this->logger->warning('Invalid SSE event', ['event' => $eventName]);
                 return;
+            }
+
+            $eventThreadId = (string) ($payload['threadId'] ?? '');
+            if ($eventThreadId === '') {
+                return;
+            }
+
+            if ($eventName === 'chat.snapshot') {
+                if ($eventThreadId === $threadId) {
+                    $lastGeneration = $generationSignature();
+                }
+
+                $payload = [...$payload, ...$this->readSnapshot($session, $eventThreadId)];
+            } elseif (! str_starts_with($eventName, 'chat.audio.')) {
+                if (! $this->chatStreamPublisher->generationState()->acceptsEvent(
+                    $userId,
+                    $eventThreadId,
+                    $eventName,
+                    (string) ($payload['messageId'] ?? '')
+                )) {
+                    return;
+                }
+
+                if ($eventThreadId === $threadId) {
+                    $lastGeneration = [$payload['messageId'], ! in_array($eventName, ['chat.assistant.done', 'chat.error'], true)];
+                }
             }
 
             $eventId = match ($eventName) {
@@ -240,18 +298,58 @@ final readonly class BrainController
                 $eventId,
                 $eventName,
             ));
+            if (in_array($eventName, ['chat.assistant.done', 'chat.error'], true)) {
+                $stream->write($this->sseEventFormatter->formatJsonEvent([
+                    ...$this->readSnapshot($session, $eventThreadId),
+                    'threadId' => $eventThreadId,
+                    'sessionId' => $sessionId,
+                ], 'thread::' . $eventThreadId, 'chat.snapshot'));
+            }
         };
 
         while (connection_aborted() === 0) {
-            $message = $this->chatStreamSubscriber->popMessage($sessionId, $this->settings->get('sse.pop_timeout'));
+            $message = $this->chatStreamSubscriber->popMessage(
+                ChatStreamSubscriber::scope($userId, $sessionId),
+                $this->settings->get('sse.pop_timeout')
+            );
             if ($message !== null) {
                 $onMessage($message);
             } else {
+                // Other tabs and a failed terminal publication have no event on this channel.
+                $currentGeneration = $threadId !== '' ? $generationSignature() : null;
+                if ($currentGeneration !== $lastGeneration) {
+                    $lastGeneration = $currentGeneration;
+                    $stream->write($this->sseEventFormatter->formatJsonEvent([
+                        ...$this->readSnapshot($session, $threadId),
+                        'threadId' => $threadId,
+                        'sessionId' => $sessionId,
+                    ], 'thread::' . $threadId, 'chat.snapshot'));
+                }
+
                 $stream->write($this->sseEventFormatter->keepalive());
             }
         }
 
         return $response;
+    }
+
+    /** @return array<string, mixed> */
+    private function readSnapshot(SessionInterface $session, string $threadId): array
+    {
+        return $this->chatStreamPublisher->generationState()->capture(
+            (string) $session->get(Auth::USERID),
+            $threadId,
+            function () use ($session, $threadId): array {
+                $userChatHistory = new UserChatHistory(
+                    session: $session,
+                    pdo: $this->entityManager->getConnection()->getNativeConnection(),
+                    contextWindow: $this->settings->get('llm.openai.contextWindow'),
+                    threadId: $threadId,
+                    createIfMissing: false,
+                );
+                return ['html' => $this->chatHtmlRenderer->messages($userChatHistory->getFormattedMessages())];
+            },
+        );
     }
 
     /**

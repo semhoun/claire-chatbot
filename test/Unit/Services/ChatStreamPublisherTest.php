@@ -12,6 +12,36 @@ use PHPUnit\Framework\TestCase;
 
 final class ChatStreamPublisherTest extends TestCase
 {
+    public function testPublishSucceedsWhenConsumerRemovesQueueBeforeExpiration(): void
+    {
+        $settings = new Settings(['redis' => ['prefix' => 'test:'], 'sse' => ['queue_ttl' => 60]]);
+        $redis = $this->createMock(RedisClient::class);
+        $subscriber = new ChatStreamSubscriber($redis, $settings);
+        $channel = ChatStreamSubscriber::scope('user-1', 'tab');
+        $redis->expects(self::once())->method('lpush')->willReturn(1);
+        $redis->expects(self::once())->method('expire')
+            ->with($subscriber->channel($channel) . ':queue', 60)->willReturn(false);
+
+        new ChatStreamPublisher($redis, $subscriber, $settings)->publish($channel, 'chat.snapshot', [
+            'threadId' => 'thread-1',
+        ]);
+    }
+
+    public function testPublishStillFailsWhenPushFails(): void
+    {
+        $settings = new Settings(['redis' => ['prefix' => 'test:'], 'sse' => ['queue_ttl' => 60]]);
+        $redis = $this->createMock(RedisClient::class);
+        $subscriber = new ChatStreamSubscriber($redis, $settings);
+        $redis->expects(self::once())->method('lpush')->willReturn(false);
+        $redis->expects(self::never())->method('expire');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Cannot publish chat stream event');
+        new ChatStreamPublisher($redis, $subscriber, $settings)->publish(
+            ChatStreamSubscriber::scope('user-1', 'tab'), 'chat.snapshot', ['threadId' => 'thread-1'],
+        );
+    }
+
     public function testPublishUsesThreadScopedChannelAndEnvelope(): void
     {
         $settings = new Settings([
@@ -24,18 +54,19 @@ final class ChatStreamPublisherTest extends TestCase
         ]);
         $redis = $this->createMock(RedisClient::class);
         $subscriber = new ChatStreamSubscriber($redis, $settings);
+        $channel = ChatStreamSubscriber::scope('user-1', 'thread-1');
 
         $redis->expects($this->once())
             ->method('expire')
             ->with(
-                $this->equalTo('claire:sse:chat:thread-1:queue'),
+                $this->equalTo('claire:sse:chat:' . $channel . ':queue'),
                 60
-            );
+            )->willReturn(true);
 
         $redis->expects($this->once())
             ->method('lpush')
             ->with(
-                $this->equalTo('claire:sse:chat:thread-1:queue'),
+                $this->equalTo('claire:sse:chat:' . $channel . ':queue'),
                 $this->callback(static function (array $payloadArr): bool {
                     $data = json_decode($payloadArr[0], true);
 
@@ -46,10 +77,10 @@ final class ChatStreamPublisherTest extends TestCase
                         && $data['threadId'] === 'thread-1'
                         && $data['payload']['messagesHtml'] === '<div>ok</div>';
                 })
-            );
+            )->willReturn(1);
 
         $publisher = new ChatStreamPublisher($redis, $subscriber, $settings);
-        $publisher->publish('thread-1', 'chat.snapshot', [
+        $publisher->publish($channel, 'chat.snapshot', [
             'threadId' => 'thread-1',
             'messagesHtml' => '<div>ok</div>',
         ]);

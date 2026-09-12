@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a9733692b01657348ac205c2651b36fd",
+    "content-hash": "9b24f928cdca00f937fe80637cce0c4d",
     "packages": [
         {
             "name": "akrabat/proxy-detection-middleware",
@@ -12363,10 +12363,15 @@
     "prefer-lowest": false,
     "platform": {
         "php": "^8.5",
+        "ext-curl": "*",
+        "ext-fileinfo": "*",
         "ext-json": "*",
         "ext-libxml": "*",
         "ext-dom": "*",
-        "ext-pdo": "*"
+        "ext-pdo": "*",
+        "ext-pcntl": "*",
+        "ext-posix": "*",
+        "ext-redis": "*"
     },
     "platform-dev": {},
     "plugin-api-version": "2.9.0"

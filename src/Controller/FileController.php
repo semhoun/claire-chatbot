@@ -206,7 +206,18 @@ final readonly class FileController
 
         $response = $response
             ->withHeader('Content-Type', $mimeType)
+            ->withHeader('X-Content-Type-Options', 'nosniff')
             ->withHeader('Content-Length', (string) strlen($content));
+
+        // Only passive formats may be displayed under the application origin.
+        $extension = strtolower(pathinfo($file->getFilename(), PATHINFO_EXTENSION));
+        if (! in_array(strtolower($mimeType), ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'text/plain'], true)
+            || in_array($extension, ['svg', 'svgz', 'html', 'htm', 'xhtml', 'xml', 'js'], true)) {
+            $filename = preg_replace('/[\x00-\x1f\x7f]/', '', $file->getFilename());
+            return $response->withHeader('Content-Type', 'application/octet-stream')
+                ->withHeader('Content-Security-Policy', "sandbox; default-src 'none'")
+                ->withHeader('Content-Disposition', 'attachment; filename="' . addcslashes($filename, '"\\') . '"');
+        }
 
         if ($file->fileType() !== File::FILE_TYPE_IMAGE) {
             return $response->withHeader('Content-Disposition', 'inline; filename="' . addcslashes($file->getFilename(), '"\\') . '"');
@@ -262,6 +273,11 @@ final readonly class FileController
         $filename = $uploadedFile->getClientFilename() ?? '';
         $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
 
+        if (in_array($extension, ['svg', 'svgz'], true)
+            || str_contains(strtolower($uploadedFile->getClientMediaType() ?? ''), 'svg')) {
+            return false;
+        }
+
         $forbiddenExtensions = $this->settings->get('files.upload.forbidden_extensions');
         if (in_array($extension, $forbiddenExtensions, true)) {
             return false;
@@ -269,14 +285,16 @@ final readonly class FileController
 
         $mimeType = $uploadedFile->getClientMediaType();
 
-        // Use finfo to check the real mime type if possible
-        $tmpFile = $uploadedFile->getStream()->getMetadata('uri');
-        if ($tmpFile !== null && is_string($tmpFile) && file_exists($tmpFile)) {
-            $finfo = new \finfo(FILEINFO_MIME_TYPE);
-            $realMimeType = $finfo->file($tmpFile);
-            if ($realMimeType !== false) {
-                $mimeType = $realMimeType;
-            }
+        // Inspect the stream, including in-memory uploads; never trust the client MIME.
+        $content = $this->readFileContent($uploadedFile);
+        $realMimeType = new \finfo(FILEINFO_MIME_TYPE)->buffer($content);
+        if ($realMimeType !== false) {
+            $mimeType = $realMimeType;
+        }
+
+        if (str_contains(strtolower($mimeType ?? ''), 'svg')
+            || preg_match('/<\s*(?:[a-z0-9_-]+:)?svg\b/i', str_replace("\0", '', $content))) {
+            return false;
         }
 
         $allowedMimeTypes = $this->settings->get('files.upload.allowed_mime_types');

@@ -101,6 +101,10 @@ final class QueueWorker
         $job = $this->reserveJob($queueWorkerOptions, $workerId);
 
         if (! $job instanceof QueueMessage) {
+            if ($queueWorkerOptions->timeout <= 0) {
+                usleep(100_000);
+            }
+
             return;
         }
 
@@ -119,7 +123,13 @@ final class QueueWorker
             ]);
 
             $this->processedJobs++;
-            $this->processJob($job);
+            if ($this->queueBackend instanceof LeasedQueueBackendInterface) {
+                $this->queueBackend->withLease($job, fn () => $this->processJob($job));
+            } else {
+                $this->processJob($job);
+            }
+
+            $this->queueBackend->delete($job);
 
             $this->activeSpan?->setStatus(StatusCode::STATUS_OK);
         } catch (Throwable $throwable) {
@@ -134,10 +144,17 @@ final class QueueWorker
                 'job_id' => $job->id,
                 'job_class' => $job->jobClass,
             ]);
+            try {
+                $this->queueBackend->release($job);
+            } catch (Throwable $releaseError) {
+                $this->logger->error('Failed to release job; lease recovery required', [
+                    'job_id' => $job->id,
+                    'error' => $releaseError,
+                ]);
+            }
+        } finally {
+            $this->otelStopSpan();
         }
-
-        $this->queueBackend->delete($job);
-        $this->otelStopSpan();
     }
 
     private function reserveJob(
@@ -152,6 +169,7 @@ final class QueueWorker
                 'error' => $throwable->getMessage(),
                 'class' => $throwable::class,
             ]);
+            usleep(250_000);
             return null;
         }
     }

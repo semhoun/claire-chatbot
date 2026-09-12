@@ -33,7 +33,7 @@ final class ChatAudioPublisherTest extends TestCase
         ]);
         $redis = $this->createMock(RedisClient::class);
         $redis->expects(self::once())->method('lpush')->with(
-            'claire:sse:chat:session-1:queue',
+            'claire:sse:chat:' . ChatStreamSubscriber::scope('user-1', 'session-1') . ':queue',
             self::callback(static function (array $messages): bool {
                 $event = json_decode((string) $messages[0], true, flags: JSON_THROW_ON_ERROR);
 
@@ -41,7 +41,7 @@ final class ChatAudioPublisherTest extends TestCase
                     && $event['payload']['messageId'] === 'message-1'
                     && $event['payload']['audioData'] === base64_encode('mp3 bytes');
             }),
-        );
+        )->willReturn(1);
         $redis->method('expire')->willReturn(true);
         $chatStreamPublisher = new ChatStreamPublisher(
             $redis,
@@ -59,7 +59,7 @@ final class ChatAudioPublisherTest extends TestCase
         ]);
 
         $chatAudioPublisher->publish(
-            'session-1',
+            ChatStreamSubscriber::scope('user-1', 'session-1'),
             'thread-1',
             'message-1',
             '**Bonjour** Claire',

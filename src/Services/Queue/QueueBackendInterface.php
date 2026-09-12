@@ -11,7 +11,9 @@ interface QueueBackendInterface extends QueueDispatcherInterface
         int $timeout = 5,
     ): ?QueueMessage;
 
+    /** Acknowledge successful execution, using the reservation's ownership metadata. */
     public function delete(QueueMessage $queueMessage): void;
 
+    /** Schedule a failed reservation for retry; durable backends may delay or dead-letter it. */
     public function release(QueueMessage $queueMessage): void;
 }

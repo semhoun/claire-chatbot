@@ -9,9 +9,9 @@ const PLAYBACK_UNLOCK_AUDIO =
 export class BrowserAudio {
   private recorder: MediaRecorder | null = null
   private stream: MediaStream | null = null
-  private chunks: Blob[] = []
   private recordingTimer: number | null = null
-  private cancelled = false
+  private recordingGeneration = 0
+  private destroyed = false
   private player: HTMLAudioElement | null = null
   private objectUrl: string | null = null
 
@@ -26,40 +26,53 @@ export class BrowserAudio {
   }
 
   public async startRecording(onFinished: RecordingCallback): Promise<void> {
+    if (this.destroyed) throw new DOMException('Audio destroyed', 'AbortError')
     if (!this.supported()) throw new Error('Audio recording is not supported')
     this.cancelRecording()
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const mediaType = this.preferredMediaType()
-    this.recorder = mediaType === ''
-      ? new MediaRecorder(this.stream)
-      : new MediaRecorder(this.stream, { mimeType: mediaType })
-    this.chunks = []
-    this.cancelled = false
-    this.recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) this.chunks.push(event.data)
+    const generation = this.recordingGeneration
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    if (generation !== this.recordingGeneration) {
+      for (const track of stream.getTracks()) track.stop()
+      return
     }
-    this.recorder.onstop = () => {
-      const actualType = this.recorder?.mimeType || mediaType || 'audio/webm'
-      const audio = new Blob(this.chunks, { type: actualType })
-      const cancelled = this.cancelled
-      this.cleanupRecording()
-      if (!cancelled && audio.size > 0) void onFinished(audio, actualType)
+    this.stream = stream
+    try {
+      const mediaType = this.preferredMediaType()
+      const recorder = mediaType === ''
+        ? new MediaRecorder(stream)
+        : new MediaRecorder(stream, { mimeType: mediaType })
+      this.recorder = recorder
+      const chunks: Blob[] = []
+      recorder.ondataavailable = (event) => {
+        if (generation === this.recordingGeneration && event.data.size > 0) chunks.push(event.data)
+      }
+      recorder.onstop = () => {
+        if (generation !== this.recordingGeneration) return
+        const actualType = recorder.mimeType || mediaType || 'audio/webm'
+        const audio = new Blob(chunks, { type: actualType })
+        this.cleanupRecording()
+        if (audio.size > 0) void onFinished(audio, actualType)
+      }
+      recorder.start()
+      this.recordingTimer = window.setTimeout(
+        () => { if (generation === this.recordingGeneration) this.stopRecording() },
+        Math.max(1, this.maxRecordingSeconds) * 1000,
+      )
+    } catch (error) {
+      this.cancelRecording()
+      throw error
     }
-    this.recorder.start()
-    this.recordingTimer = window.setTimeout(
-      () => this.stopRecording(),
-      Math.max(1, this.maxRecordingSeconds) * 1000,
-    )
   }
 
   public stopRecording(): void {
     if (this.recorder?.state === 'recording') this.recorder.stop()
+    else if (this.recorder === null) this.cancelRecording()
   }
 
   public cancelRecording(): void {
-    this.cancelled = true
+    this.recordingGeneration++
     if (this.recorder?.state === 'recording') this.recorder.stop()
-    else this.cleanupRecording()
+    this.cleanupRecording()
   }
 
   public async transcribe(audio: Blob, mediaType: string, model: string): Promise<string> {
@@ -86,6 +99,7 @@ export class BrowserAudio {
     voice: string,
     onEnded: PlaybackCallback,
   ): Promise<void> {
+    if (this.destroyed) throw new DOMException('Audio destroyed', 'AbortError')
     this.stopPlayback()
     const player = new Audio(PLAYBACK_UNLOCK_AUDIO)
     this.player = player
@@ -126,6 +140,7 @@ export class BrowserAudio {
   }
 
   public async playReady(audio: Blob, onEnded: PlaybackCallback): Promise<void> {
+    if (this.destroyed) throw new DOMException('Audio destroyed', 'AbortError')
     this.stopPlayback()
     this.objectUrl = URL.createObjectURL(audio)
     const player = new Audio(this.objectUrl)
@@ -157,6 +172,7 @@ export class BrowserAudio {
   }
 
   public destroy(): void {
+    this.destroyed = true
     this.cancelRecording()
     this.stopPlayback()
   }
@@ -174,6 +190,5 @@ export class BrowserAudio {
     for (const track of this.stream?.getTracks() ?? []) track.stop()
     this.stream = null
     this.recorder = null
-    this.chunks = []
   }
 }

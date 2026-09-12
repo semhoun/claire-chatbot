@@ -10,6 +10,8 @@ use App\Job\Web\StartThreadJob;
 use App\Renderer\ChatHtmlRenderer;
 use App\Services\Auth;
 use App\Services\ChatStreamPublisher;
+use App\Services\ChatStreamSubscriber;
+use App\Services\ChatThreadLock;
 use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
@@ -47,23 +49,34 @@ final readonly class HistoryController
         // consuming events intended for the conversation being created.
         $sessionId = uniqid('sess-', true);
 
-        // Nettoyage des conversations vides de l'utilisateur
-        $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations((string) $session->get(Auth::USERID));
-
         $session->get('brain_avatar');
         // Nouveau thread
         $threadId = uniqid(UserChatHistory::CHAT_WEB, true);
-        $this->queueDispatcher->dispatch(
-            StartThreadJob::class,
-            [
-                'threadId' => $threadId,
-                'sessionId' => $sessionId,
-                'session' => $session->all(),
-            ],
-            $this->settings->get('queue.defaultQueue')
-        );
+        $userId = (string) $session->get(Auth::USERID);
+        if ($userId === '') {
+            return $response->withStatus(403);
+        }
 
-        $this->publishSnapshot($threadId, null, $sessionId);
+        $chatThreadLock = new ChatThreadLock($this->entityManager->getConnection()->getNativeConnection(), $userId, $threadId);
+        $chatGenerationState = $this->chatStreamPublisher->generationState();
+        $chatGenerationState->set($userId, $threadId, 'opening-' . $threadId, 'queued', false);
+        try {
+            $this->queueDispatcher->dispatch(
+                StartThreadJob::class,
+                [
+                    'threadId' => $threadId,
+                    'sessionId' => $sessionId,
+                    'session' => $session->all(),
+                ],
+                $this->settings->get('queue.defaultQueue')
+            );
+        } catch (\Throwable $throwable) {
+            $chatGenerationState->set($userId, $threadId, 'opening-' . $threadId, 'error', false);
+            throw $throwable;
+        }
+
+        $this->publishSnapshot($threadId, null, $sessionId, $userId);
+        $chatThreadLock->release();
 
         $response->getBody()->write(json_encode([
             'threadId' => $threadId,
@@ -131,9 +144,6 @@ final readonly class HistoryController
             return $response->withStatus(403);
         }
 
-        // Nettoyage des conversations vides de l'utilisateur
-        $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteEmptyConversations($userId);
-
         $threadId = $request->getAttribute('threadId');
         if ($threadId === null) {
             return $response->withStatus(400);
@@ -145,9 +155,9 @@ final readonly class HistoryController
             session: $session,
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
             contextWindow: $this->settings->get('llm.openai.contextWindow'),
-            threadId: $threadId
+            threadId: $threadId,
+            createIfMissing: false,
         );
-        $userChatHistory->validateMessageSequences();
 
         $messages = $userChatHistory->getFormattedMessages();
         if ($messages === []) {
@@ -156,7 +166,7 @@ final readonly class HistoryController
 
         // sessionId from request (per-tab SSE binding key)
         $sessionId = trim((string) ($request->getParsedBody()['sessionId'] ?? $request->getQueryParams()['sessionId'] ?? ''));
-        $this->publishSnapshot($threadId, $userChatHistory, $sessionId);
+        $this->publishSnapshot($threadId, $userChatHistory, $sessionId, $userId);
 
         $response->getBody()->write(json_encode([
             'threadId' => $threadId,
@@ -183,6 +193,14 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
+        try {
+            $chatThreadLock = new ChatThreadLock($this->entityManager->getConnection()->getNativeConnection(), $userId, $threadId);
+        } catch (\RuntimeException) {
+            return $response->withStatus(409);
+        }
+
+        $chatGenerationState = $this->chatStreamPublisher->generationState();
+        $chatGenerationState->set($userId, $threadId, '', 'deleted', false);
         if (! $this->entityManager->getRepository(ChatHistoryEntity::class)->deleteThread($userId, $threadId, $this->filesystem)) {
             return $response->withStatus(400);
         }
@@ -215,6 +233,16 @@ final readonly class HistoryController
             return $response->withStatus(400);
         }
 
+        try {
+            $chatThreadLock = new ChatThreadLock($this->entityManager->getConnection()->getNativeConnection(), $userId, $threadId);
+        } catch (\RuntimeException) {
+            return $response->withStatus(409);
+        }
+
+        if ($this->chatStreamPublisher->generationState()->snapshot($userId, $threadId)['responding']) {
+            return $response->withStatus(409);
+        }
+
         $history = $this->entityManager
             ->getRepository(ChatHistoryEntity::class)
             ->getCurrentUserChatHistory($session, $threadId);
@@ -228,7 +256,8 @@ final readonly class HistoryController
             session: $session,
             pdo: $this->entityManager->getConnection()->getNativeConnection(),
             contextWindow: $this->settings->get('llm.openai.contextWindow'),
-            threadId: $threadId
+            threadId: $threadId,
+            createIfMissing: false,
         );
 
         $removedMessage = $userChatHistory->removeLastExchange();
@@ -242,6 +271,7 @@ final readonly class HistoryController
             $threadId,
             $userChatHistory,
             $sessionId,
+            $userId,
             $removedMessage
         );
 
@@ -258,22 +288,27 @@ final readonly class HistoryController
         string $threadId,
         ?UserChatHistory $userChatHistory,
         string $sessionId,
+        string $userId,
         ?string $restoredMessage = null
     ): string {
-        $messages = null;
-        if ($userChatHistory instanceof \App\Brain\ChatHistory\UserChatHistory) {
-            $messages = $userChatHistory->getFormattedMessages();
-        }
-
-        $messagesHtml = $this->chatHtmlRenderer->messages($messages);
+        $snapshot = $this->chatStreamPublisher->generationState()->capture(
+            $userId,
+            $threadId,
+            function () use ($userChatHistory): array {
+                $userChatHistory?->refresh();
+                return ['html' => $this->chatHtmlRenderer->messages($userChatHistory?->getFormattedMessages())];
+            },
+        );
+        $messagesHtml = $snapshot['html'];
 
         // Use sessionId as channel if provided, otherwise fall back to threadId
         $channelId = $sessionId !== '' ? $sessionId : $threadId;
-        $this->chatStreamPublisher->publish($channelId, 'chat.snapshot', [
+        $this->chatStreamPublisher->publish(ChatStreamSubscriber::scope($userId, $channelId), 'chat.snapshot', [
             'threadId' => $threadId,
             'sessionId' => $sessionId,
             'html' => $messagesHtml,
             'restoredMessage' => $restoredMessage,
+            ...$snapshot,
         ]);
 
         return $messagesHtml;

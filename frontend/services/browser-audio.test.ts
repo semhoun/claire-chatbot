@@ -7,6 +7,84 @@ describe('BrowserAudio', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it('stops a microphone granted after destruction without creating a recorder', async () => {
+    vi.useFakeTimers()
+    let resolve!: (stream: MediaStream) => void
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn(() => new Promise<MediaStream>((done) => { resolve = done })) },
+    })
+    const recorder = vi.fn()
+    vi.stubGlobal('MediaRecorder', recorder)
+    const client = new SessionClient('', 120, 30)
+    const audio = new BrowserAudio(client, 300)
+    const finished = vi.fn()
+    const pending = audio.startRecording(finished)
+    audio.destroy()
+    const stop = vi.fn()
+    resolve({ getTracks: () => [{ stop }] } as unknown as MediaStream)
+    await pending
+    expect(stop).toHaveBeenCalledOnce()
+    expect(recorder).not.toHaveBeenCalled()
+    expect(finished).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+    await expect(audio.startRecording(finished)).rejects.toMatchObject({ name: 'AbortError' })
+    client.destroy()
+  })
+
+  it('isolates overlapping permissions and delayed recorder callbacks', async () => {
+    vi.useFakeTimers()
+    const grants: Array<(stream: MediaStream) => void> = []
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: vi.fn(() => new Promise<MediaStream>((resolve) => grants.push(resolve))) },
+    })
+    const recorders: Recorder[] = []
+    class Recorder {
+      static isTypeSupported(): boolean { return true }
+      state = 'inactive'
+      mimeType = 'audio/ogg'
+      ondataavailable: ((event: { data: Blob }) => void) | null = null
+      onstop: (() => void) | null = null
+      constructor() { recorders.push(this) }
+      start(): void { this.state = 'recording' }
+      stop(): void { this.state = 'inactive' }
+    }
+    vi.stubGlobal('MediaRecorder', Recorder)
+    const client = new SessionClient('', 120, 30)
+    const audio = new BrowserAudio(client, 1)
+    const oldFinished = vi.fn()
+    const finished = vi.fn()
+    const stops = [vi.fn(), vi.fn(), vi.fn()]
+    const stream = (index: number) => ({ getTracks: () => [{ stop: stops[index] }] }) as unknown as MediaStream
+    const first = audio.startRecording(oldFinished)
+    const second = audio.startRecording(oldFinished)
+    grants[1](stream(1))
+    await second
+    grants[0](stream(0))
+    await first
+    expect(stops[0]).toHaveBeenCalledOnce()
+    expect(recorders).toHaveLength(1)
+    const third = audio.startRecording(finished)
+    grants[2](stream(2))
+    await third
+    recorders[0].ondataavailable?.({ data: new Blob(['stale']) })
+    recorders[0].onstop?.()
+    expect(stops[2]).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(1)
+    recorders[1].ondataavailable?.({ data: new Blob(['new']) })
+    await vi.advanceTimersByTimeAsync(1000)
+    recorders[1].onstop?.()
+    expect(oldFinished).not.toHaveBeenCalled()
+    expect(finished).toHaveBeenCalledWith(expect.objectContaining({ size: 3, type: 'audio/ogg' }), 'audio/ogg')
+    expect(stops[1]).toHaveBeenCalledOnce()
+    expect(stops[2]).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+    audio.destroy()
+    client.destroy()
   })
 
   it('sends an OpenAI-compatible multipart transcription request', async () => {

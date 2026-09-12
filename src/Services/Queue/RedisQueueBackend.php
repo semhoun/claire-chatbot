@@ -4,97 +4,135 @@ declare(strict_types=1);
 
 namespace App\Services\Queue;
 
-use App\Services\RedisClient;
 use App\Services\Settings;
+use App\Services\TelegramService;
 use JsonException;
 use Ramsey\Uuid\Uuid;
 use RuntimeException;
 
-final class RedisQueueBackend implements QueueBackendInterface
+final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
 {
-    private bool $mustReconnect = false;
-
     public function __construct(
-        private readonly RedisClient $redisClient,
-        private readonly Settings $settings,
+        private QueueRedisConnection $queueRedisConnection,
+        private Settings $settings,
     ) {
     }
 
-    /**
-     * @param array<string, mixed> $payload
-     */
-    public function dispatch(
-        string $jobClass,
-        array $payload,
-        string $queue,
-    ): string {
-        if ($this->mustReconnect) {
-            $this->redisClient->reconnect();
-            $this->mustReconnect = false;
+    /** @param array<string, mixed> $payload */
+    public function dispatch(string $jobClass, array $payload, string $queue): string
+    {
+        $jobId = Uuid::uuid7()->toString();
+        $deduplicationKey = '';
+        if ($jobClass === TelegramService::class && isset($payload['update_json'])) {
+            $update = $this->deserialize((string) $payload['update_json']);
+            if (isset($update['update_id']) && is_int($update['update_id'])) {
+                $bot = hash('sha256', (string) $this->settings->get('telegram.bot_token'));
+                $deduplicationKey = $this->prefix() . 'telegram:update:' . $bot . ':' . $update['update_id'];
+            }
         }
 
-        $jobId = Uuid::uuid7()->toString();
-        $encodedPayload = $this->serialize($payload);
-
-        $jobData = [
-            'id' => $jobId,
-            'queue_name' => $queue,
-            'job_class' => $jobClass,
-            'payload' => $encodedPayload,
-        ];
-
-        $this->assertRedisResult(
-            $this->redisClient->hset($this->jobKey($jobId), $jobData, $this->settings->get('queue.expireAfter')),
-            'Unable to persist Redis queue job payload'
-        );
-        $this->assertRedisResult(
-            $this->redisClient->lpush($this->queueKey($queue), [$jobId]),
-            'Unable to enqueue Redis queue job'
-        );
-
-        return $jobId;
+        return (string) $this->queueRedisConnection->evaluate(QueueScripts::DISPATCH, [
+            $this->queueKey($queue), $this->jobKey($jobId),
+            $jobId, $queue, $jobClass, $this->serialize($payload), $deduplicationKey,
+        ], 2);
     }
 
-    public function reserveNextAvailable(
-        string $queueName,
-        int $timeout = 5,
-    ): ?QueueMessage {
-        if ($this->mustReconnect) {
-            $this->redisClient->reconnect();
-            $this->mustReconnect = false;
-        }
+    public function reserveNextAvailable(string $queueName, int $timeout = 5): ?QueueMessage
+    {
+        $deadline = microtime(true) + max(0, $timeout);
+        do {
+            $result = $this->transition($queueName, 'reserve', '', Uuid::uuid7()->toString());
+            if (is_array($result) && $result !== []) {
+                $data = [];
+                $counter = count($result);
+                for ($index = 0; $index < $counter; $index += 2) {
+                    $data[$result[$index]] = $result[$index + 1];
+                }
 
-        $queueKey = $this->queueKey($queueName);
+                // Malformed payloads stay leased and eventually reach dead-letter too.
+                return new QueueMessage(
+                    (string) $data['id'],
+                    (string) $data['job_class'],
+                    $this->deserialize((string) $data['payload']),
+                    $queueName,
+                    $data,
+                );
+            }
 
-        try {
-            $result = $this->redisClient->brpop([$queueKey], $timeout);
-
-            if ($result === null) {
+            if (microtime(true) >= $deadline) {
                 return null;
             }
-        } catch (\Throwable $throwable) {
-            $this->mustReconnect = true;
-            throw $throwable;
-        }
 
-        $jobId = $result[1];
-
-        return $this->hydrateQueueMessage($jobId);
+            usleep(100_000);
+        } while (true);
     }
 
     public function delete(QueueMessage $queueMessage): void
     {
-        $this->redisClient->del($this->jobKey($queueMessage->id));
+        if ($this->transitionMessage($queueMessage, 'ack') !== 1) {
+            throw new RuntimeException('Cannot acknowledge an expired or superseded queue reservation');
+        }
     }
 
     public function release(QueueMessage $queueMessage): void
     {
-        $this->assertRedisResult(
-            $this->redisClient->lpush($this->queueKey($queueMessage->queueName), [$queueMessage->id]),
-            'Unable to release job back to queue'
-        );
+        $this->transitionMessage($queueMessage, 'release');
     }
 
+    public function renew(QueueMessage $queueMessage): bool
+    {
+        return $this->transitionMessage($queueMessage, 'renew') === 1;
+    }
+
+    public function withLease(QueueMessage $queueMessage, callable $operation): void
+    {
+        if (! function_exists('pcntl_fork') || ! function_exists('posix_getppid')) {
+            throw new RuntimeException('Queue lease heartbeat requires pcntl and posix');
+        }
+
+        $parent = getmypid();
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            throw new RuntimeException('Unable to start queue lease heartbeat');
+        }
+
+        if ($pid === 0) {
+            pcntl_signal(SIGTERM, SIG_DFL);
+            pcntl_signal(SIGINT, SIG_DFL);
+            pcntl_async_signals(true);
+            try {
+                while (posix_getppid() === $parent) {
+                    usleep(max(100_000, (int) ($this->option('leaseSeconds', 300) * 1_000_000 / 3)));
+                    if (posix_getppid() !== $parent || ! $this->renew($queueMessage)) {
+                        break;
+                    }
+                }
+            } catch (\Throwable) {
+                // Redis recovers the reservation when renewal is no longer possible.
+            }
+
+            // Never run shutdown hooks/destructors inherited from the worker's DB connections.
+            posix_kill(getmypid(), SIGKILL);
+            exit(1);
+        }
+
+        try {
+            if (! $this->renew($queueMessage)) {
+                throw new RuntimeException('Queue reservation was lost before execution');
+            }
+
+            $operation();
+            if (! $this->renew($queueMessage)) {
+                throw new RuntimeException('Queue reservation was lost during execution');
+            }
+        } finally {
+            // SIGTERM may still have the worker's handler if the child has not been scheduled yet.
+            posix_kill($pid, SIGKILL);
+            pcntl_waitpid($pid, $status);
+        }
+    }
+
+    /** @param array<string, mixed> $payload */
     public function serialize(array $payload): string
     {
         try {
@@ -104,9 +142,7 @@ final class RedisQueueBackend implements QueueBackendInterface
         }
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    /** @return array<string, mixed> */
     public function deserialize(string $payload): array
     {
         try {
@@ -122,46 +158,43 @@ final class RedisQueueBackend implements QueueBackendInterface
         return $decoded;
     }
 
-    private function hydrateQueueMessage(string $jobId): QueueMessage
+    private function transitionMessage(QueueMessage $queueMessage, string $action): mixed
     {
-        $jobData = $this->getJobData($jobId);
-        return new QueueMessage(
-            id: $jobId,
-            jobClass: (string) ($jobData['job_class'] ?? ''),
-            payload: $this->deserialize((string) ($jobData['payload'] ?? '[]')),
-            queueName: (string) ($jobData['queue_name'] ?? $this->settings->get('queue.defaultQueue')),
-            metadata: $jobData,
+        return $this->transition(
+            $queueMessage->queueName, $action, $queueMessage->id, (string) ($queueMessage->metadata['token'] ?? ''),
         );
     }
 
-    /**
-     * @return array<string, string>
-     */
-    private function getJobData(string $jobId): array
+    private function transition(string $queue, string $action, string $id, string $token): mixed
     {
-        $jobData = $this->redisClient->hgetall($this->jobKey($jobId));
-        if (! is_array($jobData) || $jobData === []) {
-            throw new RuntimeException(sprintf('Redis queue job "%s" not found', $jobId));
-        }
-
-        return array_map(static fn (mixed $value): string => $value, $jobData);
+        $key = $this->queueKey($queue);
+        return $this->queueRedisConnection->evaluate(QueueScripts::TRANSITION, [
+            $key, $key . ':leased', $key . ':delayed', $key . ':dead',
+            $action, $this->prefix() . 'queue:job:', $id, $token,
+            $this->option('leaseSeconds', 300), $this->option('maxAttempts', 5),
+            $this->option('retryDelaySeconds', 5), $this->option('maxRetryDelaySeconds', 300),
+            $this->option('deduplicationSeconds', 604800),
+        ], 4);
     }
 
-    private function queueKey(string $queueName): string
+    private function option(string $name, int $default): int
     {
-        return $this->settings->get('redis.prefix') . 'queue:' . $queueName;
+        $options = $this->settings->get('queue');
+        return max(1, (int) ($options[$name] ?? $default));
     }
 
-    private function jobKey(string $jobId): string
+    private function prefix(): string
     {
-        return $this->settings->get('redis.prefix') . 'queue:job:' . $jobId;
+        return (string) $this->settings->get('redis.prefix');
     }
 
-    private function assertRedisResult(mixed $result, string $message): void
+    private function queueKey(string $queue): string
     {
-        if ($result === false) {
-            $this->mustReconnect = true;
-            throw new RuntimeException($message);
-        }
+        return $this->prefix() . 'queue:' . $queue;
+    }
+
+    private function jobKey(string $id): string
+    {
+        return $this->prefix() . 'queue:job:' . $id;
     }
 }

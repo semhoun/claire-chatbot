@@ -23,6 +23,31 @@ use Slim\Psr7\Factory\ResponseFactory;
 #[AllowMockObjectsWithoutExpectations]
 final class HistoryControllerTest extends TestCase
 {
+    public function testDeleteLastExchangeRejectsQueuedGenerationBeforeMutatingHistory(): void
+    {
+        $settings = new Settings(['redis' => ['prefix' => 'test:']]);
+        $session = new \App\Services\Session\InMemorySession([Auth::USERID => 'queued-user']);
+        $pdo = new \PDO('sqlite::memory:');
+        $connection = $this->createStub(\Doctrine\DBAL\Connection::class);
+        $connection->method('getNativeConnection')->willReturn($pdo);
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('getConnection')->willReturn($connection);
+        $entityManager->expects(self::never())->method('getRepository');
+        $redis = $this->createStub(\App\Services\RedisClient::class);
+        $redis->method('hgetall')->willReturn(['status' => 'queued', 'messageId' => 'pending']);
+        $publisher = new \App\Services\ChatStreamPublisher($redis,
+            new \App\Services\ChatStreamSubscriber($redis, $settings), $settings);
+        $controller = new HistoryController($this->chatRenderer($settings, $entityManager),
+            Twig::create(Settings::getAppRoot() . '/tmpl'), $entityManager, $settings, $publisher,
+            $this->createStub(\App\Services\Queue\QueueDispatcherInterface::class),
+            $this->createStub(Filesystem::class));
+        $request = new \Slim\Psr7\Factory\ServerRequestFactory()->createServerRequest('DELETE', '/history/last')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+            ->withParsedBody(['threadId' => 'thread']);
+        $response = $controller->deleteLastExchange($request, new \Slim\Psr7\Response());
+        self::assertSame(409, $response->getStatusCode());
+    }
+
     public function testDeleteLastExchangeUsesRequestedThreadInsteadOfStaleSessionThread(): void
     {
         $settings = new Settings([
@@ -76,10 +101,12 @@ final class HistoryControllerTest extends TestCase
         $entityManager->method('getRepository')->willReturn($repository);
 
         $redis = $this->createMock(\App\Services\RedisClient::class);
+        $redis->method('hgetall')->willReturn([]);
+        $redis->method('expire')->willReturn(true);
         $redis->expects($this->once())
             ->method('lpush')
             ->with(
-                'claire:sse:chat:sess-current:queue',
+                'claire:sse:chat:' . \App\Services\ChatStreamSubscriber::scope('user-1', 'sess-current') . ':queue',
                 $this->callback(static function (array $messages): bool {
                     $event = json_decode($messages[0], true);
 
@@ -161,10 +188,12 @@ final class HistoryControllerTest extends TestCase
         $entityManager->method('getConnection')->willReturn($connection);
         $connection->method('getNativeConnection')->willReturn($pdo);
         $redis = $this->createMock(\App\Services\RedisClient::class);
+        $redis->method('hgetall')->willReturn([]);
+        $redis->method('expire')->willReturn(true);
         $redis->expects($this->once())
             ->method('lpush')
             ->with(
-                'claire:sse:chat:thread-1:queue',
+                'claire:sse:chat:' . \App\Services\ChatStreamSubscriber::scope('user-1', 'thread-1') . ':queue',
                 $this->callback(static function (array $payloadArr): bool {
                     $payload = $payloadArr[0];
                     $data = json_decode($payload, true);
@@ -240,18 +269,22 @@ final class HistoryControllerTest extends TestCase
         $entityManager->method('getConnection')->willReturn($connection);
         $connection->method('getNativeConnection')->willReturn($pdo);
         $redis = $this->createMock(\App\Services\RedisClient::class);
+        $redis->method('hgetall')->willReturn(['status' => 'running', 'messageId' => 'active-1']);
+        $redis->method('expire')->willReturn(true);
         // Snapshot should be pushed to sessionId queue, not threadId
         $redis->expects($this->once())
             ->method('lpush')
             ->with(
-                'claire:sse:chat:sess-abc123:queue',
+                'claire:sse:chat:' . \App\Services\ChatStreamSubscriber::scope('user-1', 'sess-abc123') . ':queue',
                 $this->callback(static function (array $payloadArr): bool {
                     $payload = $payloadArr[0];
                     $data = json_decode($payload, true);
 
                     return is_array($data)
                         && $data['event'] === 'chat.snapshot'
-                        && $data['threadId'] === 'sess-abc123'
+                        && $data['threadId'] === 'thread-1'
+                        && $data['payload']['responding'] === true
+                        && $data['payload']['activeMessageId'] === 'active-1'
                         && $data['payload']['threadId'] === 'thread-1'
                         && $data['payload']['sessionId'] === 'sess-abc123'
                         && str_contains($data['payload']['html'], 'Bonjour');

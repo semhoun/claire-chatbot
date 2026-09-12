@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Brain\ChatHistory;
 
+use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Tools\ToolInterface;
@@ -29,7 +30,7 @@ final class MessageFormatter
                 continue;
             }
 
-            $formattedMessage['id'] = sprintf('history-message-%d', $messageIndex);
+            $formattedMessage['id'] ??= sprintf('history-message-%d', $messageIndex);
             $data[] = $formattedMessage;
             $messageIndex++;
         }
@@ -44,16 +45,14 @@ final class MessageFormatter
      */
     private function formatMessage(mixed $message, ?array $formattedMessage = null): ?array
     {
-        if ($formattedMessage === null) {
-            $formattedMessage = [
-                'message' => '',
-                'time' => $message->getMetadata('timestamp') ?? '',
-                'sent' => $message->getRole() === 'user',
-                'toolRunning' => false,
-                'toolsCall' => [],
-                'running' => false,
-            ];
-        }
+        $formattedMessage ??= [
+            'message' => '',
+            'time' => $message->getMetadata('timestamp') ?? '',
+            'sent' => $message->getRole() === 'user',
+            'toolRunning' => false,
+            'toolsCall' => [],
+            'running' => false,
+        ];
 
         if ($message instanceof ToolCallMessage || $message instanceof ToolResultMessage) {
             $tools = $this->formatTools($message);
@@ -70,6 +69,12 @@ final class MessageFormatter
         }
 
         $formattedMessage['message'] = $message->getContent();
+        $messageId = $message->getMetadata(UserChatHistory::MESSAGE_ID_METADATA);
+        if ($message instanceof AssistantMessage && is_string($messageId)
+            && preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $messageId) === 1) {
+            // Tool groups inherit the identity of their final assistant, not the tool call.
+            $formattedMessage['id'] = $messageId;
+        }
 
         return $formattedMessage;
     }

@@ -7,9 +7,13 @@ namespace App\Job\Web;
 use App\Brain\Agent;
 use App\Brain\BrainRegistry;
 use App\Renderer\ChatHtmlRenderer;
+use App\Services\Auth;
 use App\Services\ChatStreamPublisher;
+use App\Services\ChatStreamSubscriber;
+use App\Services\ChatThreadLock;
 use App\Services\Queue\QueueDoer;
 use App\Services\Session\InMemorySession;
+use Doctrine\DBAL\Connection;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use Psr\Container\ContainerInterface;
 
@@ -36,10 +40,13 @@ final class StartThreadJob implements QueueDoer
 
     private ?Agent $agent = null;
 
+    private string $userId = '';
+
     public function __construct(
         private readonly ChatHtmlRenderer $chatHtmlRenderer,
         private readonly BrainRegistry $brainRegistry,
         private readonly ChatStreamPublisher $chatStreamPublisher,
+        private readonly Connection $connection,
     ) {
     }
 
@@ -51,15 +58,64 @@ final class StartThreadJob implements QueueDoer
     /** @param array<string, mixed> $payload */
     public function handle(array $payload): void
     {
-        try {
-            $this->initContext($payload);
-            $this->startNewStream();
-        } catch (\Throwable $throwable) {
-            $this->handleChatError($throwable);
+        $this->agent = null;
+        $this->threadId = '';
+        $this->sessionId = '';
+        $this->userId = '';
+        $this->initContext($payload);
+        $chatThreadLock = new ChatThreadLock($this->connection->getNativeConnection(), $this->userId, $this->threadId);
+        $chatGenerationState = $this->chatStreamPublisher->generationState();
+        $previous = $chatGenerationState->get($this->userId, $this->threadId);
+        if (in_array($previous['status'] ?? '', ['done', 'deleted'], true)) {
+            return;
         }
+
+        $messageId = 'opening-' . $this->threadId;
+        if (($previous['messageId'] ?? $messageId) !== $messageId) {
+            throw new \RuntimeException('Superseded opening generation');
+        }
+
+        if (($previous['attempted'] ?? '0') === '1') {
+            $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'error', true);
+            $runtimeException = new \RuntimeException('Unsafe opening generation retry refused');
+            try {
+                $this->handleChatError($runtimeException);
+            } finally {
+                throw $runtimeException;
+            }
+        }
+
+        $attempted = false;
+        try {
+            $inMemorySession = new InMemorySession($payload['session']);
+            $this->agent = $this->brainRegistry->get($inMemorySession->get('brain_avatar'), $inMemorySession, $this->threadId);
+            $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'running', true);
+            $attempted = true;
+            $messagesHtml = $this->startNewStream();
+        } catch (\Throwable $throwable) {
+            try {
+                if (($chatGenerationState->get($this->userId, $this->threadId)['status'] ?? '') !== 'done') {
+                    $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'error', $attempted);
+                }
+
+                $this->handleChatError($throwable);
+            } finally {
+                throw $throwable;
+            }
+        } finally {
+            $this->agent = null;
+            $chatThreadLock->release();
+        }
+
+        $this->chatStreamPublisher->publish($this->sessionId, 'chat.snapshot', [
+            'threadId' => $this->threadId,
+            'sessionId' => $this->sessionId,
+            'html' => $messagesHtml,
+            ...$chatGenerationState->snapshot($this->userId, $this->threadId),
+        ]);
     }
 
-    public function startNewStream(): void
+    public function startNewStream(): string
     {
         $openingMessage = $this->agent->getOpeningText();
         $assistantMessage = new AssistantMessage($openingMessage)
@@ -73,11 +129,10 @@ final class StartThreadJob implements QueueDoer
         $messagesHtml = $this->chatHtmlRenderer->messages(
             $chatHistory->getFormattedMessages()
         );
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.snapshot', [
-            'threadId' => $this->threadId,
-            'sessionId' => $this->sessionId,
-            'html' => $messagesHtml,
-        ]);
+        $chatGenerationState = $this->chatStreamPublisher->generationState();
+        $chatGenerationState->set($this->userId, $this->threadId, 'opening-' . $this->threadId, 'done', true);
+
+        return $messagesHtml;
     }
 
     /** @param array<string, mixed> $payload */
@@ -94,8 +149,8 @@ final class StartThreadJob implements QueueDoer
         }
 
         $inMemorySession = new InMemorySession($payload['session']);
-        $brainAvatar = $inMemorySession->get('brain_avatar');
-        $this->agent = $this->brainRegistry->get($brainAvatar, $inMemorySession, $this->threadId);
+        $this->userId = (string) $inMemorySession->get(Auth::USERID);
+        $this->sessionId = ChatStreamSubscriber::scope($this->userId, $this->sessionId);
     }
 
     private function handleChatError(\Throwable $throwable): void
@@ -107,6 +162,7 @@ final class StartThreadJob implements QueueDoer
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.error', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
+            'messageId' => 'opening-' . $this->threadId,
             'message' => 'Impossible de démarrer la conversation.',
         ]);
     }

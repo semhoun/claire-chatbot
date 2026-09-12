@@ -19,14 +19,15 @@ final class ChatStreamSubscriberTest extends TestCase
             ],
         ]);
         $redis = $this->createMock(RedisClient::class);
+        $channel = ChatStreamSubscriber::scope('user-1', 'sess-123');
 
         $redis->expects($this->once())
             ->method('brpop')
-            ->with(['claire:sse:chat:sess-123:queue'], 15)
-            ->willReturn(['claire:sse:chat:sess-123:queue', '{"msg":"hello"}']);
+            ->with(['claire:sse:chat:' . $channel . ':queue'], 15)
+            ->willReturn(['claire:sse:chat:' . $channel . ':queue', '{"msg":"hello"}']);
 
         $subscriber = new ChatStreamSubscriber($redis, $settings);
-        $message = $subscriber->popMessage('sess-123', 15);
+        $message = $subscriber->popMessage($channel, 15);
 
         $this->assertSame('{"msg":"hello"}', $message);
     }
@@ -41,7 +42,21 @@ final class ChatStreamSubscriberTest extends TestCase
             ->willReturn(null);
 
         $subscriber = new ChatStreamSubscriber($redis, $settings);
-        $this->assertNull($subscriber->popMessage('sess-123', 15));
+        $this->assertNull($subscriber->popMessage(ChatStreamSubscriber::scope('user-1', 'sess-123'), 15));
+    }
+
+    public function testUsersCannotConsumeEachOthersSessionChannel(): void
+    {
+        self::assertNotSame(
+            ChatStreamSubscriber::scope('alice', 'same-session'),
+            ChatStreamSubscriber::scope('bob', 'same-session'),
+        );
+        self::assertNotSame(
+            ChatStreamSubscriber::scope('a:b', 'c'),
+            ChatStreamSubscriber::scope('a', 'b:c'),
+        );
+        $this->expectException(\InvalidArgumentException::class);
+        ChatStreamSubscriber::unScope('same-session');
     }
 
 }

@@ -57,6 +57,7 @@ const filesCount = ref(0)
 const ragCount = ref(0)
 const busy = ref(false)
 const responding = ref(false)
+let activeMessageId: string | null = null
 const message = ref('')
 const currentBrain = ref(props.config.currentBrain)
 const brainInfo = ref({ ...props.config.brainInfo })
@@ -75,6 +76,7 @@ const readyAudio = new Map<string, Blob>()
 const pendingAudio = new Set<string>()
 const failedAudio = new Set<string>()
 const autoPlayedAudio = new Set<string>()
+let audioThreadId = threadId.value
 const localFiles = ref<File[]>([])
 const storedFiles = ref<Array<{ id: string; name: string }>>([])
 const notification = ref<{ text: string; variant: string } | null>(null)
@@ -90,6 +92,7 @@ const lightboxUrl = ref<string | null>(null)
 let eventSource: EventSource | null = null
 let reconnectTimer: number | null = null
 let notificationTimer: number | null = null
+let destroyed = false
 
 const brainName = computed(() => {
   return props.config.brains.find((brain) => brain.slug === currentBrain.value)?.name
@@ -125,6 +128,7 @@ async function withBusy(action: () => Promise<void>): Promise<void> {
 }
 
 function notify(text: string, variant = 'success'): void {
+  if (destroyed) return
   if (notificationTimer !== null) window.clearTimeout(notificationTimer)
   notification.value = { text, variant }
   notificationTimer = window.setTimeout(() => {
@@ -181,6 +185,7 @@ async function loadRag(): Promise<void> {
 }
 
 function connectStream(): void {
+  if (destroyed) return
   eventSource?.close()
   eventSource = null
   if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
@@ -194,6 +199,7 @@ function connectStream(): void {
   url.searchParams.set('threadId', threadId.value)
   url.searchParams.set('token', token)
   eventSource = new EventSource(url)
+  const source = eventSource
   const events = [
     'chat.error',
     'chat.snapshot',
@@ -207,6 +213,7 @@ function connectStream(): void {
   ]
   for (const type of events) {
     eventSource.addEventListener(type, (event) => {
+      if (eventSource !== source) return
       try {
         handleStreamUpdate(type, JSON.parse((event as MessageEvent<string>).data) as SseUpdate)
       } catch (error) {
@@ -215,6 +222,7 @@ function connectStream(): void {
     })
   }
   eventSource.onerror = () => {
+    if (eventSource !== source) return
     eventSource?.close()
     eventSource = null
     reconnectTimer = window.setTimeout(connectStream, 5000)
@@ -225,9 +233,15 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
   const messages = messagesElement.value
   if (messages === null) return
   if (update.threadId && update.threadId !== threadId.value) return
+  if (update.sessionId && update.sessionId !== sessionId.value) return
+  if (['chat.assistant.update', 'chat.assistant.done'].includes(type)
+    && (!responding.value || (activeMessageId !== null && update.messageId !== activeMessageId))) return
+  if (['chat.error', 'chat.tool.update'].includes(type)
+    && activeMessageId !== null && update.messageId && update.messageId !== activeMessageId) return
 
   if (type === 'chat.error') {
     finishResponse()
+    notify(update.message ?? 'Une erreur est survenue.', 'error')
     const article = document.createElement('article')
     article.className = 'claire-message claire-message--received'
     const bubble = document.createElement('div')
@@ -236,49 +250,65 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     article.appendChild(bubble)
     messages.appendChild(article)
   } else if (type === 'chat.snapshot') {
-    readyAudio.clear()
-    pendingAudio.clear()
-    failedAudio.clear()
-    autoPlayedAudio.clear()
     messages.innerHTML = update.html ?? ''
+    const retainedAudioIds = audioThreadId === threadId.value
+      ? new Set(Array.from(messages.querySelectorAll<HTMLElement>('.claire-message--received[id^="claire-"]'),
+        article => article.id.slice('claire-'.length)))
+      : new Set<string>()
+    for (const cache of [readyAudio, pendingAudio, failedAudio, autoPlayedAudio]) {
+      for (const id of cache.keys()) if (!retainedAudioIds.has(id)) cache.delete(id)
+    }
+    if (playingMessageId.value !== null && !retainedAudioIds.has(playingMessageId.value)) {
+      browserAudio.stopPlayback()
+      playingMessageId.value = null
+    }
+    audioThreadId = threadId.value
     if (typeof update.restoredMessage === 'string') message.value = update.restoredMessage
-    finishResponse()
-    void nextTick(enhanceRenderedMessages)
+    if (typeof update.responding === 'boolean') {
+      responding.value = update.responding
+      activeMessageId = update.activeMessageId ?? null
+      if (!responding.value) finishResponse()
+    }
+    enhanceRenderedMessages()
   } else if (type === 'chat.assistant.start') {
     responding.value = true
+    activeMessageId = update.messageId ?? null
   } else if (type === 'chat.assistant.placeholder') {
+    if (activeMessageId !== null && update.messageId !== activeMessageId) return
+    activeMessageId = update.messageId ?? null
     const existing = findMessage(update.messageId)
     if (existing === null) {
       const loader = messages.querySelector('[data-role="claire-assistant-loader"]')
       if (loader instanceof HTMLElement) loader.outerHTML = update.html ?? ''
       else messages.insertAdjacentHTML('beforeend', update.html ?? '')
     }
-    void nextTick(() => ensureAudioAction(
+    ensureAudioAction(
       update.messageId,
       audioAutoGenerate.value,
-    ))
+    )
+    enhanceRenderedMessages(findMessage(update.messageId), false)
   } else if (type === 'chat.assistant.update') {
     const element = rootElement.value?.querySelector(`#claire-message-${CSS.escape(update.messageId ?? '')}`)
     if (element instanceof HTMLElement) element.innerHTML = update.html ?? ''
     ensureAudioAction(update.messageId, audioAutoGenerate.value)
+    enhanceRenderedMessages(findMessage(update.messageId), false)
   } else if (type === 'chat.tool.update') {
     const element = rootElement.value?.querySelector(`#claire-toolscall-${CSS.escape(update.messageId ?? '')}`)
     if (element instanceof HTMLElement) element.innerHTML = update.html ?? ''
+    if (element instanceof HTMLElement) enhanceRenderedMessages(element, false)
   } else if (type === 'chat.assistant.done') {
     finishResponse()
-    void nextTick(() => ensureAudioAction(
+    ensureAudioAction(
       update.messageId,
       audioAutoGenerate.value,
-    ))
+    )
   } else if (type === 'chat.audio.ready') {
     receiveReadyAudio(update)
   } else if (type === 'chat.audio.error' && update.messageId) {
     pendingAudio.delete(update.messageId)
     failedAudio.add(update.messageId)
     ensureAudioAction(update.messageId)
-    updateAudioActionStates()
   }
-  void nextTick(enhanceRenderedMessages)
   scrollToBottom()
 }
 
@@ -292,43 +322,45 @@ function finishResponse(): void {
     ?.querySelector('[data-role="claire-assistant-loader"]')
     ?.remove()
   responding.value = false
+  activeMessageId = null
 }
 
-function enhanceRenderedMessages(): void {
-  if (rootElement.value === null) return
-  for (const link of rootElement.value.querySelectorAll<HTMLAnchorElement>('a.claire-generated-file[href]')) {
+function enhanceRenderedMessages(scope: Element | null = rootElement.value, audioActions = true): void {
+  if (scope === null) return
+  for (const link of scope.querySelectorAll<HTMLAnchorElement>('a.claire-generated-file[href]')) {
     link.href = client.protectedUrl(link.getAttribute('href') ?? '')
   }
-  for (const image of rootElement.value.querySelectorAll<HTMLImageElement>('img.claire-generated-image')) {
+  for (const image of scope.querySelectorAll<HTMLImageElement>('img.claire-generated-image')) {
     const src = image.dataset.protectedSrc ?? image.getAttribute('src') ?? ''
     image.src = client.protectedUrl(src)
   }
-  for (const audio of rootElement.value.querySelectorAll<HTMLAudioElement>('audio.claire-generated-audio')) {
+  for (const audio of scope.querySelectorAll<HTMLAudioElement>('audio.claire-generated-audio')) {
     const src = audio.dataset.protectedSrc ?? ''
     if (src !== '' && audio.src === '') audio.src = client.protectedUrl(src)
   }
-  for (const code of rootElement.value.querySelectorAll<HTMLElement>('pre code:not(.hljs)')) {
+  for (const code of scope.querySelectorAll<HTMLElement>('pre code:not(.hljs)')) {
     hljs.highlightElement(code)
   }
+  if (!audioActions) return
   if (!audioEnabled.value) {
-    for (const action of rootElement.value.querySelectorAll('[data-audio-listen]')) action.remove()
+    for (const action of scope.querySelectorAll('[data-audio-listen]')) action.remove()
     return
   }
-  for (const article of rootElement.value.querySelectorAll<HTMLElement>(
+  for (const article of scope.querySelectorAll<HTMLElement>(
     '.claire-message--received[id^="claire-"]',
   )) {
-    ensureAudioAction(article.id.slice('claire-'.length))
+    ensureAudioAction(article.id.slice('claire-'.length), false, article)
   }
 }
 
-function ensureAudioAction(messageId?: string, autoPending = false): void {
+function ensureAudioAction(messageId?: string, autoPending = false, existingArticle?: HTMLElement): void {
   if (!audioEnabled.value || !messageId || rootElement.value === null) return
-  const article = rootElement.value.querySelector<HTMLElement>(
+  const article = existingArticle ?? rootElement.value.querySelector<HTMLElement>(
     `#claire-${CSS.escape(messageId)}`,
   )
   if (article === null || !article.classList.contains('claire-message--received')) return
   if (article.querySelector('[data-audio-listen]') !== null) {
-    updateAudioActionStates()
+    updateAudioActionStates(article)
     return
   }
   const meta = article.querySelector<HTMLElement>('.claire-message__meta')
@@ -349,11 +381,11 @@ function ensureAudioAction(messageId?: string, autoPending = false): void {
     && !failedAudio.has(messageId)) {
     pendingAudio.add(messageId)
   }
-  updateAudioActionStates()
+  updateAudioActionStates(article)
 }
 
-function updateAudioActionStates(): void {
-  for (const action of rootElement.value?.querySelectorAll<HTMLButtonElement>('[data-audio-listen]') ?? []) {
+function updateAudioActionStates(scope: Element | null = rootElement.value): void {
+  for (const action of scope?.querySelectorAll<HTMLButtonElement>('[data-audio-listen]') ?? []) {
     const messageId = action.dataset.audioMessageId ?? ''
     const active = messageId === playingMessageId.value
     const ready = readyAudio.has(messageId)
@@ -406,7 +438,6 @@ function receiveReadyAudio(update: SseUpdate): void {
     failedAudio.add(update.messageId)
   }
   ensureAudioAction(update.messageId)
-  updateAudioActionStates()
   if (audio !== null && !autoPlayedAudio.has(update.messageId)) {
     autoPlayedAudio.add(update.messageId)
     void playSpeech(update.messageId, audio)
@@ -444,6 +475,7 @@ async function submitMessage(): Promise<void> {
   const text = message.value.trim()
   if (text === '' || composerDisabled.value) return
   responding.value = true
+  activeMessageId = null
   optimisticMessage(text)
   const data = new FormData()
   data.set('message', text)
@@ -466,6 +498,7 @@ async function submitMessage(): Promise<void> {
 
 async function toggleRecording(): Promise<void> {
   if (recording.value) {
+    recording.value = false
     browserAudio.stopRecording()
     return
   }
@@ -892,7 +925,8 @@ async function changeAudioEnabled(): Promise<void> {
   await postSetting('/config/audio', { enabled: String(audioEnabled.value) })
   if (!audioEnabled.value) {
     recording.value = false
-    browserAudio.destroy()
+    browserAudio.cancelRecording()
+    browserAudio.stopPlayback()
   }
   enhanceRenderedMessages()
 }
@@ -970,8 +1004,10 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  destroyed = true
   document.removeEventListener('keydown', handleEscape)
   eventSource?.close()
+  eventSource = null
   if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
   if (notificationTimer !== null) window.clearTimeout(notificationTimer)
   browserAudio.destroy()

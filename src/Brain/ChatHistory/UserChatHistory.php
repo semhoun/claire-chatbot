@@ -9,6 +9,7 @@ use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\History\AbstractChatHistory;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\Message;
+use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
 use PDO;
@@ -30,6 +31,10 @@ class UserChatHistory extends AbstractChatHistory
 
     public const string CHAT_TELEGRAM = 'telegram';
 
+    public const string MESSAGE_ID_METADATA = 'claire_message_id';
+
+    public const string MESSAGE_ID_PATTERN = '/\A[A-Za-z][A-Za-z0-9_.:-]{0,127}\z/';
+
     protected ?string $title = null;
 
     protected ?string $summary = null;
@@ -39,11 +44,18 @@ class UserChatHistory extends AbstractChatHistory
      */
     protected array $displayHistory = [];
 
+    private string $loadedMessages = '[]';
+
+    private string $loadedDisplayMessages = '[]';
+
+    private ?string $loadedVersion = null;
+
     public function __construct(
         protected SessionInterface $session,
         protected PDO $pdo,
         protected int $contextWindow = 50000,
         protected ?string $threadId = null,
+        private readonly bool $createIfMissing = true,
     ) {
         if ($this->threadId !== null) {
             $this->load();
@@ -89,6 +101,23 @@ class UserChatHistory extends AbstractChatHistory
         return $this->displayHistory;
     }
 
+    /** Persist the Web/audio identity on the final display message, without changing LLM context. */
+    public function identifyLastAssistantMessage(string $messageId): void
+    {
+        if (preg_match(self::MESSAGE_ID_PATTERN, $messageId) !== 1) {
+            throw new \InvalidArgumentException('Invalid assistant message ID');
+        }
+
+        $index = array_key_last($this->displayHistory);
+        $message = $index === null ? null : $this->displayHistory[$index];
+        if (! $message instanceof AssistantMessage || $message instanceof ToolCallMessage) {
+            throw new \RuntimeException('Final assistant message is missing from display history');
+        }
+
+        $this->displayHistory[$index] = (clone $message)->addMetadata(self::MESSAGE_ID_METADATA, $messageId);
+        $this->persistHistories();
+    }
+
     public function getTitle(): ?string
     {
         return $this->title;
@@ -123,6 +152,11 @@ class UserChatHistory extends AbstractChatHistory
         return new MessageFormatter($this->displayHistory)->format();
     }
 
+    public function refresh(): void
+    {
+        $this->load();
+    }
+
     public function validateMessageSequences(): void
     {
         $llmMessages = $this->fixMessageSequence($this->history);
@@ -137,9 +171,12 @@ class UserChatHistory extends AbstractChatHistory
 
     protected function load(): void
     {
+        $versionColumn = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'pgsql'
+            ? ', xmin::text AS version' : '';
         $stmt = $this->pdo->prepare(
             sprintf(
-                'SELECT %s, %s, title, summary FROM %s WHERE user_id = :user_id AND thread_id = :thread_id',
+                'SELECT %s, %s, title, summary' . $versionColumn
+                    . ' FROM %s WHERE user_id = :user_id AND thread_id = :thread_id',
                 self::LLM_MESSAGES_COLUMN,
                 self::DISPLAY_MESSAGES_COLUMN,
                 self::TABLE
@@ -151,7 +188,15 @@ class UserChatHistory extends AbstractChatHistory
         ]);
 
         $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        if (empty($history)) {
+        if ($history === []) {
+            $this->history = [];
+            $this->displayHistory = [];
+            $this->title = null;
+            $this->summary = null;
+            if (! $this->createIfMissing) {
+                return;
+            }
+
             $stmt = $this->pdo->prepare(
                 sprintf(
                     'INSERT INTO %s (user_id, thread_id, %s, %s, %s) VALUES (:user_id, :thread_id, :messages, :display_messages, :display_messages_count)',
@@ -174,10 +219,14 @@ class UserChatHistory extends AbstractChatHistory
             $this->title = null;
             $this->summary = null;
 
+            $this->load();
             return;
         }
 
         $history = $history[0];
+        $this->loadedMessages = (string) $history[self::LLM_MESSAGES_COLUMN];
+        $this->loadedDisplayMessages = (string) $history[self::DISPLAY_MESSAGES_COLUMN];
+        $this->loadedVersion = $history['version'] ?? null;
 
         $this->title = isset($history['title']) ? (string) $history['title'] : null;
         $this->summary = isset($history['summary']) ? (string) $history['summary'] : null;
@@ -198,7 +247,9 @@ class UserChatHistory extends AbstractChatHistory
 
         if (($this->history[0] ?? null) instanceof AssistantMessage) {
             array_unshift($this->history, $this->openingContextMessage());
-            $this->persistHistories();
+            if ($this->createIfMissing) {
+                $this->persistHistories();
+            }
         }
     }
 
@@ -244,16 +295,9 @@ class UserChatHistory extends AbstractChatHistory
     #[\Override]
     protected function clear(): void
     {
-        $stmt = $this->pdo->prepare(
-            'DELETE FROM ' . self::TABLE . ' WHERE thread_id = :thread_id AND user_id = :user_id'
-        );
-        $stmt->execute([
-            'thread_id' => $this->threadId,
-            'user_id' => $this->session->get(Auth::USERID),
-        ]);
-
         $this->history = [];
         $this->displayHistory = [];
+        $this->persistHistories(clearMetadata: true);
         $this->title = null;
         $this->summary = null;
     }
@@ -293,18 +337,32 @@ class UserChatHistory extends AbstractChatHistory
         return null;
     }
 
-    private function persistHistories(): void
+    private function persistHistories(bool $clearMetadata = false): void
     {
+        if ($this->threadId === null) {
+            return;
+        }
+
+        $versionGuard = $this->loadedVersion !== null ? ' AND xmin::text = :version' : '';
+        $mysql = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+        $snapshotGuard = $mysql
+            ? ' AND CAST(messages AS BINARY) = CAST(:loaded_messages AS BINARY)'
+                . ' AND CAST(display_messages AS BINARY) = CAST(:loaded_display_messages AS BINARY)'
+            : ' AND messages = :loaded_messages AND display_messages = :loaded_display_messages';
         $stmt = $this->pdo->prepare(
             sprintf(
-                'UPDATE %s SET %s = :llm_messages, %s = :display_messages, %s = :display_messages_count WHERE thread_id = :thread_id AND user_id = :user_id',
+                'UPDATE %s SET %s = :llm_messages, %s = :display_messages, %s = :display_messages_count'
+                    . ($clearMetadata ? ', title = NULL, summary = NULL' : '')
+                    . ' WHERE thread_id = :thread_id AND user_id = :user_id'
+                    . $snapshotGuard
+                    . $versionGuard . ($this->loadedVersion !== null ? ' RETURNING xmin::text' : ''),
                 self::TABLE,
                 self::LLM_MESSAGES_COLUMN,
                 self::DISPLAY_MESSAGES_COLUMN,
                 self::DISPLAY_MESSAGES_COUNT_COLUMN
             )
         );
-        $stmt->execute([
+        $parameters = [
             'thread_id' => $this->threadId,
             'user_id' => $this->session->get(Auth::USERID),
             'llm_messages' => json_encode(
@@ -316,7 +374,45 @@ class UserChatHistory extends AbstractChatHistory
                 JSON_THROW_ON_ERROR
             ),
             'display_messages_count' => count($this->displayHistory),
-        ]);
+            'loaded_messages' => $this->loadedMessages,
+            'loaded_display_messages' => $this->loadedDisplayMessages,
+        ];
+        if ($this->loadedVersion !== null) {
+            $parameters['version'] = $this->loadedVersion;
+        }
+
+        $stmt->execute($parameters);
+        $matched = $stmt->rowCount() === 1;
+        if (! $matched && $mysql
+            && $parameters['llm_messages'] === $this->loadedMessages
+            && $parameters['display_messages'] === $this->loadedDisplayMessages) {
+            // MySQL counts changed rows by default. Verify a no-op using a current,
+            // locking read, not an older REPEATABLE READ transaction snapshot.
+            $check = $this->pdo->prepare(
+                'SELECT 1 FROM ' . self::TABLE . ' WHERE thread_id = :thread_id AND user_id = :user_id'
+                    . $snapshotGuard . ' AND display_messages_count = :display_messages_count'
+                    . ($clearMetadata ? ' AND title IS NULL AND summary IS NULL' : '') . ' FOR UPDATE'
+            );
+            $check->execute([
+                'thread_id' => $this->threadId,
+                'user_id' => $parameters['user_id'],
+                'loaded_messages' => $this->loadedMessages,
+                'loaded_display_messages' => $this->loadedDisplayMessages,
+                'display_messages_count' => $parameters['display_messages_count'],
+            ]);
+            $matched = $check->fetchColumn() !== false;
+        }
+
+        if (! $matched) {
+            throw new \RuntimeException('Chat history changed or was deleted; refusing stale snapshot');
+        }
+
+        if ($this->loadedVersion !== null) {
+            $this->loadedVersion = (string) $stmt->fetchColumn();
+        }
+
+        $this->loadedMessages = $parameters['llm_messages'];
+        $this->loadedDisplayMessages = $parameters['display_messages'];
     }
 
     private function openingContextMessage(): UserMessage

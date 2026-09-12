@@ -64,11 +64,16 @@ final class OidcClient
 
     public function getAuthorizationUrl(SessionInterface $session): string
     {
+        if (parse_url($this->redirectUri, PHP_URL_SCHEME) !== 'https') {
+            throw new \RuntimeException('Browser OIDC requires an HTTPS callback, including in development.');
+        }
+
         $options = [];
         $options['scope'] = $this->scopes;
         $authUrl = $this->genericProvider->getAuthorizationUrl($options);
         $state = $this->genericProvider->getState();
         $session->set('oidc_state', $state);
+        $session->set('oidc_state_expires', time() + OidcTransaction::TTL);
         return $authUrl;
     }
 
@@ -385,14 +390,14 @@ final class OidcClient
      */
     private function validateCallback(SessionInterface $session, array $queryParams): ?array
     {
-        if (! isset($queryParams['state'])) {
-            return ['logged' => false];
-        }
-
-        $expectedState = (string) $session->get('oidc_state', '');
-        // Header-only session can be unavailable on browser redirect callbacks.
-        // If we still have a stored state, enforce strict match.
-        if ($expectedState !== '' && $expectedState !== (string) $queryParams['state']) {
+        $expectedState = $session->get('oidc_state');
+        $expires = $session->get('oidc_state_expires');
+        $session->delete('oidc_state');
+        $session->delete('oidc_state_expires');
+        if (! is_string($expectedState) || $expectedState === ''
+            || ! is_int($expires) || $expires <= time()
+            || ! is_string($queryParams['state'] ?? null)
+            || ! hash_equals($expectedState, $queryParams['state'])) {
             return ['logged' => false];
         }
 
@@ -404,7 +409,7 @@ final class OidcClient
             ];
         }
 
-        if (! isset($queryParams['code'])) {
+        if (! is_string($queryParams['code'] ?? null) || $queryParams['code'] === '') {
             return ['logged' => false];
         }
 

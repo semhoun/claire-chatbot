@@ -49,6 +49,8 @@ final class TelegramSession implements SessionInterface
     public function load(string $telegramId): void
     {
         $this->clear();
+        $this->loaded = false;
+        $this->telegramSessionEntity = null;
         $this->telegramId = $telegramId;
 
         $telegramSessionRepository = $this->getRepository();
@@ -75,12 +77,11 @@ final class TelegramSession implements SessionInterface
 
         $storage = $this->getPersistedStorage();
 
-        if ($storage === $this->originalStorage) {
-            return;
+        if ($storage !== $this->originalStorage) {
+            $this->telegramSessionEntity->setSessionData($storage);
         }
 
-        $this->telegramSessionEntity->setSessionData($storage);
-
+        // User settings may have changed even when session data is unchanged.
         $this->entityManager->flush();
         $this->originalStorage = $storage;
     }

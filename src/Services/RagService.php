@@ -23,6 +23,7 @@ final readonly class RagService implements RagServiceInterface
         private EmbeddingsProviderInterface $embeddingsProvider,
         private Settings $settings,
         private Logger $logger,
+        private RagUrlFetcher $ragUrlFetcher,
     ) {
     }
 
@@ -125,7 +126,7 @@ final readonly class RagService implements RagServiceInterface
 
         try {
             while (($line = fgets($handle)) !== false) {
-                $line = trim((string) $line);
+                $line = trim($line);
                 if ($line === '') {
                     continue;
                 }
@@ -253,17 +254,6 @@ final readonly class RagService implements RagServiceInterface
 
     private function fetchUrlContent(string $url): string
     {
-        $context = stream_context_create([
-            'http' => [
-                'timeout' => 30,
-                'user_agent' => 'ClaireBot/1.0',
-                'follow_location' => 1,
-                'max_redirects' => 3,
-            ],
-        ]);
-
-        $content = @file_get_contents($url, false, $context);
-
-        return is_string($content) ? trim($content) : '';
+        return $this->ragUrlFetcher->fetch($url);
     }
 }

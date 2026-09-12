@@ -6,11 +6,15 @@ namespace App\Job\Web;
 
 use App\Brain\Agent;
 use App\Brain\BrainRegistry;
+use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Summary;
 use App\Renderer\ChatHtmlRenderer;
 use App\Services\Audio\AudioServiceInterface;
+use App\Services\Auth;
 use App\Services\ChatAudioPublisher;
 use App\Services\ChatStreamPublisher;
+use App\Services\ChatStreamSubscriber;
+use App\Services\ChatThreadLock;
 use App\Services\Queue\QueueDoer;
 use App\Services\Session\InMemorySession;
 use App\Services\Settings;
@@ -46,13 +50,15 @@ final class NewMessageJob implements QueueDoer
 
     private int $nbPublishedChunks = 0;
 
-    private string $userMessage;
+    private string $userMessage = '';
 
-    private string $threadId;
+    private string $threadId = '';
 
-    private string $sessionId;
+    private string $sessionId = '';
 
-    private string $messageId;
+    private string $messageId = '';
+
+    private string $userId = '';
 
     private InMemorySession $inMemorySession;
 
@@ -83,12 +89,82 @@ final class NewMessageJob implements QueueDoer
     /** @param array<string, mixed> $payload */
     public function handle(array $payload): void
     {
+        $this->streamedText = '';
+        $this->toolsCall = [];
+        $this->nbPublishedChunks = 0;
+        $this->attachments = null;
+        $this->agent = null;
+        $this->userMessage = '';
+        $this->threadId = '';
+        $this->sessionId = '';
+        $this->messageId = '';
+        $this->userId = '';
+        unset($this->inMemorySession);
+        $this->initContext($payload);
+        $chatThreadLock = new ChatThreadLock($this->connection->getNativeConnection(), $this->userId, $this->threadId);
+        $chatGenerationState = $this->chatStreamPublisher->generationState();
+        $previous = $chatGenerationState->get($this->userId, $this->threadId);
+        if (($previous['status'] ?? '') === 'deleted'
+            || (($previous['messageId'] ?? '') === $this->messageId && ($previous['status'] ?? '') === 'done')) {
+            return;
+        }
+
+        if (($previous['messageId'] ?? $this->messageId) !== $this->messageId) {
+            throw new \RuntimeException('Superseded chat generation');
+        }
+
+        if (($previous['attempted'] ?? '0') === '1') {
+            $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'error', true);
+            $runtimeException = new \RuntimeException('Unsafe chat retry refused: agent may already have executed tools');
+            try {
+                $this->handleChatError($runtimeException);
+            } finally {
+                throw $runtimeException;
+            }
+        }
+
+        $attempted = false;
         try {
-            $this->initContext($payload);
-            $this->processChatStream();
-            $this->manageSummary();
+            $this->agent = $this->brainRegistry->get(
+                $this->inMemorySession->get('brain_avatar'),
+                $this->inMemorySession,
+                $this->threadId
+            );
+            $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'running', false);
+            $this->publishStartMessages();
+            // Persist the fence BEFORE entering agent code, including middleware and tool execution.
+            $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'running', true);
+            $attempted = true;
+            $responseText = $this->processChatStream();
+            try {
+                $this->manageSummary();
+            } catch (\Throwable $throwable) {
+                $this->logger->error('Chat summary failed after successful generation', ['exception' => $throwable]);
+            }
+
+            $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'done', true);
         } catch (\Throwable $throwable) {
-            $this->handleChatError($throwable);
+            try {
+                $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'error', $attempted);
+                $this->handleChatError($throwable);
+            } catch (\Throwable $reportError) {
+                $this->logger->error('Cannot report chat failure', ['exception' => $reportError]);
+            }
+
+            throw $throwable;
+        } finally {
+            $this->agent = null;
+            $chatThreadLock->release();
+        }
+
+        // Success is durable and the mutation lock is released before notifying clients.
+        // A delivery failure must not turn a completed generation into a retryable one.
+        $this->publishContent($responseText);
+        $this->publishDoneMessages();
+        try {
+            $this->publishAudio($responseText);
+        } catch (\Throwable $throwable) {
+            $this->logger->error('Chat audio failed after successful generation', ['exception' => $throwable]);
         }
     }
 
@@ -109,7 +185,14 @@ final class NewMessageJob implements QueueDoer
      */
     private function initContext(array $payload): void
     {
-        $this->messageId = $payload['messageId'] ?? uniqid('assistant-message-', true);
+        $this->messageId = (string) ($payload['messageId'] ?? '');
+        if ($this->messageId === '') {
+            throw new \InvalidArgumentException('Stable message ID is required');
+        }
+
+        if (preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $this->messageId) !== 1) {
+            throw new \InvalidArgumentException('Invalid assistant message ID');
+        }
 
         $this->userMessage = trim((string) ($payload['message'] ?? ''));
         if ($this->userMessage === '') {
@@ -127,19 +210,16 @@ final class NewMessageJob implements QueueDoer
         }
 
         $this->inMemorySession = new InMemorySession($payload['session']);
+        $this->userId = (string) $this->inMemorySession->get(Auth::USERID);
+        $this->sessionId = ChatStreamSubscriber::scope($this->userId, $this->sessionId);
 
-        $brainAvatar = $this->inMemorySession->get('brain_avatar');
-        $this->agent = $this->brainRegistry->get($brainAvatar, $this->inMemorySession, $this->threadId);
-
-        if (! empty($payload['attachments'])) {
+        if (is_array($payload['attachments'] ?? null)) {
             $this->attachments = array_merge($payload['attachments']['uploadedFiles'] ?? [], $payload['attachments']['fileIds'] ?? []);
         }
     }
 
-    private function processChatStream(): void
+    private function processChatStream(): string
     {
-        $this->publishStartMessages();
-
         $userMessage = new UserMessage($this->userMessage);
         $userMessage->addMetadata('timestamp', new DateTimeImmutable()->format(DateTimeInterface::ATOM));
         $this->addAttachments($userMessage);
@@ -156,9 +236,18 @@ final class NewMessageJob implements QueueDoer
         $responseText = $finalText !== '' && $finalText !== null
             ? $finalText
             : $this->streamedText;
-        $this->publishContent($responseText);
+        $chatHistory = $this->agent->getChatHistory();
+        if (! $chatHistory instanceof UserChatHistory) {
+            throw new \RuntimeException('Persistent chat history is required for Web messages');
+        }
 
-        $this->publishDoneMessages();
+        $chatHistory->identifyLastAssistantMessage($this->messageId);
+
+        return $responseText;
+    }
+
+    private function publishAudio(string $responseText): void
+    {
         if ($this->inMemorySession->get(
             AudioServiceInterface::AUTO_GENERATE_SESSION_KEY,
             false,

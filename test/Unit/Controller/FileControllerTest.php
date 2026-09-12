@@ -162,7 +162,7 @@ final class FileControllerTest extends TestCase
         $uploadedFile->method('getSize')->willReturn(123);
         $uploadedFile->method('getStream')->willReturn($stream);
 
-        $stream->expects($this->once())->method('rewind');
+        $stream->expects($this->exactly(2))->method('rewind');
         $stream->method('getContents')->willReturn('file content');
 
         $request = $this->createRequestWithSession(['file' => $uploadedFile]);
@@ -258,8 +258,9 @@ final class FileControllerTest extends TestCase
         $response = $this->controller->serve($request, $this->responseFactory->createResponse());
 
         $this->assertSame(200, $response->getStatusCode());
-        $this->assertSame('application/pdf', $response->getHeaderLine('Content-Type'));
-        $this->assertStringContainsString('inline; filename="mon-rapport.pdf"', $response->getHeaderLine('Content-Disposition'));
+        $this->assertSame('application/octet-stream', $response->getHeaderLine('Content-Type'));
+        $this->assertStringContainsString('attachment; filename="mon-rapport.pdf"', $response->getHeaderLine('Content-Disposition'));
+        $this->assertSame("sandbox; default-src 'none'", $response->getHeaderLine('Content-Security-Policy'));
     }
 
     public function testUploadRagSavesFileAndAddsToVectorStore(): void
@@ -278,7 +279,7 @@ final class FileControllerTest extends TestCase
         $uploadedFile->method('getSize')->willReturn(123);
         $uploadedFile->method('getStream')->willReturn($stream);
 
-        $stream->expects($this->once())->method('rewind');
+        $stream->expects($this->exactly(2))->method('rewind');
         $stream->method('getContents')
             ->willReturn('file content. very long content to split.');
 
@@ -294,6 +295,62 @@ final class FileControllerTest extends TestCase
         );
 
         $this->assertSame(201, $result->getStatusCode());
+    }
+
+    public static function svgUploads(): iterable
+    {
+        yield ['evil.SVG', 'text/plain', 'plain'];
+        yield ['evil.svgz', 'application/gzip', 'plain'];
+        yield ['evil.txt', 'image/svg+xml', 'plain'];
+        yield ['evil.txt', 'text/plain', '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'];
+        yield ['evil.png', 'image/png', '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('svgUploads')]
+    public function testRejectsSvgInBothUploads(string $name, string $mime, string $content): void
+    {
+        $this->session->method('get')->with(Auth::USERID)->willReturn('user-123');
+        $upload = new \Slim\Psr7\UploadedFile(
+            \GuzzleHttp\Psr7\Utils::streamFor($content), $name, $mime, strlen($content), UPLOAD_ERR_OK
+        );
+        $this->filesystem->expects($this->never())->method('write');
+        $this->entityManager->expects($this->never())->method('persist');
+        $this->ragService->expects($this->never())->method('createFromFile');
+        foreach (['upload', 'uploadRag'] as $method) {
+            $result = $this->controller->$method(
+                $this->createRequestWithSession(['file' => $upload]), $this->responseFactory->createResponse()
+            );
+            self::assertSame(400, $result->getStatusCode());
+        }
+    }
+
+    public static function activeFiles(): iterable
+    {
+        yield ['old.svg', 'image/svg+xml'];
+        yield ['old.SVG', 'image/png'];
+        yield ['old.html', 'text/html'];
+        yield ['old.xml', 'application/xml'];
+        yield ['old.xhtml', 'application/xhtml+xml'];
+        yield ['old.js', 'application/javascript'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('activeFiles')]
+    public function testActiveFilesAreSandboxedDownloads(string $name, string $mime): void
+    {
+        $this->session->method('get')->with(Auth::USERID)->willReturn('user-123');
+        $file = new File();
+        $file->setFilename($name);
+        $file->setFilePath('uploads/' . $name);
+        $this->fileRepository = $this->createMock(\App\Repository\FileRepository::class);
+        $this->fileRepository->method('findOneBy')->willReturn($file);
+        $this->filesystem->method('fileExists')->willReturn(true);
+        $this->filesystem->method('mimeType')->willReturn($mime);
+        $this->filesystem->method('read')->willReturn('<svg onload="alert(1)"/>');
+        $response = $this->controller->serve($this->createRequestWithSession(), $this->responseFactory->createResponse());
+        self::assertSame('application/octet-stream', $response->getHeaderLine('Content-Type'));
+        self::assertStringStartsWith('attachment;', $response->getHeaderLine('Content-Disposition'));
+        self::assertSame('nosniff', $response->getHeaderLine('X-Content-Type-Options'));
+        self::assertSame("sandbox; default-src 'none'", $response->getHeaderLine('Content-Security-Policy'));
     }
 
     private function createRequestWithSession(

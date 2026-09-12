@@ -6,6 +6,7 @@ namespace App\Test\Unit\Services;
 
 use App\Enums\TelegramAction;
 use App\Services\TelegramService;
+use App\Services\TelegramMarkdown;
 use Phptg\BotApi\TelegramBotApi;
 use Phptg\BotApi\Transport\ApiResponse;
 use Phptg\BotApi\Transport\TransportInterface;
@@ -17,6 +18,19 @@ use ReflectionProperty;
 
 final class TelegramServiceTest extends TestCase
 {
+    public function testTelegramSendFailureIsPropagatedToCaller(): void
+    {
+        $transport = $this->createMock(TransportInterface::class);
+        $transport->expects(self::once())->method('post')->willReturn(
+            new ApiResponse(200, '{"ok":false,"error_code":429,"description":"Too Many Requests"}'),
+        );
+        $service = $this->makeService($transport);
+        new ReflectionProperty($service, 'telegramMarkdown')->setValue($service, new TelegramMarkdown());
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Telegram rejected a message chunk');
+        $service->sendMessage(42, 'Hello');
+    }
+
     public function testEveryChatActionIsSentToTelegram(): void
     {
         $requests = [];

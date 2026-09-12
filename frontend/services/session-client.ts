@@ -47,6 +47,9 @@ export class SessionClient {
   private session = loadToken(SESSION_KEY)
   private miniToken = loadToken(MINI_TOKEN_KEY)
   private refreshTimer: number | null = null
+  private generation = 0
+  private destroyed = false
+  private readonly requests = new Set<AbortController>()
 
   public constructor(
     private readonly baseUrl: string,
@@ -55,6 +58,7 @@ export class SessionClient {
   ) {}
 
   public initialize(sessionToken?: string, miniToken?: string): void {
+    if (this.destroyed) return
     if (sessionToken) this.setToken(SESSION_KEY, sessionToken)
     if (miniToken) this.setToken(MINI_TOKEN_KEY, miniToken)
     this.session = loadToken(SESSION_KEY)
@@ -63,15 +67,31 @@ export class SessionClient {
   }
 
   public async request(path: string, init: RequestInit = {}): Promise<Response> {
-    const headers = new Headers(init.headers)
-    const token = this.getSessionToken()
-    if (token !== null) headers.set(AUTH_HEADER, token)
-    const response = await window.fetch(this.absolute(path), { ...init, headers })
-    this.captureTokens(response)
-    return response
+    if (this.destroyed) throw new DOMException('Session destroyed', 'AbortError')
+    const generation = this.generation
+    const controller = new AbortController()
+    const abort = () => controller.abort(init.signal?.reason)
+    if (init.signal?.aborted) abort()
+    else init.signal?.addEventListener('abort', abort, { once: true })
+    this.requests.add(controller)
+    try {
+      const headers = new Headers(init.headers)
+      const token = this.getSessionToken()
+      if (token !== null) headers.set(AUTH_HEADER, token)
+      controller.signal.throwIfAborted()
+      const response = await window.fetch(this.absolute(path), { ...init, headers, signal: controller.signal })
+      controller.signal.throwIfAborted()
+      if (generation !== this.generation) throw new DOMException('Session invalidated', 'AbortError')
+      this.captureTokens(response)
+      return response
+    } finally {
+      this.requests.delete(controller)
+      init.signal?.removeEventListener('abort', abort)
+    }
   }
 
   public getMiniToken(): string | null {
+    if (this.destroyed) return null
     this.miniToken = loadToken(MINI_TOKEN_KEY)
     return this.miniToken?.token ?? null
   }
@@ -86,8 +106,7 @@ export class SessionClient {
   }
 
   public clear(): void {
-    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer)
-    this.refreshTimer = null
+    this.invalidate()
     this.session = null
     this.miniToken = null
     sessionStorage.removeItem(SESSION_KEY)
@@ -95,6 +114,16 @@ export class SessionClient {
   }
 
   public destroy(): void {
+    this.destroyed = true
+    this.invalidate()
+    this.session = null
+    this.miniToken = null
+  }
+
+  private invalidate(): void {
+    this.generation++
+    for (const controller of this.requests) controller.abort()
+    this.requests.clear()
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer)
     this.refreshTimer = null
   }
@@ -127,6 +156,8 @@ export class SessionClient {
 
   private scheduleRefresh(): void {
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer)
+    this.refreshTimer = null
+    if (this.destroyed) return
     const expiresAt = this.session?.expiresAt
     if (expiresAt === undefined) return
     const delay = Math.max(
@@ -137,12 +168,15 @@ export class SessionClient {
   }
 
   private async refresh(): Promise<void> {
+    const generation = this.generation
+    this.refreshTimer = null
     try {
       const response = await this.request('/auth/refresh', {
         headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       })
-      if (response.status === 401 || response.status === 403) this.clear()
+      if (generation === this.generation && (response.status === 401 || response.status === 403)) this.clear()
     } catch {
+      if (this.destroyed || generation !== this.generation || this.refreshTimer !== null) return
       this.refreshTimer = window.setTimeout(
         () => void this.refresh(),
         this.refreshMinInterval * 1000,

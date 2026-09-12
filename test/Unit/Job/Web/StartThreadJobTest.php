@@ -88,6 +88,20 @@ final class StartThreadJobTest extends TestCase
         $container->method('get')->with(UserChatHistory::class)->willReturn($userChatHistory);
         $brainRegistry = new BrainRegistry($settings, $container);
         $redis = $this->createMock(RedisClient::class);
+        $redis->method('hgetall')->willReturn([]);
+        $redis->method('hset')->willReturn(1);
+        $redis->expects(self::once())->method('lpush')->with(
+            self::anything(),
+            self::callback(static function (array $messages) use ($pdo): bool {
+                $lock = new \App\Services\ChatThreadLock($pdo, 'user-1', 'web-thread-1');
+                $lock->release();
+                $event = json_decode($messages[0], true, flags: JSON_THROW_ON_ERROR);
+                return $event['event'] === 'chat.snapshot'
+                    && $event['payload']['responding'] === false
+                    && $event['payload']['activeMessageId'] === null;
+            }),
+        )->willReturn(1);
+        $redis->method('expire')->willReturn(true);
         $chatStreamPublisher = new ChatStreamPublisher(
             $redis,
             new ChatStreamSubscriber($redis, $settings),
@@ -99,7 +113,9 @@ final class StartThreadJobTest extends TestCase
             new Markdown(),
             new GeneratedFileProcessor($settings, $entityManager)
         );
-        $startThreadJob = new StartThreadJob($chatHtmlRenderer, $brainRegistry, $chatStreamPublisher);
+        $connection = $this->createStub(\Doctrine\DBAL\Connection::class);
+        $connection->method('getNativeConnection')->willReturn($pdo);
+        $startThreadJob = new StartThreadJob($chatHtmlRenderer, $brainRegistry, $chatStreamPublisher, $connection);
         $startThreadJob->handle([
             'threadId' => 'web-thread-1',
             'sessionId' => 'session-1',

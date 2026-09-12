@@ -8,14 +8,13 @@ use App\Services\Settings;
 return [
     'upload' => [
         // String used directly in input[type=file] accept="..."
-        'acceptedExt' => 'image/*,.pdf,.doc,.docx,.png,.jpg,.jpeg,.json,.txt,.csv,.md',
+        'acceptedExt' => '.gif,.webp,.pdf,.doc,.docx,.png,.jpg,.jpeg,.json,.txt,.csv,.md',
         'path' => 'uploads',
         'allowed_mime_types' => [
             'image/jpeg',
             'image/png',
             'image/gif',
             'image/webp',
-            'image/svg+xml',
             'application/pdf',
             'text/plain',
             'text/markdown',
@@ -30,6 +29,7 @@ return [
             'application/zip',
         ],
         'forbidden_extensions' => [
+            'svg', 'svgz',
             'php', 'phtml', 'php3', 'php4', 'php5', 'phps', 'phar',
             'sh', 'bash', 'exe', 'bin', 'js', 'vbs', 'pl', 'py',
         ],

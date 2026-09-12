@@ -66,6 +66,8 @@ export interface ClaireBootstrap {
 }
 
 export interface SseUpdate {
+  responding?: boolean
+  activeMessageId?: string | null
   audioData?: string
   html?: string
   message?: string

@@ -17,7 +17,7 @@ final class PdfGeneratorToolTest extends TestCase
     public function testInvokeReturnsErrorWhenDisabled(): void
     {
         $settings = new Settings(['tools' => ['pdf' => ['enabled' => false, 'defaultFormat' => 'html', 'defaultPageSize' => 'A4']]]);
-        $session = $this->createMock(SessionInterface::class);
+        $session = $this->createStub(SessionInterface::class);
         $service = $this->createPdfGeneratorService($settings);
 
         $tool = new PdfGeneratorTool($service, $settings, $session, 'thread-123');
@@ -32,7 +32,7 @@ final class PdfGeneratorToolTest extends TestCase
     public function testInvokeReturnsErrorWhenUserNotFound(): void
     {
         $settings = new Settings(['tools' => ['pdf' => ['enabled' => true, 'defaultFormat' => 'html', 'defaultPageSize' => 'A4']]]);
-        $session = $this->createMock(SessionInterface::class);
+        $session = $this->createStub(SessionInterface::class);
         $session->method('get')->willReturnMap([
             ['threadId', null],
         ]);
@@ -60,7 +60,7 @@ final class PdfGeneratorToolTest extends TestCase
     public function testToolPropertiesIncludeContent(): void
     {
         $settings = new Settings(['tools' => ['pdf' => ['enabled' => false, 'defaultFormat' => 'html', 'defaultPageSize' => 'A4']]]);
-        $session = $this->createMock(SessionInterface::class);
+        $session = $this->createStub(SessionInterface::class);
         $service = $this->createPdfGeneratorService($settings);
 
         $tool = new PdfGeneratorTool($service, $settings, $session, 'thread-123');
@@ -78,10 +78,9 @@ final class PdfGeneratorToolTest extends TestCase
 
     private function createPdfGeneratorService(Settings $settings): \App\Services\PdfGeneratorService
     {
-        $filesystem = $this->createMock(\League\Flysystem\Filesystem::class);
-        $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $chatHistoryRepository = $this->createMock(\App\Repository\ChatHistoryRepository::class);
-        $markdown = $this->createMock(\App\Services\Markdown::class);
+        $filesystem = $this->createStub(\League\Flysystem\Filesystem::class);
+        $entityManager = $this->createStub(\Doctrine\ORM\EntityManagerInterface::class);
+        $markdown = $this->createStub(\App\Services\Markdown::class);
 
         return new \App\Services\PdfGeneratorService(
             $settings,

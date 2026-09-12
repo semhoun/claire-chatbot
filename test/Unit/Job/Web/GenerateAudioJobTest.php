@@ -32,7 +32,13 @@ final class GenerateAudioJobTest extends TestCase
             'sse' => ['queue_ttl' => 60],
         ]);
         $redis = $this->createMock(RedisClient::class);
-        $redis->expects(self::once())->method('lpush');
+        $redis->expects(self::once())->method('lpush')
+            ->with('claire:sse:chat:' . ChatStreamSubscriber::scope('user-1', 'session-1') . ':queue',
+                self::callback(static function (array $events): bool {
+                    $event = json_decode($events[0], true, flags: JSON_THROW_ON_ERROR);
+                    return $event['payload']['sessionId'] === 'session-1';
+                }))
+            ->willReturn(1);
         $redis->method('expire')->willReturn(true);
         $chatAudioPublisher = new ChatAudioPublisher(
             $audioService,
@@ -50,6 +56,7 @@ final class GenerateAudioJobTest extends TestCase
             'messageId' => 'message-1',
             'text' => 'Bonjour',
             'session' => [
+                \App\Services\Auth::USERID => 'user-1',
                 AudioServiceInterface::ENABLED_SESSION_KEY => true,
                 AudioServiceInterface::VOICE_SESSION_KEY => 'voice-1',
             ],

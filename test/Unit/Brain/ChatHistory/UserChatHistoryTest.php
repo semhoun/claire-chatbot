@@ -8,7 +8,10 @@ use App\Brain\ChatHistory\UserChatHistory;
 use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
+use NeuronAI\Chat\Messages\ToolCallMessage;
+use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
+use NeuronAI\Tools\Tool;
 use PDO;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
@@ -16,6 +19,86 @@ use PHPUnit\Framework\TestCase;
 #[AllowMockObjectsWithoutExpectations]
 final class UserChatHistoryTest extends TestCase
 {
+    public function testAssistantIdentitySurvivesRoundTripAndToolGroupingWithoutChangingLlmContext(): void
+    {
+        [$history, $pdo, $session] = $this->history();
+        $tool = new Tool('lookup')->setCallId('call-1')->setResult('Tool result');
+        $history->addMessage(new UserMessage('Question'));
+        $history->addMessage(new ToolCallMessage(null, [$tool]));
+        $history->addMessage(new ToolResultMessage([$tool]));
+        $history->addMessage(new AssistantMessage('Final answer'));
+        $llmBefore = $pdo->query('SELECT messages FROM chat_history')->fetchColumn();
+        $history->identifyLastAssistantMessage('assistant-message-roundtrip');
+        self::assertSame($llmBefore, $pdo->query('SELECT messages FROM chat_history')->fetchColumn());
+        $fresh = new UserChatHistory($session, $pdo, threadId: 'thread-1');
+        self::assertSame('assistant-message-roundtrip', $fresh->getDisplayMessages()[3]
+            ->getMetadata(UserChatHistory::MESSAGE_ID_METADATA));
+        self::assertSame('assistant-message-roundtrip', $fresh->getFormattedMessages()[1]['id']);
+        self::assertSame('Tool result', $fresh->getFormattedMessages()[1]['toolsCall'][0]['result']);
+        $fresh->addMessage(new UserMessage('Next question'));
+        $fresh->addMessage(new AssistantMessage('Next answer'));
+        $fresh->identifyLastAssistantMessage('assistant-message-next');
+        $reloaded = new UserChatHistory($session, $pdo, threadId: 'thread-1');
+        self::assertSame(['history-message-0', 'assistant-message-roundtrip', 'history-message-2',
+            'assistant-message-next'], array_column($reloaded->getFormattedMessages(), 'id'));
+    }
+
+    public function testAssistantIdentityWriteRejectsStaleHistory(): void
+    {
+        [$history, $pdo, $session] = $this->history();
+        $history->addMessage(new UserMessage('Question'));
+        $history->addMessage(new AssistantMessage('Answer'));
+        $stale = new UserChatHistory($session, $pdo, threadId: 'thread-1');
+        $history->removeLastExchange();
+        $this->expectExceptionMessage('refusing stale snapshot');
+        $stale->identifyLastAssistantMessage('assistant-message-late');
+    }
+
+    public function testToolCallCannotBeIdentifiedAsTheFinalAssistant(): void
+    {
+        [$history] = $this->history();
+        $history->addMessage(new UserMessage('Question'));
+        $history->addMessage(new ToolCallMessage(null, []));
+        $this->expectExceptionMessage('Final assistant message is missing');
+        $history->identifyLastAssistantMessage('assistant-message-late');
+    }
+
+    public function testStaleSnapshotCannotOverwriteAnotherWriter(): void
+    {
+        [$first, $pdo, $session] = $this->history();
+        $stale = new UserChatHistory($session, $pdo, threadId: 'thread-1');
+        $first->addMessage(new UserMessage('Concurrent message'));
+        try {
+            $stale->replaceMessages([new UserMessage('Stale replacement')]);
+            self::fail('Stale writer was accepted');
+        } catch (\RuntimeException $exception) {
+            self::assertStringContainsString('refusing stale snapshot', $exception->getMessage());
+        }
+        $fresh = new UserChatHistory($session, $pdo, threadId: 'thread-1');
+        self::assertSame('Concurrent message', $fresh->getMessages()[0]->getContent());
+    }
+
+    public function testStaleWriterCannotResurrectDeletedExchange(): void
+    {
+        [$history, $pdo, $session] = $this->history();
+        $history->addMessage(new UserMessage('Remove me'));
+        $stale = new UserChatHistory($session, $pdo, threadId: 'thread-1');
+        $history->removeLastExchange();
+        $this->expectException(\RuntimeException::class);
+        $stale->addMessage(new AssistantMessage('Late answer'));
+    }
+
+    public function testDeletedThreadIsNotRecreatedByReadOrStaleWrite(): void
+    {
+        [$history, $pdo, $session] = $this->history();
+        $pdo->exec('DELETE FROM chat_history');
+        $read = new UserChatHistory($session, $pdo, threadId: 'thread-1', createIfMissing: false);
+        self::assertSame([], $read->getFormattedMessages());
+        self::assertSame(0, (int) $pdo->query('SELECT COUNT(*) FROM chat_history')->fetchColumn());
+        $this->expectException(\RuntimeException::class);
+        $history->addMessage(new UserMessage('Late message'));
+    }
+
     public function testInitializeWithOpeningMessageAcceptsFirstRealUserMessage(): void
     {
         [$history] = $this->history();

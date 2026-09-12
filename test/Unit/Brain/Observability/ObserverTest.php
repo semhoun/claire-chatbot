@@ -38,10 +38,18 @@ final class ObserverTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tracer = $this->createMock(TracerInterface::class);
-        $this->logger = $this->createMock(LoggerInterface::class);
-        $this->spanBuilder = $this->createMock(SpanBuilderInterface::class);
-        $this->span = $this->createMock(SpanInterface::class);
+        $this->configureObserver();
+    }
+
+    private function configureObserver(
+        ?TracerInterface $tracer = null,
+        ?LoggerInterface $logger = null,
+        ?SpanInterface $span = null,
+    ): void {
+        $this->tracer = $tracer ?? $this->createStub(TracerInterface::class);
+        $this->logger = $logger ?? $this->createStub(LoggerInterface::class);
+        $this->spanBuilder = $this->createStub(SpanBuilderInterface::class);
+        $this->span = $span ?? $this->createStub(SpanInterface::class);
 
         $this->spanBuilder->method('startSpan')->willReturn($this->span);
         $this->tracer->method('spanBuilder')->willReturn($this->spanBuilder);
@@ -79,6 +87,7 @@ final class ObserverTest extends TestCase
 
     public function testReportErrorEmitsLogRecord(): void
     {
+        $this->configureObserver(logger: $this->createMock(LoggerInterface::class));
         $exception = new RuntimeException('test error message');
 
         $this->logger
@@ -91,6 +100,7 @@ final class ObserverTest extends TestCase
 
     public function testReportErrorLogRecordContainsExceptionMessage(): void
     {
+        $this->configureObserver(logger: $this->createMock(LoggerInterface::class));
         $exception = new RuntimeException('body check');
 
         $this->logger
@@ -106,6 +116,7 @@ final class ObserverTest extends TestCase
 
     public function testReportErrorMarksActiveSpansAsErrored(): void
     {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
         $exception = new RuntimeException('span error');
 
         $this->span
@@ -157,6 +168,7 @@ final class ObserverTest extends TestCase
 
     public function testReportErrorWithNoActiveSpansDoesNotThrow(): void
     {
+        $this->configureObserver(logger: $this->createMock(LoggerInterface::class));
         $exception = new RuntimeException('no spans');
 
         $this->logger->expects($this->once())->method('emit');
@@ -231,6 +243,7 @@ final class ObserverTest extends TestCase
 
     public function testSpanSetAttributesWithString(): void
     {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
         $this->span
             ->expects($this->once())
             ->method('setAttribute')
@@ -245,6 +258,7 @@ final class ObserverTest extends TestCase
 
     public function testSpanSetAttributesWithArray(): void
     {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
         $this->span
             ->expects($this->exactly(2))
             ->method('setAttribute')
@@ -267,6 +281,7 @@ final class ObserverTest extends TestCase
 
     public function testSpanSetAttributesWithNestedArrayJsonEncodesNonStrings(): void
     {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
         $this->span
             ->expects($this->once())
             ->method('setAttribute')
@@ -284,10 +299,10 @@ final class ObserverTest extends TestCase
 
     public function testGetActiveSpansReturnsAllSpanTypes(): void
     {
-        $agentSpan = $this->createMock(SpanInterface::class);
-        $toolCallSpan = $this->createMock(SpanInterface::class);
-        $ragSpan = $this->createMock(SpanInterface::class);
-        $workflowSpan = $this->createMock(SpanInterface::class);
+        $agentSpan = $this->createStub(SpanInterface::class);
+        $toolCallSpan = $this->createStub(SpanInterface::class);
+        $ragSpan = $this->createStub(SpanInterface::class);
+        $workflowSpan = $this->createStub(SpanInterface::class);
 
         $refAgent = new \ReflectionProperty(Observer::class, 'agentSpans');
         $refAgent->setValue($this->observer, ['agent' => $agentSpan]);
@@ -318,6 +333,7 @@ final class ObserverTest extends TestCase
 
     public function testWorkflowStartCreatesSpan(): void
     {
+        $this->configureObserver(tracer: $this->createMock(TracerInterface::class));
         $workflow = new class {};
 
         $this->tracer
@@ -331,6 +347,7 @@ final class ObserverTest extends TestCase
 
     public function testWorkflowEndEndsSpan(): void
     {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
         $workflow = new class {};
         $key = $workflow::class;
 
@@ -344,6 +361,7 @@ final class ObserverTest extends TestCase
 
     public function testWorkflowEndWithoutMatchingSpanReturnsEarly(): void
     {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
         $workflow = new class {};
         $this->span->expects($this->never())->method('end');
 
@@ -352,6 +370,10 @@ final class ObserverTest extends TestCase
 
     public function testWorkflowNodeStartCreatesSpan(): void
     {
+        $this->configureObserver(
+            tracer: $this->createMock(TracerInterface::class),
+            span: $this->createMock(SpanInterface::class),
+        );
         $state = new WorkflowState();
         $state->set('key', 'value');
 
@@ -395,6 +417,7 @@ final class ObserverTest extends TestCase
 
     public function testInferenceStartCreatesSpan(): void
     {
+        $this->configureObserver(tracer: $this->createMock(TracerInterface::class));
         $message = new UserMessage('query');
 
         $this->tracer
@@ -408,6 +431,7 @@ final class ObserverTest extends TestCase
 
     public function testInferenceStopEndsSpan(): void
     {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
         $message = new UserMessage('query');
         $response = new AssistantMessage('answer');
 
@@ -425,6 +449,7 @@ final class ObserverTest extends TestCase
 
     public function testInferenceStopWithoutActiveSpanReturnsEarly(): void
     {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
         $this->span->expects($this->never())->method('end');
 
         $this->observer->inferenceStop(
@@ -438,6 +463,7 @@ final class ObserverTest extends TestCase
 
     public function testMessageSavingCreatesSpan(): void
     {
+        $this->configureObserver(tracer: $this->createMock(TracerInterface::class));
         $message = new UserMessage('hello');
 
         $this->tracer
@@ -451,6 +477,7 @@ final class ObserverTest extends TestCase
 
     public function testMessageSavedEndsSpan(): void
     {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
         $message = new UserMessage('hello');
 
         $ref = new \ReflectionProperty(Observer::class, 'message');
@@ -463,6 +490,7 @@ final class ObserverTest extends TestCase
 
     public function testMessageSavedWithoutActiveSpanReturnsEarly(): void
     {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
         $this->span->expects($this->never())->method('end');
 
         $this->observer->messageSaved(new \stdClass(), 'message-saved', new MessageSaved(new UserMessage('x')));

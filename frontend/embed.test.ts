@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { BrowserAudio } from './services/browser-audio'
 import type { ClaireBootstrap } from './types'
 
 class FakeEventSource {
@@ -78,6 +79,7 @@ describe('embed public API', () => {
     sessionStorage.clear()
     FakeEventSource.instances = []
     vi.stubGlobal('EventSource', FakeEventSource)
+    vi.stubGlobal('CSS', { escape: (value: string) => value })
     await import('./embed')
   })
 
@@ -86,6 +88,171 @@ describe('embed public API', () => {
     await Promise.resolve()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it.each(['exchange', 'bootstrap', 'body', 'css'])('never remounts after destroy during %s', async (stage) => {
+    const config = bootstrap()
+    config.brainInfo.css = 'agent.css'
+    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(config)}'></div>`
+    let release!: () => void
+    let reached!: () => void
+    const waiting = new Promise<void>((resolve) => { reached = resolve })
+    const deferred = new Promise<void>((resolve) => { release = resolve })
+    let signal: AbortSignal | null | undefined
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init: RequestInit) => {
+      const url = String(input)
+      const current = url.includes('/exchange') ? 'exchange' : url.includes('/css/') ? 'css' : 'bootstrap'
+      if (current === stage || (stage === 'body' && current === 'bootstrap')) {
+        signal = init.signal
+        reached()
+        if (stage !== 'body') await deferred
+      }
+      if (current === 'exchange') return new Response(JSON.stringify({ session_token: jwt('session') }))
+      if (current === 'css') return new Response('.agent {}')
+      const response = new Response(html)
+      if (stage === 'body') vi.spyOn(response, 'text').mockImplementation(async () => { await deferred; return html })
+      return response
+    }))
+    const foreign = document.createElement('div')
+    foreign.id = 'claire-embed-root'
+    document.body.append(foreign)
+    const pending = window.claireEmbed!({ baseUrl: 'https://claire.test', ssoToken: 'opaque' })
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    await waiting
+    window.destroyClaireEmbed!()
+    expect(signal?.aborted).toBe(true)
+    release()
+    await rejected
+    expect(document.querySelector('claire-chat-widget')).toBeNull()
+    expect(foreign.isConnected).toBe(true)
+  })
+
+  it('lets only the last initialization mount, even when an old fetch ignores abort', async () => {
+    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(bootstrap())}'></div>`
+    let resolve!: (response: Response) => void
+    let oldSignal: AbortSignal | null | undefined
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn((input: string | URL, init: RequestInit) => {
+      if (String(input).includes('/embed') && calls++ === 0) {
+        oldSignal = init.signal
+        return new Promise<Response>((done) => { resolve = done })
+      }
+      return Promise.resolve(new Response(String(input).includes('/embed') ? html : '0'))
+    }))
+    const first = window.claireEmbed!({ baseUrl: 'https://claire.test' })
+    const rejected = expect(first).rejects.toMatchObject({ name: 'AbortError' })
+    const second = await window.claireEmbed!({ baseUrl: 'https://claire.test', target: '#target' })
+    expect(oldSignal?.aborted).toBe(true)
+    resolve(new Response(html))
+    await rejected
+    expect(document.querySelectorAll('claire-chat-widget')).toHaveLength(1)
+    expect(second.parentElement?.parentElement?.id).toBe('target')
+    window.destroyClaireEmbed!()
+    expect(second.isConnected).toBe(false)
+  })
+
+  it('reconciles authoritative response state on reconnect and ignores obsolete events', async () => {
+    vi.useFakeTimers()
+    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(bootstrap())}'></div>`
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      String(input).includes('/embed') ? html : '0',
+      { headers: { 'X-Claire-Minitoken': jwt('minitoken') } },
+    )))
+    const element = await window.claireEmbed!({ baseUrl: 'https://claire.test' })
+    const input = element.shadowRoot!.querySelector('textarea')!
+    const oldSource = FakeEventSource.instances[0]
+    oldSource.emit('chat.assistant.start', { messageId: 'old' })
+    oldSource.onerror?.()
+    await vi.advanceTimersByTimeAsync(5000)
+    const source = FakeEventSource.instances[1]
+    source.emit('chat.snapshot', {
+      responding: true, activeMessageId: 'new',
+      html: '<article id="claire-new"><span id="claire-message-new">Partial</span></article><article id="claire-old"><span id="claire-message-old">Old</span></article>',
+    })
+    await Promise.resolve()
+    expect(input.disabled).toBe(true)
+    oldSource.emit('chat.snapshot', { responding: false, activeMessageId: null, html: '' })
+    oldSource.onerror?.()
+    source.emit('chat.assistant.update', { messageId: 'old', html: 'Stale' })
+    source.emit('chat.assistant.done', { messageId: 'old' })
+    source.emit('chat.error', { messageId: 'old', message: 'Obsolete failure' })
+    await Promise.resolve()
+    expect(input.disabled).toBe(true)
+    expect(element.shadowRoot!.querySelector('#claire-message-old')?.textContent).toBe('Old')
+    expect(element.shadowRoot!.textContent).not.toContain('Obsolete failure')
+    source.emit('chat.assistant.update', { messageId: 'new', html: '<strong>Current</strong>' })
+    expect(element.shadowRoot!.querySelector('#claire-message-new strong')?.textContent).toBe('Current')
+    source.emit('chat.assistant.done', { messageId: 'new' })
+    await Promise.resolve()
+    expect(input.disabled).toBe(false)
+    source.emit('chat.snapshot', { responding: false, activeMessageId: null, html: '<span id="claire-message-new">Final</span>' })
+    source.emit('chat.assistant.update', { messageId: 'new', html: 'Late' })
+    expect(element.shadowRoot!.querySelector('#claire-message-new')?.textContent).toBe('Final')
+    source.emit('chat.assistant.start', { messageId: 'another' })
+    source.emit('chat.snapshot', { responding: false, activeMessageId: null, html: '' })
+    await Promise.resolve()
+    expect(input.disabled).toBe(false)
+    source.emit('chat.assistant.start', { messageId: 'failed' })
+    source.emit('chat.error', { messageId: 'failed', message: 'Current failure' })
+    source.emit('chat.snapshot', { responding: false, activeMessageId: null, html: '' })
+    await Promise.resolve()
+    expect(element.shadowRoot!.textContent).toContain('Current failure')
+  })
+
+  it('allows a new dictation after stopping while microphone permission is pending', async () => {
+    const config = bootstrap()
+    config.audioAvailable = true
+    config.audioEnabled = true
+    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(config)}'></div>`
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      String(input).includes('/embed') ? html : '0',
+    )))
+    vi.spyOn(BrowserAudio.prototype, 'supported').mockReturnValue(true)
+    let release!: () => void
+    const start = vi.spyOn(BrowserAudio.prototype, 'startRecording')
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve }))
+      .mockResolvedValue(undefined)
+    const stop = vi.spyOn(BrowserAudio.prototype, 'stopRecording').mockImplementation(() => {})
+    const element = await window.claireEmbed!({ baseUrl: 'https://claire.test' })
+    const button = element.shadowRoot!.querySelector<HTMLButtonElement>('[aria-label="Dicter un message"]')!
+    button.click()
+    await Promise.resolve()
+    expect(button.getAttribute('aria-label')).toBe('Arrêter l’enregistrement')
+    button.click()
+    await Promise.resolve()
+    expect(stop).toHaveBeenCalledOnce()
+    expect(button.getAttribute('aria-label')).toBe('Dicter un message')
+    release()
+    await Promise.resolve()
+    button.click()
+    await Promise.resolve()
+    expect(start).toHaveBeenCalledTimes(2)
+  })
+
+  it('enhances snapshot audio once per article and streams only into the target article', async () => {
+    const config = bootstrap()
+    config.audioEnabled = true
+    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(config)}'></div>`
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      String(input).includes('/embed') ? html : '0',
+      { headers: { 'X-Claire-Minitoken': jwt('minitoken') } },
+    )))
+    const element = await window.claireEmbed!({ baseUrl: 'https://claire.test' })
+    const source = FakeEventSource.instances[0]
+    const setAttribute = vi.spyOn(Element.prototype, 'setAttribute')
+    const articles = Array.from({ length: 100 }, (_, index) => `<article id="claire-${index}" class="claire-message--received"><span id="claire-message-${index}">Server HTML</span><span class="claire-message__meta"></span></article>`).join('')
+    source.emit('chat.snapshot', { html: articles, responding: true, activeMessageId: '99' })
+    await Promise.resolve()
+    const audioWrites = () => setAttribute.mock.calls.filter(([name, value]) => name === 'aria-label' && value === 'Générer l’audio').length
+    expect(audioWrites()).toBe(100)
+    expect(element.shadowRoot!.querySelectorAll('[data-audio-listen]')).toHaveLength(100)
+    setAttribute.mockClear()
+    source.emit('chat.assistant.update', { messageId: '99', html: '<em>Stream HTML</em>' })
+    await Promise.resolve()
+    expect(audioWrites()).toBe(1)
+    expect(element.shadowRoot!.querySelector('#claire-message-99 em')?.textContent).toBe('Stream HTML')
+    expect(element.shadowRoot!.querySelector('#claire-message-0')?.textContent).toBe('Server HTML')
   })
 
   it('mounts in Shadow DOM and cleans up its SSE connection', async () => {
@@ -202,6 +369,7 @@ describe('embed public API', () => {
           headers: { 'X-Claire-Minitoken': miniToken },
         })
       }
+      if (url.includes('/history/new')) return new Response(JSON.stringify({ threadId: 'thread-2', sessionId: 'session-2' }))
       return new Response('0', { status: 200 })
     })
     let playCount = 0
@@ -247,6 +415,9 @@ describe('embed public API', () => {
     expect(historyButton?.title).toBe('Générer l’audio')
     expect(historyButton?.querySelector('svg')).not.toBeNull()
 
+    FakeEventSource.instances[0].emit('chat.assistant.start', {
+      threadId: 'thread-1', messageId: 'assistant-1',
+    })
     FakeEventSource.instances[0].emit('chat.assistant.placeholder', {
       threadId: 'thread-1',
       messageId: 'assistant-1',
@@ -278,7 +449,12 @@ describe('embed public API', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    pendingButton?.remove()
+    const finalHtml = '<article id="claire-assistant-1" class="claire-message claire-message--received"><div class="claire-message__bubble"><span id="claire-message-assistant-1" class="claire-message__text">Bonjour</span></div><span class="claire-message__meta"></span></article>'
+    FakeEventSource.instances[0].emit('chat.snapshot', {
+      threadId: 'thread-1', responding: false, activeMessageId: null, html: finalHtml,
+    })
+    expect(element?.shadowRoot?.querySelector<HTMLButtonElement>('#claire-assistant-1 [data-audio-listen]')?.title)
+      .toBe('Génération audio en cours')
 
     FakeEventSource.instances[0].emit('chat.audio.ready', {
       threadId: 'thread-1',
@@ -288,18 +464,40 @@ describe('embed public API', () => {
     })
     await Promise.resolve()
 
-    const button = element?.shadowRoot?.querySelector<HTMLButtonElement>(
+    let button = element?.shadowRoot?.querySelector<HTMLButtonElement>(
       '#claire-assistant-1 [data-audio-listen]',
     )
     expect(button).not.toBeNull()
     expect(button?.disabled).toBe(false)
     expect(button?.title).toBe('Arrêter la lecture')
     expect(playCount).toBe(1)
+    FakeEventSource.instances[0].emit('chat.snapshot', {
+      threadId: 'thread-1', responding: false, activeMessageId: null, html: finalHtml,
+    })
+    button = element?.shadowRoot?.querySelector<HTMLButtonElement>('#claire-assistant-1 [data-audio-listen]')
+    expect(button?.title).toBe('Arrêter la lecture')
+    FakeEventSource.instances[0].emit('chat.audio.ready', {
+      threadId: 'thread-1', messageId: 'assistant-1', mimeType: 'audio/mpeg', audioData: btoa('mp3'),
+    })
+    await Promise.resolve()
+    expect(playCount).toBe(1)
     button?.click()
     await Promise.resolve()
     await Promise.resolve()
+    button?.click()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(playCount).toBe(2)
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/brain/audio'))).toHaveLength(1)
 
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/v1/audio/speech')))
       .toBe(false)
+    element?.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Nouvelle conversation"]')?.click()
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(2))
+    FakeEventSource.instances[1].emit('chat.snapshot', {
+      threadId: 'thread-2', responding: false, activeMessageId: null, html: finalHtml,
+    })
+    expect(element?.shadowRoot?.querySelector<HTMLButtonElement>('#claire-assistant-1 [data-audio-listen]')?.title)
+      .toBe('Générer l’audio')
   })
 })
