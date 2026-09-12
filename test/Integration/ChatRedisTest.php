@@ -103,6 +103,15 @@ final class ChatRedisTest extends TestCase
             . hash('sha256', json_encode(['alice', 'thread'], JSON_THROW_ON_ERROR))));
     }
 
+    public function testFractionalBlockingTimeoutDoesNotBecomeAnInfiniteWait(): void
+    {
+        $this->reader->setReadTimeout(2);
+        $subscriber = new ChatStreamSubscriber($this->reader, $this->settings);
+        $started = microtime(true);
+        self::assertNull($subscriber->popMessage(ChatStreamSubscriber::scope('alice', 'shared-tab'), 0.05));
+        self::assertLessThan(1, microtime(true) - $started);
+    }
+
     public function testCaptureReloadsAfterCompletionWrittenThroughAnotherConnection(): void
     {
         $state = new ChatGenerationState($this->writer, $this->settings);

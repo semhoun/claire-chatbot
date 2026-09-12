@@ -8,9 +8,9 @@
 <script>
 (() => {
     const tokens = [
-        ['claire_session_token', {{ session_token|json_encode|raw }}],
-        ['claire_mini_token', {{ mini_token|json_encode|raw }}]
+        ['claire_session_token', {{ session_token|json_encode|raw }}]
     ];
+    sessionStorage.removeItem('claire_mini_token');
     for (const [key, token] of tokens) {
         if (!token) continue;
         try {

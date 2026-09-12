@@ -19,9 +19,9 @@ final readonly class GeneratedFileProcessor
     ) {
     }
 
-    public function process(string $content): string
+    public function process(string $content, string $userId): string
     {
-        if (preg_match(File::GENERATED_FILE_PATTERN, $content) !== 1) {
+        if (trim($userId) === '' || preg_match(File::GENERATED_FILE_PATTERN, $content) !== 1) {
             return $content;
         }
 
@@ -30,11 +30,11 @@ final readonly class GeneratedFileProcessor
 
         return preg_replace_callback(
             File::GENERATED_FILE_PATTERN,
-            static function (array $matches) use ($baseUrl, $entityRepository): string {
+            static function (array $matches) use ($baseUrl, $entityRepository, $userId): string {
                 $prefix = $matches[1] ?? '';
                 $suffix = $matches[3] ?? '';
                 $fileId = str_replace(['"', "'"], ['', ''], $matches[2]);
-                $file = $entityRepository->findOneBy(['fileId' => $fileId]);
+                $file = $entityRepository->findOneBy(['fileId' => $fileId, 'user' => $userId]);
                 if (! $file instanceof File) {
                     return $matches[0];
                 }

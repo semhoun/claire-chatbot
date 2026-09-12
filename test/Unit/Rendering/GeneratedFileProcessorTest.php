@@ -49,14 +49,64 @@ final class GeneratedFileProcessorTest extends TestCase
         $file->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
 
         $this->repository->method('findOneBy')
-            ->with(['fileId' => $placeholder])
+            ->with(['fileId' => $placeholder, 'user' => 'user123'])
             ->willReturn($file);
 
-        $result = $this->processor->process($content);
+        $result = $this->processor->process($content, 'user123');
 
         $this->assertStringContainsString('http://localhost/files/serve/uuid-123', $result);
         $this->assertStringContainsString('class="claire-generated-image"', $result);
         $this->assertStringNotContainsString('@@GENERATED@@', $result);
+    }
+
+    public static function protectedReferences(): iterable
+    {
+        foreach ([File::FILE_TYPE_IMAGE, File::FILE_TYPE_AUDIO, File::FILE_TYPE_PDF] as $type) {
+            yield [$type, '@@GENERATED@@private-file@@'];
+            yield [$type, '<a href="@@GENERATED@@private-file@@">Download</a>'];
+            yield [$type, '<img src="@@GENERATED@@private-file@@">'];
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('protectedReferences')]
+    public function testForeignAndMissingFilesHaveIdenticalRendering(string $type, string $content): void
+    {
+        $repository = $this->createMock(EntityRepository::class);
+        $this->configureProcessor($repository);
+        $file = $this->createStub(File::class);
+        $file->method('getFileId')->willReturn('private-file');
+        $file->method('getFilename')->willReturn('confidential-name.pdf');
+        $file->method('fileType')->willReturn($type);
+        $exists = true;
+        $repository->expects(self::exactly(3))->method('findOneBy')
+            ->willReturnCallback(static function (array $criteria) use ($file, &$exists): ?File {
+                self::assertSame('@@GENERATED@@private-file@@', $criteria['fileId']);
+                self::assertArrayHasKey('user', $criteria);
+                return $exists && $criteria['user'] === 'owner' ? $file : null;
+            });
+
+        $owned = $this->processor->process($content, 'owner');
+        $foreign = $this->processor->process($content, 'other-user');
+        $exists = false;
+        $missing = $this->processor->process($content, 'other-user');
+
+        self::assertStringContainsString('/files/serve/private-file', $owned);
+        self::assertSame($content, $foreign);
+        self::assertSame($missing, $foreign);
+        self::assertStringNotContainsString('confidential-name', $foreign);
+        self::assertStringNotContainsString('claire-generated-', $foreign);
+        self::assertStringNotContainsString('/files/serve/', $foreign);
+    }
+
+    public function testEmptyIdentityNeverQueriesFiles(): void
+    {
+        $repository = $this->createMock(EntityRepository::class);
+        $repository->expects(self::never())->method('findOneBy');
+        $this->configureProcessor($repository);
+        $content = '@@GENERATED@@private-file@@';
+
+        self::assertSame($content, $this->processor->process($content, ''));
+        self::assertSame($content, $this->processor->process($content, '  '));
     }
 
     public function testProcessGeneratedFilesWithPdfId(): void
@@ -71,10 +121,10 @@ final class GeneratedFileProcessorTest extends TestCase
         $file->method('getFilename')->willReturn('test.pdf');
 
         $this->repository->method('findOneBy')
-            ->with(['fileId' => $placeholder])
+            ->with(['fileId' => $placeholder, 'user' => 'user123'])
             ->willReturn($file);
 
-        $result = $this->processor->process($content);
+        $result = $this->processor->process($content, 'user123');
 
         $this->assertStringContainsString('http://localhost/files/serve/uuid-456', $result);
         $this->assertStringContainsString('class="claire-generated-file"', $result);
@@ -89,10 +139,10 @@ final class GeneratedFileProcessorTest extends TestCase
         $file->method('getFileId')->willReturn('audio-id');
         $file->method('fileType')->willReturn(File::FILE_TYPE_AUDIO);
         $this->repository->method('findOneBy')
-            ->with(['fileId' => $placeholder])
+            ->with(['fileId' => $placeholder, 'user' => 'user123'])
             ->willReturn($file);
 
-        $result = $this->processor->process($placeholder);
+        $result = $this->processor->process($placeholder, 'user123');
 
         self::assertStringContainsString('<audio controls', $result);
         self::assertStringContainsString('class="claire-generated-audio"', $result);
@@ -188,12 +238,12 @@ final class GeneratedFileProcessorTest extends TestCase
         $file3->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
 
         $this->repository->method('findOneBy')->willReturnMap([
-            [['fileId' => $placeholder1], $file1],
-            [['fileId' => $placeholder2], $file2],
-            [['fileId' => $placeholder3], $file3],
+            [['fileId' => $placeholder1, 'user' => 'user123'], $file1],
+            [['fileId' => $placeholder2, 'user' => 'user123'], $file2],
+            [['fileId' => $placeholder3, 'user' => 'user123'], $file3],
         ]);
 
-        $result = $this->processor->process($content);
+        $result = $this->processor->process($content, 'user123');
 
         $this->assertStringContainsString('http://localhost/files/serve/uuid-1', $result);
         $this->assertStringContainsString('http://localhost/files/serve/uuid-2', $result);
@@ -215,10 +265,10 @@ final class GeneratedFileProcessorTest extends TestCase
         $file->method('getFilename')->willReturn('test.pdf');
 
         $this->repository->method('findOneBy')
-            ->with(['fileId' => $placeholder])
+            ->with(['fileId' => $placeholder, 'user' => 'user123'])
             ->willReturn($file);
 
-        $result = $this->processor->process($content);
+        $result = $this->processor->process($content, 'user123');
 
         // Devrait être <a href="http://localhost/files/serve/uuid-pdf">Download</a>
         // ou au moins <a href=http://localhost/files/serve/uuid-pdf>Download</a>
@@ -238,10 +288,10 @@ final class GeneratedFileProcessorTest extends TestCase
         $file->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
 
         $this->repository->method('findOneBy')
-            ->with(['fileId' => $placeholder])
+            ->with(['fileId' => $placeholder, 'user' => 'user123'])
             ->willReturn($file);
 
-        $result = $this->processor->process($content);
+        $result = $this->processor->process($content, 'user123');
 
         $this->assertStringContainsString('src="http://localhost/files/serve/uuid-img"', $result);
         $this->assertStringContainsString('class="claire-generated-image"', $result);

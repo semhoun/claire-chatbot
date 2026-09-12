@@ -23,6 +23,47 @@ use Slim\Psr7\Factory\ResponseFactory;
 #[AllowMockObjectsWithoutExpectations]
 final class HistoryControllerTest extends TestCase
 {
+    public function testCreateDelegatesGenerationStateToAtomicDispatcher(): void
+    {
+        $settings = new Settings(['redis' => ['prefix' => 'test:'], 'queue' => ['defaultQueue' => 'default']]);
+        $session = new \App\Services\Session\InMemorySession([Auth::USERID => 'user-1', 'brain_avatar' => 'test']);
+        $pdo = new \PDO('sqlite::memory:');
+        $connection = $this->createStub(\Doctrine\DBAL\Connection::class);
+        $connection->method('getNativeConnection')->willReturn($pdo);
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $entityManager->method('getConnection')->willReturn($connection);
+        $redis = $this->createMock(\App\Services\RedisClient::class);
+        $redis->expects(self::never())->method('hset');
+        $redis->expects(self::never())->method('lpush');
+        $publisher = new \App\Services\ChatStreamPublisher($redis,
+            new \App\Services\ChatStreamSubscriber($redis, $settings), $settings);
+        $queue = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);
+        $captured = [];
+        $queue->expects(self::once())->method('dispatch')->willReturnCallback(
+            static function (string $job, array $payload, string $queueName) use (&$captured, $pdo): string {
+                $lock = new \App\Services\ChatThreadLock($pdo, 'user-1', $payload['threadId']);
+                self::assertSame(\App\Job\Web\StartThreadJob::class, $job);
+                self::assertSame('default', $queueName);
+                self::assertSame('user-1', $payload['session'][Auth::USERID]);
+                $captured = $payload;
+                $lock->release();
+                return 'queued-opening';
+            },
+        );
+        $controller = new HistoryController($this->chatRenderer($settings, $entityManager),
+            Twig::create(Settings::getAppRoot() . '/tmpl'), $entityManager, $settings, $publisher,
+            $queue, $this->createStub(Filesystem::class));
+        $request = new \Slim\Psr7\Factory\ServerRequestFactory()->createServerRequest('POST', '/history/new')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session);
+        $response = $controller->create($request, new \Slim\Psr7\Response());
+        self::assertSame(200, $response->getStatusCode());
+        $payload = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame($captured['threadId'], $payload['threadId']);
+        self::assertSame($captured['sessionId'], $payload['sessionId']);
+        $lock = new \App\Services\ChatThreadLock($pdo, 'user-1', $payload['threadId']);
+        $lock->release();
+    }
+
     public function testDeleteLastExchangeRejectsQueuedGenerationBeforeMutatingHistory(): void
     {
         $settings = new Settings(['redis' => ['prefix' => 'test:']]);

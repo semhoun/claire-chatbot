@@ -84,6 +84,7 @@ final class BrainControllerTest extends TestCase
         );
         $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/stream')
             ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+            ->withAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT, time() + 60)
             ->withQueryParams(['threadId' => 'thread', 'sessionId' => 'tab']);
         try {
             $controller->stream($request, new Response());
@@ -97,14 +98,94 @@ final class BrainControllerTest extends TestCase
         self::assertStringContainsString('"responding":' . ($responding ? 'true' : 'false'), $output);
     }
 
-    public function testSubmissionPersistsQueuedStateBeforeDispatchAndRejectsSecondGeneration(): void
+    public function testStreamRequiresUnexpiredAuthentication(): void
+    {
+        [$controller, , $session, , $redis] = $this->controller($this->createStub(QueueDispatcherInterface::class));
+        $redis->method('brpop')->willReturnCallback(static function (): never {
+            self::fail('Expired authentication must not read Redis events');
+        });
+        foreach ([null, time() - 1] as $expiry) {
+            $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/stream')
+                ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+                ->withAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT, $expiry)
+                ->withQueryParams(['threadId' => 'thread', 'sessionId' => 'tab']);
+            $response = $controller->stream($request, new Response());
+            self::assertSame(401, $response->getStatusCode());
+            self::assertSame('', (string) $response->getBody());
+        }
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testStreamDoesNotPublishAnEventReturnedAfterAuthenticationExpires(): void
+    {
+        class_alias(BufferedBrainStreamBody::class, \Slim\Psr7\NonBufferedBody::class);
+        [$controller, , $session, , $redis] = $this->controller($this->createStub(QueueDispatcherInterface::class));
+        $expiresAt = time() + 2;
+        $calls = 0;
+        $redis->method('brpop')->willReturnCallback(
+            static function (array $keys, int|float $timeout) use ($expiresAt, &$calls): array {
+                self::assertSame(1, ++$calls);
+                self::assertGreaterThan(0, $timeout);
+                self::assertLessThanOrEqual(1, $timeout);
+                usleep((int) (max(0, $expiresAt - microtime(true) + 0.01) * 1_000_000));
+                return [$keys[0], json_encode(['event' => 'chat.audio.ready', 'payload' => [
+                    'sessionId' => 'tab', 'threadId' => 'thread', 'messageId' => 'late', 'audioData' => 'expired-data',
+                ]], JSON_THROW_ON_ERROR)];
+            },
+        );
+        $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/stream')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+            ->withAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT, $expiresAt)
+            ->withQueryParams(['threadId' => 'thread', 'sessionId' => 'tab']);
+        $response = $controller->stream($request, new Response());
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame(1, $calls);
+        self::assertStringNotContainsString('expired-data', (string) $response->getBody());
+        self::assertStringNotContainsString('chat.audio.ready', (string) $response->getBody());
+    }
+
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
+    public function testStreamDoesNotForwardAnotherThreadOnTheSameTab(): void
+    {
+        class_alias(BufferedBrainStreamBody::class, \Slim\Psr7\NonBufferedBody::class);
+        [$controller, , $session, , $redis] = $this->controller($this->createStub(QueueDispatcherInterface::class));
+        $calls = 0;
+        $redis->method('brpop')->willReturnCallback(static function (array $keys) use (&$calls): array {
+            if (++$calls > 1) {
+                throw new \RuntimeException('End isolated stream');
+            }
+            return [$keys[0], json_encode(['event' => 'chat.audio.ready', 'payload' => [
+                'sessionId' => 'tab', 'threadId' => 'other-thread', 'messageId' => 'other', 'audioData' => 'other-data',
+            ]], JSON_THROW_ON_ERROR)];
+        });
+        $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/stream')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+            ->withAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT, time() + 60)
+            ->withQueryParams(['threadId' => 'thread', 'sessionId' => 'tab']);
+        try {
+            $controller->stream($request, new Response());
+            self::fail('Test stream did not terminate');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('End isolated stream', $exception->getMessage());
+        }
+        self::assertStringNotContainsString('other-data', (string) BufferedBrainStreamBody::$instance);
+        self::assertSame(1, substr_count((string) BufferedBrainStreamBody::$instance, 'event: chat.snapshot'));
+    }
+
+    public function testSubmissionDelegatesQueuedStateToDispatchAndRejectsSecondGeneration(): void
     {
         $queue = $this->createMock(QueueDispatcherInterface::class);
-        [$controller, $publisher, $session] = $this->controller($queue);
+        [$controller, $publisher, $session, $pdo] = $this->controller($queue);
         $queue->expects(self::once())->method('dispatch')->willReturnCallback(
-            static function (string $job, array $payload) use ($publisher): string {
+            static function (string $job, array $payload) use ($publisher, $pdo): string {
+                $lock = new \App\Services\ChatThreadLock($pdo, 'user-1', 'thread');
+                self::assertSame([], $publisher->generationState()->get('user-1', 'thread'));
+                $publisher->generationState()->set('user-1', 'thread', $payload['messageId'], 'queued', false);
                 self::assertSame(['responding' => true, 'activeMessageId' => $payload['messageId']],
                     $publisher->generationState()->snapshot('user-1', 'thread'));
+                $lock->release();
                 return 'queue-id';
             },
         );
@@ -115,7 +196,7 @@ final class BrainControllerTest extends TestCase
         self::assertSame(409, $controller->submitMessage($request, new Response())->getStatusCode());
     }
 
-    public function testDispatchFailureClearsRespondingStateAndPropagates(): void
+    public function testDispatchFailureDoesNotCreateGenerationStateAndPropagates(): void
     {
         $queue = $this->createMock(QueueDispatcherInterface::class);
         $failure = new \RuntimeException('Queue unavailable');
@@ -132,6 +213,43 @@ final class BrainControllerTest extends TestCase
         }
         self::assertSame(['responding' => false, 'activeMessageId' => null],
             $publisher->generationState()->snapshot('user-1', 'thread'));
+        self::assertSame([], $publisher->generationState()->get('user-1', 'thread'));
+    }
+
+    public function testAmbiguousDispatchFailureDoesNotOverwriteAtomicallyQueuedGeneration(): void
+    {
+        $queue = $this->createMock(QueueDispatcherInterface::class);
+        [$controller, $publisher, $session] = $this->controller($queue);
+        $queue->expects(self::once())->method('dispatch')->willReturnCallback(
+            static function (string $job, array $payload) use ($publisher): never {
+                $publisher->generationState()->set('user-1', 'thread', $payload['messageId'], 'queued', false);
+                throw new \RuntimeException('Reply lost after Redis committed');
+            },
+        );
+        $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/messages')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question']);
+        try {
+            $controller->submitMessage($request, new Response());
+            self::fail('Dispatch failure swallowed');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('Reply lost after Redis committed', $exception->getMessage());
+        }
+        self::assertTrue($publisher->generationState()->snapshot('user-1', 'thread')['responding']);
+        self::assertSame(409, $controller->submitMessage($request, new Response())->getStatusCode());
+    }
+
+    public function testAtomicDispatcherConflictReturns409WithoutChangingState(): void
+    {
+        $queue = $this->createMock(QueueDispatcherInterface::class);
+        $queue->expects(self::once())->method('dispatch')
+            ->willThrowException(new \App\Services\ChatGenerationBusyException('Another producer won'));
+        [$controller, $publisher, $session] = $this->controller($queue);
+        $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/messages')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question']);
+        self::assertSame(409, $controller->submitMessage($request, new Response())->getStatusCode());
+        self::assertSame([], $publisher->generationState()->get('user-1', 'thread'));
     }
 
     public function testReconnectSnapshotUsesAuthenticatedUserAndDoesNotCreateMissingHistory(): void

@@ -4,37 +4,34 @@ declare(strict_types=1);
 
 namespace App\Middleware;
 
-use App\Entity\User;
 use App\Services\Auth;
 use App\Services\JwtTokenService;
 use App\Services\Session\ArraySession;
 use App\Services\Settings;
 use DateTimeImmutable;
-use Doctrine\ORM\EntityManager;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface as Handler;
 use Slim\Psr7\NonBufferedBody;
-use Slim\Routing\RouteContext;
 
 /**
  * Middleware for JWT-based session management via X-Claire-Auth header.
  *
- * Reads JWT from X-Claire-Auth header or `token` query parameter,
- * populates session data, stores the session in request attributes,
- * and returns the session token in X-Claire-Token response header when
- * the session is modified or refreshed.
+ * Full sessions require X-Claire-Auth. Resource capabilities may also use
+ * the `token` query parameter and never issue or refresh session credentials.
  */
 final class JwtSessionMiddleware implements MiddlewareInterface
 {
     public const string SESSION_ATTRIBUTE = 'session';
 
+    public const string AUTH_EXPIRES_AT = 'auth_expires_at';
+
+    public const string AUTH_RESOURCE = 'auth_resource';
+
     private const string AUTH_HEADER = 'X-Claire-Auth';
 
     private const string TOKEN_HEADER = 'X-Claire-Token';
-
-    private const string MINI_TOKEN_HEADER = 'X-Claire-Minitoken';
 
     private const string SESSION_TOKEN_QUERY = 'token';
 
@@ -44,11 +41,7 @@ final class JwtSessionMiddleware implements MiddlewareInterface
     /** @var array<string, mixed>|null */
     private ?array $originalSessionData = null;
 
-    private bool $authenticatedViaMiniToken = false;
-
     public function __construct(
-        private readonly Auth $auth,
-        private readonly EntityManager $entityManager,
         private readonly JwtTokenService $jwtTokenService,
         private readonly Settings $settings,
     ) {
@@ -56,21 +49,41 @@ final class JwtSessionMiddleware implements MiddlewareInterface
 
     public function process(Request $request, Handler $handler): Response
     {
-        if ($this->isNotFoundRoute($request)) {
-            return $handler->handle($request);
-        }
-
         $tokenString = $this->extractBearerToken($request);
 
         $this->tokenClaims = [];
         $this->originalSessionData = null;
-        $this->authenticatedViaMiniToken = false;
 
         // Create a new session instance for this request (not a singleton)
         $arraySession = new ArraySession();
 
         if ($tokenString !== null) {
-            $this->decodeAndPopulateSession($arraySession, $tokenString);
+            $resource = $this->jwtTokenService->parseFileToken($tokenString)
+                ?? $this->jwtTokenService->parseStreamToken($tokenString);
+            if ($resource !== null) {
+                if (! $this->resourceMatchesRequest($request, $resource)) {
+                    return new \Slim\Psr7\Response(403);
+                }
+
+                $arraySession->start();
+                $arraySession->set(Auth::USERID, $resource['userId']);
+                $arraySession->set(Auth::AUTHENTICATED, true);
+                $request = $request->withAttribute(self::SESSION_ATTRIBUTE, $arraySession)
+                    ->withAttribute(self::AUTH_RESOURCE, $resource)
+                    ->withAttribute(self::AUTH_EXPIRES_AT, $resource['expiresAt']);
+                return $handler->handle($request)
+                    ->withoutHeader(self::TOKEN_HEADER)->withoutHeader('X-Claire-Minitoken')
+                    ->withHeader('Cache-Control', 'no-store')->withHeader('Referrer-Policy', 'no-referrer');
+            }
+
+            // General credentials are accepted only through explicit API authentication.
+            $parsedSession = $this->jwtTokenService->parseSessionToken($tokenString);
+            if ($request->getHeaderLine(self::AUTH_HEADER) === '' || $parsedSession === null) {
+                return new \Slim\Psr7\Response(401);
+            }
+
+            $this->decodeAndPopulateSession($arraySession, $parsedSession);
+            $request = $request->withAttribute(self::AUTH_EXPIRES_AT, $this->tokenClaims['exp']->getTimestamp());
         } else {
             $arraySession->start();
         }
@@ -94,14 +107,6 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         return $response;
     }
 
-    private function isNotFoundRoute(Request $request): bool
-    {
-        $routeContext = RouteContext::fromRequest($request);
-        $route = $routeContext->getRoute();
-
-        return $route?->getName() === 'not-found';
-    }
-
     private function extractBearerToken(Request $request): ?string
     {
         $authHeader = $request->getHeaderLine(self::AUTH_HEADER);
@@ -110,7 +115,12 @@ final class JwtSessionMiddleware implements MiddlewareInterface
             return $authHeader;
         }
 
-        $queryToken = trim((string) (($request->getQueryParams()[self::SESSION_TOKEN_QUERY] ?? '')));
+        $queryToken = $request->getQueryParams()[self::SESSION_TOKEN_QUERY] ?? '';
+        if (! is_string($queryToken)) {
+            return 'invalid-token';
+        }
+
+        $queryToken = trim($queryToken);
         if ($queryToken !== '' && $queryToken !== '0') {
             return $queryToken;
         }
@@ -120,11 +130,6 @@ final class JwtSessionMiddleware implements MiddlewareInterface
 
     private function shouldReturnToken(ArraySession $arraySession): bool
     {
-        // When authenticated via mini token, promote to session token in headers.
-        if ($this->authenticatedViaMiniToken) {
-            return true;
-        }
-
         // If session data changed, return new token
         $currentData = $arraySession->getStorageAsArray();
         if ($this->originalSessionData === null || $currentData !== $this->originalSessionData) {
@@ -158,25 +163,9 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         return $secondsBeforeExpire <= $refreshBeforeExpire;
     }
 
-    private function decodeAndPopulateSession(ArraySession $arraySession, string $tokenString): void
+    /** @param array<string,mixed> $parsedToken */
+    private function decodeAndPopulateSession(ArraySession $arraySession, array $parsedToken): void
     {
-        $miniUserId = $this->jwtTokenService->extractMiniUserId($tokenString);
-        if ($miniUserId !== null) {
-            $this->authenticatedViaMiniToken = true;
-            $arraySession->start();
-            $this->rebuildSessionFromMiniToken($arraySession, $miniUserId);
-            $this->originalSessionData = $arraySession->getStorageAsArray();
-
-            return;
-        }
-
-        $parsedToken = $this->jwtTokenService->parseSessionToken($tokenString);
-        if ($parsedToken === null) {
-            $arraySession->start();
-
-            return;
-        }
-
         $sessionId = $parsedToken['sessionId'];
         if (! in_array($sessionId, [null, '', '0'], true)) {
             $arraySession->setId((string) $sessionId);
@@ -197,26 +186,20 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         ];
     }
 
-    private function rebuildSessionFromMiniToken(ArraySession $arraySession, mixed $userIdClaim): void
+    /** @param array<string,string|int> $resource */
+    private function resourceMatchesRequest(Request $request, array $resource): bool
     {
-        if (! is_string($userIdClaim) || $userIdClaim === '' || $userIdClaim === '0') {
-            return;
+        $path = $request->getUri()->getPath();
+        $basePath = rtrim((string) $request->getAttribute(\Slim\Routing\RouteContext::BASE_PATH, ''), '/');
+        if (isset($resource['fileId'])) {
+            return in_array($request->getMethod(), ['GET', 'HEAD'], true)
+                && $path === $basePath . '/files/serve/' . rawurlencode($resource['fileId']);
         }
 
-        /** @var User|null $user */
-        $user = $this->entityManager->getRepository(User::class)->find($userIdClaim);
-        if (! $user instanceof User) {
-            return;
-        }
-
-        $data = [
-            'firstName' => $user->getFirstName() ?? '',
-            'lastName' => $user->getLastName() ?? '',
-            'email' => $user->getEmail() ?? '',
-        ];
-
-        $arraySession->clear();
-        $this->auth->login($arraySession, $userIdClaim, $data);
+        $query = $request->getQueryParams();
+        return $request->getMethod() === 'GET' && $path === $basePath . '/brain/stream'
+            && ($query['threadId'] ?? null) === $resource['threadId']
+            && ($query['sessionId'] ?? null) === $resource['sessionId'];
     }
 
     private function writeSessionToHeader(ArraySession $arraySession, Response $response): Response
@@ -231,15 +214,6 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         $lifetime = $this->jwtTokenService->ttl();
         $tokenString = $this->jwtTokenService->generateSessionToken($arraySession, $lifetime);
 
-        $response = $response->withHeader(self::TOKEN_HEADER, $tokenString);
-
-        $userId = (string) $arraySession->get(Auth::USERID, '');
-        if ($userId === '' || $userId === '0') {
-            return $response;
-        }
-
-        $miniToken = $this->jwtTokenService->generateMiniToken($arraySession, $lifetime);
-
-        return $response->withHeader(self::MINI_TOKEN_HEADER, $miniToken);
+        return $response->withHeader(self::TOKEN_HEADER, $tokenString);
     }
 }

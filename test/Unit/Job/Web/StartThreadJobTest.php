@@ -59,6 +59,24 @@ final class GeneratedOpeningTestAgent extends Agent implements \App\Brain\BrainA
 #[AllowMockObjectsWithoutExpectations]
 final class StartThreadJobTest extends TestCase
 {
+    public function testSupersededOpeningAcknowledgesWithoutAgentOrEvents(): void
+    {
+        $settings = new Settings(['redis' => ['prefix' => 'test:']]);
+        $redis = $this->createMock(RedisClient::class);
+        $redis->method('hgetall')->willReturn(['messageId' => 'newer-message', 'status' => 'queued']);
+        $redis->expects(self::never())->method('hset');
+        $redis->expects(self::never())->method('lpush');
+        $publisher = new ChatStreamPublisher($redis, new ChatStreamSubscriber($redis, $settings), $settings);
+        $container = $this->createMock(ContainerInterface::class);
+        $container->expects(self::never())->method('get');
+        $renderer = new ChatHtmlRenderer(new Markdown(), new GeneratedFileProcessor(
+            $settings, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+        ));
+        $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $job = new StartThreadJob($renderer, new BrainRegistry($settings, $container), $publisher, $connection);
+        $job->handle(['threadId' => 'thread', 'sessionId' => 'tab', 'session' => [Auth::USERID => 'user']]);
+    }
+
     public function testGeneratedOpeningMessageReplacesTechnicalLlmHistory(): void
     {
         $pdo = new PDO('sqlite::memory:');

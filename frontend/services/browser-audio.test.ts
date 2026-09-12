@@ -4,6 +4,43 @@ import { BrowserAudio } from './browser-audio'
 import { SessionClient } from './session-client'
 
 describe('BrowserAudio', () => {
+  it.each(['AbortError', 'NotAllowedError'])('absorbs an old %s and ignores saved player callbacks', async (name) => {
+    const players: Player[] = []
+    let reject!: (error: Error) => void
+    class Player {
+      onended: (() => void) | null = null
+      onerror: (() => void) | null = null
+      pause = vi.fn()
+      constructor(public src: string) { players.push(this) }
+      play(): Promise<void> {
+        return players.length === 1 ? new Promise((_, fail) => { reject = fail }) : Promise.resolve()
+      }
+    }
+    vi.stubGlobal('Audio', Player)
+    vi.stubGlobal('URL', class extends URL {
+      static createObjectURL = vi.fn().mockReturnValue('blob:audio')
+      static revokeObjectURL = vi.fn()
+    })
+    const client = new SessionClient('', 120, 30)
+    const audio = new BrowserAudio(client, 300)
+    const oldCallback = vi.fn()
+    const callback = vi.fn()
+    const pending = audio.playReady(new Blob(['old']), oldCallback)
+    const ended = players[0].onended
+    const error = players[0].onerror
+    await audio.playReady(new Blob(['new']), callback)
+    reject(new DOMException('superseded', name))
+    await expect(pending).resolves.toBeUndefined()
+    ended?.()
+    error?.()
+    expect(players[1].pause).not.toHaveBeenCalled()
+    expect(oldCallback).not.toHaveBeenCalled()
+    players[1].onended?.()
+    expect(callback).toHaveBeenCalledOnce()
+    audio.destroy()
+    client.destroy()
+  })
+
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -162,9 +199,9 @@ describe('BrowserAudio', () => {
         headers: { 'Content-Type': 'audio/mpeg' },
       })
     }))
-    vi.stubGlobal('URL', {
-      createObjectURL: vi.fn().mockReturnValue('blob:audio'),
-      revokeObjectURL: vi.fn(),
+    vi.stubGlobal('URL', class extends URL {
+      static createObjectURL = vi.fn().mockReturnValue('blob:audio')
+      static revokeObjectURL = vi.fn()
     })
     const client = new SessionClient('https://claire.test', 120, 30)
     const audio = new BrowserAudio(client, 300)

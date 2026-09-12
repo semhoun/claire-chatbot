@@ -231,7 +231,8 @@ final class NewMessageJobTest extends TestCase
             $job->handle($this->payload('thread'));
             self::fail('Failure was swallowed');
         } catch (\RuntimeException $exception) {
-            self::assertSame($failure, $exception);
+            self::assertInstanceOf(\App\Services\Queue\NonRetryableJobException::class, $exception);
+            self::assertSame($failure, $exception->getPrevious());
         }
         self::assertSame('error', $publisher->generationState()->get('user-1', 'thread')['status']);
         $this->expectExceptionMessage('Unsafe chat retry refused');
@@ -275,6 +276,18 @@ final class NewMessageJobTest extends TestCase
         $publisher->generationState()->set('user-1', 'deleted-thread', '', 'deleted', false);
         $job->handle($this->payload('deleted-thread'));
         self::assertSame('deleted', $publisher->generationState()->get('user-1', 'deleted-thread')['status']);
+    }
+
+    public function testSupersededJobDoesNotRunOrOverwriteCurrentGeneration(): void
+    {
+        $handler = $this->createMock(AgentHandler::class);
+        $handler->expects(self::never())->method('events');
+        [$job, $publisher] = $this->job($handler);
+        $state = $publisher->generationState();
+        $state->set('user-1', 'thread', 'message-newer', 'queued', false);
+        $before = $state->get('user-1', 'thread');
+        $job->handle($this->payload('thread'));
+        self::assertSame($before, $state->get('user-1', 'thread'));
     }
 
     /** @return array<string, mixed> */

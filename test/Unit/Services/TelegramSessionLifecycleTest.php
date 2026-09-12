@@ -54,7 +54,7 @@ final class TelegramSessionLifecycleTest extends TestCase
     public function testProcessingFailureIsNotSwallowed(): void
     {
         [$service] = $this->service();
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(\App\Services\Queue\NonRetryableJobException::class);
         $service->manageSession('42');
         $session = new ReflectionProperty(TelegramService::class, 'telegramSession')->getValue($service);
         $session->set('brain_avatar', 'unknown');
@@ -68,23 +68,123 @@ final class TelegramSessionLifecycleTest extends TestCase
         self::assertTrue($service->manageSession('42'));
         self::assertTrue($service->updateUserSetting('brain_avatar', 'second'));
         self::assertTrue($service->updateUserSetting('brain_avatar', 'first'));
-        $service->startNewChat(42);
+        $service->startNewChat(42, 'direct-test');
         self::assertSame('first', $entity->getSessionData()['brain_avatar']);
         self::assertStringStartsWith(UserChatHistory::CHAT_TELEGRAM, $entity->getSessionData()['threadId']);
     }
 
+    public function testTextAndPhotoDeliveryRetriesBypassAgentAndPhotoDownload(): void
+    {
+        foreach ([['text' => 'Question'], ['photo' => [[
+            'file_id' => 'photo', 'file_unique_id' => 'unique', 'width' => 10, 'height' => 10,
+        ]]]] as $content) {
+            [$service] = $this->service('Cached answer');
+            // No Telegram transport is initialized: accessing it for getFile would fail.
+            $update = $this->contentUpdate($content);
+            $service->processUpdate($update);
+            $service->processUpdate($update);
+            self::assertSame(['Cached answer'], $service->sent);
+        }
+    }
+
+    public function testVoiceDeliveryFailureRetriesCachedAnswerWithoutTranscribing(): void
+    {
+        [$service, $entity] = $this->service('Cached voice answer');
+        $audio = $this->createMock(\App\Services\Audio\AudioServiceInterface::class);
+        $audio->method('isAvailable')->willReturn(true);
+        $audio->method('defaultVoice')->willReturn('voice');
+        $audio->method('isAllowedVoice')->willReturn(true);
+        $audio->expects(self::never())->method('transcribe');
+        $audio->expects(self::exactly(2))->method('speech')->with('Cached voice answer', 'voice', 'opus')
+            ->willThrowException(new \RuntimeException('Speech delivery unavailable'));
+        $transport = $this->createMock(\Phptg\BotApi\Transport\TransportInterface::class);
+        $transport->expects(self::exactly(2))->method('post')
+            ->with(self::stringEndsWith('/sendChatAction'), self::anything(), self::anything())
+            ->willReturn(new \Phptg\BotApi\Transport\ApiResponse(200, '{"ok":true,"result":true}'));
+        $api = new \Phptg\BotApi\TelegramBotApi('test', transport: $transport);
+        new ReflectionProperty(TelegramService::class, 'audioService')->setValue($service, $audio);
+        new ReflectionProperty(TelegramService::class, 'telegramAudioService')->setValue($service,
+            new \App\Services\TelegramAudioService($api, $audio, new NullLogger()));
+        $update = $this->contentUpdate(['voice' => [
+            'file_id' => 'voice', 'file_unique_id' => 'unique', 'duration' => 1,
+        ]]);
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            try {
+                $service->processUpdate($update);
+                self::fail('Voice delivery error must propagate');
+            } catch (\RuntimeException $error) {
+                self::assertSame('Speech delivery unavailable', $error->getMessage());
+            }
+            if ($attempt === 0) {
+                $entity->setSessionData([...$entity->getSessionData(), 'threadId' => 'new-conversation']);
+            }
+        }
+        self::assertSame(['Cached voice answer'], $service->sent);
+        self::assertSame('new-conversation', $entity->getSessionData()['threadId']);
+        self::assertNull(new ReflectionProperty(TelegramService::class, 'deliveryCheckpoint')->getValue($service));
+    }
+
+    public function testConfirmedTextChunksAreNotResentAfterLaterChunkTimeout(): void
+    {
+        $first = str_repeat('a', 3000);
+        $second = str_repeat('b', 2000);
+        [$service] = $this->service($first . "\n" . $second);
+        $service->useTransport = true;
+        $requests = [];
+        $transport = $this->createMock(\Phptg\BotApi\Transport\TransportInterface::class);
+        $transport->expects(self::exactly(3))->method('post')->willReturnCallback(
+            static function (string $url, string $body) use (&$requests): \Phptg\BotApi\Transport\ApiResponse {
+                self::assertStringEndsWith('/sendMessage', $url);
+                $requests[] = json_decode($body, true, flags: JSON_THROW_ON_ERROR)['text'];
+                if (count($requests) === 2) {
+                    throw new \RuntimeException('Transport timeout');
+                }
+                return new \Phptg\BotApi\Transport\ApiResponse(200,
+                    '{"ok":true,"result":{"message_id":1,"date":1,"chat":{"id":42,"type":"private"}}}');
+            },
+        );
+        new ReflectionProperty(TelegramService::class, 'telegramBotApi')->setValue($service,
+            new \Phptg\BotApi\TelegramBotApi('test', transport: $transport));
+        new ReflectionProperty(TelegramService::class, 'telegramMarkdown')->setValue($service,
+            new \App\Services\TelegramMarkdown());
+        $update = $this->contentUpdate(['text' => 'Question']);
+        try {
+            $service->processUpdate($update);
+            self::fail('Transport timeout must propagate');
+        } catch (\RuntimeException $error) {
+            self::assertSame('Transport timeout', $error->getMessage());
+        }
+        $service->processUpdate($update);
+        $service->processUpdate($update);
+        self::assertSame([$first, $second . "\n", $second . "\n"], $requests);
+    }
+
+    private function contentUpdate(array $content): Update
+    {
+        return Update::fromJson(json_encode([
+            'update_id' => 42,
+            'message' => ['message_id' => 1, 'date' => 1,
+                'chat' => ['id' => 42, 'type' => 'private'],
+                'from' => ['id' => 42, 'is_bot' => false, 'first_name' => 'Test'], ...$content],
+        ], JSON_THROW_ON_ERROR));
+    }
+
     /** @return array{LifecycleTelegramService, SessionEntity} */
-    private function service(): array
+    private function service(?string $cachedResponse = null): array
     {
         $entity = new SessionEntity();
-        $entity->setSessionData([Auth::AUTHENTICATED => true, 'brain_avatar' => 'first']);
+        $entity->setSessionData([Auth::AUTHENTICATED => true, Auth::USERID => 'user-42', 'brain_avatar' => 'first']);
         $repository = $this->createStub(TelegramSessionRepository::class);
         $repository->method('findOrCreateByTelegramId')->willReturn($entity);
-        $manager = $this->createStub(EntityManagerInterface::class);
+        $manager = $this->createStub(\Doctrine\ORM\EntityManager::class);
         $manager->method('getRepository')->willReturn($repository);
+        $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $manager->method('getConnection')->willReturn($connection);
         $settings = new Settings([
             'llm' => ['brains' => ['first' => LifecycleBrain::class, 'second' => LifecycleBrain::class]],
             'tools' => ['comfyui' => ['enabled' => true]],
+            'redis' => ['prefix' => 'test:'],
+            'telegram' => ['bot_token' => 'test'],
         ]);
         $history = $this->createStub(UserChatHistory::class);
         $container = $this->createStub(ContainerInterface::class);
@@ -96,7 +196,25 @@ final class TelegramSessionLifecycleTest extends TestCase
             'test' => ['label' => 'Test', 'workflow' => 'unused.json'],
         ]);
         $service = new ReflectionClass(LifecycleTelegramService::class)->newInstanceWithoutConstructor();
+        $redis = $this->createStub(\App\Services\Queue\QueueRedisConnection::class);
+        $records = [];
+        $redis->method('evaluate')->willReturnCallback(static function (string $script, array $args) use (&$records, $cachedResponse): mixed {
+            if (str_starts_with($script, 'return')) {
+                return $records[$args[0]] ?? ($cachedResponse === null ? '' : json_encode([
+                    'threadId' => 'stable-thread', 'attempted' => true, 'response' => $cachedResponse,
+                ], JSON_THROW_ON_ERROR));
+            }
+            $records[$args[0]] = $args[2];
+            return 1;
+        });
+        $stateRedis = $this->createStub(\App\Services\RedisClient::class);
+        $stateRedis->method('hgetall')->willReturn([]);
+        $stateRedis->method('hset')->willReturn(1);
+        $generation = new \App\Services\TelegramGeneration($redis, $settings, $connection,
+            new \App\Services\ChatGenerationState($stateRedis, $settings));
         foreach ([
+            'entityManager' => $manager,
+            'telegramGeneration' => $generation,
             'telegramSession' => new TelegramSession($manager),
             'settings' => $settings,
             'brainRegistry' => $registry,
@@ -124,11 +242,17 @@ final class TelegramSessionLifecycleTest extends TestCase
 
 final class LifecycleTelegramService extends TelegramService
 {
+    public bool $useTransport = false;
+
     /** @var list<string> */
     public array $sent = [];
 
     public function sendMessage(int $telegramChatId, string $text): void
     {
+        if ($this->useTransport) {
+            parent::sendMessage($telegramChatId, $text);
+            return;
+        }
         $this->sent[] = $text;
     }
 }

@@ -76,7 +76,7 @@ final readonly class AuthMiddleware implements MiddlewareInterface
     private function isPublicRoute(Request $request): bool
     {
         $path = $request->getUri()->getPath();
-        if ($path === '/auth/refresh') {
+        if (in_array($path, ['/auth/refresh', '/auth/resource-token'], true)) {
             return false;
         }
 

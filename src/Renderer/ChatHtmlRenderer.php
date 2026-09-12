@@ -16,17 +16,17 @@ final readonly class ChatHtmlRenderer
     ) {
     }
 
-    public function markdown(string $message, bool $placeholder = false): string
+    public function markdown(string $message, string $userId, bool $placeholder = false): string
     {
         $html = $this->markdown->convert($message);
 
         return $placeholder
             ? $this->generatedFileProcessor->processPlaceholder($html)
-            : $this->generatedFileProcessor->process($html);
+            : $this->generatedFileProcessor->process($html, $userId);
     }
 
     /** @param array<int, array<string, mixed>>|null $messages */
-    public function messages(?array $messages): string
+    public function messages(?array $messages, string $userId): string
     {
         if ($messages === null || $messages === []) {
             return '<span class="claire-typing-indicator">'
@@ -35,11 +35,14 @@ final readonly class ChatHtmlRenderer
                 . '<span class="claire-typing-indicator__dot"></span></span>';
         }
 
-        return implode('', array_map($this->message(...), $messages));
+        return implode('', array_map(
+            fn (array $message): string => $this->message($message, $userId),
+            $messages,
+        ));
     }
 
     /** @param array<string, mixed> $message */
-    public function message(array $message): string
+    public function message(array $message, string $userId): string
     {
         $sent = ($message['sent'] ?? false) === true;
         $id = trim((string) ($message['id'] ?? ''));
@@ -56,7 +59,7 @@ final readonly class ChatHtmlRenderer
             . ($sent ? 'claire-message--sent' : 'claire-message--received')
             . '"' . $articleId . '><div class="claire-message__bubble">'
             . $toolsHtml . '<span class="claire-message__text"' . $textId . '>'
-            . $this->markdown((string) ($message['message'] ?? ''))
+            . $this->markdown((string) ($message['message'] ?? ''), $userId)
             . '</span></div><span class="claire-message__meta">'
             . $this->escape($meta) . '</span></article>';
     }
@@ -110,14 +113,18 @@ final readonly class ChatHtmlRenderer
         return '<div class="claire-message__subbubble '
             . 'claire-message__subbubble--toolcall"><details class="claire-toolcall">'
             . '<summary class="claire-toolcall__summary" aria-label="Appels d’outils">'
-            . $this->icon('claire-toolcall__icon claire-toolcall__icon--tool',
-                'M14 6 18 2l4 4-4 4M13 7 4 16a2 2 0 0 0 0 3l1 1a2 2 0 0 0 3 0l9-9')
+            . $this->icon(
+                'claire-toolcall__icon claire-toolcall__icon--tool',
+                'M14 6 18 2l4 4-4 4M13 7 4 16a2 2 0 0 0 0 3l1 1a2 2 0 0 0 3 0l9-9'
+            )
             . '<svg class="claire-toolcall__icon claire-toolcall__icon--spinner" '
             . 'viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" '
             . 'fill="none" stroke="currentColor" stroke-width="2" '
             . 'stroke-linecap="round" stroke-dasharray="42 16"/></svg>'
-            . $this->icon('claire-toolcall__icon claire-toolcall__icon--done',
-                'M5 12l4 4L19 6')
+            . $this->icon(
+                'claire-toolcall__icon claire-toolcall__icon--done',
+                'M5 12l4 4L19 6'
+            )
             . $this->icon('claire-toolcall__chevron', 'M8 10l4 4 4-4')
             . '<span class="claire-visually-hidden">Appels d’outils</span></summary>'
             . '<div class="claire-toolscall-data"' . $containerId . '>'

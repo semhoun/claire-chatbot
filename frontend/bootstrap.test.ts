@@ -16,13 +16,23 @@ describe('frontend bootstrap', () => {
     expect(config.threadId).toBe('thread-1')
   })
 
-  it('reads and removes authentication tokens from the URL', () => {
-    window.history.replaceState({}, '', '/chat?token=session.jwt&minitoken=mini.jwt&foo=bar')
+  it('reads and removes the initial session token from the URL', () => {
+    window.history.replaceState({}, '', '/chat?token=session.jwt&foo=bar')
 
     expect(readTokensFromUrl()).toEqual({
       sessionToken: 'session.jwt',
-      miniToken: 'mini.jwt',
     })
     expect(window.location.search).toBe('?foo=bar')
+  })
+
+  it('rejects and removes legacy mini-tokens from the URL', () => {
+    window.history.replaceState({}, '', '/chat?minitoken=mini.jwt&foo=bar')
+    expect(() => readTokensFromUrl()).toThrow('mini-tokens')
+    expect(window.location.search).toBe('?foo=bar')
+  })
+
+  it('does not overwrite the bootstrap session when no URL token exists', () => {
+    window.history.replaceState({}, '', '/chat')
+    expect(readTokensFromUrl()).toEqual({})
   })
 })

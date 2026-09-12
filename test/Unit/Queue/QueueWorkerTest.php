@@ -21,6 +21,29 @@ final class QueueWorkerTest extends TestCase
         $this->runJob(false);
     }
 
+    public function testNonRetryableFailureDeadLettersImmediately(): void
+    {
+        $this->runLeasedFailure(new \App\Services\Queue\NonRetryableJobException('unsafe'), 'fail');
+    }
+
+    public function testChatContentionDefersWithoutNormalRelease(): void
+    {
+        $this->runLeasedFailure(new \App\Services\ChatGenerationBusyException('busy'), 'defer');
+    }
+
+    private function runLeasedFailure(\Throwable $error, string $transition): void
+    {
+        $backend = $this->createMock(\App\Services\Queue\LeasedQueueBackendInterface::class);
+        $message = new QueueMessage('id', WorkerTestJob::class, [], 'test');
+        $backend->method('reserveNextAvailable')->willReturn($message);
+        $backend->method('withLease')->willThrowException($error);
+        $backend->expects(self::once())->method($transition)->with($message);
+        $backend->expects(self::never())->method('release');
+        $backend->expects(self::never())->method('delete');
+        $worker = new QueueWorker($backend, $this->createStub(ContainerInterface::class), new NullLogger());
+        self::assertSame(1, $worker->run(new QueueWorkerOptions('test', 0, 1, 10), 'test-worker'));
+    }
+
     public function testFailureReleasesWithoutAcknowledgement(): void
     {
         $this->runJob(true);

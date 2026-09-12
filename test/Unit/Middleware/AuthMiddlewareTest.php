@@ -8,6 +8,7 @@ use App\Middleware\AuthMiddleware;
 use App\Services\Auth;
 use App\Services\Session\ArraySession;
 use App\Services\Settings;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Server\RequestHandlerInterface;
 use Slim\Interfaces\DispatcherInterface;
@@ -20,20 +21,22 @@ use Slim\Views\Twig;
 
 final class AuthMiddlewareTest extends TestCase
 {
-    public function testProtectedRouteReturnsUnauthorizedJsonForExpiredSession(): void
+    #[TestWith(['/auth/refresh', 'GET'])]
+    #[TestWith(['/auth/resource-token', 'POST'])]
+    public function testProtectedRouteReturnsUnauthorizedJsonForExpiredSession(string $path, string $method): void
     {
         $route = $this->createStub(RouteInterface::class);
         $route->method('getName')->willReturn('auth.refresh');
         $routingResults = new RoutingResults(
             $this->createStub(DispatcherInterface::class),
-            'GET',
-            '/auth/refresh',
+            $method,
+            $path,
             RoutingResults::FOUND,
         );
         $session = new ArraySession();
         $session->start();
         $request = new ServerRequestFactory()
-            ->createServerRequest('GET', 'https://claire.test/auth/refresh')
+            ->createServerRequest($method, 'https://claire.test' . $path)
             ->withAttribute(RouteContext::ROUTE, $route)
             ->withAttribute(
                 RouteContext::ROUTE_PARSER,

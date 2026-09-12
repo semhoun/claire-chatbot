@@ -101,6 +101,15 @@
                 <input id="baseUrl" type="url" placeholder="auto-detect" />
             </div>
 
+            <div>
+                <label for="tokenType">Type de token</label>
+                <select id="tokenType">
+                    <option value="session">Session Claire</option>
+                    <option value="id_token">SSO : ID token</option>
+                    <option value="access_token">SSO : access token</option>
+                </select>
+            </div>
+
             <div class="full">
                 <label for="token">Token (SSO ou Claire session)</label>
                 <textarea id="token" placeholder="opaque_or_jwt_token"></textarea>
@@ -121,11 +130,12 @@
 
 </div>
 
-<script src="/js/embed.js?v=20260816-2"></script>
+<script src="/js/embed.js?v=20260912-2"></script>
 <script>
     (function () {
         const baseUrlEl = document.getElementById('baseUrl');
         const tokenEl = document.getElementById('token');
+        const tokenTypeEl = document.getElementById('tokenType');
         const statusEl = document.getElementById('status');
 
         function detectBaseUrl() {
@@ -182,8 +192,12 @@
         }
 
         baseUrlEl.value = detectBaseUrl();
-        tokenEl.value = readStoredToken('claire_session_token')
-            || readStoredToken('claire_mini_token');
+        try {
+            tokenEl.value = new URL(baseUrlEl.value, window.location.href).origin === window.location.origin
+                ? readStoredToken('claire_session_token') : '';
+        } catch {
+            tokenEl.value = '';
+        }
 
         document.getElementById('btnEmbed').addEventListener('click', async function () {
             const baseUrl = trimValue(baseUrlEl) || detectBaseUrl();
@@ -198,14 +212,17 @@
                 baseUrl: baseUrl,
             };
 
-            if (token !== '') {
-                config.token = token;
+            if (tokenTypeEl.value === 'session') {
+                config.sessionToken = token;
+            } else {
+                config.ssoToken = token;
+                config.ssoTokenType = tokenTypeEl.value;
             }
 
             log('Init embed: ' + JSON.stringify({
                 baseUrl: config.baseUrl,
-                hasToken: typeof config.token === 'string',
-                tokenMode: 'auto-detect',
+                hasToken: token !== '',
+                tokenMode: tokenTypeEl.value,
             }));
 
             try {

@@ -33,10 +33,11 @@ async function exchangeToken(
   token: string,
   signal: AbortSignal,
   tokenType?: string,
-): Promise<{ session_token: string; mini_token?: string }> {
+): Promise<{ session_token: string }> {
   const response = await window.fetch(`${baseUrl}/auth/embed/exchange`, {
     method: 'POST',
     signal,
+    redirect: 'error',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify({
       sso_token: token,
@@ -44,20 +45,20 @@ async function exchangeToken(
     }),
   })
   if (!response.ok) throw new Error(`SSO exchange failed with status ${response.status}`)
-  return response.json() as Promise<{ session_token: string; mini_token?: string }>
+  return response.json() as Promise<{ session_token: string }>
 }
 
 async function fetchBootstrap(baseUrl: string, signal: AbortSignal, authToken?: string): Promise<ClaireBootstrap> {
   const url = new URL(`${baseUrl}/embed`)
-  if (authToken) url.searchParams.set('token', authToken)
-  const response = await window.fetch(url, { signal, headers: { Accept: 'text/html' } })
+  const headers = new Headers({ Accept: 'text/html' })
+  if (authToken) headers.set('X-Claire-Auth', authToken)
+  const response = await window.fetch(url, { signal, headers, redirect: 'error' })
   if (!response.ok) throw new Error(`Embed page fetch failed with status ${response.status}`)
   const documentFragment = new DOMParser().parseFromString(await response.text(), 'text/html')
   const bootstrap = documentFragment.querySelector<HTMLElement>('.claire-embed-bootstrap')
   if (bootstrap === null) throw new Error('Embed bootstrap payload is missing')
   const config = parseBootstrap(bootstrap)
   config.sessionToken = response.headers.get('X-Claire-Token') ?? undefined
-  config.miniToken = response.headers.get('X-Claire-Minitoken') ?? undefined
   return config
 }
 
@@ -102,22 +103,26 @@ async function claireEmbed(options: ClaireEmbedConfig = {}): Promise<HTMLElement
     const baseUrl = normalizedBaseUrl(options.baseUrl)
     const genericToken = options.token?.trim() ?? ''
     let sessionToken = options.sessionToken?.trim() ?? ''
-    let miniToken = ''
     const audience = genericToken ? jwtAudience(genericToken) : null
     if (!sessionToken && audience === 'session') sessionToken = genericToken
-    if (!miniToken && audience === 'minitoken') miniToken = genericToken
-    const exchangeCandidate = options.ssoToken?.trim() || genericToken
-    if (!sessionToken && exchangeCandidate && audience === null) {
+    if (audience === 'minitoken' || jwtAudience(sessionToken) === 'minitoken'
+      || jwtAudience(options.ssoToken?.trim() ?? '') === 'minitoken') {
+      throw new Error('A mini-token cannot authenticate the widget. Use a session token or explicit ssoToken.')
+    }
+    if (genericToken && audience !== 'session' && !options.ssoToken) {
+      throw new Error('Unrecognized token audience. Supply SSO credentials through ssoToken explicitly.')
+    }
+    const exchangeCandidate = options.ssoToken?.trim()
+    if (!sessionToken && exchangeCandidate) {
       const exchange = await exchangeToken(baseUrl, exchangeCandidate, controller.signal, options.ssoTokenType)
       assertCurrent()
       sessionToken = exchange.session_token
-      miniToken = exchange.mini_token ?? ''
     }
+    if (jwtAudience(sessionToken) === 'minitoken') throw new Error('SSO exchange returned a mini-token instead of a session token')
 
-    const config = await fetchBootstrap(baseUrl, controller.signal, sessionToken || miniToken)
+    const config = await fetchBootstrap(baseUrl, controller.signal, sessionToken)
     assertCurrent()
     config.sessionToken ||= sessionToken || undefined
-    config.miniToken ||= miniToken || undefined
     await loadDynamicCss(config, controller.signal)
     assertCurrent()
     registerElement()

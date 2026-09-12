@@ -15,7 +15,7 @@ export function parseBootstrap(element: BootstrapElement): ClaireBootstrap {
   return config
 }
 
-export function readTokensFromUrl(): { sessionToken?: string; miniToken?: string } {
+export function readTokensFromUrl(): { sessionToken?: string } {
   const url = new URL(window.location.href)
   const sessionToken = url.searchParams.get('token') || undefined
   const miniToken = url.searchParams.get('minitoken') || undefined
@@ -24,7 +24,10 @@ export function readTokensFromUrl(): { sessionToken?: string; miniToken?: string
     url.searchParams.delete('minitoken')
     window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`)
   }
-  return { sessionToken, miniToken }
+  if (miniToken || (sessionToken && jwtAudience(sessionToken) === 'minitoken')) {
+    throw new Error('Legacy mini-tokens are no longer supported. Authenticate with a session token.')
+  }
+  return sessionToken ? { sessionToken } : {}
 }
 
 export function jwtAudience(token: string): 'session' | 'minitoken' | null {

@@ -9,6 +9,7 @@ use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Job\Web\StartThreadJob;
 use App\Renderer\ChatHtmlRenderer;
 use App\Services\Auth;
+use App\Services\ChatGenerationBusyException;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\ChatThreadLock;
@@ -57,9 +58,6 @@ final readonly class HistoryController
             return $response->withStatus(403);
         }
 
-        $chatThreadLock = new ChatThreadLock($this->entityManager->getConnection()->getNativeConnection(), $userId, $threadId);
-        $chatGenerationState = $this->chatStreamPublisher->generationState();
-        $chatGenerationState->set($userId, $threadId, 'opening-' . $threadId, 'queued', false);
         try {
             $this->queueDispatcher->dispatch(
                 StartThreadJob::class,
@@ -70,13 +68,9 @@ final readonly class HistoryController
                 ],
                 $this->settings->get('queue.defaultQueue')
             );
-        } catch (\Throwable $throwable) {
-            $chatGenerationState->set($userId, $threadId, 'opening-' . $threadId, 'error', false);
-            throw $throwable;
+        } catch (ChatGenerationBusyException) {
+            return $response->withStatus(409);
         }
-
-        $this->publishSnapshot($threadId, null, $sessionId, $userId);
-        $chatThreadLock->release();
 
         $response->getBody()->write(json_encode([
             'threadId' => $threadId,
@@ -294,9 +288,9 @@ final readonly class HistoryController
         $snapshot = $this->chatStreamPublisher->generationState()->capture(
             $userId,
             $threadId,
-            function () use ($userChatHistory): array {
+            function () use ($userChatHistory, $userId): array {
                 $userChatHistory?->refresh();
-                return ['html' => $this->chatHtmlRenderer->messages($userChatHistory?->getFormattedMessages())];
+                return ['html' => $this->chatHtmlRenderer->messages($userChatHistory?->getFormattedMessages(), $userId)];
             },
         );
         $messagesHtml = $snapshot['html'];

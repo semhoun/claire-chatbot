@@ -145,7 +145,15 @@ final class QueueWorker
                 'job_class' => $job->jobClass,
             ]);
             try {
-                $this->queueBackend->release($job);
+                if ($this->queueBackend instanceof LeasedQueueBackendInterface
+                    && $throwable instanceof NonRetryableJobException) {
+                    $this->queueBackend->fail($job);
+                } elseif ($this->queueBackend instanceof LeasedQueueBackendInterface
+                    && $throwable instanceof \App\Services\ChatGenerationBusyException) {
+                    $this->queueBackend->defer($job);
+                } else {
+                    $this->queueBackend->release($job);
+                }
             } catch (Throwable $releaseError) {
                 $this->logger->error('Failed to release job; lease recovery required', [
                     'job_id' => $job->id,

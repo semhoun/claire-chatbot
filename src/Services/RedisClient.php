@@ -122,7 +122,7 @@ class RedisClient
     public function brpop(array $keys, float|int $timeout): ?array
     {
         try {
-            $result = $this->redis->brPop($keys, (int) $timeout);
+            $result = $this->redis->brPop($keys, $timeout);
         } catch (\RedisException $redisException) {
             // Recover the connection so the next blocking read can proceed.
             if (str_contains(strtolower($redisException->getMessage()), 'read error')) {

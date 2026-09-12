@@ -144,6 +144,46 @@ final class TelegramAudioServiceTest extends TestCase
         );
     }
 
+    public function testConfirmedVoiceChunkSkipsSynthesisAndSendOnRetry(): void
+    {
+        $transport = $this->createMock(TransportInterface::class);
+        $transport->expects(self::exactly(3))->method('post')
+            ->willReturn(new ApiResponse(200, '{"ok":true,"result":true}'));
+        $transport->expects(self::exactly(2))->method('postWithFiles')
+            ->willReturn(new ApiResponse(200,
+                '{"ok":true,"result":{"message_id":1,"date":1,"chat":{"id":42,"type":"private"}}}'));
+        $audio = $this->createMock(AudioServiceInterface::class);
+        $calls = [];
+        $audio->expects(self::exactly(3))->method('speech')->willReturnCallback(
+            static function (string $text) use (&$calls): SpeechResult {
+                $calls[] = $text;
+                if (count($calls) === 2) {
+                    throw new \RuntimeException('Synthesis failed');
+                }
+                return new SpeechResult('opus bytes', 'audio/opus', 'opus');
+            },
+        );
+        $service = new TelegramAudioService(new TelegramBotApi('test', transport: $transport), $audio,
+            $this->createStub(LoggerInterface::class));
+        $confirmed = [];
+        $checkpoint = static function (string $step, callable $operation) use (&$confirmed): void {
+            if (isset($confirmed[$step])) {
+                return;
+            }
+            $operation();
+            $confirmed[$step] = true;
+        };
+        $first = implode(' ', array_fill(0, 300, 'word'));
+        try {
+            $service->sendResponse(42, $first . ' last', 'voice', $checkpoint);
+            self::fail('Synthesis failure must propagate');
+        } catch (\RuntimeException $error) {
+            self::assertSame('Synthesis failed', $error->getMessage());
+        }
+        $service->sendResponse(42, $first . ' last', 'voice', $checkpoint);
+        self::assertSame([$first, 'last', 'last'], $calls);
+    }
+
     private function expectAudioDownload(
         TransportInterface&\PHPUnit\Framework\MockObject\MockObject $transport,
         string $fileId,

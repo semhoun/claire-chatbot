@@ -51,26 +51,39 @@ final readonly class TelegramAudioService
         return $text;
     }
 
-    public function sendResponse(int $telegramChatId, string $responseText, string $voice): void
-    {
+    /** @param callable(string, callable(): void): void|null $checkpoint */
+    public function sendResponse(
+        int $telegramChatId,
+        string $responseText,
+        string $voice,
+        ?callable $checkpoint = null,
+    ): void {
         $text = $this->normalizeSpeechText($responseText);
         if ($text === '') {
             return;
         }
 
         try {
-            foreach ($this->splitSpeechText($text) as $chunk) {
-                $this->telegramBotApi->sendChatAction(
-                    $telegramChatId,
-                    TelegramAction::VOICE->value,
-                );
-                $speech = $this->audioService->speech($chunk, $voice, 'opus');
-                $this->sendVoice($telegramChatId, $speech->content);
+            foreach ($this->splitSpeechText($text) as $index => $chunk) {
+                $send = function () use ($telegramChatId, $chunk, $voice): void {
+                    $this->telegramBotApi->sendChatAction(
+                        $telegramChatId,
+                        TelegramAction::VOICE->value,
+                    );
+                    $speech = $this->audioService->speech($chunk, $voice, 'opus');
+                    $this->sendVoice($telegramChatId, $speech->content);
+                };
+                if ($checkpoint !== null) {
+                    $checkpoint('voice:' . $index, $send);
+                } else {
+                    $send();
+                }
             }
         } catch (Throwable $throwable) {
             $this->logger->error('Voice response error: ' . $throwable->getMessage(), [
                 'exception' => $throwable,
             ]);
+            throw $throwable;
         }
     }
 

@@ -322,7 +322,258 @@ final class RedisQueueBackendTest extends TestCase
 
     private function newBackend(): RedisQueueBackend
     {
-        return new RedisQueueBackend(new QueueRedisConnection($this->settings), $this->settings);
+        return new RedisQueueBackend(new QueueRedisConnection($this->settings), $this->settings,
+            \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]));
+    }
+
+    public function testWebDispatchAtomicallyQueuesAndRejectsBusyWithoutOverwrite(): void
+    {
+        $payload = $this->webPayload();
+        $id = $this->backend->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'telegram');
+        $key = $this->generationKey();
+        $before = $this->redis->hGetAll($key);
+        self::assertSame(['messageId' => 'msg-test', 'status' => 'queued', 'attempted' => '0'], $before);
+        try {
+            $payload['messageId'] = 'msg-other';
+            $this->backend->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'telegram');
+            self::fail('Busy dispatch must fail');
+        } catch (\App\Services\ChatGenerationBusyException) {
+            self::assertSame($before, $this->redis->hGetAll($key));
+            self::assertSame([$id], $this->redis->lRange($this->key(), 0, -1));
+            self::assertCount(1, $this->redis->keys($this->prefix . 'queue:job:*'));
+        }
+    }
+
+    public function testWrongTypesNeverLeaveQueuedStateOrOrphanJob(): void
+    {
+        foreach ([$this->key(), $this->generationKey()] as $badKey) {
+            $this->redis->set($badKey, 'wrong');
+            try {
+                $this->backend->dispatch(\App\Job\Web\NewMessageJob::class, $this->webPayload(), 'telegram');
+                self::fail('Wrong type must fail');
+            } catch (\RuntimeException) {
+                self::assertSame([], $this->redis->keys($this->prefix . 'queue:job:*'));
+                self::assertSame('wrong', $this->redis->get($badKey));
+            }
+            $this->redis->del($badKey);
+        }
+        self::assertSame(0, $this->redis->exists($this->generationKey()));
+    }
+
+    public function testOpeningDispatchAndDeletedThread(): void
+    {
+        $payload = $this->webPayload();
+        unset($payload['messageId'], $payload['message']);
+        $this->backend->dispatch(\App\Job\Web\StartThreadJob::class, $payload, 'telegram');
+        self::assertSame('opening-thread-test', $this->redis->hGet($this->generationKey(), 'messageId'));
+        $this->redis->hSet($this->generationKey(), 'status', 'deleted');
+        $this->expectException(\App\Services\ChatGenerationBusyException::class);
+        $this->backend->dispatch(\App\Job\Web\NewMessageJob::class, $this->webPayload(), 'telegram');
+    }
+
+    /** @return array<string, array{string}> */
+    public static function sqlEngines(): array
+    {
+        return ['MariaDB' => ['MYSQL'], 'PostgreSQL' => ['PGSQL']];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('sqlEngines')]
+    public function testSqlLockRejectsDispatchBeforeAnyRedisWrite(string $engine): void
+    {
+        $envPrefix = 'CLAIRE_CHAT_TEST_' . $engine;
+        $dsn = getenv($envPrefix . '_DSN');
+        if ($dsn === false || $dsn === '' || ! extension_loaded('pdo_' . strtolower($engine))) {
+            self::markTestSkipped('Requires isolated ' . $envPrefix . '_DSN');
+        }
+        $user = getenv($envPrefix . '_USER') ?: '';
+        $password = getenv($envPrefix . '_PASSWORD') ?: '';
+        $owner = new \PDO($dsn, $user, $password);
+        $contender = new \PDO($dsn, $user, $password);
+        $other = $this->createStub(\Doctrine\DBAL\Connection::class);
+        $other->method('getNativeConnection')->willReturn($contender);
+        $payload = $this->webPayload();
+        $payload['threadId'] = $this->prefix . 'thread';
+        $stateKey = $this->prefix . 'chat:generation:'
+            . hash('sha256', json_encode(['user-test', $payload['threadId']], JSON_THROW_ON_ERROR));
+        $lock = new \App\Services\ChatThreadLock($owner, 'user-test', $payload['threadId']);
+        $backend = new RedisQueueBackend(new QueueRedisConnection($this->settings), $this->settings, $other);
+        try {
+            $backend->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'telegram');
+            self::fail('SQL lock must reject concurrent dispatch');
+        } catch (\App\Services\ChatGenerationBusyException) {
+            self::assertSame(0, $this->redis->exists($stateKey));
+            self::assertSame([], $this->redis->keys($this->prefix . 'queue:job:*'));
+        } finally {
+            $lock->release();
+        }
+        $id = $backend->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'telegram');
+        self::assertSame($id, $backend->reserveNextAvailable('telegram', 0)?->id);
+    }
+
+    public function testContentionDefersWithoutAttemptAndPermanentFailureKeepsPayloadOnce(): void
+    {
+        $id = $this->backend->dispatch('ExampleJob', ['recover' => 'me'], 'telegram');
+        for ($contention = 0; $contention < 8; $contention++) {
+            $job = $this->backend->reserveNextAvailable('telegram', 0);
+            self::assertNotNull($job);
+            $this->backend->defer($job);
+            self::assertSame('0', $this->redis->hGet($this->jobKey($id), 'attempts'));
+            $this->makeRetryReady($id);
+        }
+        $job = $this->backend->reserveNextAvailable('telegram', 0);
+        $this->backend->fail($job);
+        $this->backend->fail($job);
+        self::assertSame('1', $this->redis->hGet($this->jobKey($id), 'attempts'));
+        self::assertSame('dead', $this->redis->hGet($this->jobKey($id), 'state'));
+        self::assertSame('{"recover":"me"}', $this->redis->hGet($this->jobKey($id), 'payload'));
+        self::assertSame(1, $this->redis->zCard($this->key('dead')));
+        self::assertNull($this->backend->reserveNextAvailable('telegram', 0));
+    }
+
+    private function webPayload(): array
+    {
+        return ['threadId' => 'thread-test', 'sessionId' => 'session-test', 'messageId' => 'msg-test',
+            'message' => 'hello', 'session' => [\App\Services\Auth::USERID => 'user-test']];
+    }
+
+    public function testTelegramDeliveryRetryReusesDurableResponseAndThread(): void
+    {
+        [$generation, $state] = $this->telegramGeneration();
+        $calls = 0;
+        $deliveries = 0;
+        $generate = function (string $thread) use (&$calls, $state): string {
+            $calls++;
+            self::assertSame('thread-test', $thread);
+            self::assertTrue($state->snapshot('user-test', $thread)['responding']);
+            self::assertSame('1', $state->get('user-test', $thread)['attempted']);
+            // A second SQL connection cannot mutate this thread while the agent runs.
+            try {
+                new \App\Services\ChatThreadLock(new \PDO('sqlite::memory:'), 'user-test', $thread);
+                self::fail('Agent must hold thread lock');
+            } catch (\App\Services\ChatGenerationBusyException) {
+            }
+            return 'durable answer';
+        };
+        $deliver = function (string $answer) use (&$deliveries, $state): void {
+            self::assertSame('durable answer', $answer);
+            self::assertFalse($state->snapshot('user-test', 'thread-test')['responding']);
+            if (++$deliveries === 1) {
+                throw new \RuntimeException('Telegram unavailable');
+            }
+        };
+        try {
+            $generation->run('user-test', 'thread-test', 'update:42', $generate, $deliver);
+            self::fail('Delivery failure must propagate');
+        } catch (\RuntimeException $error) {
+            self::assertSame('Telegram unavailable', $error->getMessage());
+        }
+        [$restarted] = $this->telegramGeneration();
+        $restarted->run('user-test', 'changed-session-thread', 'update:42', $generate, $deliver);
+        $restarted->run('user-test', 'changed-session-thread', 'update:42', $generate, $deliver);
+        self::assertSame(1, $calls);
+        self::assertSame(2, $deliveries);
+    }
+
+    public function testTelegramAmbiguousAttemptIsNonRetryableAndWebContentionDoesNotAttempt(): void
+    {
+        [$generation, $state] = $this->telegramGeneration();
+        $state->set('user-test', 'thread-test', 'web-message', 'queued', false);
+        $calls = 0;
+        $generate = static function (string $threadId) use (&$calls): string {
+            $calls++;
+            self::assertSame('thread-test', $threadId);
+            throw new \RuntimeException('provider failed after tool');
+        };
+        $deliver = static function (): void { self::fail('Must not deliver'); };
+        try {
+            $generation->run('user-test', 'thread-test', 'update:43', $generate, $deliver);
+            self::fail('Web queued state must block Telegram');
+        } catch (\App\Services\ChatGenerationBusyException) {
+            self::assertSame(0, $calls);
+            $key = $this->redis->keys($this->prefix . 'telegram:generation:*')[0];
+            $record = json_decode($this->redis->get($key), true, flags: JSON_THROW_ON_ERROR);
+            self::assertFalse($record['attempted']);
+        }
+        $state->set('user-test', 'thread-test', 'web-message', 'done', true);
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            try {
+                $generation->run('user-test', 'new-session-thread', 'update:43', $generate, $deliver);
+                self::fail('Unsafe attempt must fail');
+            } catch (\App\Services\Queue\NonRetryableJobException) {
+                self::assertSame(1, $calls);
+            }
+        }
+        self::assertSame('error', $state->get('user-test', 'thread-test')['status']);
+    }
+
+    public function testTelegramJournalIsBotScopedButSurvivesTokenRotation(): void
+    {
+        $calls = 0;
+        foreach (['100:secret', '100:rotated', '200:secret'] as $token) {
+            $this->settings = new Settings([
+                'redis' => $this->settings->get('redis'), 'telegram' => ['bot_token' => $token],
+            ]);
+            [$generation] = $this->telegramGeneration();
+            $generation->run('user-test', 'thread-test', 'update:99',
+                static function () use (&$calls): string { $calls++; return 'answer'; },
+                static function (string $text): void { self::assertSame('answer', $text); },
+            );
+        }
+        self::assertSame(2, $calls);
+    }
+
+    public function testTelegramDeliveryCheckpointsAndUncertaintySurviveRestart(): void
+    {
+        [$generation] = $this->telegramGeneration();
+        $generated = $textSends = $voiceSends = 0;
+        $generate = static function () use (&$generated): string { $generated++; return 'answer'; };
+        $deliver = static function (string $text, callable $checkpoint) use (&$textSends, &$voiceSends): void {
+            self::assertSame('answer', $text);
+            $checkpoint('text:0', static function () use (&$textSends): void { $textSends++; });
+            $checkpoint('voice:0', static function () use (&$voiceSends): void {
+                if (++$voiceSends === 1) {
+                    throw new \RuntimeException('Ambiguous Telegram timeout');
+                }
+            });
+        };
+        try {
+            $generation->run('user-test', 'thread-test', 'update:101', $generate, $deliver);
+            self::fail('Delivery error must propagate');
+        } catch (\RuntimeException) {
+            $key = $this->redis->keys($this->prefix . 'telegram:generation:*')[0];
+            $record = json_decode($this->redis->get($key), true, flags: JSON_THROW_ON_ERROR);
+            self::assertSame('confirmed', $record['deliveries']['text:0']['status']);
+            self::assertSame('uncertain', $record['deliveries']['voice:0']['status']);
+            self::assertStringContainsString('Ambiguous Telegram timeout', $record['deliveries']['voice:0']['lastError']);
+        }
+        [$restarted] = $this->telegramGeneration();
+        $restarted->run('user-test', 'new-thread', 'update:101', $generate, $deliver);
+        self::assertSame(1, $generated);
+        self::assertSame(1, $textSends);
+        self::assertSame(2, $voiceSends);
+        $record = json_decode($this->redis->get($key), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('thread-test', $record['threadId']);
+        self::assertTrue($record['delivered']);
+        self::assertSame('confirmed', $record['deliveries']['voice:0']['status']);
+        self::assertSame(2, $record['deliveries']['voice:0']['attempts']);
+        self::assertArrayHasKey('lastError', $record['deliveries']['voice:0']);
+    }
+
+    private function telegramGeneration(): array
+    {
+        $redis = new \App\Services\RedisClient();
+        $redis->connect('127.0.0.1', (int) getenv('QUEUE_TEST_REDIS_PORT'), 2);
+        $state = new \App\Services\ChatGenerationState($redis, $this->settings);
+        $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        return [new \App\Services\TelegramGeneration(
+            new QueueRedisConnection($this->settings), $this->settings, $connection, $state,
+        ), $state];
+    }
+
+    private function generationKey(): string
+    {
+        return $this->prefix . 'chat:generation:'
+            . hash('sha256', json_encode(['user-test', 'thread-test'], JSON_THROW_ON_ERROR));
     }
 
     private function key(string $suffix = ''): string

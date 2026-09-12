@@ -72,16 +72,16 @@ final class StartThreadJob implements QueueDoer
 
         $messageId = 'opening-' . $this->threadId;
         if (($previous['messageId'] ?? $messageId) !== $messageId) {
-            throw new \RuntimeException('Superseded opening generation');
+            return;
         }
 
         if (($previous['attempted'] ?? '0') === '1') {
             $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'error', true);
-            $runtimeException = new \RuntimeException('Unsafe opening generation retry refused');
+            $nonRetryableJobException = new \App\Services\Queue\NonRetryableJobException('Unsafe opening generation retry refused');
             try {
-                $this->handleChatError($runtimeException);
+                $this->handleChatError($nonRetryableJobException);
             } finally {
-                throw $runtimeException;
+                throw $nonRetryableJobException;
             }
         }
 
@@ -100,7 +100,9 @@ final class StartThreadJob implements QueueDoer
 
                 $this->handleChatError($throwable);
             } finally {
-                throw $throwable;
+                throw $attempted
+                    ? new \App\Services\Queue\NonRetryableJobException('Opening attempt failed after agent entry', 0, $throwable)
+                    : $throwable;
             }
         } finally {
             $this->agent = null;
@@ -127,7 +129,8 @@ final class StartThreadJob implements QueueDoer
         $chatHistory->initializeWithOpeningMessage($assistantMessage);
 
         $messagesHtml = $this->chatHtmlRenderer->messages(
-            $chatHistory->getFormattedMessages()
+            $chatHistory->getFormattedMessages(),
+            $this->userId,
         );
         $chatGenerationState = $this->chatStreamPublisher->generationState();
         $chatGenerationState->set($this->userId, $this->threadId, 'opening-' . $this->threadId, 'done', true);

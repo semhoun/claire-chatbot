@@ -15,6 +15,8 @@ return static function (App $app): void {
     $app->group('/auth', static function (Group $group): void {
         $group->get('/refresh', [SessionController::class, 'refresh'])
             ->setName('auth.refresh');
+        $group->post('/resource-token', [AuthController::class, 'resourceToken'])
+            ->setName('auth.resource_token');
         $group->get('/sso', [AuthController::class, 'ssoRedirect'])->setName('auth.sso');
         $group->get('/callback', [AuthController::class, 'ssoCallback'])->setName('auth.callback');
         $group->post('/embed/exchange', [AuthController::class, 'embedExchange'])

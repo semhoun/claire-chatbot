@@ -40,20 +40,16 @@ final readonly class StartThreadJob implements QueueDoer
     /** @param array<string, mixed> $payload */
     public function handle(array $payload): void
     {
-        $telegramUserId = (string) ($payload['telegramUserId'] ?? $payload['telegramUserId'] ?? '');
+        $telegramUserId = (string) ($payload['telegramUserId'] ?? '');
         try {
             if ($telegramUserId === '') {
                 throw new \InvalidArgumentException('Thread ID cannot be empty');
             }
 
-            $this->telegramService->manageSession($telegramUserId);
-            $this->telegramService->startNewChat((int) $telegramUserId);
+            $this->telegramService->startNewChatForUser($telegramUserId, (string) ($payload['generationId'] ?? ''));
         } catch (\Throwable $throwable) {
             $this->logger->error('Telegram start new thread processing error', ['throwable' => $throwable]);
-            $telegramUserId = (int) $telegramUserId;
-            if ($telegramUserId > 0) {
-                $this->telegramService->sendMessage($telegramUserId, 'Désolé, une erreur est survenue lors du la création d\'une nouvelle conversation.');
-            }
+            throw $throwable;
         }
     }
 }

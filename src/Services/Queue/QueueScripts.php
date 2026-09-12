@@ -7,13 +7,25 @@ namespace App\Services\Queue;
 final class QueueScripts
 {
     public const string DISPATCH = <<<'LUA'
+        local function check(key, expected)
+            local actual = redis.call('TYPE', key).ok
+            return actual == 'none' or actual == expected
+        end
+        if not check(KEYS[1], 'list') or not check(KEYS[2], 'hash')
+            or (ARGV[5] ~= '' and not check(ARGV[5], 'string'))
+            or (ARGV[6] ~= '' and not check(ARGV[6], 'hash')) then
+            return redis.error_reply('Invalid dispatch key type')
+        end
         if ARGV[5] ~= '' then
             local previous = redis.call('GET', ARGV[5])
             if previous then return previous end
         end
-        local queueType = redis.call('TYPE', KEYS[1]).ok
-        if queueType ~= 'none' and queueType ~= 'list' then
-            return redis.error_reply('Queue key must be a list')
+        if ARGV[6] ~= '' then
+            local status = redis.call('HGET', ARGV[6], 'status')
+            local previous = redis.call('HGET', ARGV[6], 'messageId')
+            if status == 'queued' or status == 'running' or status == 'deleted'
+                or previous == ARGV[7] then return 'CHAT_BUSY' end
+            redis.call('HSET', ARGV[6], 'messageId', ARGV[7], 'status', 'queued', 'attempted', '0')
         end
         redis.call('HSET', KEYS[2], 'id', ARGV[1], 'queue_name', ARGV[2],
             'job_class', ARGV[3], 'payload', ARGV[4], 'attempts', 0, 'state', 'ready',
@@ -81,6 +93,17 @@ final class QueueScripts
             redis.call('DEL', key)
         elseif action == 'release' then
             retry(id, 'execution failed')
+        elseif action == 'fail' then
+            redis.call('ZREM', KEYS[2], id)
+            redis.call('HDEL', key, 'token')
+            redis.call('HSET', key, 'state', 'dead', 'last_error', 'non-retryable execution')
+            redis.call('ZADD', KEYS[4], now, id)
+        elseif action == 'defer' then
+            redis.call('ZREM', KEYS[2], id)
+            redis.call('HDEL', key, 'token')
+            redis.call('HINCRBY', key, 'attempts', -1)
+            redis.call('HSET', key, 'state', 'delayed', 'last_error', 'chat contention')
+            redis.call('ZADD', KEYS[3], now + tonumber(ARGV[7]), id)
         else
             return redis.error_reply('Unknown queue transition')
         end

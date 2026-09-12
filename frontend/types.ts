@@ -61,7 +61,6 @@ export interface ClaireBootstrap {
   refreshBeforeExpire: number
   refreshMinInterval: number
   sessionToken?: string
-  miniToken?: string
   dynamicCss?: string
 }
 

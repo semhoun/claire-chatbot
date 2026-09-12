@@ -38,7 +38,7 @@ final readonly class ChatStreamSubscriber
         return hex2bin($matches[2]);
     }
 
-    public function popMessage(string $threadId, int $timeout): ?string
+    public function popMessage(string $threadId, int|float $timeout): ?string
     {
         $result = $this->redisClient->brpop([$this->channel($threadId) . ':queue'], $timeout);
 

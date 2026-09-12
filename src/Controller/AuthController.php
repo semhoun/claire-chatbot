@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Entity\ChatHistory;
+use App\Entity\File;
+use App\Middleware\JwtSessionMiddleware;
 use App\Services\Auth;
+use App\Services\ChatGenerationState;
 use App\Services\JwtTokenService;
 use App\Services\OidcClient;
 use App\Services\OidcTransaction;
@@ -27,6 +31,8 @@ final readonly class AuthController
         private JwtTokenService $jwtTokenService,
         private Twig $twig,
         private OidcTransaction $oidcTransaction,
+        private \Doctrine\ORM\EntityManager $entityManager,
+        private ChatGenerationState $chatGenerationState,
     ) {
     }
 
@@ -92,7 +98,6 @@ final readonly class AuthController
         $this->auth->login($session, $result['id'], $result['data']);
 
         $sessionToken = $this->jwtTokenService->generateSessionToken($session);
-        $miniToken = $this->jwtTokenService->generateMiniToken($session);
 
         // Render callback page that stores token client-side then redirects
         // This avoids losing tokens on a 302 redirect while keeping
@@ -100,7 +105,6 @@ final readonly class AuthController
         return $this->twig->render($response, 'auth_callback.twig', [
             'base_url' => (string) $request->getAttribute('base_url'),
             'session_token' => $sessionToken,
-            'mini_token' => $miniToken,
             'redirect_url' => '/',
         ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
@@ -168,7 +172,7 @@ final readonly class AuthController
 
             return $this->jsonResponse(
                 $response,
-                ['error' => 'unauthorized'],
+                ['error' => 'unauthorized', 'reason' => $reason],
                 401
             );
         }
@@ -192,12 +196,82 @@ final readonly class AuthController
         );
 
         $sessionToken = $this->jwtTokenService->generateSessionToken($session);
-        $miniToken = $this->jwtTokenService->generateMiniToken($session);
 
         return $this->jsonResponse($response, [
             'session_token' => $sessionToken,
-            'mini_token' => $miniToken,
         ]);
+    }
+
+    public function resourceToken(Request $request, Response $response): Response
+    {
+        $session = $request->getAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE);
+        if ($request->getMethod() !== 'POST') {
+            return $this->jsonResponse($response, ['error' => 'method_not_allowed'], 405);
+        }
+
+        if (! $session instanceof SessionInterface || $session->get(Auth::AUTHENTICATED) !== true
+            || $request->getAttribute(JwtSessionMiddleware::AUTH_RESOURCE) !== null
+            || ! is_int($request->getAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT))
+            || $request->getAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT) <= time()) {
+            return $this->jsonResponse($response, ['error' => 'unauthorized'], 401);
+        }
+
+        $userId = $session->get(Auth::USERID);
+        if (! is_string($userId) || $userId === '' || $userId === '0') {
+            return $this->jsonResponse($response, ['error' => 'unauthorized'], 401);
+        }
+
+        $payload = $this->extractEmbedExchangePayload($request);
+        $type = $payload['type'] ?? null;
+        $fields = match ($type) {
+            'file' => ['fileId'],
+            'stream' => ['threadId', 'sessionId'],
+            default => [],
+        };
+        if ($fields === []) {
+            return $this->jsonResponse($response, ['error' => 'invalid_resource_type'], 400);
+        }
+
+        foreach ($fields as $field) {
+            if (! is_string($payload[$field] ?? null) || $payload[$field] === ''
+                || strlen($payload[$field]) > 255 || preg_match('/[\x00-\x20\/\\\\?#]/', $payload[$field])) {
+                return $this->jsonResponse($response, ['error' => 'invalid_resource_scope'], 400);
+            }
+        }
+
+        if ($type === 'file') {
+            $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $payload['fileId']]);
+            if (! $file instanceof File || $file->getUser()->getId() !== $userId) {
+                return $this->jsonResponse($response, ['error' => 'resource_not_found'], 404);
+            }
+        } else {
+            $thread = $this->entityManager->getRepository(ChatHistory::class)
+                ->findOneBy(['threadId' => $payload['threadId']]);
+            if ($thread !== null && $thread->getUser()->getId() !== $userId) {
+                return $this->jsonResponse($response, ['error' => 'resource_not_found'], 404);
+            }
+
+            if ($thread === null) {
+                $state = $this->chatGenerationState->get($userId, $payload['threadId']);
+                if (($state['messageId'] ?? '') === ''
+                    || ! in_array($state['status'] ?? '', ['queued', 'running', 'done', 'error'], true)) {
+                    return $this->jsonResponse($response, ['error' => 'resource_not_found'], 404);
+                }
+            }
+        }
+
+        try {
+            $token = $type === 'file'
+                ? $this->jwtTokenService->generateFileToken($session, $payload['fileId'])
+                : $this->jwtTokenService->generateStreamToken($session, $payload['threadId'], $payload['sessionId']);
+        } catch (\InvalidArgumentException) {
+            return $this->jsonResponse($response, ['error' => 'invalid_resource_scope'], 400);
+        }
+
+        $claims = $type === 'file'
+            ? $this->jwtTokenService->parseFileToken($token)
+            : $this->jwtTokenService->parseStreamToken($token);
+        return $this->jsonResponse($response, ['token' => $token, 'expiresAt' => $claims['expiresAt']]);
     }
 
     /**
@@ -236,6 +310,7 @@ final readonly class AuthController
 
         return $response
             ->withStatus($status)
+            ->withHeader('Cache-Control', 'no-store')
             ->withHeader('Content-Type', 'application/json');
     }
 }

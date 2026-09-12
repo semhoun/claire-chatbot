@@ -36,7 +36,7 @@ const client = new SessionClient(
   props.config.refreshBeforeExpire,
   props.config.refreshMinInterval,
 )
-client.initialize(props.config.sessionToken, props.config.miniToken)
+client.initialize(props.config.sessionToken)
 const browserAudio = new BrowserAudio(client, props.config.audioMaxRecordingSeconds)
 
 const rootElement = ref<HTMLElement | null>(null)
@@ -76,6 +76,7 @@ const readyAudio = new Map<string, Blob>()
 const pendingAudio = new Set<string>()
 const failedAudio = new Set<string>()
 const autoPlayedAudio = new Set<string>()
+const invalidAudio = new Set<string>()
 let audioThreadId = threadId.value
 const localFiles = ref<File[]>([])
 const storedFiles = ref<Array<{ id: string; name: string }>>([])
@@ -93,6 +94,61 @@ let eventSource: EventSource | null = null
 let reconnectTimer: number | null = null
 let notificationTimer: number | null = null
 let destroyed = false
+let contextGeneration = 0
+let connectionGeneration = 0
+let playbackGeneration = 0
+let audioGeneration = 0
+let reconnectDelay = 1500
+const protectedLinks = new Map<HTMLAnchorElement, { timer: number | null }>()
+
+function clearProtectedLinks(): void {
+  for (const state of protectedLinks.values()) {
+    if (state.timer !== null) window.clearTimeout(state.timer)
+  }
+  protectedLinks.clear()
+}
+
+function captureContext(): () => boolean {
+  const generation = contextGeneration
+  const thread = threadId.value
+  const session = sessionId.value
+  return () => !destroyed && generation === contextGeneration
+    && thread === threadId.value && session === sessionId.value
+}
+
+function resetAudio(): void {
+  for (const article of messagesElement.value?.querySelectorAll('[id^="claire-"]') ?? []) {
+    invalidAudio.add(article.id.slice('claire-'.length))
+  }
+  audioGeneration++
+  playbackGeneration++
+  browserAudio.cancelRecording()
+  browserAudio.stopPlayback()
+  recording.value = false
+  transcribing.value = false
+  playingMessageId.value = null
+  readyAudio.clear()
+  pendingAudio.clear()
+  failedAudio.clear()
+  autoPlayedAudio.clear()
+}
+
+function beginNavigation(): void {
+  contextGeneration++
+  connectionGeneration++
+  eventSource?.close()
+  eventSource = null
+  if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
+  reconnectTimer = null
+  clearProtectedLinks()
+  client.invalidateResources()
+  resetAudio()
+  invalidAudio.clear()
+  finishResponse()
+  busy.value = false
+  notification.value = null
+  lightboxUrl.value = null
+}
 
 const brainName = computed(() => {
   return props.config.brains.find((brain) => brain.slug === currentBrain.value)?.name
@@ -116,14 +172,16 @@ async function checkedRequest(path: string, init: RequestInit = {}): Promise<Res
 }
 
 async function withBusy(action: () => Promise<void>): Promise<void> {
+  const current = captureContext()
   busy.value = true
   try {
     await action()
   } catch (error) {
+    if (!current()) return
     console.error(error)
     notify('Une erreur est survenue.', 'error')
   } finally {
-    busy.value = false
+    if (current()) busy.value = false
   }
 }
 
@@ -184,48 +242,68 @@ async function loadRag(): Promise<void> {
   })
 }
 
-function connectStream(): void {
+async function connectStream(): Promise<void> {
   if (destroyed) return
+  const connection = ++connectionGeneration
+  const context = captureContext()
+  const current = () => context() && connection === connectionGeneration
   eventSource?.close()
   eventSource = null
   if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
-  const token = client.getMiniToken()
-  if (token === null) {
-    reconnectTimer = window.setTimeout(connectStream, 1500)
-    return
-  }
-  const url = new URL(endpoint('/brain/stream'))
-  url.searchParams.set('sessionId', sessionId.value)
-  url.searchParams.set('threadId', threadId.value)
-  url.searchParams.set('token', token)
-  eventSource = new EventSource(url)
-  const source = eventSource
-  const events = [
-    'chat.error',
-    'chat.snapshot',
-    'chat.assistant.start',
-    'chat.assistant.placeholder',
-    'chat.assistant.update',
-    'chat.assistant.done',
-    'chat.audio.ready',
-    'chat.audio.error',
-    'chat.tool.update',
-  ]
-  for (const type of events) {
-    eventSource.addEventListener(type, (event) => {
-      if (eventSource !== source) return
-      try {
-        handleStreamUpdate(type, JSON.parse((event as MessageEvent<string>).data) as SseUpdate)
-      } catch (error) {
-        console.error(error)
-      }
-    })
-  }
-  eventSource.onerror = () => {
-    if (eventSource !== source) return
+  reconnectTimer = null
+  const retry = () => {
+    if (!current()) return
     eventSource?.close()
     eventSource = null
-    reconnectTimer = window.setTimeout(connectStream, 5000)
+    if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
+    reconnectTimer = window.setTimeout(() => {
+      if (current()) void connectStream()
+    }, reconnectDelay)
+    reconnectDelay = Math.min(30000, reconnectDelay * 2)
+  }
+  try {
+    const capability = await client.resourceToken({ type: 'stream', threadId: threadId.value, sessionId: sessionId.value })
+    if (!current()) return
+    const lifetime = Math.min(300000, capability.expiresAt - Date.now())
+    if (lifetime <= 0) throw new Error('Stream capability expired before connection')
+    const url = new URL(endpoint('/brain/stream'), window.location.href)
+    url.searchParams.set('sessionId', sessionId.value)
+    url.searchParams.set('threadId', threadId.value)
+    url.searchParams.set('token', capability.token)
+    eventSource = new EventSource(url)
+    const source = eventSource
+    const events = [
+      'chat.error',
+      'chat.snapshot',
+      'chat.assistant.start',
+      'chat.assistant.placeholder',
+      'chat.assistant.update',
+      'chat.assistant.done',
+      'chat.audio.ready',
+      'chat.audio.error',
+      'chat.tool.update',
+    ]
+    for (const type of events) {
+      source.addEventListener(type, (event) => {
+        if (!current() || eventSource !== source) return
+        try {
+          handleStreamUpdate(type, JSON.parse((event as MessageEvent<string>).data) as SseUpdate)
+        } catch (error) {
+          console.error(error)
+        }
+      })
+    }
+    source.onerror = () => {
+      if (!current() || eventSource !== source) return
+      retry()
+    }
+    source.onopen = () => { if (current() && eventSource === source) reconnectDelay = 1500 }
+    // Renew five seconds early, or halfway through a very short remaining TTL.
+    reconnectTimer = window.setTimeout(() => {
+      if (current()) void connectStream()
+    }, Math.max(1, lifetime - Math.min(5000, lifetime / 2)))
+  } catch {
+    retry()
   }
 }
 
@@ -256,7 +334,10 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
         article => article.id.slice('claire-'.length)))
       : new Set<string>()
     for (const cache of [readyAudio, pendingAudio, failedAudio, autoPlayedAudio]) {
-      for (const id of cache.keys()) if (!retainedAudioIds.has(id)) cache.delete(id)
+      for (const id of cache.keys()) if (!retainedAudioIds.has(id)) {
+        invalidAudio.add(id)
+        cache.delete(id)
+      }
     }
     if (playingMessageId.value !== null && !retainedAudioIds.has(playingMessageId.value)) {
       browserAudio.stopPlayback()
@@ -304,7 +385,8 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     )
   } else if (type === 'chat.audio.ready') {
     receiveReadyAudio(update)
-  } else if (type === 'chat.audio.error' && update.messageId) {
+  } else if (type === 'chat.audio.error' && update.messageId && audioEnabled.value
+    && !invalidAudio.has(update.messageId) && findMessage(update.messageId)) {
     pendingAudio.delete(update.messageId)
     failedAudio.add(update.messageId)
     ensureAudioAction(update.messageId)
@@ -325,18 +407,58 @@ function finishResponse(): void {
   activeMessageId = null
 }
 
+function protectFileLink(link: HTMLAnchorElement): void {
+  if (protectedLinks.has(link)) return
+  const context = captureContext()
+  const state: { timer: number | null } = { timer: null }
+  const path = link.getAttribute('href') ?? ''
+  protectedLinks.set(link, state)
+  const current = () => context() && protectedLinks.get(link) === state && rootElement.value?.contains(link)
+  const refresh = async () => {
+    if (!current()) {
+      if (protectedLinks.get(link) === state) protectedLinks.delete(link)
+      return
+    }
+    state.timer = null
+    try {
+      const resource = await client.protectedResource(path)
+      if (!current()) return
+      link.href = resource.url
+      // Keep native target/download/modifier-click behavior: only refresh href.
+      if (resource.renewAt !== null) {
+        state.timer = window.setTimeout(() => void refresh(), Math.max(1, resource.renewAt - Date.now()))
+      }
+    } catch {
+      if (current()) state.timer = window.setTimeout(() => void refresh(), 5000)
+    }
+  }
+  void refresh()
+}
+
 function enhanceRenderedMessages(scope: Element | null = rootElement.value, audioActions = true): void {
   if (scope === null) return
+  for (const [link, state] of protectedLinks) {
+    if (rootElement.value?.contains(link)) continue
+    if (state.timer !== null) window.clearTimeout(state.timer)
+    protectedLinks.delete(link)
+  }
+  const current = captureContext()
+  const protect = (element: HTMLImageElement | HTMLAudioElement, path: string) => {
+    void client.protectedResource(path).then(({ url }) => {
+      if (!current() || !rootElement.value?.contains(element)) return
+      element.src = url
+    }).catch(() => { /* Unauthorized or obsolete assets remain unavailable. */ })
+  }
   for (const link of scope.querySelectorAll<HTMLAnchorElement>('a.claire-generated-file[href]')) {
-    link.href = client.protectedUrl(link.getAttribute('href') ?? '')
+    protectFileLink(link)
   }
   for (const image of scope.querySelectorAll<HTMLImageElement>('img.claire-generated-image')) {
     const src = image.dataset.protectedSrc ?? image.getAttribute('src') ?? ''
-    image.src = client.protectedUrl(src)
+    protect(image, src)
   }
   for (const audio of scope.querySelectorAll<HTMLAudioElement>('audio.claire-generated-audio')) {
     const src = audio.dataset.protectedSrc ?? ''
-    if (src !== '' && audio.src === '') audio.src = client.protectedUrl(src)
+    if (src !== '' && audio.src === '') protect(audio, src)
   }
   for (const code of scope.querySelectorAll<HTMLElement>('pre code:not(.hljs)')) {
     hljs.highlightElement(code)
@@ -420,7 +542,8 @@ function setAudioActionIcon(
 }
 
 function receiveReadyAudio(update: SseUpdate): void {
-  if (!update.messageId || !update.audioData) return
+  if (!audioEnabled.value || !update.messageId || !update.audioData
+    || invalidAudio.has(update.messageId) || !findMessage(update.messageId)) return
   let audio: Blob | null = null
   try {
     const binary = atob(update.audioData)
@@ -472,6 +595,7 @@ function optimisticMessage(text: string): void {
 }
 
 async function submitMessage(): Promise<void> {
+  const current = captureContext()
   const text = message.value.trim()
   if (text === '' || composerDisabled.value) return
   responding.value = true
@@ -485,11 +609,13 @@ async function submitMessage(): Promise<void> {
   for (const file of storedFiles.value) data.append('file_ids[]', file.id)
   try {
     await checkedRequest('/brain/messages', { method: 'POST', body: data })
+    if (!current()) return
     message.value = ''
     localFiles.value = []
     storedFiles.value = []
     if (chatFileInput.value !== null) chatFileInput.value.value = ''
   } catch (error) {
+    if (!current()) return
     console.error(error)
     finishResponse()
     notify('Le message n’a pas pu être envoyé.', 'error')
@@ -497,6 +623,9 @@ async function submitMessage(): Promise<void> {
 }
 
 async function toggleRecording(): Promise<void> {
+  const context = captureContext()
+  const generation = audioGeneration
+  const current = () => context() && generation === audioGeneration && audioEnabled.value
   if (recording.value) {
     recording.value = false
     browserAudio.stopRecording()
@@ -510,6 +639,7 @@ async function toggleRecording(): Promise<void> {
   try {
     recording.value = true
     await browserAudio.startRecording(async (audio, mediaType) => {
+      if (!current()) return
       recording.value = false
       transcribing.value = true
       try {
@@ -518,18 +648,22 @@ async function toggleRecording(): Promise<void> {
           mediaType,
           props.config.audioTranscriptionModel,
         )
+        if (!current()) return
         message.value = transcription
         await nextTick()
+        if (!current()) return
         messageInput.value?.focus()
         if (audioDictationMode.value === 'auto_send') await submitMessage()
       } catch (error) {
+        if (!current()) return
         console.error(error)
         notify('La transcription audio a échoué.', 'error')
       } finally {
-        transcribing.value = false
+        if (current()) transcribing.value = false
       }
     })
   } catch (error) {
+    if (!current()) return
     recording.value = false
     console.error(error)
     notify('L’accès au microphone a été refusé ou a échoué.', 'error')
@@ -544,6 +678,7 @@ async function toggleSpeech(action: HTMLElement): Promise<void> {
   if (text === '' || messageId === '') return
 
   if (playingMessageId.value === messageId) {
+    playbackGeneration++
     browserAudio.stopPlayback()
     playingMessageId.value = null
     updateAudioActionStates()
@@ -559,12 +694,18 @@ async function toggleSpeech(action: HTMLElement): Promise<void> {
 }
 
 async function playSpeech(messageId: string, audio: Blob): Promise<void> {
+  if (!audioEnabled.value || !findMessage(messageId)) return
+  const context = captureContext()
+  const generation = ++playbackGeneration
+  const current = () => context() && generation === playbackGeneration
+    && audioEnabled.value && playingMessageId.value === messageId && findMessage(messageId) !== null
   try {
     playingMessageId.value = messageId
     updateAudioActionStates()
     await browserAudio.playReady(
       audio,
       (error) => {
+        if (!current()) return
         playingMessageId.value = null
         updateAudioActionStates()
         if (error !== undefined) {
@@ -574,6 +715,7 @@ async function playSpeech(messageId: string, audio: Blob): Promise<void> {
       },
     )
   } catch (error) {
+    if (!current()) return
     console.error(error)
     browserAudio.stopPlayback()
     playingMessageId.value = null
@@ -583,6 +725,10 @@ async function playSpeech(messageId: string, audio: Blob): Promise<void> {
 }
 
 async function requestSpeech(messageId: string, text: string): Promise<void> {
+  if (!audioEnabled.value || !findMessage(messageId)) return
+  const context = captureContext()
+  const generation = audioGeneration
+  invalidAudio.delete(messageId)
   pendingAudio.add(messageId)
   failedAudio.delete(messageId)
   updateAudioActionStates()
@@ -597,6 +743,8 @@ async function requestSpeech(messageId: string, text: string): Promise<void> {
       }),
     })
   } catch (error) {
+    if (!context() || generation !== audioGeneration || !audioEnabled.value
+      || invalidAudio.has(messageId) || !findMessage(messageId)) return
     console.error(error)
     pendingAudio.delete(messageId)
     failedAudio.add(messageId)
@@ -632,24 +780,37 @@ function removeStoredFile(id: string): void {
 }
 
 async function createConversation(): Promise<void> {
+  beginNavigation()
+  const current = captureContext()
   await withBusy(async () => {
     const data = new URLSearchParams({ sessionId: sessionId.value })
     const response = await checkedRequest('/history/new', { method: 'POST', body: data })
+    if (!current()) return
     const payload = await response.json() as { threadId: string; sessionId: string }
+    if (!current()) return
+    busy.value = false
     threadId.value = payload.threadId
     sessionId.value = payload.sessionId
+    message.value = ''
+    localFiles.value = []
+    storedFiles.value = []
     messagesElement.value?.replaceChildren()
     connectStream()
     closeMenus()
     await refreshCounters()
   })
+  if (current()) void connectStream()
 }
 
 async function deleteLastExchange(): Promise<void> {
+  const current = captureContext()
   await withBusy(async () => {
     const data = new URLSearchParams({ threadId: threadId.value, sessionId: sessionId.value })
     const response = await checkedRequest('/history/exchange/last', { method: 'DELETE', body: data })
+    if (!current()) return
     const payload = await response.json() as { html?: string; removedMessage?: string }
+    if (!current()) return
+    resetAudio()
     if (messagesElement.value !== null && typeof payload.html === 'string') {
       messagesElement.value.innerHTML = payload.html
     }
@@ -663,16 +824,26 @@ async function onHistoryClick(event: MouseEvent): Promise<void> {
   const target = event.target as Element
   const open = target.closest<HTMLElement>('[data-history-open]')
   if (open !== null) {
+    beginNavigation()
+    const current = captureContext()
     const path = open.dataset.historyOpen ?? ''
     await withBusy(async () => {
       const separator = path.includes('?') ? '&' : '?'
       const response = await checkedRequest(`${path}${separator}sessionId=${encodeURIComponent(sessionId.value)}`)
+      if (!current()) return
       const payload = await response.json() as { threadId: string }
+      if (!current()) return
+      busy.value = false
       threadId.value = payload.threadId
+      messagesElement.value?.replaceChildren()
+      message.value = ''
+      localFiles.value = []
+      storedFiles.value = []
       connectStream()
       historyHtml.value = ''
       closeMenus()
     })
+    if (current()) void connectStream()
     return
   }
   const remove = target.closest<HTMLElement>('[data-history-delete]')
@@ -922,13 +1093,11 @@ async function changeMemory(): Promise<void> {
 }
 
 async function changeAudioEnabled(): Promise<void> {
-  await postSetting('/config/audio', { enabled: String(audioEnabled.value) })
   if (!audioEnabled.value) {
-    recording.value = false
-    browserAudio.cancelRecording()
-    browserAudio.stopPlayback()
+    resetAudio()
   }
   enhanceRenderedMessages()
+  await postSetting('/config/audio', { enabled: String(audioEnabled.value) })
 }
 
 async function changeAudioAutoGenerate(): Promise<void> {
@@ -966,6 +1135,8 @@ async function toggleLayout(): Promise<void> {
 }
 
 function logout(): void {
+  beginNavigation()
+  destroyed = true
   client.clear()
   sessionStorage.removeItem('claireStreamSessionId')
   if (props.config.mode === 'normal') {
@@ -1005,6 +1176,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   destroyed = true
+  clearProtectedLinks()
   document.removeEventListener('keydown', handleEscape)
   eventSource?.close()
   eventSource = null

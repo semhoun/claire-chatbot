@@ -110,16 +110,16 @@ final class NewMessageJob implements QueueDoer
         }
 
         if (($previous['messageId'] ?? $this->messageId) !== $this->messageId) {
-            throw new \RuntimeException('Superseded chat generation');
+            return;
         }
 
         if (($previous['attempted'] ?? '0') === '1') {
             $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'error', true);
-            $runtimeException = new \RuntimeException('Unsafe chat retry refused: agent may already have executed tools');
+            $nonRetryableJobException = new \App\Services\Queue\NonRetryableJobException('Unsafe chat retry refused: agent may already have executed tools');
             try {
-                $this->handleChatError($runtimeException);
+                $this->handleChatError($nonRetryableJobException);
             } finally {
-                throw $runtimeException;
+                throw $nonRetryableJobException;
             }
         }
 
@@ -151,7 +151,9 @@ final class NewMessageJob implements QueueDoer
                 $this->logger->error('Cannot report chat failure', ['exception' => $reportError]);
             }
 
-            throw $throwable;
+            throw $attempted
+                ? new \App\Services\Queue\NonRetryableJobException('Chat attempt failed after agent entry', 0, $throwable)
+                : $throwable;
         } finally {
             $this->agent = null;
             $chatThreadLock->release();
@@ -322,7 +324,7 @@ final class NewMessageJob implements QueueDoer
 
         $this->streamedText .= $chunk->content;
 
-        $html = $this->chatHtmlRenderer->markdown($this->streamedText, true);
+        $html = $this->chatHtmlRenderer->markdown($this->streamedText, $this->userId, true);
 
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
             'threadId' => $this->threadId,
@@ -361,7 +363,7 @@ final class NewMessageJob implements QueueDoer
             'message' => '',
             'time' => new DateTimeImmutable()->format(DateTimeInterface::ATOM),
             'sent' => false,
-        ]);
+        ], $this->userId);
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.placeholder', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
@@ -372,7 +374,7 @@ final class NewMessageJob implements QueueDoer
 
     private function publishContent(string $content): void
     {
-        $html = $this->chatHtmlRenderer->markdown($content);
+        $html = $this->chatHtmlRenderer->markdown($content, $this->userId);
 
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
             'threadId' => $this->threadId,

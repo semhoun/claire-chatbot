@@ -172,6 +172,7 @@ final readonly class FileController
      */
     public function serve(Request $request, Response $response): Response
     {
+        $response = $response->withHeader('Cache-Control', 'private, no-store');
         $session = $this->getSession($request);
 
         $userId = (string) $session->get(Auth::USERID);
@@ -193,21 +194,25 @@ final readonly class FileController
             return $response->withStatus(404);
         }
 
-        $path = $file?->getFilePath();
+        $path = $file->getFilePath();
 
         if ($path === null || ! $this->filesystem->fileExists($path)) {
             return $response->withStatus(404);
         }
 
         $mimeType = $this->filesystem->mimeType($path);
-        $content = $this->filesystem->read($path);
-
-        $response->getBody()->write($content);
+        if ($request->getMethod() === 'HEAD') {
+            $contentLength = $this->filesystem->fileSize($path);
+        } else {
+            $content = $this->filesystem->read($path);
+            $contentLength = strlen($content);
+            $response->getBody()->write($content);
+        }
 
         $response = $response
             ->withHeader('Content-Type', $mimeType)
             ->withHeader('X-Content-Type-Options', 'nosniff')
-            ->withHeader('Content-Length', (string) strlen($content));
+            ->withHeader('Content-Length', (string) $contentLength);
 
         // Only passive formats may be displayed under the application origin.
         $extension = strtolower(pathinfo($file->getFilename(), PATHINFO_EXTENSION));

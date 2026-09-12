@@ -263,6 +263,76 @@ final class FileControllerTest extends TestCase
         $this->assertSame("sandbox; default-src 'none'", $response->getHeaderLine('Content-Security-Policy'));
     }
 
+    public function testServeForeignAndMissingFilesReturnIdenticalResponses(): void
+    {
+        $this->session->method('get')->with(Auth::USERID)->willReturn('user-123');
+        $this->fileRepository = $this->createMock(\App\Repository\FileRepository::class);
+        $this->fileRepository->expects(self::exactly(2))->method('findOneBy')
+            ->willReturnCallback(function (array $criteria): ?File {
+                self::assertSame($this->user, $criteria['user']);
+                self::assertContains($criteria['fileId'], ['foreign-file', 'missing-file']);
+                return null;
+            });
+        $this->filesystem->expects(self::never())->method('fileExists');
+        $this->filesystem->expects(self::never())->method('mimeType');
+        $this->filesystem->expects(self::never())->method('read');
+
+        $foreign = $this->controller->serve(
+            $this->createRequestWithSession(attributeId: 'foreign-file'), $this->responseFactory->createResponse(),
+        );
+        $missing = $this->controller->serve(
+            $this->createRequestWithSession(attributeId: 'missing-file'), $this->responseFactory->createResponse(),
+        );
+
+        self::assertSame(404, $foreign->getStatusCode());
+        self::assertSame($foreign->getStatusCode(), $missing->getStatusCode());
+        self::assertSame($foreign->getHeaders(), $missing->getHeaders());
+        self::assertSame('', (string) $foreign->getBody());
+        self::assertSame((string) $foreign->getBody(), (string) $missing->getBody());
+    }
+
+    public function testServeWithoutIdentityDoesNotQueryFiles(): void
+    {
+        $this->session->method('get')->with(Auth::USERID)->willReturn(null);
+        $this->entityManager->expects(self::never())->method('getRepository');
+        $this->filesystem->expects(self::never())->method('read');
+
+        $response = $this->controller->serve(
+            $this->createRequestWithSession(attributeId: 'private-file'), $this->responseFactory->createResponse(),
+        );
+
+        self::assertSame(403, $response->getStatusCode());
+        self::assertSame('', (string) $response->getBody());
+    }
+
+    public function testServeHeadReturnsProtectedHeadersWithoutReadingContent(): void
+    {
+        $this->session->method('get')->with(Auth::USERID)->willReturn('user-123');
+        $file = new File();
+        $file->setFilename('legacy.html');
+        $file->setFilePath('uploads/legacy.html');
+        $this->fileRepository = $this->createMock(\App\Repository\FileRepository::class);
+        $this->fileRepository->expects(self::once())->method('findOneBy')
+            ->with(['fileId' => 'private-file', 'user' => $this->user])->willReturn($file);
+        $this->filesystem->method('fileExists')->with('uploads/legacy.html')->willReturn(true);
+        $this->filesystem->method('mimeType')->with('uploads/legacy.html')->willReturn('text/html');
+        $this->filesystem->expects(self::once())->method('fileSize')->with('uploads/legacy.html')->willReturn(123);
+        $this->filesystem->expects(self::never())->method('read');
+        $request = $this->createRequestWithSession(attributeId: 'private-file');
+        $request->method('getMethod')->willReturn('HEAD');
+
+        $response = $this->controller->serve($request, $this->responseFactory->createResponse());
+
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame('', (string) $response->getBody());
+        self::assertSame('123', $response->getHeaderLine('Content-Length'));
+        self::assertSame('private, no-store', $response->getHeaderLine('Cache-Control'));
+        self::assertSame('application/octet-stream', $response->getHeaderLine('Content-Type'));
+        self::assertSame('attachment; filename="legacy.html"', $response->getHeaderLine('Content-Disposition'));
+        self::assertSame('nosniff', $response->getHeaderLine('X-Content-Type-Options'));
+        self::assertSame("sandbox; default-src 'none'", $response->getHeaderLine('Content-Security-Policy'));
+    }
+
     public function testUploadRagSavesFileAndAddsToVectorStore(): void
     {
         $userId = 'user-123';

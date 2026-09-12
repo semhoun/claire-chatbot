@@ -11,6 +11,135 @@ function token(audience = 'session'): string {
 }
 
 describe('SessionClient', () => {
+  it('purges stored legacy mini-tokens and ignores legacy response headers', async () => {
+    sessionStorage.setItem('claire_mini_token', JSON.stringify({ token: token('minitoken'), expiresAt: Date.now() + 60000 }))
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { headers: { 'X-Claire-Minitoken': token('minitoken') } })))
+    const client = new SessionClient('https://claire.test', 120, 30)
+    client.initialize(token())
+    expect(sessionStorage.getItem('claire_mini_token')).toBeNull()
+    await client.request('/history/count')
+    expect(sessionStorage.getItem('claire_mini_token')).toBeNull()
+    client.destroy()
+  })
+
+  it('does not capture token headers from a request started before a setting mutation', async () => {
+    let release!: (response: Response) => void
+    const updated = token().replace('signature', 'setting')
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/slow')
+      ? new Promise<Response>(resolve => { release = resolve })
+      : new Response(null, { headers: { 'X-Claire-Token': updated } })))
+    const client = new SessionClient('https://claire.test', 120, 30)
+    client.initialize(token())
+    const pending = client.request('/slow')
+    await client.request('/config/audio', { method: 'POST' })
+    release(new Response(null, { headers: { 'X-Claire-Token': token() } }))
+    await pending
+    expect(JSON.parse(sessionStorage.getItem('claire_session_token')!).token).toBe(updated)
+    client.destroy()
+  })
+
+  it.each([
+    { token: '', expiresAt: 9999999999 },
+    { token: 'scoped', expiresAt: 0 },
+    { token: 'scoped', expiresAt: '9999999999' },
+    { token: 'scoped', expiresAt: null },
+  ])('rejects malformed or expired resource capabilities: %j', async (payload) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(payload))))
+    const client = new SessionClient('https://claire.test', 120, 30)
+    await expect(client.protectedResource('/files/serve/a')).rejects.toThrow('Invalid resource capability')
+    client.destroy()
+  })
+
+  it.each([200, 401, 403])('ignores obsolete refresh status %s after session replacement', async (status) => {
+    let resolve!: (value: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(done => { resolve = done })))
+    const client = new SessionClient('https://claire.test', 120, 30)
+    client.initialize(token())
+    const pending = client.request('/auth/refresh')
+    await Promise.resolve()
+    const replacement = token().replace('signature', 'replacement')
+    client.initialize(replacement)
+    resolve(new Response(null, { status, headers: { 'X-Claire-Token': token() } }))
+    await pending
+    expect(JSON.parse(sessionStorage.getItem('claire_session_token')!).token).toBe(replacement)
+    client.destroy()
+  })
+
+  it('serializes settings with refresh and sends the latest JWT to each mutation', async () => {
+    const releases: Array<(value: Response) => void> = []
+    const fetchMock = vi.fn(() => new Promise<Response>(resolve => releases.push(resolve)))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient('https://claire.test', 120, 30)
+    client.initialize(token())
+    const refresh = client.request('/auth/refresh')
+    const first = client.request('/config/audio', { method: 'POST' })
+    const second = client.request('/config/layout_mode', { method: 'POST' })
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const refreshed = token().replace('signature', 'refreshed')
+    releases[0](new Response(null, { headers: { 'X-Claire-Token': refreshed } }))
+    await refresh
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const audioToken = token().replace('signature', 'audio')
+    releases[1](new Response(null, { headers: { 'X-Claire-Token': audioToken } }))
+    await first
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>
+    expect(new Headers(calls[1][1].headers).get('X-Claire-Auth')).toBe(refreshed)
+    expect(new Headers(calls[2][1].headers).get('X-Claire-Auth')).toBe(audioToken)
+    releases[2](new Response())
+    await second
+    client.destroy()
+  })
+
+  it('rejects external authenticated requests and mini-token login', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient('https://claire.test', 120, 30)
+    expect(() => client.initialize(token('minitoken'))).toThrow('mini-token')
+    await expect(client.request('//external.test/private')).rejects.toThrow('Claire origin')
+    expect(fetchMock).not.toHaveBeenCalled()
+    client.destroy()
+  })
+
+  it('shares early file renewal and invalidates cached capabilities on context changes', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ token: `scoped-${fetchMock.mock.calls.length}`, expiresAt: Date.now() / 1000 + 10 })))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient('https://claire.test', 120, 30)
+    const [first, concurrent] = await Promise.all([client.protectedResource('/files/serve/a'), client.protectedResource('/files/serve/a')])
+    expect(first).toEqual(concurrent)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(first.renewAt).toBe(Date.now() + 5000)
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(await client.protectedResource('/files/serve/a')).toEqual(first)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(1)
+    const [renewed, shared] = await Promise.all([client.protectedResource('/files/serve/a'), client.protectedResource('/files/serve/a')])
+    expect(renewed.url).not.toBe(first.url)
+    expect(shared).toEqual(renewed)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    client.invalidateResources()
+    await client.protectedResource('/files/serve/a')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    client.destroy()
+  })
+
+  it.each(['invalidateResources', 'clear', 'destroy'] as const)('rejects a resource body completed after %s', async (action) => {
+    let resolve!: (value: unknown) => void
+    const response = new Response()
+    vi.spyOn(response, 'json').mockImplementation(() => new Promise(done => { resolve = done }))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response))
+    const client = new SessionClient('https://claire.test', 120, 30)
+    const pending = client.protectedResource('/files/serve/a')
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'))
+    client[action]()
+    resolve({ token: 'late', expiresAt: Date.now() / 1000 + 60 })
+    await rejected
+    client.destroy()
+  })
+
   beforeEach(() => sessionStorage.clear())
   afterEach(() => {
     vi.useRealTimers()
@@ -40,7 +169,6 @@ describe('SessionClient', () => {
     if (action === 'destroy') {
       client.initialize(token())
       await expect(client.request('/later')).rejects.toMatchObject({ name: 'AbortError' })
-      expect(client.getMiniToken()).toBeNull()
       expect(vi.getTimerCount()).toBe(0)
     } else {
       client.initialize(token())
@@ -111,12 +239,18 @@ describe('SessionClient', () => {
     client.destroy()
   })
 
-  it('adds the mini token only to protected file URLs', () => {
+  it('mints a scoped token only for protected local file URLs', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ token: 'file-capability', expiresAt: Date.now() / 1000 + 60 })))
+    vi.stubGlobal('fetch', fetchMock)
     const client = new SessionClient('https://claire.test', 120, 30)
-    client.initialize(undefined, token('minitoken'))
+    client.initialize(token())
 
-    expect(client.protectedUrl('/files/serve/file-1')).toContain('token=')
-    expect(client.protectedUrl('/history/list')).not.toContain('token=')
+    expect((await client.protectedResource('/files/serve/file-1')).url).toContain('token=file-capability')
+    expect((await client.protectedResource('/history/list')).url).not.toContain('token=')
+    expect((await client.protectedResource('https://external.test/files/serve/file-1')).url).not.toContain('token=')
+    expect((await client.protectedResource('//external.test/files/serve/file-1')).url).not.toContain('token=')
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ type: 'file', fileId: 'file-1' })
     client.destroy()
   })
 

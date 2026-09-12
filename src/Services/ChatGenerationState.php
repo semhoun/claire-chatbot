@@ -84,7 +84,7 @@ final readonly class ChatGenerationState
         };
     }
 
-    private function key(string $userId, string $threadId): string
+    public function key(string $userId, string $threadId): string
     {
         return $this->settings->get('redis.prefix') . 'chat:generation:'
             . hash('sha256', json_encode([$userId, $threadId], JSON_THROW_ON_ERROR));

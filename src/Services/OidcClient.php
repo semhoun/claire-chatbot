@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Services\Session\SessionInterface;
 use GuzzleHttp\Client;
+use GuzzleHttp\ClientInterface;
 use JsonException;
 use Lcobucci\Clock\SystemClock;
 use Lcobucci\JWT\Encoding\JoseEncoder;
@@ -48,7 +49,8 @@ final class OidcClient
 
     public function __construct(
         private readonly Logger $logger,
-        private readonly Settings $settings
+        private readonly Settings $settings,
+        private readonly ClientInterface $httpClient = new Client(['timeout' => 5.0, 'allow_redirects' => false]),
     ) {
         $wellKnownUrl = $this->settings->get('oidc.well_known_url');
         $clientId = $this->settings->get('oidc.client_id');
@@ -96,16 +98,15 @@ final class OidcClient
             return $this->resolveFromIdToken($ssoToken);
         }
 
-        if ($this->looksLikeJwt($ssoToken)) {
-            $idTokenResult = $this->resolveFromIdToken($ssoToken);
-            if (($idTokenResult['logged'] ?? false) === true) {
-                return $idTokenResult;
-            }
-
-            return $this->resolveFromAccessToken($ssoToken);
+        if ($normalizedType !== null) {
+            return ['logged' => false, 'token_type' => 'unknown', 'reason' => 'invalid_sso_token_type'];
         }
 
-        return $this->resolveFromAccessToken($ssoToken);
+        if ($this->looksLikeJwt($ssoToken)) {
+            return $this->resolveFromIdToken($ssoToken);
+        }
+
+        return ['logged' => false, 'token_type' => 'unknown', 'reason' => 'explicit_access_token_type_required'];
     }
 
     /**
@@ -433,23 +434,41 @@ final class OidcClient
      */
     private function resolveFromAccessToken(string $token): array
     {
-        $userinfoEndpoint = (string) ($this->discovery['userinfo_endpoint'] ?? '');
-        if ($userinfoEndpoint === '') {
+        $endpoint = $this->discovery['introspection_endpoint'] ?? '';
+        if (! is_string($endpoint) || parse_url($endpoint, PHP_URL_SCHEME) !== 'https') {
             return [
                 'logged' => false,
                 'token_type' => 'access_token',
-                'reason' => 'missing_userinfo_endpoint',
+                'reason' => 'access_token_introspection_unavailable',
             ];
         }
 
         try {
-            $client = new Client(['timeout' => 5.0]);
-            $response = $client->get($userinfoEndpoint, [
-                'headers' => [
-                    'Authorization' => 'Bearer ' . $token,
-                    'Accept' => 'application/json',
-                ],
-            ]);
+            $clientId = (string) $this->settings->get('oidc.client_id');
+            $secret = (string) $this->settings->get('oidc.client_secret');
+            if ($clientId === '' || $secret === '') {
+                throw new \RuntimeException('Introspection requires client credentials');
+            }
+
+            $methods = $this->discovery['introspection_endpoint_auth_methods_supported'] ?? ['client_secret_basic'];
+            $options = [
+                'headers' => ['Accept' => 'application/json'],
+                'form_params' => ['token' => $token, 'token_type_hint' => 'access_token'],
+                'allow_redirects' => false,
+            ];
+            if (in_array('client_secret_basic', $methods, true)) {
+                $options['auth'] = [urlencode($clientId), urlencode($secret)];
+            } elseif (in_array('client_secret_post', $methods, true)) {
+                $options['form_params']['client_id'] = $clientId;
+                $options['form_params']['client_secret'] = $secret;
+            } else {
+                throw new \RuntimeException('Unsupported introspection client authentication');
+            }
+
+            $response = $this->httpClient->request('POST', $endpoint, $options);
+            if ($response->getStatusCode() !== 200) {
+                throw new \RuntimeException('Introspection returned an unexpected HTTP status');
+            }
 
             $claims = json_decode(
                 (string) $response->getBody(),
@@ -458,21 +477,51 @@ final class OidcClient
                 JSON_THROW_ON_ERROR
             );
 
-            if (! is_array($claims)) {
+            $allowedClients = $this->settings->get('oidc.access_token_client_ids');
+            if (! is_array($claims) || ($claims['active'] ?? null) !== true
+                || ! in_array($clientId, (array) ($claims['aud'] ?? []), true)
+                || ! is_array($allowedClients)
+                || ! is_string($claims['client_id'] ?? null)
+                || ! in_array($claims['client_id'], $allowedClients, true)
+                || (isset($claims['exp']) && (! is_int($claims['exp']) || $claims['exp'] <= time()))
+                || (isset($claims['nbf']) && (! is_int($claims['nbf']) || $claims['nbf'] > time()))
+                || (isset($claims['iss']) && $claims['iss'] !== ($this->discovery['issuer'] ?? null))) {
                 return [
                     'logged' => false,
                     'token_type' => 'access_token',
-                    'reason' => 'invalid_userinfo_payload',
+                    'reason' => 'invalid_introspection_claims',
                 ];
             }
 
-            $subject = (string) ($claims['sub'] ?? '');
-            if ($subject === '') {
+            $subject = $claims['sub'] ?? null;
+            if (! is_string($subject) || $subject === '') {
                 return [
                     'logged' => false,
                     'token_type' => 'access_token',
                     'reason' => 'missing_sub',
                 ];
+            }
+
+            $userinfoEndpoint = $this->discovery['userinfo_endpoint'] ?? null;
+            if ($userinfoEndpoint !== null) {
+                if (! is_string($userinfoEndpoint) || parse_url($userinfoEndpoint, PHP_URL_SCHEME) !== 'https') {
+                    throw new \RuntimeException('UserInfo requires HTTPS');
+                }
+
+                $userinfo = $this->httpClient->request('GET', $userinfoEndpoint, [
+                    'headers' => ['Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json'],
+                    'allow_redirects' => false,
+                ]);
+                if ($userinfo->getStatusCode() !== 200) {
+                    throw new \RuntimeException('UserInfo returned an unexpected HTTP status');
+                }
+
+                $profile = json_decode((string) $userinfo->getBody(), true, 512, JSON_THROW_ON_ERROR);
+                if (! is_array($profile) || ($profile['sub'] ?? null) !== $subject) {
+                    throw new \RuntimeException('UserInfo subject differs from introspection');
+                }
+
+                $claims = $profile;
             }
 
             return [
@@ -482,14 +531,14 @@ final class OidcClient
                 'token_type' => 'access_token',
             ];
         } catch (JsonException|Throwable $exception) {
-            $this->logger->info('Access token userinfo validation failed', [
+            $this->logger->info('Access token introspection validation failed', [
                 'reason' => $exception::class,
             ]);
 
             return [
                 'logged' => false,
                 'token_type' => 'access_token',
-                'reason' => 'userinfo_validation_failed',
+                'reason' => 'introspection_validation_failed',
             ];
         }
     }

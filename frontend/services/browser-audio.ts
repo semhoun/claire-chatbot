@@ -129,14 +129,21 @@ export class BrowserAudio {
     this.objectUrl = URL.createObjectURL(audio)
     player.src = this.objectUrl
     player.onended = () => {
+      if (this.player !== player) return
       this.stopPlayback()
       onEnded()
     }
     player.onerror = () => {
+      if (this.player !== player) return
       this.stopPlayback()
       onEnded(new Error('The browser could not decode the generated audio'))
     }
-    await player.play()
+    try {
+      await player.play()
+    } catch (error) {
+      if (this.player !== player) return
+      throw error
+    }
   }
 
   public async playReady(audio: Blob, onEnded: PlaybackCallback): Promise<void> {
@@ -146,14 +153,21 @@ export class BrowserAudio {
     const player = new Audio(this.objectUrl)
     this.player = player
     player.onended = () => {
+      if (this.player !== player) return
       this.stopPlayback()
       onEnded()
     }
     player.onerror = () => {
+      if (this.player !== player) return
       this.stopPlayback()
       onEnded(new Error('The browser could not decode the generated audio'))
     }
-    await player.play()
+    try {
+      await player.play()
+    } catch (error) {
+      if (this.player !== player) return
+      throw error
+    }
   }
 
   public stopPlayback(): void {

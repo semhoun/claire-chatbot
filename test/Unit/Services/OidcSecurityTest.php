@@ -301,7 +301,9 @@ final class OidcSecurityTest extends TestCase
             'session' => ['lifetime' => 300, 'jwt' => ['secret' => str_repeat('s', 32)]],
         ]));
         $controller = new AuthController(new NullLogger(), $client, $auth, $tokens,
-            Twig::create(Settings::getAppRoot() . '/tmpl'), new OidcTransaction($redis));
+            Twig::create(Settings::getAppRoot() . '/tmpl'), new OidcTransaction($redis),
+            $this->createStub(\Doctrine\ORM\EntityManager::class),
+            new \App\Services\ChatGenerationState($this->createStub(RedisClient::class), new Settings([])));
         $factory = new ServerRequestFactory();
         $initial = new ArraySession();
         $response = $controller->ssoRedirect(
@@ -330,9 +332,7 @@ final class OidcSecurityTest extends TestCase
         self::assertSame(1, preg_match('/\[\x27claire_session_token\x27, ("[^"]+")\]/', $html, $sessionMatch));
         $sessionJwt = json_decode($sessionMatch[1], true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('user-123', $tokens->parseSessionToken($sessionJwt)['sessionData'][Auth::USERID]);
-        self::assertSame(1, preg_match('/\[\x27claire_mini_token\x27, ("[^"]+")\]/', $html, $miniMatch));
-        $miniJwt = json_decode($miniMatch[1], true, 512, JSON_THROW_ON_ERROR);
-        self::assertSame('user-123', $tokens->extractMiniUserId($miniJwt));
+        self::assertStringNotContainsString('minitoken', $html);
         self::assertStringContainsString('Max-Age=0', $response->getHeaderLine('Set-Cookie'));
         self::assertFalse($callbackSession->has('oidc_state'));
         self::assertSame(403, $controller->ssoCallback($request, new Response())->getStatusCode());
@@ -404,7 +404,9 @@ final class OidcSecurityTest extends TestCase
         $auth->expects(self::never())->method('login');
         $controller = new AuthController(
             new NullLogger(), $this->client($provider), $auth, new JwtTokenService(new Settings([])),
-            Twig::create(Settings::getAppRoot() . '/tmpl'), $transactions
+            Twig::create(Settings::getAppRoot() . '/tmpl'), $transactions,
+            $this->createStub(\Doctrine\ORM\EntityManager::class),
+            new \App\Services\ChatGenerationState($this->createStub(RedisClient::class), new Settings([]))
         );
         $session = new ArraySession();
         // Legacy/header session state must never replace the browser cookie binding.

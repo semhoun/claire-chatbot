@@ -54,6 +54,11 @@ class TelegramService implements QueueDoer
 
     private ?TelegramAction $telegramAction = null;
 
+    private string $generationId = '';
+
+    /** @var \Closure(string, callable(): void): void|null */
+    private ?\Closure $deliveryCheckpoint = null;
+
     public function __construct(
         private readonly Logger $logger,
         private readonly BrainRegistry $brainRegistry,
@@ -66,6 +71,7 @@ class TelegramService implements QueueDoer
         private readonly AudioServiceInterface $audioService,
         private readonly TelegramAudioService $telegramAudioService,
         private readonly TelegramChatActionHeartbeat $telegramChatActionHeartbeat,
+        private readonly TelegramGeneration $telegramGeneration,
     ) {
         $this->telegramSession = new TelegramSession($entityManager);
     }
@@ -177,31 +183,55 @@ class TelegramService implements QueueDoer
     /**
      * Start a new chat for a user and send welcome message.
      */
-    public function startNewChat(int $telegramChatId): void
+    public function startNewChat(int $telegramChatId, ?string $generationId = null): void
     {
         $this->telegramSession->ensureLoaded();
 
-        $threadId = uniqid(UserChatHistory::CHAT_TELEGRAM, true);
-        $this->telegramSession->set('threadId', $threadId);
+        $this->telegramGeneration->run(
+            (string) $this->telegramSession->get(Auth::USERID),
+            uniqid(UserChatHistory::CHAT_TELEGRAM, true),
+            $generationId ?? $this->generationId,
+            function (string $threadId): string {
+                $this->telegramSession->set('threadId', $threadId);
+                $this->telegramSession->save();
 
-        $currentBrain = $this->telegramSession->get('brain_avatar');
-        $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession, $threadId);
-        $openingText = $agent->getOpeningText();
-        $chatHistory = $agent->getChatHistory();
-        $assistantMessage = new AssistantMessage($openingText)
-            ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-        $chatHistory->initializeWithOpeningMessage($assistantMessage, false);
+                $agent = $this->brainRegistry->get(
+                    $this->telegramSession->get('brain_avatar'),
+                    $this->telegramSession,
+                    $threadId,
+                );
+                $text = $agent->getOpeningText();
+                $agent->getChatHistory()->initializeWithOpeningMessage(
+                    new AssistantMessage($text)
+                        ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM)),
+                    false,
+                );
+                return $text;
+            },
+            fn (string $text, callable $checkpoint) => $this->deliverChatResponse($telegramChatId, $text, $checkpoint),
+        );
+    }
 
-        // Handle files in welcome message
-        $fileIds = $this->extractFileIds($openingText);
-        if ($fileIds !== []) {
-            $this->handleFileResponse($telegramChatId, $openingText, $fileIds);
-            $this->telegramSession->save();
-            return;
+    public function startNewChatForUser(string $telegramUserId, string $generationId): void
+    {
+        if ($generationId === '') {
+            throw new \App\Services\Queue\NonRetryableJobException('Stable Telegram generation ID is required');
         }
 
-        $this->sendMessage($telegramChatId, $openingText);
-        $this->telegramSession->save();
+        $chatThreadLock = new ChatThreadLock(
+            $this->entityManager->getConnection()->getNativeConnection(),
+            'telegram-session',
+            $telegramUserId,
+        );
+        try {
+            if (! $this->manageSession($telegramUserId)) {
+                throw new \App\Services\Queue\NonRetryableJobException('Unknown Telegram user');
+            }
+
+            $this->startNewChat((int) $telegramUserId, 'job:' . $generationId);
+        } finally {
+            $chatThreadLock->release();
+        }
     }
 
     public function processUpdate(Update $update): void
@@ -217,14 +247,16 @@ class TelegramService implements QueueDoer
         }
 
         try {
+            $this->generationId = 'update:' . $update->updateId;
             $this->handleMessage($telegramChatId, $message);
         } catch (\Throwable $throwable) {
             $this->logger->error('Telegram update processing error: ' . $throwable->getMessage(), [
                 'exception' => $throwable,
                 'update_id' => $update->updateId,
             ]);
-            $this->sendMessage($telegramChatId, 'Désolé, j\'ai un soucis.');
             throw $throwable;
+        } finally {
+            $this->generationId = '';
         }
     }
 
@@ -331,11 +363,18 @@ class TelegramService implements QueueDoer
         try {
             $formattedText = $this->formatForTelegram($filteredText);
             $chunks = $this->splitMessage($formattedText);
-            foreach ($chunks as $chunk) {
-                $result = $this->telegramBotApi->sendMessage(chatId: $telegramChatId, text: $chunk, parseMode: ParseMode::MARKDOWN_V2);
-                if ($result instanceof FailResult) {
-                    $this->logger->error('Failed to send message chunk', ['chatId' => $telegramChatId, 'chunk' => $chunk, 'error' => $result]);
-                    throw new \RuntimeException('Telegram rejected a message chunk');
+            foreach ($chunks as $index => $chunk) {
+                $send = function () use ($telegramChatId, $chunk): void {
+                    $result = $this->telegramBotApi->sendMessage(chatId: $telegramChatId, text: $chunk, parseMode: ParseMode::MARKDOWN_V2);
+                    if ($result instanceof FailResult) {
+                        $this->logger->error('Failed to send message chunk', ['chatId' => $telegramChatId, 'chunk' => $chunk, 'error' => $result]);
+                        throw new \RuntimeException('Telegram rejected a message chunk');
+                    }
+                };
+                if ($this->deliveryCheckpoint instanceof \Closure) {
+                    ($this->deliveryCheckpoint)('text:' . hash('sha256', $filteredText) . ':' . $index, $send);
+                } else {
+                    $send();
                 }
             }
         } catch (\Throwable $throwable) {
@@ -348,6 +387,12 @@ class TelegramService implements QueueDoer
     private function handleMessage(int $telegramChatId, Message $message): void
     {
         $telegramUserId = (string) $message->from->id;
+        // Serialize session thread selection too, including the first message and /start.
+        $chatThreadLock = new ChatThreadLock(
+            $this->entityManager->getConnection()->getNativeConnection(),
+            'telegram-session',
+            $telegramUserId,
+        );
         if (! $this->manageSession($telegramUserId)) {
             $this->sendMessage($telegramChatId, "Je ne vous reconnais pas, merci d'ajouter votre id " . $telegramUserId . " sur l'interface web");
             return;
@@ -368,7 +413,7 @@ class TelegramService implements QueueDoer
         $photo = $photos[count($photos) - 1];
         $fileId = $photo->fileId;
 
-        try {
+        $this->processChatMessage($telegramChatId, function () use ($fileId, $message): string {
             $file = $this->telegramBotApi->getFile(fileId: $fileId);
             $filePath = $file->filePath;
             $fileUrl = sprintf('https://api.telegram.org/file/bot%s/%s', $this->settings->get('telegram.bot_token'), $filePath);
@@ -383,14 +428,8 @@ class TelegramService implements QueueDoer
 
             $caption = $message->caption ?? 'Décris cette image';
 
-            $this->processChatMessage(
-                $telegramChatId,
-                "[Image: {$localPath}]\n\n{$caption}"
-            );
-        } catch (\Throwable $throwable) {
-            $this->logger->error('Photo handling error: ' . $throwable->getMessage());
-            $this->sendMessage($telegramChatId, 'Désolé, je n\'ai pas pu traiter cette image.');
-        }
+            return "[Image: {$localPath}]\n\n{$caption}";
+        });
     }
 
     private function handleDocument(int $telegramChatId, Message $message): void
@@ -405,7 +444,7 @@ class TelegramService implements QueueDoer
         $fileName = $document->fileName ?? 'document';
         $mimeType = $document->mimeType ?? 'application/octet-stream';
 
-        try {
+        $this->processChatMessage($telegramChatId, function () use ($fileId, $fileName, $mimeType, $message): string {
             $file = $this->telegramBotApi->getFile(fileId: $fileId);
             $filePath = $file->filePath;
             $fileUrl = sprintf('https://api.telegram.org/file/bot%s/%s', $this->settings->get('telegram.bot_token'), $filePath);
@@ -421,14 +460,8 @@ class TelegramService implements QueueDoer
 
             $caption = $message->caption ?? 'Analyse ce document';
 
-            $this->processChatMessage(
-                $telegramChatId,
-                "[Document: {$localPath} ({$mimeType})]\n\n{$caption}",
-            );
-        } catch (\Throwable $throwable) {
-            $this->logger->error('Document handling error: ' . $throwable->getMessage());
-            $this->sendMessage($telegramChatId, 'Désolé, je n\'ai pas pu traiter ce document.');
-        }
+            return "[Document: {$localPath} ({$mimeType})]\n\n{$caption}";
+        });
     }
 
     private function processMessageByType(int $telegramChatId, Message $message): void
@@ -472,16 +505,11 @@ class TelegramService implements QueueDoer
             return;
         }
 
-        try {
-            $text = $this->telegramAudioService->transcribe($audio);
-            $this->processChatMessage($telegramChatId, $text, voiceResponse: true);
-        } catch (\Throwable $throwable) {
-            $this->logger->error('Audio handling error: ' . $throwable->getMessage(), [
-                'exception' => $throwable,
-            ]);
-            $this->sendMessage($telegramChatId, 'Désolé, je n’ai pas pu transcrire ce message audio.');
-            throw $throwable;
-        }
+        $this->processChatMessage(
+            $telegramChatId,
+            fn (): string => $this->telegramAudioService->transcribe($audio),
+            voiceResponse: true,
+        );
     }
 
     private function hasPhoto(Message $message): bool
@@ -528,7 +556,11 @@ class TelegramService implements QueueDoer
             'comfyui' => 'cmdComfyui',
         };
 
-        $this->$method($telegramChatId, $parts);
+        if ($command === 'start') {
+            $this->startNewChat($telegramChatId);
+        } else {
+            $this->$method($telegramChatId, $parts);
+        }
 
         return true;
     }
@@ -578,41 +610,35 @@ class TelegramService implements QueueDoer
 
     private function processChatMessage(
         int $telegramChatId,
-        string $text,
+        string|callable $text,
         bool $voiceResponse = false,
     ): void {
-        try {
-            $responseText = $this->generateChatResponse($telegramChatId, $text);
-            $this->sendChatResponse($telegramChatId, $responseText);
-            if ($voiceResponse) {
-                $voice = (string) $this->telegramSession->get(
-                    AudioServiceInterface::VOICE_SESSION_KEY,
-                    $this->audioService->defaultVoice(),
-                );
-                if (! $this->audioService->isAllowedVoice($voice)) {
-                    $voice = $this->audioService->defaultVoice();
+        $threadId = (string) $this->telegramSession->get('threadId', '');
+        $this->telegramGeneration->run(
+            (string) $this->telegramSession->get(Auth::USERID),
+            $threadId !== '' ? $threadId : uniqid(UserChatHistory::CHAT_TELEGRAM, true),
+            $this->generationId,
+            function (string $threadId) use ($telegramChatId, $text): string {
+                if (! $this->telegramSession->get('threadId')) {
+                    $this->telegramSession->set('threadId', $threadId);
+                    $this->telegramSession->save();
                 }
 
-                $this->telegramAudioService->sendResponse(
-                    $telegramChatId,
-                    $responseText,
-                    $voice,
-                );
-            }
-        } catch (\Throwable $throwable) {
-            $this->logger->error('Chat processing error: ' . $throwable->getMessage());
-            $this->sendMessage($telegramChatId, 'Désolé, une erreur est survenue lors du traitement de votre message.');
-            throw $throwable;
-        }
+                return $this->generateChatResponse($telegramChatId, is_string($text) ? $text : $text(), $threadId);
+            },
+            function (string $responseText, callable $checkpoint) use ($telegramChatId, $voiceResponse): void {
+                $this->deliverChatResponse($telegramChatId, $responseText, $checkpoint, $voiceResponse);
+            },
+        );
     }
 
-    private function generateChatResponse(int $telegramChatId, string $text): string
+    private function generateChatResponse(int $telegramChatId, string $text, string $threadId): string
     {
-        $this->logger->info('Generating chat response for chat ID: ' . $telegramChatId, ['text' => $text, 'threadId' => $this->telegramSession->get('threadId')]);
+        $this->logger->info('Generating chat response for chat ID: ' . $telegramChatId, ['text' => $text, 'threadId' => $threadId]);
         $this->sendChatAction($telegramChatId, TelegramAction::TEXT, force: true);
 
         $currentBrain = $this->telegramSession->get('brain_avatar');
-        $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession, $this->telegramSession->get('threadId'));
+        $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession, $threadId);
 
         $userMessage = new UserMessage($text);
         $userMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
@@ -658,6 +684,32 @@ class TelegramService implements QueueDoer
         return $chunk->tool instanceof GenerateImageTool
             ? TelegramAction::GENERATE
             : TelegramAction::TEXT;
+    }
+
+    /** @param callable(string, callable(): void): void $checkpoint */
+    private function deliverChatResponse(
+        int $telegramChatId,
+        string $responseText,
+        callable $checkpoint,
+        bool $voiceResponse = false,
+    ): void {
+        $this->deliveryCheckpoint = \Closure::fromCallable($checkpoint);
+        try {
+            $checkpoint('text', fn () => $this->sendChatResponse($telegramChatId, $responseText));
+            if ($voiceResponse) {
+                $voice = (string) $this->telegramSession->get(
+                    AudioServiceInterface::VOICE_SESSION_KEY,
+                    $this->audioService->defaultVoice(),
+                );
+                if (! $this->audioService->isAllowedVoice($voice)) {
+                    $voice = $this->audioService->defaultVoice();
+                }
+
+                $this->telegramAudioService->sendResponse($telegramChatId, $responseText, $voice, $checkpoint);
+            }
+        } finally {
+            $this->deliveryCheckpoint = null;
+        }
     }
 
     private function sendChatResponse(int $telegramChatId, string $responseText): void
@@ -753,8 +805,7 @@ class TelegramService implements QueueDoer
             $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $fileId]);
             if ($file === null) {
                 $this->logger->error('File not found for ID: ' . $fileId);
-                $this->sendMessage($telegramChatId, "Désolé j'ai un soucis pour trouver le fichier à envoyer.");
-                continue;
+                throw new \RuntimeException('Generated Telegram file is missing');
             }
 
             if ($file->fileType() === File::FILE_TYPE_IMAGE) {
@@ -772,7 +823,6 @@ class TelegramService implements QueueDoer
         try {
             $this->sendChatAction($telegramChatId, TelegramAction::VOICE);
             $tempFile = $this->prepareTempFile(
-                $telegramChatId,
                 $file->getFilePath(),
                 'fichier audio',
             );
@@ -807,7 +857,6 @@ class TelegramService implements QueueDoer
         } catch (\Throwable $throwable) {
             $this->handleFileSendError(
                 $throwable,
-                $telegramChatId,
                 $file->getFilePath(),
                 'fichier audio',
             );
@@ -823,7 +872,7 @@ class TelegramService implements QueueDoer
     {
         try {
             $this->sendChatAction($telegramChatId, TelegramAction::DOCUMENT);
-            $tempFile = $this->prepareTempFile($telegramChatId, $file->getFilePath(), 'document');
+            $tempFile = $this->prepareTempFile($file->getFilePath(), 'document');
             if ($tempFile === null) {
                 return;
             }
@@ -848,7 +897,7 @@ class TelegramService implements QueueDoer
 
             $this->handleFileSendResult($result, $telegramChatId, $file->getFilePath(), $formattedCaption, 'document');
         } catch (\Throwable $throwable) {
-            $this->handleFileSendError($throwable, $telegramChatId, $file->getFilePath(), 'document');
+            $this->handleFileSendError($throwable, $file->getFilePath(), 'document');
         } finally {
             $this->cleanupTempFile($tempFile ?? null);
         }
@@ -861,7 +910,7 @@ class TelegramService implements QueueDoer
     {
         try {
             $this->sendChatAction($telegramChatId, TelegramAction::PHOTO);
-            $tempFile = $this->prepareTempFile($telegramChatId, $file->getFilePath(), 'image');
+            $tempFile = $this->prepareTempFile($file->getFilePath(), 'image');
             if ($tempFile === null) {
                 return;
             }
@@ -869,19 +918,17 @@ class TelegramService implements QueueDoer
             $formattedCaption = $this->formatCaption($caption);
             $this->sendPhotoWithInputFile($telegramChatId, $tempFile, $file->getFilePath(), $formattedCaption);
         } catch (\Throwable $throwable) {
-            $this->handleFileSendError($throwable, $telegramChatId, $file->getFilePath(), 'image');
+            $this->handleFileSendError($throwable, $file->getFilePath(), 'image');
         } finally {
             $this->cleanupTempFile($tempFile ?? null);
         }
     }
 
-    private function prepareTempFile(int $telegramChatId, string $filePath, string $type = 'fichier'): ?string
+    private function prepareTempFile(string $filePath, string $type = 'fichier'): string
     {
         if (! $this->filesystem->fileExists($filePath)) {
             $this->logger->error($type . ' file not found', ['path' => $filePath]);
-            $this->sendMessage($telegramChatId, sprintf("Désolé, le %s généré n'a pas pu être trouvé.", $type));
-
-            return null;
+            throw new \RuntimeException('Generated Telegram file content is missing');
         }
 
         $fileContent = $this->filesystem->read($filePath);
@@ -945,7 +992,7 @@ class TelegramService implements QueueDoer
                 'error' => $result,
                 'caption' => $remainingCaption,
             ]);
-            $this->sendMessage($telegramChatId, sprintf("Désolé, je n'ai pas pu envoyer le %s.", $type));
+            throw new \RuntimeException('Telegram rejected generated file delivery');
         }
 
         if ($remainingCaption !== null) {
@@ -953,14 +1000,14 @@ class TelegramService implements QueueDoer
         }
     }
 
-    private function handleFileSendError(\Throwable $throwable, int $telegramChatId, string $filePath, string $type = 'fichier'): void
+    private function handleFileSendError(\Throwable $throwable, string $filePath, string $type = 'fichier'): void
     {
         $message = $throwable instanceof FilesystemException
             ? sprintf('Filesystem error sending %s: ', $type) . $throwable->getMessage()
             : sprintf('Error sending %s: ', $type) . $throwable->getMessage();
 
         $this->logger->error($message, ['path' => $filePath]);
-        $this->sendMessage($telegramChatId, sprintf("Désolé, une erreur est survenue lors de l'envoi du %s.", $type));
+        throw $throwable;
     }
 
     private function cleanupTempFile(?string $tempFile): void

@@ -4,8 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services\Queue;
 
+use App\Brain\ChatHistory\UserChatHistory;
+use App\Job\Web\NewMessageJob;
+use App\Job\Web\StartThreadJob;
+use App\Services\Auth;
+use App\Services\ChatGenerationBusyException;
+use App\Services\ChatThreadLock;
 use App\Services\Settings;
 use App\Services\TelegramService;
+use Doctrine\DBAL\Connection;
 use JsonException;
 use Ramsey\Uuid\Uuid;
 use RuntimeException;
@@ -15,6 +22,7 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
     public function __construct(
         private QueueRedisConnection $queueRedisConnection,
         private Settings $settings,
+        private Connection $connection,
     ) {
     }
 
@@ -22,19 +30,77 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
     public function dispatch(string $jobClass, array $payload, string $queue): string
     {
         $jobId = Uuid::uuid7()->toString();
+        $stateKey = '';
+        $messageId = '';
+        $lock = null;
+        if (in_array($jobClass, [NewMessageJob::class, StartThreadJob::class], true)) {
+            foreach (['threadId', 'sessionId'] as $field) {
+                if (! is_string($payload[$field] ?? null) || trim($payload[$field]) === '') {
+                    throw new \InvalidArgumentException('Missing chat ' . $field);
+                }
+            }
+
+            if (! is_array($payload['session'] ?? null)) {
+                throw new \InvalidArgumentException('Chat session is required');
+            }
+
+            $userId = $payload['session'][Auth::USERID] ?? null;
+            if (! is_string($userId) || $userId === '') {
+                throw new \InvalidArgumentException('Chat user identity is required');
+            }
+
+            $messageId = 'opening-' . $payload['threadId'];
+            if ($jobClass === NewMessageJob::class) {
+                $messageId = $payload['messageId'] ?? '';
+                if (! is_string($messageId) || preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $messageId) !== 1
+                    || ! is_string($payload['message'] ?? null) || trim($payload['message']) === '') {
+                    throw new \InvalidArgumentException('Stable message ID and message are required');
+                }
+
+                if (isset($payload['attachments'])) {
+                    if (! is_array($payload['attachments'])) {
+                        throw new \InvalidArgumentException('Chat attachments must be an array');
+                    }
+
+                    foreach (['uploadedFiles', 'fileIds'] as $field) {
+                        if (isset($payload['attachments'][$field]) && ! is_array($payload['attachments'][$field])) {
+                            throw new \InvalidArgumentException('Chat attachment groups must be arrays');
+                        }
+                    }
+                }
+            }
+
+            $stateKey = $this->prefix() . 'chat:generation:'
+                . hash('sha256', json_encode([$userId, $payload['threadId']], JSON_THROW_ON_ERROR));
+            $lock = new ChatThreadLock($this->connection->getNativeConnection(), $userId, $payload['threadId']);
+        }
+
+        if ($jobClass === \App\Job\Telegram\StartThreadJob::class) {
+            $payload['generationId'] ??= $jobId;
+        }
+
         $deduplicationKey = '';
         if ($jobClass === TelegramService::class && isset($payload['update_json'])) {
             $update = $this->deserialize((string) $payload['update_json']);
             if (isset($update['update_id']) && is_int($update['update_id'])) {
-                $bot = hash('sha256', (string) $this->settings->get('telegram.bot_token'));
+                $bot = hash('sha256', explode(':', (string) $this->settings->get('telegram.bot_token'), 2)[0]);
                 $deduplicationKey = $this->prefix() . 'telegram:update:' . $bot . ':' . $update['update_id'];
             }
         }
 
-        return (string) $this->queueRedisConnection->evaluate(QueueScripts::DISPATCH, [
-            $this->queueKey($queue), $this->jobKey($jobId),
-            $jobId, $queue, $jobClass, $this->serialize($payload), $deduplicationKey,
-        ], 2);
+        try {
+            $result = $this->queueRedisConnection->evaluate(QueueScripts::DISPATCH, [
+                $this->queueKey($queue), $this->jobKey($jobId),
+                $jobId, $queue, $jobClass, $this->serialize($payload), $deduplicationKey, $stateKey, $messageId,
+            ], 2);
+            if ($result === 'CHAT_BUSY') {
+                throw new ChatGenerationBusyException('Chat generation is busy or deleted');
+            }
+
+            return (string) $result;
+        } finally {
+            $lock?->release();
+        }
     }
 
     public function reserveNextAvailable(string $queueName, int $timeout = 5): ?QueueMessage
@@ -77,6 +143,16 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
     public function release(QueueMessage $queueMessage): void
     {
         $this->transitionMessage($queueMessage, 'release');
+    }
+
+    public function fail(QueueMessage $queueMessage): void
+    {
+        $this->transitionMessage($queueMessage, 'fail');
+    }
+
+    public function defer(QueueMessage $queueMessage): void
+    {
+        $this->transitionMessage($queueMessage, 'defer');
     }
 
     public function renew(QueueMessage $queueMessage): bool
@@ -161,7 +237,10 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
     private function transitionMessage(QueueMessage $queueMessage, string $action): mixed
     {
         return $this->transition(
-            $queueMessage->queueName, $action, $queueMessage->id, (string) ($queueMessage->metadata['token'] ?? ''),
+            $queueMessage->queueName,
+            $action,
+            $queueMessage->id,
+            (string) ($queueMessage->metadata['token'] ?? ''),
         );
     }
 

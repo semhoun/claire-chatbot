@@ -38,7 +38,7 @@ final class ChatThreadLock
 
             if (! flock($file, LOCK_EX | LOCK_NB)) {
                 fclose($file);
-                throw new RuntimeException('Chat thread is busy');
+                throw new ChatGenerationBusyException('Chat thread is busy');
             }
 
             $this->fileLock = $file;
@@ -58,7 +58,7 @@ final class ChatThreadLock
         $statement = $pdo->prepare($sql);
         $statement->execute(['key' => $this->key]);
         if (! in_array($statement->fetchColumn(), [true, 't', 1, '1'], true)) {
-            throw new RuntimeException('Chat thread is busy');
+            throw new ChatGenerationBusyException('Chat thread is busy');
         }
 
         $this->locked = true;
