@@ -4,6 +4,9 @@
          bootstrap="vendor/autoload.php"
          colors="true"
          cacheDirectory="var/cache/.phpunit.cache">
+    <php>
+        <ini name="memory_limit" value="256M"/>
+    </php>
     <testsuites>
         <testsuite name="Unit">
             <directory>test/Unit</directory>
