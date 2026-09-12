@@ -11,6 +11,7 @@ use App\Services\Session\SessionInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
+use Mpdf\HTMLParserMode;
 use Mpdf\Mpdf;
 use Mpdf\MpdfException;
 use Mpdf\Output\Destination;
@@ -19,6 +20,40 @@ use RuntimeException;
 final readonly class PdfGeneratorService
 {
     private const int MAX_CONTENT_LENGTH = 10 * 1024 * 1024;
+
+    private const string DEFAULT_CSS = <<<'CSS'
+        body { font-family: dejavusans; font-size: 10.5pt; line-height: 1.5; color: #263445; }
+        p { margin: 0 0 3mm; }
+        h1, h2, h3, h4, h5, h6 {
+            font-weight: bold; line-height: 1.2;
+            color: #182b3a; page-break-after: avoid;
+        }
+        h1 { font-size: 24pt; margin: 0 0 6mm; }
+        h2 { font-size: 16pt; margin: 7mm 0 3mm; }
+        h3 { font-size: 12pt; margin: 5mm 0 2mm; }
+        h4 { font-size: 11pt; margin: 4mm 0 2mm; }
+        h5, h6 { font-size: 10.5pt; margin: 4mm 0 2mm; }
+        ul, ol { margin: 2mm 0 4mm; padding-left: 6mm; }
+        blockquote {
+            margin: 4mm 0; padding: 3mm 4mm; border-left: 0.8mm solid #879bac;
+            background-color: #f3f6f8; color: #435568;
+        }
+        /* mPDF's overflow: wrap breaks long cell values instead of shrinking the entire table. */
+        table {
+            border-collapse: collapse; margin: 3mm 0 5mm; font-size: 9.5pt;
+            line-height: 1.35; overflow: wrap;
+        }
+        th, td { padding: 2.5mm 3mm; border-bottom: 0.2mm solid #d5dee5; vertical-align: top; }
+        th { background-color: #eaf0f5; color: #182b3a; font-weight: bold; text-align: left; }
+        pre, code, kbd, samp { font-family: dejavusansmono; font-size: 9pt; }
+        pre {
+            margin: 3mm 0 4mm; padding: 3mm; line-height: 1.4;
+            background-color: #f3f6f8; border: 0.2mm solid #d5dee5;
+        }
+        img { max-width: 100%; }
+        a { color: #245b80; text-decoration: underline; }
+        hr { color: #d5dee5; height: 0.2mm; margin: 5mm 0; }
+        CSS;
 
     public function __construct(
         private Settings $settings,
@@ -121,6 +156,8 @@ final readonly class PdfGeneratorService
             'curlAllowUnsafeSsl' => false,
         ]);
 
+        // Load defaults first so document styles and explicit page settings remain authoritative.
+        $mpdf->WriteHTML(self::DEFAULT_CSS, HTMLParserMode::HEADER_CSS);
         $mpdf->WriteHTML($html);
 
         return $mpdf->Output('', Destination::STRING_RETURN);

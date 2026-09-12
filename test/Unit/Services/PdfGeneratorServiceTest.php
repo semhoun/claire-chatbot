@@ -16,6 +16,9 @@ use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Smalot\PdfParser\Config;
+use Smalot\PdfParser\Document;
+use Smalot\PdfParser\Parser;
 
 final class PdfGeneratorServiceTest extends TestCase
 {
@@ -162,7 +165,11 @@ final class PdfGeneratorServiceTest extends TestCase
 
         $user = new User();
         $user->setId('user-123');
-        $imageData = 'fake-image-binary-data';
+        $imageData = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAACXBIWXMAAA7EAAAOxAGVKw4b'
+                . 'AAAAD0lEQVQImWNgYGBgYGAAAAAHAAHV3tbYAAAAAElFTkSuQmCC',
+            true,
+        );
 
         $filesystem->expects($this->once())
             ->method('read')
@@ -183,9 +190,144 @@ final class PdfGeneratorServiceTest extends TestCase
         // Result should contain img tag with temp file path
         $this->assertStringContainsString('<img src="' . $tempFiles[0] . '"', $result);
         $this->assertStringContainsString('style="max-width:100%;height:auto;">', $result);
+        $document = $this->renderDocument($result);
+        $images = $document->getObjectsByType('XObject', 'Image');
+        self::assertNotEmpty($images);
+        self::assertSame(2, (int) array_values($images)[0]->get('Width')->getContent());
+        self::assertSame(1, (int) array_values($images)[0]->get('Height')->getContent());
 
         // Clean up
         @unlink($tempFiles[0]);
+    }
+
+    public function testDefaultStylesRenderSemanticMarkdownAndSafeLinks(): void
+    {
+        $html = new \App\Services\Markdown()->convert("# R\u{00e9}sum\u{00e9}\n\n" . <<<'MD'
+            Texte **important** et [source](https://example.org/report).
+
+            ## Section
+
+            - Premier point
+            - Second point
+
+            > Une citation.
+
+            ```php
+            $total = 42;
+            ```
+
+            [unsafe](javascript:alert%281%29)
+            MD);
+        $document = $this->renderDocument($html);
+        self::assertCount(1, $document->getPages());
+        $page = $document->getPages()[0];
+        self::assertStringContainsString("R\u{00e9}sum\u{00e9}", $page->getText());
+        $runs = $page->getDataTm();
+        self::assertEqualsWithDelta(24, (float) $runs[0][3], 0.1);
+        self::assertStringContainsString('DejaVuSans', $page->getFont($runs[0][2])->getDetails()['BaseFont']);
+        $sizes = array_map(static fn (array $run): float => (float) $run[3], $runs);
+        self::assertContains(16.0, $sizes);
+        self::assertContains(10.5, $sizes);
+        self::assertContains(9.0, $sizes);
+        self::assertStringContainsString('$total = 42;', $page->getText());
+        $links = $document->getObjectsByType('Annot');
+        self::assertCount(1, $links);
+        self::assertSame('https://example.org/report', array_values($links)[0]->get('A')->get('URI')->getContent());
+    }
+
+    public function testLongTableWrapsWithoutTinyTextAndRepeatsHeadings(): void
+    {
+        $html = '<h1>Report</h1><table><thead><tr><th>Reference</th><th>Status</th></tr></thead><tbody>';
+        for ($row = 1; $row <= 60; ++$row) {
+            $html .= '<tr><td>' . str_repeat('LONGREFERENCE', 10) . '</td><td>Row ' . $row . '</td></tr>';
+        }
+        $document = $this->renderDocument($html . '</tbody></table>');
+        self::assertGreaterThan(1, count($document->getPages()));
+        foreach ($document->getPages() as $page) {
+            self::assertStringContainsString('Reference', $page->getText());
+            self::assertStringContainsString('Status', preg_replace('/\s+/', '', $page->getText()));
+            foreach ($page->getDataTm() as $run) {
+                self::assertGreaterThanOrEqual(9.4, (float) $run[3]);
+            }
+        }
+        self::assertStringContainsString('Row60', preg_replace('/\s+/', '', $document->getText()));
+    }
+
+    public function testHeadingStaysWithFollowingParagraphAtPageBoundary(): void
+    {
+        $document = $this->renderDocument(
+            '<div style="height:250mm">Opening</div><h2>Next section</h2><p>Following paragraph</p>',
+        );
+        self::assertCount(2, $document->getPages());
+        self::assertStringNotContainsString('Next section', $document->getPages()[0]->getText());
+        self::assertStringContainsString('Next section', $document->getPages()[1]->getText());
+        self::assertStringContainsString('Following paragraph', $document->getPages()[1]->getText());
+    }
+
+    public static function pageOptions(): array
+    {
+        return [
+            'zero margins' => ['A4', 'portrait', ['top' => 0, 'bottom' => 0, 'left' => 0, 'right' => 0], 210, 297],
+            'landscape' => ['A5', 'landscape', ['top' => 7, 'bottom' => 9, 'left' => 11, 'right' => 13], 210, 148],
+            'letter' => ['Letter', 'portrait', [], 215.9, 279.4],
+        ];
+    }
+
+    #[DataProvider('pageOptions')]
+    public function testExplicitPageOptionsAndCustomStylesRemainEffective(
+        string $pageSize,
+        string $orientation,
+        array $margins,
+        float $width,
+        float $height,
+    ): void {
+        $html = '<html><head><style>body { font-family: dejavuserif; font-size: 18pt; }'
+            . 'h1 { font-size: 20pt; color: #990000; margin: 0; }'
+            . 'table { font-size: 14pt; }</style></head><body>'
+            . '<p>Custom body</p><h1>Custom heading</h1><p style="font-size:22pt">Inline style</p>'
+            . '<table><tr><td>Custom table</td></tr></table>'
+            . '<p style="page-break-before:always">Second page</p></body></html>';
+        $document = $this->renderDocument($html, $pageSize, $orientation, $margins);
+        self::assertCount(2, $document->getPages());
+        $page = $document->getPages()[0];
+        $box = $page->getDetails()['MediaBox'];
+        self::assertEqualsWithDelta($width * 72 / 25.4, $box[2], 0.1);
+        self::assertEqualsWithDelta($height * 72 / 25.4, $box[3], 0.1);
+        $runs = $page->getDataTm();
+        self::assertEqualsWithDelta(($margins['left'] ?? 15) * 72 / 25.4, (float) $runs[0][0][4], 0.1);
+        self::assertEqualsWithDelta(18, (float) $runs[0][3], 0.1);
+        self::assertStringContainsString('DejaVuSerif', $page->getFont($runs[0][2])->getDetails()['BaseFont']);
+        $sizes = array_map(static fn (array $run): float => (float) $run[3], $runs);
+        self::assertContains(20.0, $sizes);
+        self::assertContains(22.0, $sizes);
+        self::assertContains(14.0, $sizes);
+        self::assertStringContainsString('Second page', $document->getPages()[1]->getText());
+        $zeroTop = $this->renderDocument($html, $pageSize, $orientation, [...$margins, 'top' => 0]);
+        $zeroY = (float) $zeroTop->getPages()[0]->getDataTm()[0][0][5];
+        self::assertEqualsWithDelta(
+            ($margins['top'] ?? 15) * 72 / 25.4,
+            $zeroY - (float) $runs[0][0][5],
+            0.1,
+        );
+    }
+
+    private function renderDocument(
+        string $html,
+        string $pageSize = 'A4',
+        string $orientation = 'portrait',
+        array $margins = [],
+    ): Document {
+        $service = new PdfGeneratorService(
+            new Settings(['tools' => ['pdf' => ['tempDir' => $this->imagesTempDir]]]),
+            $this->createStub(Filesystem::class),
+            $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+            new \App\Services\Markdown(),
+        );
+        $pdf = new \ReflectionMethod($service, 'renderPdf')->invoke($service, $html, $pageSize, $orientation, $margins);
+        $config = new Config();
+        $config->setDataTmFontInfoHasToBeIncluded(true);
+
+        return new Parser([], $config)->parseContent($pdf);
     }
 
     public function testResolveGeneratedImagesThrowsExceptionForDifferentUser(): void

@@ -27,6 +27,11 @@ Generates a PDF document from HTML or Markdown content. The generated PDF will b
 Use this tool whenever the user requests or needs a PDF document, report, or printable output.
 The content can be provided as HTML or Markdown (specify the format using the 'format' parameter).
 
+The PDF already has restrained professional typography, spacing, table and code styles. Prefer semantic content over elaborate decoration: one h1 title, ordered h2/h3 sections, paragraphs, lists, blockquotes, and pre/code for code. Do not invent branding, logos, dates, headers or footers.
+HTML is rendered by mPDF, not a web browser. Use simple block layout and supported print CSS with pt/mm units; avoid flexbox, grid, JavaScript, CSS variables, web fonts, and fixed-position layouts. Explicit document CSS can override the default styles.
+For data tables use table/thead/tbody/tr/th/td so column headings repeat across pages. Keep tables reasonably narrow, allow natural page breaks, and split long identifiers with <wbr> when needed; do not apply page-break-inside:avoid to an entire long table. Keep code lines short. Use landscape or a larger page size for genuinely wide data rather than tiny text.
+Use page-break-before:always or <pagebreak /> only for intentional section breaks in HTML. Add page numbers or running headers/footers only when appropriate to the requested document, using mPDF's supported features and sufficient margins. Preserve requested page size, orientation and margins, including zero.
+
 IMPORTANT: The tool returns two fields:
 - "id": The file identifier in the format @@GENERATED@@<uuid>@@. This ID must be used in the message text to reference the PDF.
 - "name": The human-readable display name of the file. This is shown to the user when they download the PDF.
@@ -34,6 +39,7 @@ IMPORTANT: The tool returns two fields:
 Always use the "id" value (the @@GENERATED@@...@@ pattern) in your message, use it with or without the <a> tag or markdown link.
 
 You can embed images in the PDF content by including their @@GENERATED@@<uuid>@@ tokens in the HTML/Markdown. These will be automatically resolved and embedded as images in the PDF.
+Place generated image tokens on their own, not inside an img src attribute or a Markdown image URL. For ordinary HTML images, preserve the aspect ratio and avoid setting both width and height unless explicitly required.
 IMPORTANT: Use ONLY image IDs that have been explicitly provided by the generate_image tool in the current conversation. NEVER invent, placeholder, or hallucinate image IDs (like @@GENERATED@@placeholder@@). If you haven't called the tool yet, you don't have an ID to use.
 If you need to include an image that hasn't been generated yet, you MUST call generate_image FIRST, wait for the response to get the ID, and ONLY THEN call generate_pdf. NEVER call both tools in parallel if one depends on the other.
 EOT;
