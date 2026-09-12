@@ -25,7 +25,7 @@ use Psr\Log\NullLogger;
 use ReflectionClass;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
-use Slim\Views\Twig;
+use App\Renderer\VueShell;
 
 final class AuthResourceTokenTest extends TestCase
 {
@@ -121,7 +121,7 @@ final class AuthResourceTokenTest extends TestCase
         }
         $controller = new AuthController(
             new NullLogger(), (new ReflectionClass(OidcClient::class))->newInstanceWithoutConstructor(),
-            $this->createStub(Auth::class), $tokens, Twig::create(Settings::getAppRoot() . '/tmpl'),
+            $this->createStub(Auth::class), $tokens, new VueShell(),
             new OidcTransaction($this->createStub(RedisClient::class)), $entityManager, $generation,
         );
         $session = new ArraySession();

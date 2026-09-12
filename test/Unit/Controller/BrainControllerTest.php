@@ -8,7 +8,7 @@ use App\Brain\BrainRegistry;
 use App\Controller\BrainController;
 use App\Entity\User;
 use App\Middleware\JwtSessionMiddleware;
-use App\Renderer\ChatHtmlRenderer;
+use App\Renderer\ChatDataRenderer;
 use App\Repository\ChatHistoryRepository;
 use App\Repository\UserRepository;
 use App\Services\Audio\AudioServiceInterface;
@@ -16,7 +16,6 @@ use App\Services\Auth;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\CorsHeaders;
-use App\Services\Markdown;
 use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\RedisClient;
 use App\Services\Rendering\GeneratedFileProcessor;
@@ -329,7 +328,9 @@ final class BrainControllerTest extends TestCase
         $snapshot = new \ReflectionMethod($controller, 'readSnapshot')->invoke($controller, $session, 'thread');
         self::assertSame(['assistant-snapshot' => 'auto-assistant-snapshot'], $snapshot['audioRequestIds']);
         self::assertFalse($snapshot['responding']);
-        self::assertStringContainsString('claire-message-assistant-snapshot', $snapshot['html']);
+        self::assertSame('assistant-snapshot', $snapshot['messages'][1]['id']);
+        self::assertSame('Answer', $snapshot['messages'][1]['message']);
+        self::assertArrayNotHasKey('html', $snapshot);
     }
 
     /** @return array{BrainController, ChatStreamPublisher, InMemorySession, \PDO, RedisClient} */
@@ -365,7 +366,7 @@ final class BrainControllerTest extends TestCase
         });
         $subscriber = new ChatStreamSubscriber($redis, $settings);
         $publisher = new ChatStreamPublisher($redis, $subscriber, $settings);
-        $renderer = new ChatHtmlRenderer(new Markdown(), new GeneratedFileProcessor($settings, $entityManager));
+        $renderer = new ChatDataRenderer(new GeneratedFileProcessor($settings, $entityManager));
         return [new BrainController(new NullLogger(), $renderer,
             new BrainRegistry($settings, $this->createStub(ContainerInterface::class)), $entityManager,
             $this->createStub(Filesystem::class), $settings, $audio ?? $this->createStub(AudioServiceInterface::class),

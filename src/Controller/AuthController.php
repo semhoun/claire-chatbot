@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Renderer\VueShell;
 use App\Entity\ChatHistory;
 use App\Entity\File;
 use App\Middleware\JwtSessionMiddleware;
@@ -18,7 +19,6 @@ use App\Services\Session\Trait\SessionFromRequest;
 use JsonException;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
-use Slim\Views\Twig;
 
 final readonly class AuthController
 {
@@ -29,7 +29,7 @@ final readonly class AuthController
         private OidcClient $oidcClient,
         private Auth $auth,
         private JwtTokenService $jwtTokenService,
-        private Twig $twig,
+        private VueShell $vueShell,
         private OidcTransaction $oidcTransaction,
         private \Doctrine\ORM\EntityManager $entityManager,
         private ChatGenerationState $chatGenerationState,
@@ -64,7 +64,10 @@ final readonly class AuthController
 
         $state = $this->oidcTransaction->consume($request->getCookieParams()[OidcTransaction::COOKIE] ?? null);
         if ($state === null) {
-            return $response->withStatus(403);
+            return $this->vueShell->respond($response->withStatus(403), [
+                'page' => 'error', 'code' => 403, 'title' => 'Session de connexion expirée ou invalide.',
+                'baseUrl' => (string) $request->getAttribute('base_url'),
+            ]);
         }
 
         $session->set('oidc_state', $state);
@@ -77,8 +80,9 @@ final readonly class AuthController
             if (isset($result['error'])) {
                 $errorDescription = $result['error_description'] ?? 'Authorization failed';
 
-                return $this->twig->render($response, 'error.twig', [
-                    'base_url' => (string) $request->getAttribute('base_url'),
+                return $this->vueShell->respond($response, [
+                    'page' => 'error',
+                    'baseUrl' => (string) $request->getAttribute('base_url'),
                     'code' => 403,
                     'title' => 'Accès refusé: ' . $result['error'],
                     'details' => ['message' => $errorDescription],
@@ -102,10 +106,11 @@ final readonly class AuthController
         // Render callback page that stores token client-side then redirects
         // This avoids losing tokens on a 302 redirect while keeping
         // sensitive JWT values out of the URL.
-        return $this->twig->render($response, 'auth_callback.twig', [
-            'base_url' => (string) $request->getAttribute('base_url'),
-            'session_token' => $sessionToken,
-            'redirect_url' => '/',
+        return $this->vueShell->respond($response, [
+            'page' => 'callback',
+            'baseUrl' => (string) $request->getAttribute('base_url'),
+            'sessionToken' => $sessionToken,
+            'redirectUrl' => '/',
         ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 

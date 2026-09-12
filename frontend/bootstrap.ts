@@ -1,17 +1,13 @@
 import type { ClaireBootstrap } from './types'
 
-interface BootstrapElement extends HTMLElement {
-  dataset: DOMStringMap & {
-    baseUrl?: string
-    bootstrap?: string
+export function parseBootstrap(value: unknown, baseUrl: string): ClaireBootstrap {
+  if (!value || typeof value !== 'object') throw new Error('Configuration frontend Claire absente')
+  const config = value as ClaireBootstrap
+  if (!['normal', 'embed'].includes(config.mode) || typeof config.threadId !== 'string'
+    || typeof config.sessionId !== 'string' || !config.brainInfo || !Array.isArray(config.brains)) {
+    throw new Error('Configuration frontend Claire invalide')
   }
-}
-
-export function parseBootstrap(element: BootstrapElement): ClaireBootstrap {
-  const raw = element.dataset.bootstrap
-  if (!raw) throw new Error('Configuration frontend Claire absente')
-  const config = JSON.parse(raw) as ClaireBootstrap
-  config.baseUrl = (element.dataset.baseUrl ?? '').replace(/\/$/, '')
+  config.baseUrl = baseUrl.replace(/\/$/, '')
   return config
 }
 

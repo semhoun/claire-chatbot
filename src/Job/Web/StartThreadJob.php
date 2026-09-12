@@ -6,7 +6,7 @@ namespace App\Job\Web;
 
 use App\Brain\Agent;
 use App\Brain\BrainRegistry;
-use App\Renderer\ChatHtmlRenderer;
+use App\Renderer\ChatDataRenderer;
 use App\Services\Auth;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
@@ -43,7 +43,7 @@ final class StartThreadJob implements QueueDoer
     private string $userId = '';
 
     public function __construct(
-        private readonly ChatHtmlRenderer $chatHtmlRenderer,
+        private readonly ChatDataRenderer $chatDataRenderer,
         private readonly BrainRegistry $brainRegistry,
         private readonly ChatStreamPublisher $chatStreamPublisher,
         private readonly Connection $connection,
@@ -91,7 +91,7 @@ final class StartThreadJob implements QueueDoer
             $this->agent = $this->brainRegistry->get($inMemorySession->get('brain_avatar'), $inMemorySession, $this->threadId);
             $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'running', true);
             $attempted = true;
-            $messagesHtml = $this->startNewStream();
+            $messages = $this->startNewStream();
         } catch (\Throwable $throwable) {
             try {
                 if (($chatGenerationState->get($this->userId, $this->threadId)['status'] ?? '') !== 'done') {
@@ -112,12 +112,13 @@ final class StartThreadJob implements QueueDoer
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.snapshot', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
-            'html' => $messagesHtml,
+            'messages' => $messages,
             ...$chatGenerationState->snapshot($this->userId, $this->threadId),
         ]);
     }
 
-    public function startNewStream(): string
+    /** @return array<int, array<string, mixed>> */
+    public function startNewStream(): array
     {
         $openingMessage = $this->agent->getOpeningText();
         $assistantMessage = new AssistantMessage($openingMessage)
@@ -128,14 +129,14 @@ final class StartThreadJob implements QueueDoer
         // context followed by the opening message actually shown to the user.
         $chatHistory->initializeWithOpeningMessage($assistantMessage);
 
-        $messagesHtml = $this->chatHtmlRenderer->messages(
+        $messages = $this->chatDataRenderer->messages(
             $chatHistory->getFormattedMessages(),
             $this->userId,
         );
         $chatGenerationState = $this->chatStreamPublisher->generationState();
         $chatGenerationState->set($this->userId, $this->threadId, 'opening-' . $this->threadId, 'done', true);
 
-        return $messagesHtml;
+        return $messages;
     }
 
     /** @param array<string, mixed> $payload */

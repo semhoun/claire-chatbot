@@ -6,9 +6,8 @@ namespace App\Test\Unit\Controller;
 
 use App\Controller\HistoryController;
 use App\Middleware\JwtSessionMiddleware;
-use App\Renderer\ChatHtmlRenderer;
+use App\Renderer\ChatDataRenderer;
 use App\Services\Auth;
-use App\Services\Markdown;
 use App\Services\Rendering\GeneratedFileProcessor;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
@@ -17,12 +16,41 @@ use League\Flysystem\Filesystem;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ServerRequestInterface;
-use Slim\Views\Twig;
 use Slim\Psr7\Factory\ResponseFactory;
 
 #[AllowMockObjectsWithoutExpectations]
 final class HistoryControllerTest extends TestCase
 {
+    public function testListReturnsOnlyHistoryMetadataScopedToTheSessionUser(): void
+    {
+        $settings = new Settings(['redis' => ['prefix' => 'test:']]);
+        $history = $this->createStub(\App\Entity\ChatHistory::class);
+        $history->method('getThreadId')->willReturn('thread-1');
+        $history->method('getTitle')->willReturn(null);
+        $history->method('getSummary')->willReturn(' <summary> ');
+        $history->method('getUpdatedAt')->willReturn(new \DateTimeImmutable('2026-09-12T12:00:00+00:00'));
+        $repository = $this->createMock(\App\Repository\ChatHistoryRepository::class);
+        $repository->expects(self::once())->method('getHistoryList')->with('user-1')->willReturn([$history]);
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $entityManager->method('getRepository')->willReturn($repository);
+        $redis = $this->createStub(\App\Services\RedisClient::class);
+        $publisher = new \App\Services\ChatStreamPublisher($redis,
+            new \App\Services\ChatStreamSubscriber($redis, $settings), $settings);
+        $controller = new HistoryController($this->chatRenderer($settings, $entityManager),
+            $entityManager, $settings, $publisher,
+            $this->createStub(\App\Services\Queue\QueueDispatcherInterface::class),
+            $this->createStub(Filesystem::class));
+        $request = new \Slim\Psr7\Factory\ServerRequestFactory()->createServerRequest('GET', '/history/list')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE,
+                new \App\Services\Session\InMemorySession([Auth::USERID => 'user-1']));
+        $response = $controller->list($request, new \Slim\Psr7\Response());
+        self::assertSame('application/json', $response->getHeaderLine('Content-Type'));
+        self::assertSame(['histories' => [[
+            'threadId' => 'thread-1', 'title' => 'Conversation', 'summary' => '<summary>',
+            'updatedAt' => '2026-09-12T12:00:00+00:00',
+        ]]], json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR));
+    }
+
     public function testCreateDelegatesGenerationStateToAtomicDispatcher(): void
     {
         $settings = new Settings(['redis' => ['prefix' => 'test:'], 'queue' => ['defaultQueue' => 'default']]);
@@ -51,7 +79,7 @@ final class HistoryControllerTest extends TestCase
             },
         );
         $controller = new HistoryController($this->chatRenderer($settings, $entityManager),
-            Twig::create(Settings::getAppRoot() . '/tmpl'), $entityManager, $settings, $publisher,
+            $entityManager, $settings, $publisher,
             $queue, $this->createStub(Filesystem::class));
         $request = new \Slim\Psr7\Factory\ServerRequestFactory()->createServerRequest('POST', '/history/new')
             ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session);
@@ -79,7 +107,7 @@ final class HistoryControllerTest extends TestCase
         $publisher = new \App\Services\ChatStreamPublisher($redis,
             new \App\Services\ChatStreamSubscriber($redis, $settings), $settings);
         $controller = new HistoryController($this->chatRenderer($settings, $entityManager),
-            Twig::create(Settings::getAppRoot() . '/tmpl'), $entityManager, $settings, $publisher,
+            $entityManager, $settings, $publisher,
             $this->createStub(\App\Services\Queue\QueueDispatcherInterface::class),
             $this->createStub(Filesystem::class));
         $request = new \Slim\Psr7\Factory\ServerRequestFactory()->createServerRequest('DELETE', '/history/last')
@@ -162,7 +190,6 @@ final class HistoryControllerTest extends TestCase
 
         $controller = new HistoryController(
             $this->chatRenderer($settings, $entityManager),
-            Twig::create(\App\Services\Settings::getAppRoot() . '/tmpl'),
             $entityManager,
             $settings,
             $publisher,
@@ -190,7 +217,8 @@ final class HistoryControllerTest extends TestCase
         $payload = json_decode((string) $result->getBody(), true);
         $this->assertSame('current-thread', $payload['threadId']);
         $this->assertSame('Question', $payload['removedMessage']);
-        $this->assertStringContainsString('claire-typing-indicator', $payload['html']);
+        $this->assertSame([], $payload['messages']);
+        $this->assertArrayNotHasKey('html', $payload);
     }
 
     public function testOpenReturnsJsonChatIdForPersistentReconnect(): void
@@ -242,7 +270,7 @@ final class HistoryControllerTest extends TestCase
                     return is_array($data)
                         && $data['event'] === 'chat.snapshot'
                         && $data['threadId'] === 'thread-1'
-                        && str_contains($data['payload']['html'], 'Bonjour');
+                        && $data['payload']['messages'][0]['message'] === 'Bonjour';
                 })
             )
             ->willReturn(1);
@@ -253,7 +281,6 @@ final class HistoryControllerTest extends TestCase
 
         $controller = new HistoryController(
             $this->chatRenderer($settings, $entityManager),
-            Twig::create(\App\Services\Settings::getAppRoot() . '/tmpl'),
             $entityManager,
             $settings,
             $chatStreamPublisher,
@@ -328,7 +355,7 @@ final class HistoryControllerTest extends TestCase
                         && $data['payload']['activeMessageId'] === 'active-1'
                         && $data['payload']['threadId'] === 'thread-1'
                         && $data['payload']['sessionId'] === 'sess-abc123'
-                        && str_contains($data['payload']['html'], 'Bonjour');
+                        && $data['payload']['messages'][0]['message'] === 'Bonjour';
                 })
             )
             ->willReturn(1);
@@ -339,7 +366,6 @@ final class HistoryControllerTest extends TestCase
 
         $controller = new HistoryController(
             $this->chatRenderer($settings, $entityManager),
-            Twig::create(\App\Services\Settings::getAppRoot() . '/tmpl'),
             $entityManager,
             $settings,
             $chatStreamPublisher,
@@ -366,9 +392,8 @@ final class HistoryControllerTest extends TestCase
     private function chatRenderer(
         Settings $settings,
         EntityManagerInterface $entityManager,
-    ): ChatHtmlRenderer {
-        return new ChatHtmlRenderer(
-            new Markdown(),
+    ): ChatDataRenderer {
+        return new ChatDataRenderer(
             new GeneratedFileProcessor($settings, $entityManager)
         );
     }

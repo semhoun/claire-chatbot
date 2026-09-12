@@ -7,6 +7,16 @@ export interface BrainOption {
   cssInline?: string
 }
 
+export interface PageData {
+  page: 'app' | 'callback' | 'error'
+  baseUrl: string
+  sessionToken?: string
+  redirectUrl?: string
+  code?: number
+  title?: string
+  details?: Record<string, unknown> | null
+}
+
 export interface WorkflowOption {
   slug: string
   label: string
@@ -64,13 +74,40 @@ export interface ClaireBootstrap {
   dynamicCss?: string
 }
 
+export interface GeneratedFile {
+  id: string
+  name: string
+  type: string
+  url: string | null
+}
+
+export interface ToolCall {
+  id: string
+  name: string
+  inputs: Array<{ name: string; value: unknown }>
+  running: boolean
+  result: unknown
+}
+
+export interface ChatMessage {
+  id: string
+  message: string
+  sent: boolean
+  time: string
+  toolsCall: ToolCall[]
+  files: GeneratedFile[]
+}
+
 export interface SseUpdate {
   audioRequestId?: string | null
   audioRequestIds?: Record<string, string>
   responding?: boolean
   activeMessageId?: string | null
   audioData?: string
-  html?: string
+  messages?: ChatMessage[]
+  entry?: ChatMessage
+  toolsCall?: ToolCall[]
+  files?: GeneratedFile[]
   message?: string
   messageId?: string
   mimeType?: string

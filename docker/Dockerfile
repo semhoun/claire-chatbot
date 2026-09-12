@@ -120,6 +120,7 @@ COPY migrations /opt/www/migrations
 COPY public /opt/www/public
 COPY src /opt/www/src
 COPY tmpl /opt/www/tmpl
+COPY frontend/shell.html /opt/www/frontend/shell.html
 COPY --from=php-dependencies /app/vendor /opt/www/vendor
 COPY --from=frontend-build /src/public/build /opt/www/public/build
 COPY --from=frontend-build /src/public/js/embed.js /opt/www/public/js/embed.js

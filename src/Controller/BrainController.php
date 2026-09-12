@@ -9,7 +9,7 @@ use App\Brain\ChatHistory\UserChatHistory;
 use App\Job\Web\GenerateAudioJob;
 use App\Job\Web\NewMessageJob;
 use App\Middleware\JwtSessionMiddleware;
-use App\Renderer\ChatHtmlRenderer;
+use App\Renderer\ChatDataRenderer;
 use App\Services\Audio\AudioServiceInterface;
 use App\Services\Auth;
 use App\Services\ChatGenerationBusyException;
@@ -41,7 +41,7 @@ final readonly class BrainController
 
     public function __construct(
         private Logger $logger,
-        private ChatHtmlRenderer $chatHtmlRenderer,
+        private ChatDataRenderer $chatDataRenderer,
         private BrainRegistry $brainRegistry,
         private EntityManagerInterface $entityManager,
         private Filesystem $filesystem,
@@ -368,7 +368,7 @@ final readonly class BrainController
                 );
                 $messages = $userChatHistory->getFormattedMessages();
                 return [
-                    'html' => $this->chatHtmlRenderer->messages($messages, (string) $session->get(Auth::USERID)),
+                    'messages' => $this->chatDataRenderer->messages($messages, (string) $session->get(Auth::USERID)),
                     'audioRequestIds' => array_column(array_filter($messages,
                         static fn (array $message): bool => isset($message['audioRequestId'])), 'audioRequestId', 'id'),
                 ];

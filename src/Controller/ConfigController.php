@@ -16,14 +16,12 @@ use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
-use Slim\Views\Twig;
 
 final readonly class ConfigController
 {
     use SessionFromRequest;
 
     public function __construct(
-        private Twig $twig,
         private EntityManagerInterface $entityManager,
         private BrainRegistry $brainRegistry,
         private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
@@ -216,32 +214,23 @@ final readonly class ConfigController
         }
 
         if ($telegramId !== '' && ! ctype_digit($telegramId)) {
-            return $this->twig->render($response, 'partials/telegram_config.twig', [
-                'telegram_id' => $telegramId,
-                'error' => 'L\'identifiant Telegram doit être composé uniquement de chiffres.',
-                'success' => null,
-            ])->withStatus(422)->withHeader('Content-Type', 'text/html; charset=utf-8');
+            return $this->telegramResponse($response, $user->getTelegramId(),
+                error: 'L\'identifiant Telegram doit être composé uniquement de chiffres.', status: 422);
         }
 
         if ($telegramId !== '') {
             $existingUser = $this->entityManager->getRepository(User::class)->findByTelegramId($telegramId);
             if ($existingUser !== null && $existingUser->getId() !== $user->getId()) {
-                return $this->twig->render($response, 'partials/telegram_config.twig', [
-                    'telegram_id' => $user->getTelegramId(),
-                    'error' => 'Cet identifiant Telegram est déjà associé à un autre compte.',
-                    'success' => null,
-                ])->withStatus(409)->withHeader('Content-Type', 'text/html; charset=utf-8');
+                return $this->telegramResponse($response, $user->getTelegramId(),
+                    error: 'Cet identifiant Telegram est déjà associé à un autre compte.', status: 409);
             }
         }
 
         $user->setTelegramId($telegramId === '' ? null : $telegramId);
         $this->entityManager->flush();
 
-        return $this->twig->render($response, 'partials/telegram_config.twig', [
-            'telegram_id' => $user->getTelegramId(),
-            'success' => $telegramId === '' ? 'Association Telegram supprimée avec succès.' : 'Configuration Telegram enregistrée avec succès.',
-            'error' => null,
-        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
+        return $this->telegramResponse($response, $user->getTelegramId(), success: $telegramId === ''
+            ? 'Association Telegram supprimée avec succès.' : 'Configuration Telegram enregistrée avec succès.');
     }
 
     public function telegramForm(Request $request, Response $response): Response
@@ -259,11 +248,23 @@ final readonly class ConfigController
             return $response->withStatus(404);
         }
 
-        return $this->twig->render($response, 'partials/telegram_config.twig', [
-            'telegram_id' => $user->getTelegramId(),
-            'success' => null,
-            'error' => null,
-        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
+        return $this->telegramResponse($response, $user->getTelegramId());
+    }
+
+    private function telegramResponse(
+        Response $response,
+        ?string $telegramId,
+        ?string $success = null,
+        ?string $error = null,
+        int $status = 200,
+    ): Response
+    {
+        $response->getBody()->write(json_encode([
+            'telegramId' => $telegramId,
+            'success' => $success,
+            'error' => $error,
+        ], JSON_THROW_ON_ERROR));
+        return $response->withStatus($status)->withHeader('Content-Type', 'application/json');
     }
 
     public function comfyuiWorkflow(Request $request, Response $response): Response

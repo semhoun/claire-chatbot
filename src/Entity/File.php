@@ -115,6 +115,11 @@ class File
         $this->sizeBytes = $size;
     }
 
+    public function getSizeBytes(): int
+    {
+        return $this->sizeBytes;
+    }
+
     public function getFileId(): string
     {
         return $this->fileId;

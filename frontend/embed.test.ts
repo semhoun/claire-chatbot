@@ -2,9 +2,18 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BrowserAudio } from './services/browser-audio'
+import { SessionClient } from './services/session-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import ClaireApp from './components/ClaireApp.vue'
-import type { ClaireBootstrap } from './types'
+import type { ChatMessage, ClaireBootstrap, GeneratedFile } from './types'
+
+function entry(id = 'a', message = 'Hello', files: GeneratedFile[] = []): ChatMessage {
+  return { id, message: [message, ...files.map(file => file.id)].join('\n\n'), files, sent: false, time: '2026-09-12T12:00:00Z', toolsCall: [] }
+}
+
+function file(id = 'a', type = 'pdf', name = 'result.txt'): GeneratedFile {
+  return { id: `@@GENERATED@@${id}@@`, type, name, url: `/files/serve/${id}` }
+}
 
 class FakeEventSource {
   public static instances: FakeEventSource[] = []
@@ -80,6 +89,211 @@ function bootstrap(): ClaireBootstrap {
 }
 
 describe('embed public API', () => {
+  it('does not let a late image authorization overwrite a reused streaming img or retain a denied source', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(capability())))
+    let finishOld!: (value: { url: string; renewAt: null }) => void
+    const authorize = vi.spyOn(SessionClient.prototype, 'protectedResource').mockImplementation(async path => {
+      if (path === '/files/serve/old') return new Promise(resolve => { finishOld = resolve })
+      if (path === '/files/serve/denied') throw new Error('Forbidden')
+      return { url: 'https://claire.test/files/serve/new?token=scoped', renewAt: null }
+    })
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), baseUrl: 'https://claire.test' } } })
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances[0]
+      source.emit('chat.snapshot', { messages: [{ ...entry('a'), message: '![Image](/files/serve/old)' }], responding: true, activeMessageId: 'a' })
+      await flushPromises()
+      const image = wrapper.get<HTMLImageElement>('.claire-message__text img').element
+      source.emit('chat.assistant.update', { messageId: 'a', message: '![Image](/files/serve/new)', files: [] })
+      await flushPromises()
+      expect(wrapper.get('.claire-message__text img').element).toBe(image)
+      expect(image.src).toContain('/new?token=scoped')
+      finishOld({ url: 'https://claire.test/files/serve/old?token=obsolete', renewAt: null })
+      await flushPromises()
+      expect(image.src).toContain('/new?token=scoped')
+      source.emit('chat.assistant.update', { messageId: 'a', message: '![Image](/files/serve/denied)', files: [] })
+      await flushPromises()
+      expect(image.hasAttribute('src')).toBe(false)
+    } finally { wrapper.unmount(); authorize.mockRestore() }
+  })
+
+  it.each(['normal', 'embed'] as const)('authorizes Markdown upload images and real generated IDs in snapshots and streaming in %s', async mode => {
+    const requests: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init: RequestInit) => {
+      if (new URL(input).pathname === '/auth/resource-token') {
+        const resources = JSON.parse(init.body as string).resources
+        requests.push(...resources.filter((resource: { type: string }) => resource.type === 'file')
+          .map((resource: { fileId: string }) => resource.fileId))
+        return new Response(capability())
+      }
+      return new Response('0')
+    }))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances[0]
+      const id = '@@GENERATED@@83b00160-e9d9-4cae-b334-09f496c1f028@@'
+      const image = { id, type: 'image', name: 'image.png', url: `https://claire.test/files/serve/${encodeURIComponent(id)}` }
+      source.emit('chat.snapshot', { messages: [{ ...entry('a'), message: `![Upload](/files/serve/upload)\n\n![Public](https://images.test/photo.png)\n\n${id}`, files: [image] }] })
+      await flushPromises()
+      expect(requests).toEqual(['upload', id])
+      expect(wrapper.findAll('.claire-message__text img').map(image => image.attributes('src'))).toEqual([
+        'https://claire.test/files/serve/upload?token=scoped-stream', 'https://images.test/photo.png',
+        `${image.url}?token=scoped-stream`,
+      ])
+      source.emit('chat.assistant.start', { messageId: 'a' })
+      source.emit('chat.assistant.update', { messageId: 'a', message: `![Generated](${id})`, files: [{ ...image, type: 'pending', url: null }] })
+      await flushPromises()
+      expect(wrapper.find('.claire-generated-image-placeholder').exists()).toBe(true)
+      source.emit('chat.assistant.update', { messageId: 'a', message: `![Generated](${id})`, files: [image] })
+      await flushPromises()
+      expect(wrapper.get('.claire-message__text img').attributes('src')).toBe(`${image.url}?token=scoped-stream`)
+      const renderedImage = wrapper.get<HTMLImageElement>('.claire-message__text img').element
+      const sourceWrites = vi.spyOn(renderedImage, 'src', 'set')
+      for (let index = 0; index < 5; index++) {
+        source.emit('chat.assistant.update', { messageId: 'a', message: `![Generated](${id}) Suite ${index}`, files: [image] })
+        await flushPromises()
+      }
+      expect(wrapper.get('.claire-message__text img').element).toBe(renderedImage)
+      expect(sourceWrites).not.toHaveBeenCalled()
+    } finally { wrapper.unmount() }
+  })
+
+  it('applies a late initial theme without replacing a subsequently selected persona theme', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
+    )))
+    const config: ClaireBootstrap = { ...bootstrap(), mode: 'normal', baseUrl: 'https://claire.test', dynamicCss: '.inline{}' }
+    config.brains.push({ slug: 'other', name: 'Other', description: '', avatar: '', cssInline: '.other{}' })
+    const wrapper = mount(ClaireApp, { props: { config } })
+    try {
+      await flushPromises()
+      await wrapper.setProps({ config: { ...config, dynamicCss: '.external{}\n.inline{}' } })
+      expect(wrapper.get('style').text()).toBe('.external{}\n.inline{}')
+      await wrapper.get('#claire-brain-selector').setValue('other')
+      await flushPromises()
+      expect(wrapper.get('style').text()).toBe('.other{}')
+      await wrapper.setProps({ config: { ...config, dynamicCss: '.obsolete{}' } })
+      expect(wrapper.get('style').text()).toBe('.other{}')
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['normal', 'embed'] as const)('renews an unchanged keyed audio attachment across expiry/reconnect without interrupting playback in %s', async mode => {
+    vi.useFakeTimers()
+    let fileRequests = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init: RequestInit) => {
+      if (new URL(input).pathname === '/auth/resource-token') {
+        const isFile = JSON.parse(init.body as string).resources[0].type === 'file'
+        return new Response(JSON.stringify({ token: isFile ? `file-${++fileRequests}` : 'stream', expiresAt: Date.now() / 1000 + 300 }))
+      }
+      return new Response('0')
+    }))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+    try {
+      await flushPromises()
+      const messages = [entry('a', 'Audio', [file('audio', 'audio')])]
+      FakeEventSource.instances[0].emit('chat.snapshot', { messages })
+      await flushPromises()
+      const audio = wrapper.get<HTMLAudioElement>('audio.claire-generated-audio').element
+      expect(audio.src).toContain('token=file-1')
+      await vi.advanceTimersByTimeAsync(295000)
+      expect(fileRequests).toBe(2)
+      expect(audio.src).toContain('token=file-2')
+      await vi.advanceTimersByTimeAsync(6000)
+      FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { messages })
+      await flushPromises()
+      expect(wrapper.get('audio.claire-generated-audio').element).toBe(audio)
+      expect(audio.src).toContain('token=file-2')
+      let paused = false
+      vi.spyOn(audio, 'paused', 'get').mockImplementation(() => paused)
+      vi.spyOn(audio, 'pause').mockImplementation(() => { paused = true; audio.dispatchEvent(new Event('pause')) })
+      audio.currentTime = 17
+      audio.dispatchEvent(new Event('play'))
+      const sourceWrites = vi.spyOn(audio, 'src', 'set')
+      await vi.advanceTimersByTimeAsync(295000)
+      FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { messages })
+      await flushPromises()
+      expect(fileRequests).toBe(3)
+      expect(sourceWrites).not.toHaveBeenCalled()
+      expect(audio.src).toContain('token=file-2')
+      expect(audio.currentTime).toBe(17)
+      paused = true
+      audio.dispatchEvent(new Event('pause'))
+      await flushPromises()
+      expect(audio.src).toContain('token=file-3')
+      audio.dispatchEvent(new Event('loadedmetadata'))
+      expect(audio.currentTime).toBe(17)
+    } finally { wrapper.unmount() }
+    const requests = fileRequests
+    await vi.advanceTimersByTimeAsync(600000)
+    expect(fileRequests).toBe(requests)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('reauthorizes audio before resuming when background timers missed expiry', async () => {
+    vi.useFakeTimers()
+    let fileRequests = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init: RequestInit) => {
+      if (new URL(input).pathname === '/auth/resource-token') {
+        const isFile = JSON.parse(init.body as string).resources[0].type === 'file'
+        return new Response(JSON.stringify({ token: isFile ? `file-${++fileRequests}` : 'stream', expiresAt: Date.now() / 1000 + 300 }))
+      }
+      return new Response('0')
+    }))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), baseUrl: 'https://claire.test' } } })
+    try {
+      await flushPromises()
+      FakeEventSource.instances[0].emit('chat.snapshot', { messages: [entry('a', '', [file('audio', 'audio')])] })
+      await flushPromises()
+      const audio = wrapper.get<HTMLAudioElement>('audio').element
+      let paused = false
+      vi.spyOn(audio, 'paused', 'get').mockImplementation(() => paused)
+      const pause = vi.spyOn(audio, 'pause').mockImplementation(() => { paused = true; audio.dispatchEvent(new Event('pause')) })
+      const play = vi.spyOn(audio, 'play').mockImplementation(async () => {
+        expect(audio.src).toContain('token=file-2')
+        paused = false
+        audio.dispatchEvent(new Event('play'))
+      })
+      vi.setSystemTime(Date.now() + 301000)
+      audio.dispatchEvent(new Event('play'))
+      expect(pause).toHaveBeenCalledOnce()
+      expect(play).not.toHaveBeenCalled()
+      await flushPromises()
+      expect(fileRequests).toBe(2)
+      expect(play).toHaveBeenCalledOnce()
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['normal', 'embed'] as const)('renders structured stream tools and Markdown securely in %s mode', async mode => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
+    )))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances[0]
+      source.emit('chat.snapshot', { messages: [], responding: true, activeMessageId: 'a' })
+      const tool = { id: 'tool', name: '<script>alert(1)</script>', inputs: [{ name: 'input', value: '<img onerror=alert(1)>' }], running: true, result: null }
+      source.emit('chat.tool.update', { messageId: 'a', toolsCall: [tool] })
+      await flushPromises()
+      expect(wrapper.find('.claire-tools-running-flag').exists()).toBe(true)
+      source.emit('chat.assistant.placeholder', { messageId: 'a', entry: entry('a', '') })
+      source.emit('chat.assistant.update', { messageId: 'a', message: '**Stream** <script>alert(1)</script>' })
+      source.emit('chat.tool.update', { messageId: 'a', toolsCall: [{ ...tool, running: false, result: '<svg onload=alert(1)>' }] })
+      await flushPromises()
+      expect(wrapper.get('#claire-message-a strong').text()).toBe('Stream')
+      expect(wrapper.find('.claire-tools-running-flag').exists()).toBe(false)
+      expect(wrapper.find('script, [onerror], [onload]').exists()).toBe(false)
+      expect(wrapper.get('.claire-toolcall__result').text()).toBe('<svg onload=alert(1)>')
+      source.emit('chat.assistant.done', { messageId: 'a' })
+      source.emit('chat.tool.update', { messageId: 'a', toolsCall: [tool] })
+      source.emit('chat.assistant.placeholder', { messageId: 'obsolete', entry: entry('obsolete') })
+      await flushPromises()
+      expect(wrapper.find('.claire-tools-running-flag').exists()).toBe(false)
+      expect(wrapper.find('#claire-obsolete').exists()).toBe(false)
+      expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
+    } finally { wrapper.unmount() }
+  })
   it.each(['normal', 'embed'] as const)('shares and renews 17 files of different media types in %s mode', async (mode) => {
     vi.useFakeTimers()
     let fileRequests = 0
@@ -98,12 +312,11 @@ describe('embed public API', () => {
       return new Response('0')
     }))
     const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
-    const html = '<article id="claire-a"><span id="claire-message-a"><a class="claire-generated-file" href="/files/serve/a" target="_blank" rel="noopener">Open</a><a class="claire-generated-file" href="/files/serve/a" download="result.txt">Download</a><a class="claire-generated-file" href="https://external.test/files/serve/b">External</a></span></article>'
-      + Array.from({ length: 15 }, (_, index) => `<img class="claire-generated-image" data-protected-src="/files/serve/image-${index}">`).join('')
-      + '<audio class="claire-generated-audio" data-protected-src="/files/serve/audio"></audio>'
+    const files = [file(), ...Array.from({ length: 15 }, (_, index) => file(`image-${index}`, 'image')), file('audio', 'audio')]
+    const messages = [entry('a', '[External](https://external.test/files/serve/b)', files)]
     try {
       await flushPromises()
-      FakeEventSource.instances[0].emit('chat.snapshot', { html, responding: true, activeMessageId: 'a' })
+      FakeEventSource.instances[0].emit('chat.snapshot', { messages, responding: true, activeMessageId: 'a' })
       await flushPromises()
       expect(fileRequests).toBe(1)
       expect(wrapper.findAll<HTMLImageElement>('img.claire-generated-image').every(image => image.element.src.includes('token=file-1'))).toBe(true)
@@ -111,7 +324,7 @@ describe('embed public API', () => {
       // Replacing fragments during streaming must only reuse the cached capability.
       for (let index = 0; index < 20; index++) {
         FakeEventSource.instances[0].emit('chat.assistant.update', {
-          messageId: 'a', html: '<a class="claire-generated-file" href="/files/serve/a" target="_blank" rel="noopener">Open</a><a class="claire-generated-file" href="/files/serve/a" download="result.txt">Download</a>',
+          messageId: 'a', message: entry('a', 'Streaming', files).message, files,
         })
         await flushPromises()
       }
@@ -121,16 +334,16 @@ describe('embed public API', () => {
       await vi.advanceTimersByTimeAsync(1)
       expect(fileRequests).toBe(2)
       // Reproduce the SSE reconnect snapshot at 295s, then use the links after 300s.
-      FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { html })
+      FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { messages })
       await flushPromises()
       expect(fileRequests).toBe(2)
       await vi.advanceTimersByTimeAsync(6000)
       const links = wrapper.findAll<HTMLAnchorElement>('a.claire-generated-file')
       expect(links[0].element.href).toContain('token=file-2')
       expect(links[1].element.href).toContain('token=file-2')
-      expect(links[2].element.href).toBe('https://external.test/files/serve/b')
+      expect(wrapper.get<HTMLAnchorElement>('.claire-message__text a').element.href).toBe('https://external.test/files/serve/b')
       expect(links[0].attributes('target')).toBe('_blank')
-      expect(links[0].attributes('rel')).toBe('noopener')
+      expect(links[0].attributes('rel')).toBe('noopener noreferrer')
       expect(links[1].attributes('download')).toBe('result.txt')
       const usedUrls: string[] = []
       wrapper.element.addEventListener('click', (event: Event) => {
@@ -175,25 +388,29 @@ describe('embed public API', () => {
       return new Response('0')
     }))
     const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), baseUrl: 'https://claire.test' } } })
-    const html = '<a class="claire-generated-file" href="/files/serve/a" target="_blank">Open</a>'
+    const messages = [entry('a', '', [file(), file('audio', 'audio')])]
     await flushPromises()
-    FakeEventSource.instances[0].emit('chat.snapshot', { html })
+    FakeEventSource.instances[0].emit('chat.snapshot', { messages })
     await flushPromises()
     const oldLink = wrapper.get<HTMLAnchorElement>('a.claire-generated-file').element
+    const oldAudio = wrapper.get<HTMLAudioElement>('audio.claire-generated-audio').element
     const oldHref = oldLink.href
+    const oldSource = oldAudio.src
     const click = vi.spyOn(oldLink, 'click')
     await vi.advanceTimersByTimeAsync(295000)
     expect(fileRequests).toBe(2)
     if (action === 'navigate') {
       await wrapper.get('[aria-label="Nouvelle conversation"]').trigger('click')
       await flushPromises()
-      FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { html })
+      FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { messages })
       await flushPromises()
       expect(wrapper.get<HTMLAnchorElement>('a.claire-generated-file').element.href).toContain('token=file-3')
+      expect(wrapper.get<HTMLAudioElement>('audio.claire-generated-audio').element.src).toContain('token=file-3')
     } else wrapper.unmount()
     release({ token: 'obsolete', expiresAt: Date.now() / 1000 + 300 })
     await flushPromises()
     expect(oldLink.href).toBe(oldHref)
+    expect(oldAudio.src).toBe(oldSource)
     expect(open).not.toHaveBeenCalled()
     expect(click).not.toHaveBeenCalled()
     if (action === 'navigate') {
@@ -216,7 +433,7 @@ describe('embed public API', () => {
   it('exchanges explicit SSO and authenticates embed only through the session header', async () => {
     const session = jwt('session')
     const refreshed = session.replace('signature', 'refreshed')
-    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(bootstrap())}'></div>`
+    const html = JSON.stringify(bootstrap())
     const fetchMock = vi.fn(async (input: string | URL, init: RequestInit) => {
       const url = new URL(input)
       expect(url.search).toBe('')
@@ -256,8 +473,8 @@ describe('embed public API', () => {
     try {
       await flushPromises()
       const source = FakeEventSource.instances[0]
-      source.emit('chat.snapshot', { html: ['a', 'b'].map(id => `<article id="claire-${id}" class="claire-message claire-message--received"><span class="claire-message__text">Hello</span><span class="claire-message__meta"></span></article>`).join('') })
-      source.emit('chat.snapshot', { audioRequestIds: { a: 'auto-a', b: 'auto-b' }, html: wrapper.get('#claire-a').element.outerHTML + wrapper.get('#claire-b').element.outerHTML })
+      source.emit('chat.snapshot', { messages: [entry('a'), entry('b')], audioRequestIds: { a: 'auto-a', b: 'auto-b' } })
+      await flushPromises()
       source.emit('chat.audio.ready', { messageId: 'a', audioRequestId: 'auto-a', audioData: btoa('mp3') })
       source.emit('chat.audio.ready', { messageId: 'b', audioRequestId: 'auto-b', audioData: btoa('mp3') })
       reject(new DOMException('old playback', 'AbortError'))
@@ -375,7 +592,9 @@ describe('embed public API', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
       const path = new URL(input).pathname
       if (path === '/auth/resource-token') return new Response(capability())
-      if (path === '/history/list') return new Response('<button data-history-open="/history/open/old">Old</button>')
+      if (path === '/history/list') return new Response(JSON.stringify({ histories: [
+        { threadId: 'old', title: 'Old', summary: '', updatedAt: '2026-09-12T12:00:00Z' },
+      ] }))
       if (path === '/history/open/old') {
         const response = new Response()
         vi.spyOn(response, 'json').mockImplementation(() => new Promise((resolve, fail) => { release = resolve; reject = fail }))
@@ -389,7 +608,7 @@ describe('embed public API', () => {
       await flushPromises()
       await wrapper.get('#claire-history-toggle').trigger('click')
       await flushPromises()
-      await wrapper.get('[data-history-open]').trigger('click')
+      await wrapper.get('[aria-label="Afficher la conversation"]').trigger('click')
       await flushPromises()
       await wrapper.get('[aria-label="Nouvelle conversation"]').trigger('click')
       await flushPromises()
@@ -466,7 +685,7 @@ describe('embed public API', () => {
       await flushPromises()
       await wrapper.get('textarea').setValue('winner draft')
       navigations[0](new Response(JSON.stringify({ threadId: 'loser', sessionId: 'loser-session' })))
-      releaseDelete({ html: '<p>obsolete exchange</p>', removedMessage: 'obsolete draft' })
+      releaseDelete({ messages: [entry('old', 'obsolete exchange')], removedMessage: 'obsolete draft' })
       await flushPromises()
       expect(wrapper.get('#claire-chat-stream').attributes('data-thread-id')).toBe('winner')
       expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('winner draft')
@@ -491,8 +710,9 @@ describe('embed public API', () => {
     try {
       await flushPromises()
       const source = FakeEventSource.instances[0]
-      const html = '<article id="claire-a" class="claire-message claire-message--received"><span class="claire-message__text">Hello</span><span class="claire-message__meta"></span></article>'
-      source.emit('chat.snapshot', { html })
+      const messages = [entry()]
+      source.emit('chat.snapshot', { messages })
+      await flushPromises()
       await wrapper.get('[data-audio-listen]').trigger('click')
       await flushPromises()
       const a = requests[0].id
@@ -506,16 +726,17 @@ describe('embed public API', () => {
         await toggle.setValue(false)
         await toggle.setValue(true)
         await flushPromises()
-        source.emit('chat.snapshot', { html, audioRequestIds: { a: 'auto-a' } })
+        source.emit('chat.snapshot', { messages, audioRequestIds: { a: 'auto-a' } })
         source.emit('chat.audio.ready', { messageId: 'a', audioRequestId: 'auto-a', audioData: btoa('obsolete') })
         expect(wrapper.get('[data-audio-listen]').attributes('title')).toBe('Générer l’audio')
         expect(play).not.toHaveBeenCalled()
       }
+      await flushPromises()
       await wrapper.get('[data-audio-listen]').trigger('click')
       await flushPromises()
       const b = requests[1].id
       expect(b).not.toBe(a)
-      source.emit('chat.snapshot', { html, audioRequestIds: { a: 'auto-a' } })
+      source.emit('chat.snapshot', { messages, audioRequestIds: { a: 'auto-a' } })
       source.emit('chat.assistant.start', { messageId: 'a' })
       source.emit('chat.assistant.done', { messageId: 'a', audioRequestId: 'auto-a' })
       for (const audioRequestId of [undefined, a, 'auto-a']) {
@@ -532,13 +753,14 @@ describe('embed public API', () => {
       const cached = play.mock.calls[0][0]
       source.emit('chat.audio.ready', { messageId: 'a', audioRequestId: a, audioData: btoa('old') })
       source.emit('chat.audio.error', { messageId: 'a', audioRequestId: a })
-      source.emit('chat.snapshot', { html })
+      source.emit('chat.snapshot', { messages })
       await wrapper.get('[data-audio-listen]').trigger('click')
       await wrapper.get('[data-audio-listen]').trigger('click')
       expect(play.mock.calls[1][0]).toBe(cached)
-      source.emit('chat.snapshot', { html: '' })
-      source.emit('chat.snapshot', { html, audioRequestIds: { a: 'auto-a' } })
+      source.emit('chat.snapshot', { messages: [] })
+      source.emit('chat.snapshot', { messages, audioRequestIds: { a: 'auto-a' } })
       source.emit('chat.audio.ready', { messageId: 'a', audioRequestId: b, audioData: btoa('late') })
+      await flushPromises()
       expect(wrapper.get('[data-audio-listen]').attributes('title')).toBe('Générer l’audio')
       expect(play).toHaveBeenCalledTimes(2)
     } finally { wrapper.unmount() }
@@ -553,21 +775,23 @@ describe('embed public API', () => {
     try {
       await flushPromises()
       const source = FakeEventSource.instances[0]
-      const html = '<article id="claire-a" class="claire-message claire-message--received"><span class="claire-message__text">Hello</span><span class="claire-message__meta"></span></article>'
+      const messages = [entry()]
       const ready = { messageId: 'a', audioRequestId: 'auto-a', audioData: btoa('mp3') }
-      source.emit('chat.snapshot', { html })
+      source.emit('chat.snapshot', { messages })
       source.emit('chat.audio.ready', ready)
+      await flushPromises()
       expect(play).not.toHaveBeenCalled()
       expect(wrapper.get('[data-audio-listen]').attributes('title')).toBe('Générer l’audio')
       if (announcement === 'done') {
         source.emit('chat.assistant.start', { messageId: 'a' })
         source.emit('chat.assistant.done', { messageId: 'a', audioRequestId: 'auto-a' })
-      } else source.emit('chat.snapshot', { html, audioRequestIds: { a: 'auto-a' } })
+      } else source.emit('chat.snapshot', { messages, audioRequestIds: { a: 'auto-a' } })
+      await flushPromises()
       expect(wrapper.get('[data-audio-listen]').attributes('title')).toBe(
         announcement === 'done' ? 'Génération audio en cours' : 'Générer l’audio',
       )
       source.emit('chat.audio.ready', ready)
-      source.emit('chat.snapshot', { html, audioRequestIds: { a: 'auto-a' } })
+      source.emit('chat.snapshot', { messages, audioRequestIds: { a: 'auto-a' } })
       source.emit('chat.audio.ready', ready)
       await flushPromises()
       expect(play).toHaveBeenCalledOnce()
@@ -591,7 +815,7 @@ describe('embed public API', () => {
       source.emit('chat.snapshot', {
         threadId: config.threadId,
         responding: false,
-        html: '<article id="claire-a" class="claire-message claire-message--received"><span class="claire-message__text">Hello</span><span class="claire-message__meta"></span></article>',
+        messages: [entry()],
         audioRequestIds: { a: 'auto-a' },
       })
       await flushPromises()
@@ -620,9 +844,10 @@ describe('embed public API', () => {
     try {
       await flushPromises()
       const source = FakeEventSource.instances[0]
-      source.emit('chat.snapshot', { html: '<article id="claire-a" class="claire-message claire-message--received"><span class="claire-message__text">Hello</span><span class="claire-message__meta"></span></article>' })
+      source.emit('chat.snapshot', { messages: [entry()] })
+      await flushPromises()
       await wrapper.get('[data-audio-listen]').trigger('click')
-      if (action === 'delete') source.emit('chat.snapshot', { html: '' })
+      if (action === 'delete') source.emit('chat.snapshot', { messages: [] })
       else {
         await wrapper.get('[aria-label="Préférences"]').trigger('click')
         const audioSwitch = wrapper.findAll('input[type="checkbox"]').find(input => input.element.parentElement?.textContent?.trim() === 'Audio')!
@@ -689,7 +914,7 @@ describe('embed public API', () => {
   it.each(['exchange', 'bootstrap', 'body', 'css'])('never remounts after destroy during %s', async (stage) => {
     const config = bootstrap()
     config.brainInfo.css = 'agent.css'
-    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(config)}'></div>`
+    const html = JSON.stringify(config)
     let release!: () => void
     let reached!: () => void
     const waiting = new Promise<void>((resolve) => { reached = resolve })
@@ -706,7 +931,7 @@ describe('embed public API', () => {
       if (current === 'exchange') return new Response(JSON.stringify({ session_token: jwt('session') }))
       if (current === 'css') return new Response('.agent {}')
       const response = new Response(html)
-      if (stage === 'body') vi.spyOn(response, 'text').mockImplementation(async () => { await deferred; return html })
+      if (stage === 'body') vi.spyOn(response, 'json').mockImplementation(async () => { await deferred; return config })
       return response
     }))
     const foreign = document.createElement('div')
@@ -724,7 +949,7 @@ describe('embed public API', () => {
   })
 
   it('lets only the last initialization mount, even when an old fetch ignores abort', async () => {
-    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(bootstrap())}'></div>`
+    const html = JSON.stringify(bootstrap())
     let resolve!: (response: Response) => void
     let oldSignal: AbortSignal | null | undefined
     let calls = 0
@@ -749,7 +974,7 @@ describe('embed public API', () => {
 
   it('reconciles authoritative response state on reconnect and ignores obsolete events', async () => {
     vi.useFakeTimers()
-    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(bootstrap())}'></div>`
+    const html = JSON.stringify(bootstrap())
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
       String(input).includes('/embed') ? html : String(input).includes('/auth/resource-token') ? capability() : '0',
       { headers: { 'X-Claire-Minitoken': jwt('minitoken') } },
@@ -764,34 +989,36 @@ describe('embed public API', () => {
     const source = FakeEventSource.instances[1]
     source.emit('chat.snapshot', {
       responding: true, activeMessageId: 'new',
-      html: '<article id="claire-new"><span id="claire-message-new">Partial</span></article><article id="claire-old"><span id="claire-message-old">Old</span></article>',
+      messages: [entry('new', 'Partial'), entry('old', 'Old')],
     })
     await Promise.resolve()
     expect(input.disabled).toBe(true)
-    oldSource.emit('chat.snapshot', { responding: false, activeMessageId: null, html: '' })
+    oldSource.emit('chat.snapshot', { responding: false, activeMessageId: null, messages: [] })
     oldSource.onerror?.()
-    source.emit('chat.assistant.update', { messageId: 'old', html: 'Stale' })
+    source.emit('chat.assistant.update', { messageId: 'old', message: 'Stale' })
     source.emit('chat.assistant.done', { messageId: 'old' })
     source.emit('chat.error', { messageId: 'old', message: 'Obsolete failure' })
     await Promise.resolve()
     expect(input.disabled).toBe(true)
-    expect(element.shadowRoot!.querySelector('#claire-message-old')?.textContent).toBe('Old')
+    expect(element.shadowRoot!.querySelector('#claire-message-old')?.textContent?.trim()).toBe('Old')
     expect(element.shadowRoot!.textContent).not.toContain('Obsolete failure')
-    source.emit('chat.assistant.update', { messageId: 'new', html: '<strong>Current</strong>' })
+    source.emit('chat.assistant.update', { messageId: 'new', message: '**Current**' })
+    await Promise.resolve()
     expect(element.shadowRoot!.querySelector('#claire-message-new strong')?.textContent).toBe('Current')
     source.emit('chat.assistant.done', { messageId: 'new' })
     await Promise.resolve()
     expect(input.disabled).toBe(false)
-    source.emit('chat.snapshot', { responding: false, activeMessageId: null, html: '<span id="claire-message-new">Final</span>' })
-    source.emit('chat.assistant.update', { messageId: 'new', html: 'Late' })
-    expect(element.shadowRoot!.querySelector('#claire-message-new')?.textContent).toBe('Final')
+    source.emit('chat.snapshot', { responding: false, activeMessageId: null, messages: [entry('new', 'Final')] })
+    source.emit('chat.assistant.update', { messageId: 'new', message: 'Late' })
+    await Promise.resolve()
+    expect(element.shadowRoot!.querySelector('#claire-message-new')?.textContent?.trim()).toBe('Final')
     source.emit('chat.assistant.start', { messageId: 'another' })
-    source.emit('chat.snapshot', { responding: false, activeMessageId: null, html: '' })
+    source.emit('chat.snapshot', { responding: false, activeMessageId: null, messages: [] })
     await Promise.resolve()
     expect(input.disabled).toBe(false)
     source.emit('chat.assistant.start', { messageId: 'failed' })
     source.emit('chat.error', { messageId: 'failed', message: 'Current failure' })
-    source.emit('chat.snapshot', { responding: false, activeMessageId: null, html: '' })
+    source.emit('chat.snapshot', { responding: false, activeMessageId: null, messages: [] })
     await Promise.resolve()
     expect(element.shadowRoot!.textContent).toContain('Current failure')
   })
@@ -800,7 +1027,7 @@ describe('embed public API', () => {
     const config = bootstrap()
     config.audioAvailable = true
     config.audioEnabled = true
-    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(config)}'></div>`
+    const html = JSON.stringify(config)
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
       String(input).includes('/embed') ? html : String(input).includes('/auth/resource-token') ? capability() : '0',
     )))
@@ -829,7 +1056,7 @@ describe('embed public API', () => {
   it('enhances snapshot audio once per article and streams only into the target article', async () => {
     const config = bootstrap()
     config.audioEnabled = true
-    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(config)}'></div>`
+    const html = JSON.stringify(config)
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
       String(input).includes('/embed') ? html : String(input).includes('/auth/resource-token') ? capability() : '0',
       { headers: { 'X-Claire-Minitoken': jwt('minitoken') } },
@@ -838,23 +1065,23 @@ describe('embed public API', () => {
     await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
     const source = FakeEventSource.instances[0]
     const setAttribute = vi.spyOn(Element.prototype, 'setAttribute')
-    const articles = Array.from({ length: 100 }, (_, index) => `<article id="claire-${index}" class="claire-message--received"><span id="claire-message-${index}">Server HTML</span><span class="claire-message__meta"></span></article>`).join('')
-    source.emit('chat.snapshot', { html: articles, responding: true, activeMessageId: '99' })
+    const articles = Array.from({ length: 100 }, (_, index) => entry(String(index), 'Server Markdown'))
+    source.emit('chat.snapshot', { messages: articles, responding: true, activeMessageId: '99' })
     await Promise.resolve()
     const audioWrites = () => setAttribute.mock.calls.filter(([name, value]) => name === 'aria-label' && value === 'Générer l’audio').length
     expect(audioWrites()).toBe(100)
     expect(element.shadowRoot!.querySelectorAll('[data-audio-listen]')).toHaveLength(100)
     setAttribute.mockClear()
-    source.emit('chat.assistant.update', { messageId: '99', html: '<em>Stream HTML</em>' })
+    source.emit('chat.assistant.update', { messageId: '99', message: '*Stream Markdown*' })
     await Promise.resolve()
-    expect(audioWrites()).toBe(1)
-    expect(element.shadowRoot!.querySelector('#claire-message-99 em')?.textContent).toBe('Stream HTML')
-    expect(element.shadowRoot!.querySelector('#claire-message-0')?.textContent).toBe('Server HTML')
+    expect(audioWrites()).toBe(0)
+    expect(element.shadowRoot!.querySelector('#claire-message-99 em')?.textContent).toBe('Stream Markdown')
+    expect(element.shadowRoot!.querySelector('#claire-message-0')?.textContent?.trim()).toBe('Server Markdown')
   })
 
   it('mounts in Shadow DOM and cleans up its SSE connection', async () => {
     const config = bootstrap()
-    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(config)}'></div>`
+    const html = JSON.stringify(config)
     const miniToken = jwt('minitoken')
     const promotedSessionToken = jwt('session')
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
@@ -902,7 +1129,7 @@ describe('embed public API', () => {
 
   it('disables the composer during an assistant response without showing an action indicator', async () => {
     const config = bootstrap()
-    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(config)}'></div>`
+    const html = JSON.stringify(config)
     const miniToken = jwt('minitoken')
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       if (String(input).includes('/embed')) {
@@ -958,7 +1185,7 @@ describe('embed public API', () => {
     config.audioAutoGenerate = false
     config.audioVoice = 'fr_marie_neutral'
     config.audioVoices = [{ id: 'fr_marie_neutral', label: 'Marie — Neutre' }]
-    const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(config)}'></div>`
+    const html = JSON.stringify(config)
     const miniToken = jwt('minitoken')
     const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
       const url = String(input)
@@ -1003,7 +1230,7 @@ describe('embed public API', () => {
     await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1))
     FakeEventSource.instances[0].emit('chat.snapshot', {
       threadId: 'thread-1',
-      html: '<article id="claire-history-1" class="claire-message claire-message--received"><div class="claire-message__bubble"><span class="claire-message__text">Ancienne réponse</span></div><span class="claire-message__meta"></span></article>',
+      messages: [entry('history-1', 'Ancienne réponse')],
     })
     await Promise.resolve()
     await Promise.resolve()
@@ -1021,7 +1248,7 @@ describe('embed public API', () => {
     FakeEventSource.instances[0].emit('chat.assistant.placeholder', {
       threadId: 'thread-1',
       messageId: 'assistant-1',
-      html: '<article id="claire-assistant-1" class="claire-message claire-message--received"><div class="claire-message__bubble"><span id="claire-message-assistant-1" class="claire-message__text">Bonjour</span></div><span class="claire-message__meta"></span></article>',
+      entry: entry('assistant-1', 'Bonjour'),
     })
     await Promise.resolve()
     await Promise.resolve()
@@ -1051,9 +1278,9 @@ describe('embed public API', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    const finalHtml = '<article id="claire-assistant-1" class="claire-message claire-message--received"><div class="claire-message__bubble"><span id="claire-message-assistant-1" class="claire-message__text">Bonjour</span></div><span class="claire-message__meta"></span></article>'
+    const finalMessages = [entry('assistant-1', 'Bonjour')]
     FakeEventSource.instances[0].emit('chat.snapshot', {
-      threadId: 'thread-1', responding: false, activeMessageId: null, html: finalHtml,
+      threadId: 'thread-1', responding: false, activeMessageId: null, messages: finalMessages,
     })
     expect(element?.shadowRoot?.querySelector<HTMLButtonElement>('#claire-assistant-1 [data-audio-listen]')?.title)
       .toBe('Génération audio en cours')
@@ -1075,7 +1302,7 @@ describe('embed public API', () => {
     expect(button?.title).toBe('Arrêter la lecture')
     expect(playCount).toBe(1)
     FakeEventSource.instances[0].emit('chat.snapshot', {
-      threadId: 'thread-1', responding: false, activeMessageId: null, html: finalHtml,
+      threadId: 'thread-1', responding: false, activeMessageId: null, messages: finalMessages,
     })
     button = element?.shadowRoot?.querySelector<HTMLButtonElement>('#claire-assistant-1 [data-audio-listen]')
     expect(button?.title).toBe('Arrêter la lecture')
@@ -1098,8 +1325,9 @@ describe('embed public API', () => {
     element?.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Nouvelle conversation"]')?.click()
     await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(2))
     FakeEventSource.instances[1].emit('chat.snapshot', {
-      threadId: 'thread-2', responding: false, activeMessageId: null, html: finalHtml,
+      threadId: 'thread-2', responding: false, activeMessageId: null, messages: finalMessages,
     })
+    await Promise.resolve()
     expect(element?.shadowRoot?.querySelector<HTMLButtonElement>('#claire-assistant-1 [data-audio-listen]')?.title)
       .toBe('Générer l’audio')
   })

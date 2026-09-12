@@ -58,7 +58,7 @@ final readonly class ChatGenerationState
      */
     public function capture(string $userId, string $threadId, callable $readHistory): array
     {
-        // Do not pair pre-completion HTML with a post-completion idle state.
+        // Do not pair pre-completion messages with a post-completion idle state.
         for ($attempt = 0; $attempt < 3; $attempt++) {
             $before = $this->get($userId, $threadId);
             $history = $readHistory();

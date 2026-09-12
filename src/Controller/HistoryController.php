@@ -7,7 +7,7 @@ namespace App\Controller;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Job\Web\StartThreadJob;
-use App\Renderer\ChatHtmlRenderer;
+use App\Renderer\ChatDataRenderer;
 use App\Services\Auth;
 use App\Services\ChatGenerationBusyException;
 use App\Services\ChatStreamPublisher;
@@ -20,15 +20,13 @@ use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
-use Slim\Views\Twig;
 
 final readonly class HistoryController
 {
     use SessionFromRequest;
 
     public function __construct(
-        private ChatHtmlRenderer $chatHtmlRenderer,
-        private Twig $twig,
+        private ChatDataRenderer $chatDataRenderer,
         private EntityManagerInterface $entityManager,
         private Settings $settings,
         private ChatStreamPublisher $chatStreamPublisher,
@@ -104,7 +102,7 @@ final readonly class HistoryController
     /**
      * Récupère la liste des historiques de conversation de l'utilisateur en session.
      * - Charge les historiques appartenant à l'utilisateur identifié via la session
-     * - Retourne le HTML pour mettre à jour le conteneur #history-list (HTMX).
+     * - Retourne les métadonnées JSON, sans les messages ni les données utilisateur.
      *
      * @param Request $request La requête HTTP courante
      * @param Response $response La réponse HTTP courante
@@ -117,10 +115,15 @@ final readonly class HistoryController
 
         $userId = (string) $session->get(Auth::USERID);
         $histories = $this->entityManager->getRepository(ChatHistoryEntity::class)->getHistoryList($userId);
-        return $this->twig->render($response, 'partials/history_list.twig', [
-            'histories' => $histories,
-            'base_url' => (string) $request->getAttribute('base_url'),
-        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
+        $response->getBody()->write(json_encode([
+            'histories' => array_values(array_map(static fn (ChatHistoryEntity $history): array => [
+                'threadId' => $history->getThreadId(),
+                'title' => $history->getTitle() ?: 'Conversation',
+                'summary' => trim($history->getSummary() ?? ''),
+                'updatedAt' => $history->getUpdatedAt()->format(DATE_ATOM),
+            ], $histories)),
+        ], JSON_THROW_ON_ERROR));
+        return $response->withHeader('Content-Type', 'application/json');
     }
 
     /**
@@ -261,7 +264,7 @@ final readonly class HistoryController
 
         // sessionId from request (per-tab SSE binding key)
         $sessionId = trim((string) ($body['sessionId'] ?? $query['sessionId'] ?? ''));
-        $messagesHtml = $this->publishSnapshot(
+        $messages = $this->publishSnapshot(
             $threadId,
             $userChatHistory,
             $sessionId,
@@ -272,19 +275,20 @@ final readonly class HistoryController
         $response->getBody()->write(json_encode([
             'threadId' => $threadId,
             'removedMessage' => $removedMessage,
-            'html' => $messagesHtml,
+            'messages' => $messages,
         ], JSON_THROW_ON_ERROR));
 
         return $response->withHeader('Content-Type', 'application/json');
     }
 
+    /** @return array<int, array<string, mixed>> */
     private function publishSnapshot(
         string $threadId,
         ?UserChatHistory $userChatHistory,
         string $sessionId,
         string $userId,
         ?string $restoredMessage = null
-    ): string {
+    ): array {
         $snapshot = $this->chatStreamPublisher->generationState()->capture(
             $userId,
             $threadId,
@@ -292,24 +296,24 @@ final readonly class HistoryController
                 $userChatHistory?->refresh();
                 $messages = $userChatHistory?->getFormattedMessages() ?? [];
                 return [
-                    'html' => $this->chatHtmlRenderer->messages($messages, $userId),
+                    'messages' => $this->chatDataRenderer->messages($messages, $userId),
                     'audioRequestIds' => array_column(array_filter($messages,
                         static fn (array $message): bool => isset($message['audioRequestId'])), 'audioRequestId', 'id'),
                 ];
             },
         );
-        $messagesHtml = $snapshot['html'];
+        $messages = $snapshot['messages'];
 
         // Use sessionId as channel if provided, otherwise fall back to threadId
         $channelId = $sessionId !== '' ? $sessionId : $threadId;
         $this->chatStreamPublisher->publish(ChatStreamSubscriber::scope($userId, $channelId), 'chat.snapshot', [
             'threadId' => $threadId,
             'sessionId' => $sessionId,
-            'html' => $messagesHtml,
+            'messages' => $messages,
             'restoredMessage' => $restoredMessage,
             ...$snapshot,
         ]);
 
-        return $messagesHtml;
+        return $messages;
     }
 }

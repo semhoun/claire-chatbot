@@ -9,14 +9,13 @@ use App\Brain\BrainAvatar;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Job\Web\NewMessageJob;
-use App\Renderer\ChatHtmlRenderer;
+use App\Renderer\ChatDataRenderer;
 use App\Services\Audio\AudioServiceInterface;
 use App\Services\Auth;
 use App\Services\ChatAudioPublisher;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\ChatThreadLock;
-use App\Services\Markdown;
 use App\Services\RedisClient;
 use App\Services\Rendering\GeneratedFileProcessor;
 use App\Services\Settings;
@@ -229,6 +228,11 @@ final class NewMessageJobTest extends TestCase
             self::assertContains('chat.assistant.update', $names);
             foreach ($events as $event) {
                 self::assertSame('message-order-test', $event['payload']['messageId']);
+                self::assertArrayNotHasKey('html', $event['payload']);
+                if ($event['event'] === 'chat.assistant.update') {
+                    self::assertSame('Answer', $event['payload']['message']);
+                    self::assertSame([], $event['payload']['files']);
+                }
             }
             if ($withChunks) {
                 self::assertSame('chat.assistant.placeholder', $names[1]);
@@ -380,7 +384,7 @@ final class NewMessageJobTest extends TestCase
         $container = $this->createStub(ContainerInterface::class);
         $container->method('get')->willReturnCallback(static fn (string $class) =>
             $class === \PDO::class ? $pdo : $handler);
-        $renderer = new ChatHtmlRenderer(new Markdown(),
+        $renderer = new ChatDataRenderer(
             new GeneratedFileProcessor($settings, $this->createStub(EntityManagerInterface::class)));
         return [new NewMessageJob($logger, $renderer, new BrainRegistry($settings, $container),
             $publisher, new ChatAudioPublisher($audio ?? $this->createStub(AudioServiceInterface::class),

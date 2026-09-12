@@ -50,14 +50,11 @@ async function exchangeToken(
 
 async function fetchBootstrap(baseUrl: string, signal: AbortSignal, authToken?: string): Promise<ClaireBootstrap> {
   const url = new URL(`${baseUrl}/embed`)
-  const headers = new Headers({ Accept: 'text/html' })
+  const headers = new Headers({ Accept: 'application/json' })
   if (authToken) headers.set('X-Claire-Auth', authToken)
   const response = await window.fetch(url, { signal, headers, redirect: 'error' })
   if (!response.ok) throw new Error(`Embed page fetch failed with status ${response.status}`)
-  const documentFragment = new DOMParser().parseFromString(await response.text(), 'text/html')
-  const bootstrap = documentFragment.querySelector<HTMLElement>('.claire-embed-bootstrap')
-  if (bootstrap === null) throw new Error('Embed bootstrap payload is missing')
-  const config = parseBootstrap(bootstrap)
+  const config = parseBootstrap(await response.json(), baseUrl)
   config.sessionToken = response.headers.get('X-Claire-Token') ?? undefined
   return config
 }

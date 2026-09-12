@@ -15,18 +15,15 @@ use Doctrine\ORM\EntityManagerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Message\UploadedFileInterface;
-use Slim\Views\Twig;
 
 final readonly class RagController
 {
     use SessionFromRequest;
 
     public function __construct(
-        private Twig $twig,
         private EntityManagerInterface $entityManager,
         private RagServiceInterface $ragService,
         private Settings $settings,
-        private Markdown $markdown,
     ) {
     }
 
@@ -45,11 +42,18 @@ final readonly class RagController
 
         $documents = $this->ragService->listForUser($user);
 
-        return $this->twig->render($response, 'partials/rag_list.twig', [
-            'documents' => $documents,
-            'base_url' => (string) $request->getAttribute('base_url'),
-            'accepted_ext' => $this->settings->get('files.upload.acceptedExt'),
-        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
+        $response->getBody()->write(json_encode([
+            'documents' => array_values(array_map(static fn (RagDocument $document): array => [
+                'documentId' => $document->getDocumentId(),
+                'name' => $document->getName(),
+                'sourceType' => $document->getSourceType(),
+                'isActive' => $document->isActive(),
+                'chunkCount' => $document->getChunkCount(),
+                'createdAt' => $document->getCreatedAt()->format(DATE_ATOM),
+            ], $documents)),
+            'acceptedExt' => $this->settings->get('files.upload.acceptedExt'),
+        ], JSON_THROW_ON_ERROR));
+        return $response->withHeader('Content-Type', 'application/json');
     }
 
     public function count(Request $request, Response $response): Response
@@ -160,10 +164,11 @@ final readonly class RagController
 
         $segments = $this->ragService->listSegments($document);
 
-        return $this->twig->render($response, 'partials/rag_segments.twig', [
-            'document' => $document,
+        $response->getBody()->write(json_encode([
+            'document' => ['documentId' => $document->getDocumentId(), 'name' => $document->getName()],
             'segments' => $segments,
-        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
+        ], JSON_THROW_ON_ERROR));
+        return $response->withHeader('Content-Type', 'application/json');
     }
 
     public function toggle(Request $request, Response $response): Response

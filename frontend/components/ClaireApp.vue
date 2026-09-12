@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import hljs from 'highlight.js/lib/core'
 import bash from 'highlight.js/lib/languages/bash'
 import css from 'highlight.js/lib/languages/css'
@@ -13,9 +13,20 @@ import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 import { SessionClient } from '../services/session-client'
+import { protectAudio } from '../services/protected-audio'
 import { BrowserAudio } from '../services/browser-audio'
-import type { AudioDictationMode, ClaireBootstrap, SseUpdate } from '../types'
+import type { AudioDictationMode, ChatMessage, ClaireBootstrap, SseUpdate } from '../types'
+import ChatMessages from './ChatMessages.vue'
 import ClaireIcon from './ClaireIcon.vue'
+import HistoryList from './HistoryList.vue'
+import FilesList from './FilesList.vue'
+import RagList from './RagList.vue'
+import RagSegments from './RagSegments.vue'
+import TelegramConfig from './TelegramConfig.vue'
+import type {
+  HistoryItem, HistoryList as HistoryData, StoredFile, FileList,
+  RagDocument, RagList as RagData, RagSegments as SegmentsData, TelegramConfig as TelegramData,
+} from '../options-types'
 
 const props = defineProps<{ config: ClaireBootstrap }>()
 
@@ -49,19 +60,23 @@ const sessionId = ref(props.config.sessionId)
 const collapsed = ref(props.config.mode === 'embed')
 const optionsOpen = ref(false)
 const openMenu = ref<string | null>(null)
-const historyHtml = ref('')
-const filesHtml = ref('')
-const ragHtml = ref('')
+const histories = ref<HistoryItem[]>([])
+const files = ref<FileList>({ files: [], acceptedExt: props.config.acceptedExt })
+const rag = ref<RagData>({ documents: [], acceptedExt: props.config.acceptedExt })
 const historyCount = ref(0)
 const filesCount = ref(0)
 const ragCount = ref(0)
 const busy = ref(false)
 const responding = ref(false)
-let activeMessageId: string | null = null
+const chatMessages = ref<ChatMessage[]>([])
+const activeMessageId = ref<string | null>(null)
 const message = ref('')
 const currentBrain = ref(props.config.currentBrain)
 const brainInfo = ref({ ...props.config.brainInfo })
 const dynamicCss = ref(props.config.dynamicCss ?? '')
+watch(() => props.config.dynamicCss, css => {
+  if (currentBrain.value === props.config.currentBrain) dynamicCss.value = css ?? ''
+})
 const currentWorkflow = ref(props.config.currentWorkflow)
 const longTermMemory = ref(props.config.longTermMemoryEnabled)
 const layoutMode = ref(props.config.layoutMode)
@@ -72,23 +87,31 @@ const audioVoice = ref(props.config.audioVoice)
 const recording = ref(false)
 const transcribing = ref(false)
 const playingMessageId = ref<string | null>(null)
-const readyAudio = new Map<string, Blob>()
-const pendingAudio = new Set<string>()
+const readyAudio = reactive(new Map<string, Blob>())
+const pendingAudio = reactive(new Set<string>())
 const expectedAudio = new Map<string, string>()
-const failedAudio = new Set<string>()
+const failedAudio = reactive(new Set<string>())
 const autoPlayedAudio = new Set<string>()
 const invalidAudio = new Set<string>()
 let audioThreadId = threadId.value
 const localFiles = ref<File[]>([])
 const storedFiles = ref<Array<{ id: string; name: string }>>([])
 const notification = ref<{ text: string; variant: string } | null>(null)
-const modal = ref<{
+type OptionModal = {
   title: string
-  body: string
   confirmLabel: string
   variant: string
-  action: (() => Promise<void>) | null
-} | null>(null)
+} & (
+  | { kind: 'confirm'; body: string; action: () => Promise<void> }
+  | { kind: 'segments'; segments: SegmentsData }
+  | { kind: 'text' | 'url'; name: string; input: string }
+  | { kind: 'telegram'; telegram: TelegramData; input: string }
+)
+const modal = ref<OptionModal | null>(null)
+const modalForm = ref<HTMLFormElement | null>(null)
+let modalGeneration = 0
+const modalBusy = ref(false)
+const pendingActions = new Set<symbol>()
 const lightboxUrl = ref<string | null>(null)
 
 let eventSource: EventSource | null = null
@@ -101,12 +124,15 @@ let playbackGeneration = 0
 let audioGeneration = 0
 let reconnectDelay = 1500
 const protectedLinks = new Map<HTMLAnchorElement, { timer: number | null }>()
+const protectedAudio = new Map<HTMLAudioElement, ReturnType<typeof protectAudio>>()
 
-function clearProtectedLinks(): void {
+function clearProtectedResources(): void {
   for (const state of protectedLinks.values()) {
     if (state.timer !== null) window.clearTimeout(state.timer)
   }
   protectedLinks.clear()
+  for (const binding of protectedAudio.values()) binding.dispose()
+  protectedAudio.clear()
 }
 
 function captureContext(): () => boolean {
@@ -118,8 +144,8 @@ function captureContext(): () => boolean {
 }
 
 function resetAudio(): void {
-  for (const article of messagesElement.value?.querySelectorAll('[id^="claire-"]') ?? []) {
-    invalidAudio.add(article.id.slice('claire-'.length))
+  for (const entry of chatMessages.value) {
+    if (entry.id) invalidAudio.add(entry.id)
   }
   audioGeneration++
   playbackGeneration++
@@ -142,14 +168,16 @@ function beginNavigation(): void {
   eventSource = null
   if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
   reconnectTimer = null
-  clearProtectedLinks()
+  clearProtectedResources()
   client.invalidateResources()
   resetAudio()
   invalidAudio.clear()
   finishResponse()
   busy.value = false
+  pendingActions.clear()
   notification.value = null
   lightboxUrl.value = null
+  closeModal()
 }
 
 const brainName = computed(() => {
@@ -175,6 +203,8 @@ async function checkedRequest(path: string, init: RequestInit = {}): Promise<Res
 
 async function withBusy(action: () => Promise<void>): Promise<void> {
   const current = captureContext()
+  const pending = Symbol()
+  pendingActions.add(pending)
   busy.value = true
   try {
     await action()
@@ -183,7 +213,8 @@ async function withBusy(action: () => Promise<void>): Promise<void> {
     console.error(error)
     notify('Une erreur est survenue.', 'error')
   } finally {
-    if (current()) busy.value = false
+    pendingActions.delete(pending)
+    if (current()) busy.value = pendingActions.size > 0
   }
 }
 
@@ -210,37 +241,56 @@ function toggleMenu(name: string): void {
 }
 
 async function refreshCounters(): Promise<void> {
+  const current = captureContext()
   const [history, files, rag] = await Promise.allSettled([
     client.request('/history/count'),
     client.request('/files/count'),
     client.request('/rag/count'),
   ])
   if (history.status === 'fulfilled' && history.value.ok) {
-    historyCount.value = Number(await history.value.text()) || 0
+    const count = Number(await history.value.text()) || 0
+    if (current()) historyCount.value = count
   }
   if (files.status === 'fulfilled' && files.value.ok) {
-    filesCount.value = Number(await files.value.text()) || 0
+    const count = Number(await files.value.text()) || 0
+    if (current()) filesCount.value = count
   }
   if (rag.status === 'fulfilled' && rag.value.ok) {
-    ragCount.value = Number(await rag.value.text()) || 0
+    const count = Number(await rag.value.text()) || 0
+    if (current()) ragCount.value = count
   }
 }
 
 async function loadHistory(): Promise<void> {
+  const current = captureContext()
   await withBusy(async () => {
-    historyHtml.value = await (await checkedRequest('/history/list')).text()
+    const data = await (await checkedRequest('/history/list')).json() as HistoryData
+    if (current()) {
+      histories.value = data.histories
+      historyCount.value = data.histories.length
+    }
   })
 }
 
 async function loadFiles(): Promise<void> {
+  const current = captureContext()
   await withBusy(async () => {
-    filesHtml.value = await (await checkedRequest('/files/list')).text()
+    const data = await (await checkedRequest('/files/list')).json() as FileList
+    if (current()) {
+      files.value = data
+      filesCount.value = data.files.length
+    }
   })
 }
 
 async function loadRag(): Promise<void> {
+  const current = captureContext()
   await withBusy(async () => {
-    ragHtml.value = await (await checkedRequest('/rag/list')).text()
+    const data = await (await checkedRequest('/rag/list')).json() as RagData
+    if (current()) {
+      rag.value = data
+      ragCount.value = data.documents.length
+    }
   })
 }
 
@@ -310,30 +360,21 @@ async function connectStream(): Promise<void> {
 }
 
 function handleStreamUpdate(type: string, update: SseUpdate): void {
-  const messages = messagesElement.value
-  if (messages === null) return
   if (update.threadId && update.threadId !== threadId.value) return
   if (update.sessionId && update.sessionId !== sessionId.value) return
-  if (['chat.assistant.update', 'chat.assistant.done'].includes(type)
-    && (!responding.value || (activeMessageId !== null && update.messageId !== activeMessageId))) return
+  if (['chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update', 'chat.assistant.done'].includes(type)
+    && (!responding.value || (activeMessageId.value !== null && update.messageId !== activeMessageId.value))) return
   if (['chat.error', 'chat.tool.update'].includes(type)
-    && activeMessageId !== null && update.messageId && update.messageId !== activeMessageId) return
+    && activeMessageId.value !== null && update.messageId && update.messageId !== activeMessageId.value) return
 
   if (type === 'chat.error') {
     finishResponse()
     notify(update.message ?? 'Une erreur est survenue.', 'error')
-    const article = document.createElement('article')
-    article.className = 'claire-message claire-message--received'
-    const bubble = document.createElement('div')
-    bubble.className = 'claire-message__bubble'
-    bubble.textContent = update.message ?? 'Une erreur est survenue.'
-    article.appendChild(bubble)
-    messages.appendChild(article)
+    chatMessages.value.push({ id: '', message: update.message ?? 'Une erreur est survenue.', sent: false, time: '', toolsCall: [], files: [] })
   } else if (type === 'chat.snapshot') {
-    messages.innerHTML = update.html ?? ''
+    chatMessages.value = update.messages ?? []
     const retainedAudioIds = audioThreadId === threadId.value
-      ? new Set(Array.from(messages.querySelectorAll<HTMLElement>('.claire-message--received[id^="claire-"]'),
-        article => article.id.slice('claire-'.length)))
+      ? new Set(chatMessages.value.filter(entry => !entry.sent).map(entry => entry.id))
       : new Set<string>()
     for (const cache of [readyAudio, pendingAudio, failedAudio, autoPlayedAudio, expectedAudio]) {
       for (const id of cache.keys()) if (!retainedAudioIds.has(id)) {
@@ -352,59 +393,52 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     if (typeof update.restoredMessage === 'string') message.value = update.restoredMessage
     if (typeof update.responding === 'boolean') {
       responding.value = update.responding
-      activeMessageId = update.activeMessageId ?? null
+      activeMessageId.value = update.activeMessageId ?? null
       if (!responding.value) finishResponse()
     }
-    enhanceRenderedMessages()
   } else if (type === 'chat.assistant.start') {
     responding.value = true
-    activeMessageId = update.messageId ?? null
+    activeMessageId.value = update.messageId ?? null
   } else if (type === 'chat.assistant.placeholder') {
-    if (activeMessageId !== null && update.messageId !== activeMessageId) return
-    activeMessageId = update.messageId ?? null
-    const existing = findMessage(update.messageId)
-    if (existing === null) {
-      const loader = messages.querySelector('[data-role="claire-assistant-loader"]')
-      if (loader instanceof HTMLElement) loader.outerHTML = update.html ?? ''
-      else messages.insertAdjacentHTML('beforeend', update.html ?? '')
+    if (activeMessageId.value !== null && update.messageId !== activeMessageId.value) return
+    activeMessageId.value = update.messageId ?? null
+    if (update.entry && !chatMessages.value.some(entry => entry.id === update.messageId)) {
+      chatMessages.value.push(update.entry)
     }
-    ensureAudioAction(update.messageId)
-    enhanceRenderedMessages(findMessage(update.messageId), false)
   } else if (type === 'chat.assistant.update') {
-    const element = rootElement.value?.querySelector(`#claire-message-${CSS.escape(update.messageId ?? '')}`)
-    if (element instanceof HTMLElement) element.innerHTML = update.html ?? ''
-    ensureAudioAction(update.messageId)
-    enhanceRenderedMessages(findMessage(update.messageId), false)
+    if (update.messageId && !chatMessages.value.some(entry => entry.id === update.messageId)) {
+      chatMessages.value.push({ id: update.messageId, message: '', sent: false, time: new Date().toISOString(), files: [], toolsCall: [] })
+    }
+    const entry = chatMessages.value.find(entry => entry.id === update.messageId)
+    if (entry) { entry.message = update.message ?? ''; entry.files = update.files ?? [] }
   } else if (type === 'chat.tool.update') {
-    const element = rootElement.value?.querySelector(`#claire-toolscall-${CSS.escape(update.messageId ?? '')}`)
-    if (element instanceof HTMLElement) element.innerHTML = update.html ?? ''
-    if (element instanceof HTMLElement) enhanceRenderedMessages(element, false)
+    if (update.messageId && !chatMessages.value.some(entry => entry.id === update.messageId)) {
+      chatMessages.value.push({ id: update.messageId, message: '', sent: false, time: new Date().toISOString(), files: [], toolsCall: [] })
+    }
+    const entry = chatMessages.value.find(entry => entry.id === update.messageId)
+    if (entry) entry.toolsCall = update.toolsCall ?? []
   } else if (type === 'chat.assistant.done') {
     finishResponse()
     expectAutoAudio(update.messageId, update.audioRequestId)
-    ensureAudioAction(update.messageId)
   } else if (type === 'chat.audio.ready') {
     receiveReadyAudio(update)
   } else if (type === 'chat.audio.error' && update.messageId && audioEnabled.value
     && matchesAudioRequest(update)) {
     pendingAudio.delete(update.messageId)
     failedAudio.add(update.messageId)
-    ensureAudioAction(update.messageId)
   }
+  void nextTick(() => enhanceRenderedMessages())
   scrollToBottom()
 }
 
-function findMessage(messageId?: string): Element | null {
+function findMessage(messageId?: string): ChatMessage | null {
   if (!messageId) return null
-  return rootElement.value?.querySelector(`#claire-${CSS.escape(messageId)}, #${CSS.escape(messageId)}`) ?? null
+  return chatMessages.value.find(entry => entry.id === messageId) ?? null
 }
 
 function finishResponse(): void {
-  messagesElement.value
-    ?.querySelector('[data-role="claire-assistant-loader"]')
-    ?.remove()
   responding.value = false
-  activeMessageId = null
+  activeMessageId.value = null
 }
 
 function protectFileLink(link: HTMLAnchorElement): void {
@@ -435,18 +469,25 @@ function protectFileLink(link: HTMLAnchorElement): void {
   void refresh()
 }
 
-function enhanceRenderedMessages(scope: Element | null = rootElement.value, audioActions = true): void {
+function enhanceRenderedMessages(scope: Element | null = rootElement.value): void {
   if (scope === null) return
   for (const [link, state] of protectedLinks) {
     if (rootElement.value?.contains(link)) continue
     if (state.timer !== null) window.clearTimeout(state.timer)
     protectedLinks.delete(link)
   }
+  for (const [audio, binding] of protectedAudio) {
+    if (rootElement.value?.contains(audio) && audio.dataset.protectedSrc === binding.path) continue
+    binding.dispose()
+    protectedAudio.delete(audio)
+  }
   const current = captureContext()
-  const protect = (element: HTMLImageElement | HTMLAudioElement, path: string) => {
+  const protect = (element: HTMLImageElement, path: string) => {
+    if (element.dataset.authorizedSrc !== path) element.removeAttribute('src')
     void client.protectedResource(path).then(({ url }) => {
-      if (!current() || !rootElement.value?.contains(element)) return
-      element.src = url
+      if (!current() || !rootElement.value?.contains(element) || element.dataset.protectedSrc !== path) return
+      element.dataset.authorizedSrc = path
+      if (element.src !== url) element.src = url
     }).catch(() => { /* Unauthorized or obsolete assets remain unavailable. */ })
   }
   for (const link of scope.querySelectorAll<HTMLAnchorElement>('a.claire-generated-file[href]')) {
@@ -458,86 +499,21 @@ function enhanceRenderedMessages(scope: Element | null = rootElement.value, audi
   }
   for (const audio of scope.querySelectorAll<HTMLAudioElement>('audio.claire-generated-audio')) {
     const src = audio.dataset.protectedSrc ?? ''
-    if (src !== '' && audio.src === '') protect(audio, src)
+    if (src === '') continue
+    if (!protectedAudio.has(audio)) {
+      const binding = protectAudio(audio, client, () => current()
+        && protectedAudio.get(audio) === binding && !!rootElement.value?.contains(audio))
+      protectedAudio.set(audio, binding)
+    }
+    void protectedAudio.get(audio)!.refresh()
   }
   for (const code of scope.querySelectorAll<HTMLElement>('pre code:not(.hljs)')) {
     hljs.highlightElement(code)
   }
-  if (!audioActions) return
-  if (!audioEnabled.value) {
-    for (const action of scope.querySelectorAll('[data-audio-listen]')) action.remove()
-    return
-  }
-  for (const article of scope.querySelectorAll<HTMLElement>(
-    '.claire-message--received[id^="claire-"]',
-  )) {
-    ensureAudioAction(article.id.slice('claire-'.length), article)
-  }
-}
-
-function ensureAudioAction(messageId?: string, existingArticle?: HTMLElement): void {
-  if (!audioEnabled.value || !messageId || rootElement.value === null) return
-  const article = existingArticle ?? rootElement.value.querySelector<HTMLElement>(
-    `#claire-${CSS.escape(messageId)}`,
-  )
-  if (article === null || !article.classList.contains('claire-message--received')) return
-  if (article.querySelector('[data-audio-listen]') !== null) {
-    updateAudioActionStates(article)
-    return
-  }
-  const meta = article.querySelector<HTMLElement>('.claire-message__meta')
-  if (meta === null) return
-  const button = document.createElement('button')
-  button.type = 'button'
-  button.className = 'claire-message__audio-action'
-  button.dataset.audioListen = 'true'
-  button.dataset.audioMessageId = messageId
-  button.addEventListener('click', (event) => {
-    event.preventDefault()
-    event.stopPropagation()
-    void toggleSpeech(button)
-  })
-  meta.appendChild(button)
-  updateAudioActionStates(article)
-}
-
-function updateAudioActionStates(scope: Element | null = rootElement.value): void {
-  for (const action of scope?.querySelectorAll<HTMLButtonElement>('[data-audio-listen]') ?? []) {
-    const messageId = action.dataset.audioMessageId ?? ''
-    const active = messageId === playingMessageId.value
-    const ready = readyAudio.has(messageId)
-    const pending = pendingAudio.has(messageId)
-    const failed = failedAudio.has(messageId)
-    action.disabled = pending
-    if (active) setAudioActionIcon(action, 'stop', 'Arrêter la lecture')
-    else if (ready) setAudioActionIcon(action, 'play', 'Lire la réponse')
-    else if (pending) setAudioActionIcon(action, 'pending', 'Génération audio en cours')
-    else if (failed) setAudioActionIcon(action, 'retry', 'Réessayer la génération audio')
-    else setAudioActionIcon(action, 'generate', 'Générer l’audio')
-    action.classList.toggle('is-playing', active)
-  }
-}
-
-function setAudioActionIcon(
-  action: HTMLButtonElement,
-  icon: 'generate' | 'pending' | 'play' | 'retry' | 'stop',
-  label: string,
-): void {
-  const paths = {
-    generate: '<path d="M5 10v4h3l4 4V6L8 10H5zm10-1a4 4 0 0 1 0 6m3-8a7 7 0 0 1 0 10"/>',
-    pending: '<path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/>',
-    play: '<path class="claire-icon__fill" d="M8 5v14l11-7z"/>',
-    retry: '<path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/>',
-    stop: '<path class="claire-icon__fill" d="M7 7h10v10H7z"/>',
-  }
-  action.title = label
-  action.setAttribute('aria-label', label)
-  action.classList.toggle('is-loading', icon === 'pending')
-  action.innerHTML = `<svg class="claire-icon" viewBox="0 0 24 24" aria-hidden="true">${paths[icon]}</svg>`
 }
 
 function expectAutoAudio(messageId?: string, requestId?: string | null, pending = true): void {
-  if (!audioEnabled.value || !messageId || !requestId || !findMessage(messageId)
+  if (!audioEnabled.value || !messageId || !requestId || !chatMessages.value.some(entry => entry.id === messageId)
     || invalidAudio.has(messageId)) return
   const expected = expectedAudio.get(messageId)
   if (expected !== undefined && expected !== requestId) return
@@ -570,7 +546,6 @@ function receiveReadyAudio(update: SseUpdate): void {
     pendingAudio.delete(update.messageId)
     failedAudio.add(update.messageId)
   }
-  ensureAudioAction(update.messageId)
   if (audio !== null && !autoPlayedAudio.has(update.messageId)) {
     autoPlayedAudio.add(update.messageId)
     void playSpeech(update.messageId, audio)
@@ -585,22 +560,8 @@ function scrollToBottom(): void {
 }
 
 function optimisticMessage(text: string): void {
-  const messages = messagesElement.value
-  if (messages === null) return
-  const article = document.createElement('article')
-  article.className = 'claire-message claire-message--sent'
-  const bubble = document.createElement('div')
-  bubble.className = 'claire-message__bubble'
-  bubble.textContent = text
-  const meta = document.createElement('span')
-  meta.className = 'claire-message__meta'
-  meta.textContent = `${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Vous`
-  article.append(bubble, meta)
-  const loader = document.createElement('article')
-  loader.className = 'claire-message'
-  loader.dataset.role = 'claire-assistant-loader'
-  loader.innerHTML = '<div class="claire-message__bubble"><span class="claire-typing-indicator" aria-hidden="true"><span class="claire-typing-indicator__dot"></span><span class="claire-typing-indicator__dot"></span><span class="claire-typing-indicator__dot"></span></span></div>'
-  messages.append(article, loader)
+  chatMessages.value.push({ id: '', message: text, sent: true, time: new Date().toISOString(), toolsCall: [], files: [] })
+  void nextTick(() => enhanceRenderedMessages())
   scrollToBottom()
 }
 
@@ -609,7 +570,7 @@ async function submitMessage(): Promise<void> {
   const text = message.value.trim()
   if (text === '' || composerDisabled.value) return
   responding.value = true
-  activeMessageId = null
+  activeMessageId.value = null
   optimisticMessage(text)
   const data = new FormData()
   data.set('message', text)
@@ -691,7 +652,6 @@ async function toggleSpeech(action: HTMLElement): Promise<void> {
     playbackGeneration++
     browserAudio.stopPlayback()
     playingMessageId.value = null
-    updateAudioActionStates()
     return
   }
 
@@ -711,13 +671,11 @@ async function playSpeech(messageId: string, audio: Blob): Promise<void> {
     && audioEnabled.value && playingMessageId.value === messageId && findMessage(messageId) !== null
   try {
     playingMessageId.value = messageId
-    updateAudioActionStates()
     await browserAudio.playReady(
       audio,
       (error) => {
         if (!current()) return
         playingMessageId.value = null
-        updateAudioActionStates()
         if (error !== undefined) {
           console.error(error)
           notify('Le navigateur n’a pas pu lire le fichier audio généré.', 'error')
@@ -729,7 +687,6 @@ async function playSpeech(messageId: string, audio: Blob): Promise<void> {
     console.error(error)
     browserAudio.stopPlayback()
     playingMessageId.value = null
-    updateAudioActionStates()
     notify('La synthèse vocale a échoué.', 'error')
   }
 }
@@ -748,7 +705,6 @@ async function requestSpeech(messageId: string, text: string): Promise<void> {
   autoPlayedAudio.delete(messageId)
   pendingAudio.add(messageId)
   failedAudio.delete(messageId)
-  updateAudioActionStates()
   try {
     await checkedRequest('/brain/audio', {
       method: 'POST',
@@ -767,7 +723,6 @@ async function requestSpeech(messageId: string, text: string): Promise<void> {
     console.error(error)
     pendingAudio.delete(messageId)
     failedAudio.add(messageId)
-    updateAudioActionStates()
     notify('La génération audio n’a pas pu démarrer.', 'error')
   }
 }
@@ -813,7 +768,7 @@ async function createConversation(): Promise<void> {
     message.value = ''
     localFiles.value = []
     storedFiles.value = []
-    messagesElement.value?.replaceChildren()
+    chatMessages.value = []
     connectStream()
     closeMenus()
     await refreshCounters()
@@ -827,94 +782,92 @@ async function deleteLastExchange(): Promise<void> {
     const data = new URLSearchParams({ threadId: threadId.value, sessionId: sessionId.value })
     const response = await checkedRequest('/history/exchange/last', { method: 'DELETE', body: data })
     if (!current()) return
-    const payload = await response.json() as { html?: string; removedMessage?: string }
+    const payload = await response.json() as { messages?: ChatMessage[]; removedMessage?: string }
     if (!current()) return
     resetAudio()
-    if (messagesElement.value !== null && typeof payload.html === 'string') {
-      messagesElement.value.innerHTML = payload.html
-    }
+    chatMessages.value = payload.messages ?? []
     if (typeof payload.removedMessage === 'string') message.value = payload.removedMessage
+    await nextTick()
     enhanceRenderedMessages()
     scrollToBottom()
   })
 }
 
-async function onHistoryClick(event: MouseEvent): Promise<void> {
-  const target = event.target as Element
-  const open = target.closest<HTMLElement>('[data-history-open]')
-  if (open !== null) {
-    beginNavigation()
-    const current = captureContext()
-    const path = open.dataset.historyOpen ?? ''
-    await withBusy(async () => {
-      const separator = path.includes('?') ? '&' : '?'
-      const response = await checkedRequest(`${path}${separator}sessionId=${encodeURIComponent(sessionId.value)}`)
-      if (!current()) return
-      const payload = await response.json() as { threadId: string }
-      if (!current()) return
-      busy.value = false
-      threadId.value = payload.threadId
-      messagesElement.value?.replaceChildren()
-      message.value = ''
-      localFiles.value = []
-      storedFiles.value = []
-      connectStream()
-      historyHtml.value = ''
-      closeMenus()
-    })
-    if (current()) void connectStream()
-    return
-  }
-  const remove = target.closest<HTMLElement>('[data-history-delete]')
-  if (remove !== null) {
-    confirmAction('Confirmer la suppression', 'Supprimer cette conversation ? Cette action est irréversible.', 'Supprimer', async () => {
-      await checkedRequest(remove.dataset.historyDelete ?? '', { method: 'DELETE' })
-      await Promise.all([loadHistory(), refreshCounters()])
-    })
-  }
-}
-
-async function onFilesClick(event: MouseEvent): Promise<void> {
-  const target = event.target as Element
-  const add = target.closest<HTMLElement>('[data-add-file-id]')
-  if (add !== null) {
-    const id = add.dataset.addFileId ?? ''
-    const name = add.dataset.addFileName ?? 'Fichier'
-    if (!storedFiles.value.some((file) => file.id === id)) storedFiles.value.push({ id, name })
-    notify('Fichier ajouté à la conversation.')
-    return
-  }
-  const remove = target.closest<HTMLElement>('[data-file-delete]')
-  if (remove !== null) {
-    confirmAction('Confirmer la suppression', 'Supprimer ce fichier ? Cette action est irréversible.', 'Supprimer', async () => {
-      await checkedRequest(remove.dataset.fileDelete ?? '', { method: 'DELETE' })
-      await Promise.all([loadFiles(), refreshCounters()])
-    })
-  }
-}
-
-async function onFilesSubmit(event: SubmitEvent): Promise<void> {
-  event.preventDefault()
-  const form = event.target as HTMLFormElement
+async function openHistory(history: HistoryItem): Promise<void> {
+  beginNavigation()
+  const current = captureContext()
+  const path = `/history/open/${encodeURIComponent(history.threadId)}`
   await withBusy(async () => {
-    await checkedRequest('/files/upload', { method: 'POST', body: new FormData(form) })
-    form.reset()
-    await Promise.all([loadFiles(), refreshCounters()])
+    const response = await checkedRequest(`${path}?sessionId=${encodeURIComponent(sessionId.value)}`)
+    if (!current()) return
+    const payload = await response.json() as { threadId: string }
+    if (!current()) return
+    busy.value = false
+    threadId.value = payload.threadId
+    chatMessages.value = []
+    message.value = ''
+    localFiles.value = []
+    storedFiles.value = []
+    connectStream()
+    histories.value = []
+    closeMenus()
+  })
+  if (current()) void connectStream()
+}
+
+function deleteHistory(history: HistoryItem): void {
+  const current = captureContext()
+  confirmAction('Confirmer la suppression', 'Supprimer cette conversation ? Cette action est irréversible.', 'Supprimer', async () => {
+    await checkedRequest(`/history/delete/${encodeURIComponent(history.threadId)}`, { method: 'DELETE' })
+    if (current()) await Promise.all([loadHistory(), refreshCounters()])
   })
 }
 
-function onFilesChange(event: Event): void {
-  const input = event.target
-  if (!(input instanceof HTMLInputElement) || input.type !== 'file') return
-  const form = input.closest('form')
-  const filename = input.files?.[0]?.name ?? 'Aucun fichier'
-  const name = form?.querySelector<HTMLElement>('.claire-file-upload__name')
-  const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]')
-  if (name !== null && name !== undefined) {
-    name.textContent = filename
-    name.title = filename
-  }
-  if (submit !== null && submit !== undefined) submit.disabled = !input.files?.length
+function addStoredFile(file: StoredFile): void {
+  const id = file.fileId
+  const name = file.filename
+  if (!storedFiles.value.some((file) => file.id === id)) storedFiles.value.push({ id, name })
+  notify('Fichier ajouté à la conversation.')
+}
+
+function deleteFile(file: StoredFile): void {
+  const current = captureContext()
+  confirmAction('Confirmer la suppression', 'Supprimer ce fichier ? Cette action est irréversible.', 'Supprimer', async () => {
+    const data = await (await checkedRequest(`/files/delete/${encodeURIComponent(file.fileId)}`, { method: 'DELETE' })).json() as FileList
+    if (!current()) return
+    files.value = data
+    filesCount.value = data.files.length
+    removeStoredFile(file.fileId)
+  })
+}
+
+async function uploadFile(file: File, kind: 'files' | 'rag'): Promise<boolean> {
+  const current = captureContext()
+  let success = false
+  await withBusy(async () => {
+    const body = new FormData()
+    body.set('file', file)
+    const response = await checkedRequest(`/${kind}/upload`, { method: 'POST', body })
+    if (kind === 'files') {
+      const data = await response.json() as FileList
+      if (!current()) return
+      files.value = data
+      filesCount.value = data.files.length
+    } else {
+      const data = await response.json() as RagData
+      if (!current()) return
+      rag.value = data
+      ragCount.value = data.documents.length
+    }
+    success = true
+    notify(kind === 'files' ? 'Fichier ajouté.' : 'Document ajouté au RAG.')
+  })
+  return success
+}
+
+function closeModal(): void {
+  modalGeneration++
+  modal.value = null
 }
 
 function confirmAction(
@@ -923,152 +876,104 @@ function confirmAction(
   confirmLabel: string,
   action: () => Promise<void>,
 ): void {
-  modal.value = { title, body, confirmLabel, variant: 'danger', action }
+  closeModal()
+  modal.value = { title, body, confirmLabel, variant: 'danger', action, kind: 'confirm' }
 }
 
 async function confirmModal(): Promise<void> {
-  const action = modal.value?.action
-  if (action === null || action === undefined) return
-  busy.value = true
+  const active = modal.value
+  if (active === null || modalBusy.value) return
+  if (active.kind === 'segments') { closeModal(); return }
+  if ((active.kind === 'text' || active.kind === 'url') && !modalForm.value?.reportValidity()) return
+  const context = captureContext()
+  const current = () => context() && modal.value === active
+  modalBusy.value = true
   try {
-    await action()
-    modal.value = null
+    if (active.kind === 'telegram') {
+      // Validation/conflict responses are form state, not generic HTTP failures.
+      const response = await client.request('/config/telegram', {
+        method: 'POST', body: new URLSearchParams({ telegram_id: active.input ?? '' }),
+      })
+      if (!response.ok && response.status !== 409 && response.status !== 422) throw new Error(`HTTP ${response.status}`)
+      const data = await response.json() as TelegramData
+      if (!current()) return
+      active.telegram = data
+      if (response.ok) {
+        active.input = data.telegramId ?? ''
+        notify(data.success ?? 'Configuration Telegram enregistrée.')
+      }
+      return
+    }
+    if (active.kind === 'text' || active.kind === 'url') {
+      const data = await (await checkedRequest(`/rag/${active.kind}`, {
+        method: 'POST', body: new URLSearchParams({ name: active.name ?? '', [active.kind === 'text' ? 'content' : 'url']: active.input ?? '' }),
+      })).json() as RagData
+      if (!context()) return
+      rag.value = data
+      ragCount.value = data.documents.length
+      if (current()) notify('Document ajouté au RAG.')
+    } else if (active.kind === 'confirm') await active.action()
+    if (current()) closeModal()
   } catch (error) {
+    if (!current()) return
     console.error(error)
     notify('L’action a échoué.', 'error')
   } finally {
-    busy.value = false
+    modalBusy.value = false
   }
 }
 
-async function onRagClick(event: MouseEvent): Promise<void> {
-  const target = event.target as Element
-  const toggle = target.closest<HTMLElement>('[data-rag-toggle]')
-  if (toggle !== null) {
-    await withBusy(async () => {
-      await checkedRequest(toggle.dataset.ragToggle ?? '', { method: 'POST' })
-      await Promise.all([loadRag(), refreshCounters()])
-    })
-    return
-  }
-  const remove = target.closest<HTMLElement>('[data-rag-delete]')
-  if (remove !== null) {
-    confirmAction('Confirmer la suppression', 'Supprimer ce document RAG ? Cette action est irréversible.', 'Supprimer', async () => {
-      await checkedRequest(remove.dataset.ragDelete ?? '', { method: 'DELETE' })
-      await Promise.all([loadRag(), refreshCounters()])
-    })
-    return
-  }
-  const segments = target.closest<HTMLElement>('[data-rag-segments]')
-  if (segments !== null) {
-    await openRagSegmentsModal(segments.dataset.ragSegments ?? '')
-    return
-  }
-  const addText = target.closest<HTMLElement>('[data-rag-add-text]')
-  if (addText !== null) {
-    openRagTextModal()
-    return
-  }
-  const addUrl = target.closest<HTMLElement>('[data-rag-add-url]')
-  if (addUrl !== null) {
-    openRagUrlModal()
-  }
-}
-
-async function onRagSubmit(event: SubmitEvent): Promise<void> {
-  event.preventDefault()
-  const form = event.target as HTMLFormElement
+async function toggleRag(document: RagDocument): Promise<void> {
+  const current = captureContext()
   await withBusy(async () => {
-    await checkedRequest(form.action, { method: 'POST', body: new FormData(form) })
-    form.reset()
-    const nameSpan = form.querySelector<HTMLElement>('.claire-file-upload__name')
-    const submitBtn = form.querySelector<HTMLButtonElement>('button[type="submit"]')
-    if (nameSpan !== null && nameSpan !== undefined) {
-      nameSpan.textContent = 'Aucun document'
-      nameSpan.title = ''
-    }
-    if (submitBtn !== null && submitBtn !== undefined) submitBtn.disabled = true
-    await Promise.all([loadRag(), refreshCounters()])
+    const data = await (await checkedRequest(`/rag/toggle/${encodeURIComponent(document.documentId)}`, { method: 'POST' })).json() as RagData
+    if (!current()) return
+    rag.value = data
+    ragCount.value = data.documents.length
   })
 }
 
-function onRagChange(event: Event): void {
-  const input = event.target
-  if (!(input instanceof HTMLInputElement) || input.type !== 'file') return
-  const form = input.closest('form')
-  const filename = input.files?.[0]?.name ?? 'Aucun document'
-  const name = form?.querySelector<HTMLElement>('.claire-file-upload__name')
-  const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]')
-  if (name !== null && name !== undefined) {
-    name.textContent = filename
-    name.title = filename
-  }
-  if (submit !== null && submit !== undefined) submit.disabled = !input.files?.length
+function deleteRag(document: RagDocument): void {
+  const current = captureContext()
+  confirmAction('Confirmer la suppression', 'Supprimer ce document RAG ? Cette action est irréversible.', 'Supprimer', async () => {
+    const data = await (await checkedRequest(`/rag/delete/${encodeURIComponent(document.documentId)}`, { method: 'DELETE' })).json() as RagData
+    if (!current()) return
+    rag.value = data
+    ragCount.value = data.documents.length
+  })
 }
 
-async function openRagSegmentsModal(url: string): Promise<void> {
+async function openRagSegmentsModal(document: RagDocument): Promise<void> {
+  closeModal()
+  const generation = modalGeneration
+  const current = captureContext()
   await withBusy(async () => {
-    const body = await (await checkedRequest(url)).text()
+    const segments = await (await checkedRequest(`/rag/segments/${encodeURIComponent(document.documentId)}`)).json() as SegmentsData
+    if (!current() || generation !== modalGeneration) return
     modal.value = {
-      title: 'Segments du document',
-      body,
-      confirmLabel: 'Fermer',
-      variant: 'default',
-      action: async () => {},
+      title: 'Segments du document', confirmLabel: 'Fermer', variant: 'default', kind: 'segments', segments,
     }
   })
 }
 
-function openRagTextModal(): void {
+function openRagForm(kind: 'text' | 'url'): void {
+  closeModal()
   modal.value = {
-    title: 'Ajouter un document texte',
-    body: `<form id="claire-rag-text-form"><label class="claire-modal__field"><span>Nom</span><input type="text" name="name" required maxlength="255"></label><label class="claire-modal__field"><span>Contenu</span><textarea name="content" rows="6" required></textarea></label></form>`,
-    confirmLabel: 'Ajouter',
-    variant: 'default',
-    action: async () => {
-      const form = rootElement.value?.querySelector<HTMLFormElement>('#claire-rag-text-form')
-      if (form === null || form === undefined || !form.reportValidity()) throw new Error('Invalid form')
-      await checkedRequest('/rag/text', { method: 'POST', body: new URLSearchParams(new FormData(form) as unknown as Record<string, string>) })
-      await Promise.all([loadRag(), refreshCounters()])
-      notify('Document ajouté au RAG.')
-    },
-  }
-}
-
-function openRagUrlModal(): void {
-  modal.value = {
-    title: 'Ajouter un document URL',
-    body: `<form id="claire-rag-url-form"><label class="claire-modal__field"><span>Nom</span><input type="text" name="name" required maxlength="255"></label><label class="claire-modal__field"><span>URL</span><input type="url" name="url" required></label></form>`,
-    confirmLabel: 'Ajouter',
-    variant: 'default',
-    action: async () => {
-      const form = rootElement.value?.querySelector<HTMLFormElement>('#claire-rag-url-form')
-      if (form === null || form === undefined || !form.reportValidity()) throw new Error('Invalid form')
-      await checkedRequest('/rag/url', { method: 'POST', body: new URLSearchParams(new FormData(form) as unknown as Record<string, string>) })
-      await Promise.all([loadRag(), refreshCounters()])
-      notify('Document ajouté au RAG.')
-    },
+    title: kind === 'text' ? 'Ajouter un document texte' : 'Ajouter un document URL',
+    confirmLabel: 'Ajouter', variant: 'default', kind, name: '', input: '',
   }
 }
 
 async function openTelegram(): Promise<void> {
+  closeModal()
+  const generation = modalGeneration
+  const current = captureContext()
   await withBusy(async () => {
-    const body = await (await checkedRequest('/config/telegram_form')).text()
+    const telegram = await (await checkedRequest('/config/telegram_form')).json() as TelegramData
+    if (!current() || generation !== modalGeneration) return
     modal.value = {
-      title: 'Configuration Telegram',
-      body,
-      confirmLabel: 'Enregistrer',
-      variant: 'default',
-      action: async () => {
-        const form = rootElement.value?.querySelector<HTMLFormElement>('#claire-telegram-config-form')
-        if (form === null || form === undefined) throw new Error('Telegram form not found')
-        const response = await checkedRequest('/config/telegram', {
-          method: 'POST',
-          body: new URLSearchParams(new FormData(form) as unknown as Record<string, string>),
-        })
-        if (modal.value !== null) modal.value.body = await response.text()
-        notify('Configuration Telegram enregistrée.')
-      },
+      title: 'Configuration Telegram', confirmLabel: 'Enregistrer', variant: 'default',
+      kind: 'telegram', telegram, input: telegram.telegramId ?? '',
     }
   })
 }
@@ -1132,7 +1037,6 @@ async function changeAudioDictationMode(): Promise<void> {
 async function changeAudioVoice(): Promise<void> {
   browserAudio.stopPlayback()
   playingMessageId.value = null
-  updateAudioActionStates()
   await postSetting('/config/audio', { voice: audioVoice.value })
 }
 
@@ -1149,7 +1053,7 @@ function rebuildMemory(): void {
 
 async function toggleLayout(): Promise<void> {
   layoutMode.value = layoutMode.value === 'full' ? 'compact' : 'full'
-  document.body.classList.toggle('claire-compact', layoutMode.value === 'compact')
+  if (props.config.mode === 'normal') document.body.classList.toggle('claire-compact', layoutMode.value === 'compact')
   await postSetting('/config/layout_mode', { mode: layoutMode.value })
 }
 
@@ -1183,7 +1087,7 @@ function onRootClick(event: MouseEvent): void {
 function handleEscape(event: KeyboardEvent): void {
   if (event.key !== 'Escape') return
   if (lightboxUrl.value !== null) lightboxUrl.value = null
-  else if (modal.value !== null) modal.value = null
+  else if (modal.value !== null) closeModal()
   else closeMenus()
 }
 
@@ -1195,7 +1099,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   destroyed = true
-  clearProtectedLinks()
+  clearProtectedResources()
   document.removeEventListener('keydown', handleEscape)
   eventSource?.close()
   eventSource = null
@@ -1232,15 +1136,15 @@ onBeforeUnmount(() => {
                 <button v-if="config.user" class="claire-embed-toolbar__item" type="button" title="Compte" aria-label="Compte" @click="toggleMenu('account')"><ClaireIcon name="user" /></button>
                 <div class="claire-embed-toolbar__dropdown">
                   <button id="claire-rag-toggle" class="claire-embed-toolbar__item" type="button" title="Documents RAG" aria-label="Documents RAG" @click="toggleMenu('rag')"><ClaireIcon name="rag" /><span id="claire-rag-count-badge" class="claire-embed-toolbar__badge">{{ ragCount }}</span></button>
-                  <div v-if="openMenu === 'rag'" id="claire-rag-list" class="claire-embed-toolbar__subpanel is-visible claire-rag-root" @click="onRagClick" @change="onRagChange" @submit="onRagSubmit" v-html="ragHtml"></div>
+                  <div v-if="openMenu === 'rag'" id="claire-rag-list" class="claire-embed-toolbar__subpanel is-visible claire-rag-root"><RagList :data="rag" :busy="busy" :upload="file => uploadFile(file, 'rag')" @segments="openRagSegmentsModal" @toggle="toggleRag" @delete="deleteRag" @text="openRagForm('text')" @url="openRagForm('url')" /></div>
                 </div>
                 <div class="claire-embed-toolbar__dropdown">
               <button id="claire-files-toggle" class="claire-embed-toolbar__item" type="button" title="Fichiers" aria-label="Fichiers" @click="toggleMenu('files')"><ClaireIcon name="file" /><span id="claire-files-count-badge" class="claire-embed-toolbar__badge">{{ filesCount }}</span></button>
-              <div v-if="openMenu === 'files'" id="claire-files-list" class="claire-embed-toolbar__subpanel is-visible claire-files-root" @click="onFilesClick" @change="onFilesChange" @submit="onFilesSubmit" v-html="filesHtml"></div>
+              <div v-if="openMenu === 'files'" id="claire-files-list" class="claire-embed-toolbar__subpanel is-visible claire-files-root"><FilesList :data="files" :busy="busy" :upload="file => uploadFile(file, 'files')" @add="addStoredFile" @delete="deleteFile" /></div>
             </div>
             <div class="claire-embed-toolbar__dropdown">
               <button id="claire-history-toggle" class="claire-embed-toolbar__item" type="button" title="Historique" aria-label="Historique" @click="toggleMenu('history')"><ClaireIcon name="history" /><span id="claire-history-count-badge" class="claire-embed-toolbar__badge">{{ historyCount }}</span></button>
-              <div v-if="openMenu === 'history'" id="claire-history-list" class="claire-embed-toolbar__subpanel is-visible" @click="onHistoryClick" v-html="historyHtml"></div>
+              <div v-if="openMenu === 'history'" id="claire-history-list" class="claire-embed-toolbar__subpanel is-visible"><HistoryList :histories="histories" :busy="busy" @open="openHistory" @delete="deleteHistory" /></div>
             </div>
             <div class="claire-embed-toolbar__dropdown">
               <button class="claire-embed-toolbar__item" type="button" title="Préférences" aria-label="Préférences" @click="toggleMenu('preferences')"><ClaireIcon name="settings" /></button>
@@ -1271,7 +1175,7 @@ onBeforeUnmount(() => {
           </div>
         </nav>
         <section class="claire-chat-panel"><div class="claire-chat-shell">
-          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
+          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :loading="responding && !chatMessages.some(entry => entry.id === activeMessageId && entry.message)" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
           <footer class="claire-chat-input"><form id="claire-brain-chat" class="claire-chat-input__form" :class="{ 'claire-chat-input__form--typing': message.trim() !== '' }" @submit.prevent="submitMessage">
             <label class="claire-chat-icon-btn claire-chat-icon-btn--upload claire-chat-input__toggleable" for="claire-chat-upload" aria-label="Joindre un fichier" :aria-disabled="composerDisabled">
               <ClaireIcon name="paperclip" />
@@ -1302,7 +1206,7 @@ onBeforeUnmount(() => {
               </svg>
             </button>
           </header>
-          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
+          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :loading="responding && !chatMessages.some(entry => entry.id === activeMessageId && entry.message)" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
           <footer class="claire-chat-input"><form id="claire-brain-chat" class="claire-chat-input__form" :class="{ 'claire-chat-input__form--typing': message.trim() !== '' }" @submit.prevent="submitMessage">
             <label class="claire-chat-icon-btn claire-chat-icon-btn--upload claire-chat-input__toggleable" for="claire-chat-upload" aria-label="Joindre un fichier" :aria-disabled="composerDisabled">
               <ClaireIcon name="paperclip" />
@@ -1323,13 +1227,13 @@ onBeforeUnmount(() => {
         <section class="claire-options-panel__section"><span class="claire-options-panel__title">Conversations</span>
           <button class="claire-options-item" type="button" @click="createConversation"><span class="claire-options-item__label">Nouvelle conversation</span></button>
           <button id="claire-history-toggle" class="claire-options-item" type="button" @click="toggleMenu('history')"><span class="claire-options-item__label">Historique des conversations</span><span id="claire-history-count-badge" class="claire-options-item__badge">{{ historyCount }}</span></button>
-          <div v-if="openMenu === 'history'" id="claire-history-list" class="claire-options-subpanel" @click="onHistoryClick" v-html="historyHtml"></div>
+          <div v-if="openMenu === 'history'" id="claire-history-list" class="claire-options-subpanel"><HistoryList :histories="histories" :busy="busy" @open="openHistory" @delete="deleteHistory" /></div>
         </section>
         <section class="claire-options-panel__section"><span class="claire-options-panel__title">Données</span>
           <button id="claire-files-toggle" class="claire-options-item" type="button" @click="toggleMenu('files')"><span class="claire-options-item__label">Fichiers</span><span id="claire-files-count-badge" class="claire-options-item__badge">{{ filesCount }}</span></button>
-          <div v-if="openMenu === 'files'" id="claire-files-list" class="claire-options-subpanel claire-files-root" @click="onFilesClick" @change="onFilesChange" @submit="onFilesSubmit" v-html="filesHtml"></div>
+          <div v-if="openMenu === 'files'" id="claire-files-list" class="claire-options-subpanel claire-files-root"><FilesList :data="files" :busy="busy" :upload="file => uploadFile(file, 'files')" @add="addStoredFile" @delete="deleteFile" /></div>
           <button id="claire-rag-toggle" class="claire-options-item" type="button" @click="toggleMenu('rag')"><span class="claire-options-item__label">Documents RAG</span><span id="claire-rag-count-badge" class="claire-options-item__badge">{{ ragCount }}</span></button>
-          <div v-if="openMenu === 'rag'" id="claire-rag-list" class="claire-options-subpanel claire-rag-root" @click="onRagClick" @change="onRagChange" @submit="onRagSubmit" v-html="ragHtml"></div>
+          <div v-if="openMenu === 'rag'" id="claire-rag-list" class="claire-options-subpanel claire-rag-root"><RagList :data="rag" :busy="busy" :upload="file => uploadFile(file, 'rag')" @segments="openRagSegmentsModal" @toggle="toggleRag" @delete="deleteRag" @text="openRagForm('text')" @url="openRagForm('url')" /></div>
         </section>
         <section class="claire-options-panel__section"><span class="claire-options-panel__title">Préférences</span>
           <label class="claire-options-item"><span class="claire-options-item__label">Assistant</span><select id="claire-brain-selector" v-model="currentBrain" @change="changeBrain"><option v-for="brain in config.brains" :key="brain.slug" :value="brain.slug">{{ brain.name }}</option></select></label>
@@ -1350,15 +1254,23 @@ onBeforeUnmount(() => {
       </aside>
     </template>
 
-    <div v-if="modal" class="claire-modal-backdrop claire-is-visible" @click="modal = null"></div>
-    <div v-if="modal" class="claire-modal claire-is-open" role="dialog" aria-modal="true" :data-variant="modal.variant">
+    <div v-if="modal" class="claire-modal-backdrop claire-is-visible" @click="closeModal"></div>
+    <div v-if="modal" class="claire-modal claire-is-open" role="dialog" aria-modal="true" aria-labelledby="claire-modal-title" :aria-busy="modalBusy" :data-variant="modal.variant">
       <div class="claire-modal__container">
-        <div class="claire-modal__header"><h2 class="claire-modal__title">{{ modal.title }}</h2><button class="claire-modal__close" type="button" aria-label="Fermer" @click="modal = null"><ClaireIcon name="close" /></button></div>
-        <div class="claire-modal__body" v-html="modal.body"></div>
-        <div class="claire-modal__footer"><button class="claire-btn claire-btn--secondary" type="button" @click="modal = null">Annuler</button><button class="claire-btn claire-btn--primary" type="button" :disabled="busy" @click="confirmModal">{{ modal.confirmLabel }}</button></div>
+        <div class="claire-modal__header"><h2 id="claire-modal-title" class="claire-modal__title">{{ modal.title }}</h2><button class="claire-modal__close" type="button" aria-label="Fermer" @click="closeModal"><ClaireIcon name="close" /></button></div>
+        <div class="claire-modal__body">
+          <RagSegments v-if="modal.kind === 'segments'" :data="modal.segments" />
+          <TelegramConfig v-else-if="modal.kind === 'telegram'" v-model="modal.input" :data="modal.telegram" :busy="modalBusy" @submit="confirmModal" />
+          <form v-else-if="modal.kind === 'text' || modal.kind === 'url'" ref="modalForm" @submit.prevent="confirmModal">
+            <label class="claire-modal__field"><span>Nom</span><input v-model="modal.name" type="text" required maxlength="255" :disabled="modalBusy"></label>
+            <label class="claire-modal__field"><span>{{ modal.kind === 'text' ? 'Contenu' : 'URL' }}</span><textarea v-if="modal.kind === 'text'" v-model="modal.input" rows="6" required :disabled="modalBusy"></textarea><input v-else v-model="modal.input" type="url" required :disabled="modalBusy"></label>
+          </form>
+          <template v-else-if="modal.kind === 'confirm'">{{ modal.body }}</template>
+        </div>
+        <div class="claire-modal__footer"><button class="claire-btn claire-btn--secondary" type="button" @click="closeModal">{{ modal.kind === 'telegram' ? 'Fermer' : 'Annuler' }}</button><button class="claire-btn claire-btn--primary" type="button" :disabled="busy || modalBusy" @click="confirmModal">{{ modal.confirmLabel }}</button></div>
       </div>
     </div>
-    <div v-if="busy || transcribing" class="claire-global-action-indicator claire-is-requesting" role="status"><div class="claire-global-action-indicator__pill"><span class="claire-global-action-indicator__spinner"></span><span>{{ transcribing ? 'Transcription en cours...' : 'Action en cours...' }}</span></div></div>
+    <div v-if="busy || modalBusy || transcribing" class="claire-global-action-indicator claire-is-requesting" role="status"><div class="claire-global-action-indicator__pill"><span class="claire-global-action-indicator__spinner"></span><span>{{ transcribing ? 'Transcription en cours...' : 'Action en cours...' }}</span></div></div>
     <div v-if="notification" class="claire-is-visible" id="claire-history-tooltip-banner" :data-variant="notification.variant">{{ notification.text }}</div>
     <div v-if="lightboxUrl" class="claire-image-lightbox claire-is-open" role="dialog" aria-modal="true" @click="lightboxUrl = null"><div class="claire-image-lightbox__backdrop"></div><div class="claire-image-lightbox__content"><img class="claire-image-lightbox__img" :src="lightboxUrl" alt="Image agrandie"></div></div>
   </div>

@@ -8,7 +8,7 @@ use App\Brain\Agent;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Summary;
-use App\Renderer\ChatHtmlRenderer;
+use App\Renderer\ChatDataRenderer;
 use App\Services\Audio\AudioServiceInterface;
 use App\Services\Auth;
 use App\Services\ChatAudioPublisher;
@@ -74,7 +74,7 @@ final class NewMessageJob implements QueueDoer
 
     public function __construct(
         private readonly Logger $logger,
-        private readonly ChatHtmlRenderer $chatHtmlRenderer,
+        private readonly ChatDataRenderer $chatDataRenderer,
         private readonly BrainRegistry $brainRegistry,
         private readonly ChatStreamPublisher $chatStreamPublisher,
         private readonly ChatAudioPublisher $chatAudioPublisher,
@@ -312,12 +312,11 @@ final class NewMessageJob implements QueueDoer
 
         $this->toolsCall[$id] = $toolData;
 
-        $toolsHtml = $this->chatHtmlRenderer->tools($this->toolsCall);
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.tool.update', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
-            'html' => $toolsHtml,
+            'toolsCall' => array_values($this->toolsCall),
         ]);
     }
 
@@ -329,13 +328,13 @@ final class NewMessageJob implements QueueDoer
 
         $this->streamedText .= $chunk->content;
 
-        $html = $this->chatHtmlRenderer->markdown($this->streamedText, $this->userId, true);
+        $content = $this->chatDataRenderer->content($this->streamedText, $this->userId, true);
 
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
-            'html' => $html,
+            ...$content,
         ]);
     }
 
@@ -364,7 +363,7 @@ final class NewMessageJob implements QueueDoer
             return;
         }
 
-        $placeholderHtml = $this->chatHtmlRenderer->message([
+        $placeholder = $this->chatDataRenderer->message([
             'id' => $this->messageId,
             'message' => '',
             'time' => new DateTimeImmutable()->format(DateTimeInterface::ATOM),
@@ -374,19 +373,19 @@ final class NewMessageJob implements QueueDoer
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
-            'html' => $placeholderHtml,
+            'entry' => $placeholder,
         ]);
     }
 
     private function publishContent(string $content): void
     {
-        $html = $this->chatHtmlRenderer->markdown($content, $this->userId);
+        $data = $this->chatDataRenderer->content($content, $this->userId);
 
         $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
-            'html' => $html,
+            ...$data,
         ]);
     }
 

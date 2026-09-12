@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Middleware;
 
+use App\Renderer\VueShell;
 use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
@@ -13,7 +14,6 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface as Handler;
 use Slim\Psr7\Response as SlimResponse;
 use Slim\Routing\RouteContext;
-use Slim\Views\Twig;
 
 /**
  * Global authentication middleware.
@@ -28,7 +28,7 @@ use Slim\Views\Twig;
 final readonly class AuthMiddleware implements MiddlewareInterface
 {
     public function __construct(
-        private Twig $twig,
+        private VueShell $vueShell,
         private Auth $auth,
         private Settings $settings,
     ) {
@@ -88,7 +88,7 @@ final readonly class AuthMiddleware implements MiddlewareInterface
     private function handleUnauthorized(Request $request): Response
     {
         $route = RouteContext::fromRequest($request)->getRoute();
-        if ($route?->getName() !== 'home') {
+        if ($route?->getName() !== 'home' || str_contains($request->getHeaderLine('Accept'), 'application/json')) {
             $response = new SlimResponse(401);
             $response->getBody()->write(json_encode(
                 ['error' => 'unauthorized'],
@@ -98,8 +98,8 @@ final readonly class AuthMiddleware implements MiddlewareInterface
             return $response->withHeader('Content-Type', 'application/json');
         }
 
-        return $this->twig->render(new SlimResponse(200), 'welcome.twig', [
-            'base_url' => (string) $request->getAttribute('base_url'),
-        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
+        return $this->vueShell->respond(new SlimResponse(200), [
+            'page' => 'app', 'baseUrl' => (string) $request->getAttribute('base_url'),
+        ]);
     }
 }

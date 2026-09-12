@@ -8,11 +8,10 @@ use App\Brain\Agent;
 use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Job\Web\StartThreadJob;
-use App\Renderer\ChatHtmlRenderer;
+use App\Renderer\ChatDataRenderer;
 use App\Services\Auth;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
-use App\Services\Markdown;
 use App\Services\RedisClient;
 use App\Services\Rendering\GeneratedFileProcessor;
 use App\Services\Session\InMemorySession;
@@ -69,7 +68,7 @@ final class StartThreadJobTest extends TestCase
         $publisher = new ChatStreamPublisher($redis, new ChatStreamSubscriber($redis, $settings), $settings);
         $container = $this->createMock(ContainerInterface::class);
         $container->expects(self::never())->method('get');
-        $renderer = new ChatHtmlRenderer(new Markdown(), new GeneratedFileProcessor(
+        $renderer = new ChatDataRenderer(new GeneratedFileProcessor(
             $settings, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         ));
         $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
@@ -114,6 +113,8 @@ final class StartThreadJobTest extends TestCase
                 $lock = new \App\Services\ChatThreadLock($pdo, 'user-1', 'web-thread-1');
                 $lock->release();
                 $event = json_decode($messages[0], true, flags: JSON_THROW_ON_ERROR);
+                self::assertArrayNotHasKey('html', $event['payload']);
+                self::assertSame('Bienvenue générée', $event['payload']['messages'][0]['message']);
                 return $event['event'] === 'chat.snapshot'
                     && $event['payload']['responding'] === false
                     && $event['payload']['activeMessageId'] === null;
@@ -127,13 +128,12 @@ final class StartThreadJobTest extends TestCase
         );
 
         $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
-        $chatHtmlRenderer = new ChatHtmlRenderer(
-            new Markdown(),
+        $chatDataRenderer = new ChatDataRenderer(
             new GeneratedFileProcessor($settings, $entityManager)
         );
         $connection = $this->createStub(\Doctrine\DBAL\Connection::class);
         $connection->method('getNativeConnection')->willReturn($pdo);
-        $startThreadJob = new StartThreadJob($chatHtmlRenderer, $brainRegistry, $chatStreamPublisher, $connection);
+        $startThreadJob = new StartThreadJob($chatDataRenderer, $brainRegistry, $chatStreamPublisher, $connection);
         $startThreadJob->handle([
             'threadId' => 'web-thread-1',
             'sessionId' => 'session-1',

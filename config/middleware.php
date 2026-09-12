@@ -11,8 +11,6 @@ use App\Renderer\JsonErrorRenderer;
 use App\Services\Settings;
 use RKA\Middleware\ProxyDetection;
 use Slim\App;
-use Slim\Views\Twig;
-use Slim\Views\TwigMiddleware;
 
 return static function (App $app): void {
     $container = $app->getContainer();
@@ -22,7 +20,6 @@ return static function (App $app): void {
     $app->add(AuthMiddleware::class);
 
     $app->add(JwtSessionMiddleware::class);
-    $app->add(TwigMiddleware::create($app, $container->get(Twig::class)));
     $app->add(BaseUrlMiddleware::class);
     $app->add(new ProxyDetection());
     $app->add(CorsMiddleware::class);

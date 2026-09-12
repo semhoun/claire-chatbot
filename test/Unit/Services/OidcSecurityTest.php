@@ -25,7 +25,7 @@ use ReflectionClass;
 use ReflectionProperty;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
-use Slim\Views\Twig;
+use App\Renderer\VueShell;
 
 final class OidcSecurityTest extends TestCase
 {
@@ -301,7 +301,7 @@ final class OidcSecurityTest extends TestCase
             'session' => ['lifetime' => 300, 'jwt' => ['secret' => str_repeat('s', 32)]],
         ]));
         $controller = new AuthController(new NullLogger(), $client, $auth, $tokens,
-            Twig::create(Settings::getAppRoot() . '/tmpl'), new OidcTransaction($redis),
+            new VueShell(), new OidcTransaction($redis),
             $this->createStub(\Doctrine\ORM\EntityManager::class),
             new \App\Services\ChatGenerationState($this->createStub(RedisClient::class), new Settings([])));
         $factory = new ServerRequestFactory();
@@ -329,8 +329,10 @@ final class OidcSecurityTest extends TestCase
         $response = $controller->ssoCallback($request, new Response());
         self::assertSame(200, $response->getStatusCode());
         $html = (string) $response->getBody();
-        self::assertSame(1, preg_match('/\[\x27claire_session_token\x27, ("[^"]+")\]/', $html, $sessionMatch));
-        $sessionJwt = json_decode($sessionMatch[1], true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(1, preg_match('/<script id="claire-page-data" type="application\/json">(.*?)<\/script>/s', $html, $sessionMatch));
+        $data = json_decode($sessionMatch[1], true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame('callback', $data['page']);
+        $sessionJwt = $data['sessionToken'];
         self::assertSame('user-123', $tokens->parseSessionToken($sessionJwt)['sessionData'][Auth::USERID]);
         self::assertStringNotContainsString('minitoken', $html);
         self::assertStringContainsString('Max-Age=0', $response->getHeaderLine('Set-Cookie'));
@@ -404,7 +406,7 @@ final class OidcSecurityTest extends TestCase
         $auth->expects(self::never())->method('login');
         $controller = new AuthController(
             new NullLogger(), $this->client($provider), $auth, new JwtTokenService(new Settings([])),
-            Twig::create(Settings::getAppRoot() . '/tmpl'), $transactions,
+            new VueShell(), $transactions,
             $this->createStub(\Doctrine\ORM\EntityManager::class),
             new \App\Services\ChatGenerationState($this->createStub(RedisClient::class), new Settings([]))
         );

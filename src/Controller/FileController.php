@@ -17,14 +17,12 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Message\UploadedFileInterface;
 use Ramsey\Uuid\Uuid;
-use Slim\Views\Twig;
 
 final readonly class FileController
 {
     use SessionFromRequest;
 
     public function __construct(
-        private Twig $twig,
         private EntityManagerInterface $entityManager,
         private Filesystem $filesystem,
         private Settings $settings,
@@ -42,11 +40,17 @@ final readonly class FileController
         }
 
         $files = $this->entityManager->getRepository(File::class)->listByUser($userId);
-        return $this->twig->render($response, 'partials/files_list.twig', [
-            'files' => $files,
-            'base_url' => (string) $request->getAttribute('base_url'),
-            'accepted_ext' => $this->settings->get('files.upload.acceptedExt'),
-        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
+        $response->getBody()->write(json_encode([
+            'files' => array_values(array_map(static fn (File $file): array => [
+                'fileId' => $file->getFileId(),
+                'filename' => $file->getFilename(),
+                'mimeType' => $file->getMimeType(),
+                'sizeBytes' => $file->getSizeBytes(),
+                'createdAt' => $file->getCreatedAt()->format(DATE_ATOM),
+            ], $files)),
+            'acceptedExt' => $this->settings->get('files.upload.acceptedExt'),
+        ], JSON_THROW_ON_ERROR));
+        return $response->withHeader('Content-Type', 'application/json');
     }
 
     /**
@@ -163,7 +167,7 @@ final readonly class FileController
         $this->entityManager->remove($file);
         $this->entityManager->flush();
 
-        // Return refreshed list (so the badge/count updates via OOB)
+        // Return the updated JSON list.
         return $this->list($request, $response);
     }
 

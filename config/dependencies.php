@@ -100,7 +100,6 @@ return [
             $settings->get('twig.template_path'),
             $settings->get('twig.config')
         );
-        $twig->getEnvironment()->addGlobal('settings', $settings);
 
         return $twig;
     },

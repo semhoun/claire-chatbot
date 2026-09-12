@@ -13,10 +13,32 @@ type IconName =
   | 'undo'
   | 'user'
   | 'volume'
+  | 'eye'
+  | 'delete'
+  | 'upload'
+  | 'link'
+  | 'disable'
+  | 'enable'
+  | 'check'
+  | 'chevron-down'
+  | 'play'
+  | 'stop'
+  | 'refresh'
 
 const props = defineProps<{ name: IconName }>()
 
 const paths: Record<IconName, string> = {
+  check: 'M5 12l4 4L19 6',
+  'chevron-down': 'M8 10l4 4 4-4',
+  play: 'M8 5v14l11-7z',
+  stop: 'M7 7h10v10H7z',
+  refresh: 'M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5',
+  eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
+  delete: 'M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7M10 11v6M14 11v6',
+  upload: 'M12 16V4m0 0L7 9m5-5 5 5M5 14v5h14v-5',
+  link: 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71',
+  disable: 'M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636',
+  enable: 'M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z',
   'arrow-down': 'M12 5v14m0 0 6-6m-6 6-6-6',
   close: 'M6 6l12 12M18 6 6 18',
   file: 'M7 3h7l4 4v14H7zM14 3v5h5',

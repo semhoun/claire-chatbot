@@ -18,27 +18,6 @@ final readonly class SseEventFormatter
         );
     }
 
-    /**
-     * Format for HTMX SSE extension with named events
-     * Returns: event: name\ndata: <html>\n\n.
-     */
-    public function formatNamedEvent(string $event, string $data): string
-    {
-        $lines = preg_split('/\R/', $data);
-
-        if ($lines === false) {
-            $lines = [''];
-        }
-
-        $payload = sprintf('event: %s%s', $event, PHP_EOL);
-
-        foreach ($lines as $line) {
-            $payload .= 'data: ' . $line . "\n";
-        }
-
-        return $payload . "\n";
-    }
-
     public function keepalive(): string
     {
         return ": keepalive\n\n";

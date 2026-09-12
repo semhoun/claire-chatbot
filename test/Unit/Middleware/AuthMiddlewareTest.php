@@ -17,10 +17,38 @@ use Slim\Interfaces\RouteParserInterface;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Routing\RouteContext;
 use Slim\Routing\RoutingResults;
-use Slim\Views\Twig;
+use App\Renderer\VueShell;
 
 final class AuthMiddlewareTest extends TestCase
 {
+    #[TestWith(['text/html', 200])]
+    #[TestWith(['application/json', 401])]
+    public function testHomeServesVueShellOrUnauthorizedJson(string $accept, int $status): void
+    {
+        $route = $this->createStub(RouteInterface::class);
+        $route->method('getName')->willReturn('home');
+        $request = new ServerRequestFactory()->createServerRequest('GET', '/')
+            ->withHeader('Accept', $accept)->withAttribute(RouteContext::ROUTE, $route)
+            ->withAttribute(RouteContext::ROUTE_PARSER, $this->createStub(RouteParserInterface::class))
+            ->withAttribute(RouteContext::ROUTING_RESULTS, new RoutingResults(
+                $this->createStub(DispatcherInterface::class), 'GET', '/', RoutingResults::FOUND,
+            ))
+            ->withAttribute('session', new \App\Services\Session\InMemorySession([]));
+        $handler = $this->createMock(RequestHandlerInterface::class);
+        $handler->expects(self::never())->method('handle');
+        $auth = $this->createStub(Auth::class);
+        $auth->method('isAuthenticated')->willReturn(false);
+        $response = new AuthMiddleware(new VueShell(), $auth, new Settings(['security' => ['public_routes' => []]]))
+            ->process($request, $handler);
+        self::assertSame($status, $response->getStatusCode());
+        if ($status === 200) {
+            self::assertStringContainsString('id="claire-vue-app"', (string) $response->getBody());
+            self::assertStringNotContainsString('Se connecter', (string) $response->getBody());
+        } else {
+            self::assertSame(['error' => 'unauthorized'], json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR));
+        }
+    }
+
     #[TestWith(['/auth/refresh', 'GET'])]
     #[TestWith(['/auth/resource-token', 'POST'])]
     public function testProtectedRouteReturnsUnauthorizedJsonForExpiredSession(string $path, string $method): void
@@ -49,7 +77,7 @@ final class AuthMiddlewareTest extends TestCase
         $auth = $this->createStub(Auth::class);
         $auth->method('isAuthenticated')->willReturn(false);
         $middleware = new AuthMiddleware(
-            $this->createStub(Twig::class),
+            new VueShell(),
             $auth,
             new Settings(['security' => ['public_routes' => ['/auth']]]),
         );

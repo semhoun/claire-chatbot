@@ -9,14 +9,14 @@ use PHPUnit\Framework\TestCase;
 
 final class SseEventFormatterTest extends TestCase
 {
-    public function testFormatNamedEventBuildsExpectedPayload(): void
+    public function testMultilineMarkdownCannotInjectAnSseEvent(): void
     {
         $formatter = new SseEventFormatter();
 
-        $payload = $formatter->formatNamedEvent('chat.snapshot', "<div>first</div>\n<div>second</div>");
+        $payload = $formatter->formatJsonEvent(['message' => "**Hello**\n\nevent: chat.error\ndata: malicious"], eventName: 'chat.assistant.update');
 
         $this->assertSame(
-            "event: chat.snapshot\ndata: <div>first</div>\ndata: <div>second</div>\n\n",
+            "event: chat.assistant.update\ndata: {\"message\":\"**Hello**\\n\\nevent: chat.error\\ndata: malicious\"}\n\n",
             $payload,
         );
     }

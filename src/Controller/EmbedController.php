@@ -15,14 +15,12 @@ use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
-use Slim\Views\Twig;
 
 final readonly class EmbedController
 {
     use SessionFromRequest;
 
     public function __construct(
-        private Twig $twig,
         private EntityManagerInterface $entityManager,
         private FrontendConfigFactory $frontendConfigFactory,
         private Settings $settings,
@@ -60,9 +58,8 @@ final readonly class EmbedController
             $threadId,
             $sessionId
         );
-        return $this->twig->render($response, 'embed.twig', [
-            'base_url' => (string) $request->getAttribute('base_url'),
-            'config' => $config,
-        ])->withHeader('Content-Type', 'text/html; charset=utf-8');
+        $config['baseUrl'] = (string) $request->getAttribute('base_url');
+        $response->getBody()->write(json_encode($config, JSON_THROW_ON_ERROR));
+        return $response->withHeader('Content-Type', 'application/json')->withHeader('Cache-Control', 'no-store');
     }
 }

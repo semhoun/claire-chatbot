@@ -10,6 +10,8 @@ export default defineConfig({
     'process.env.NODE_ENV': JSON.stringify('production'),
   },
   publicDir: false,
+  // Classic scripts inherit the host page encoding unless the response declares UTF-8.
+  esbuild: { charset: 'ascii' },
   plugins: [vue()],
   build: {
     emptyOutDir: false,

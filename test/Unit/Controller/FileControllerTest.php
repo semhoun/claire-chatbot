@@ -19,7 +19,6 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Message\UploadedFileInterface;
 use Slim\Psr7\Factory\ResponseFactory;
-use Slim\Views\Twig;
 
 #[AllowMockObjectsWithoutExpectations]
 final class FileControllerTest extends TestCase
@@ -71,7 +70,6 @@ final class FileControllerTest extends TestCase
             ->willReturn($this->user);
 
         $this->controller = new FileController(
-            Twig::create(\App\Services\Settings::getAppRoot() . '/tmpl'),
             $this->entityManager,
             $this->filesystem,
             new \App\Services\Settings([
@@ -120,7 +118,28 @@ final class FileControllerTest extends TestCase
             $this->createRequestWithSession(),
             $this->responseFactory->createResponse(),
         );
-        $this->assertStringContainsString('Aucun fichier', (string) $result->getBody());
+        self::assertSame('application/json', $result->getHeaderLine('Content-Type'));
+        self::assertSame(['files' => [], 'acceptedExt' => '.txt'],
+            json_decode((string) $result->getBody(), true, 512, JSON_THROW_ON_ERROR));
+    }
+
+    public function testListSerializesOnlyPublicFileMetadata(): void
+    {
+        $file = new File();
+        $file->setFileId('file-1');
+        $file->setFilename('<report>.txt');
+        $file->setMimeType('text/plain');
+        $file->setSizeBytes(1234);
+        $file->setFilePath('/private/path');
+        $file->onPrePersist();
+        $this->session->method('get')->with(Auth::USERID)->willReturn('user-123');
+        $this->fileRepository = $this->createMock(\App\Repository\FileRepository::class);
+        $this->fileRepository->expects(self::once())->method('listByUser')->with('user-123')->willReturn([$file]);
+        $result = $this->controller->list($this->createRequestWithSession(), $this->responseFactory->createResponse());
+        self::assertSame(['files' => [[
+            'fileId' => 'file-1', 'filename' => '<report>.txt', 'mimeType' => 'text/plain',
+            'sizeBytes' => 1234, 'createdAt' => $file->getCreatedAt()->format(DATE_ATOM),
+        ]], 'acceptedExt' => '.txt'], json_decode((string) $result->getBody(), true, 512, JSON_THROW_ON_ERROR));
     }
 
     public function testCountReturnsNumber(): void

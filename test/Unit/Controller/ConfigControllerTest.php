@@ -20,7 +20,6 @@ use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Psr7\Factory\ResponseFactory;
-use Slim\Views\Twig;
 
 #[AllowMockObjectsWithoutExpectations]
 final class ConfigControllerTest extends TestCase
@@ -68,7 +67,6 @@ final class ConfigControllerTest extends TestCase
         );
 
         $this->controller = new ConfigController(
-            Twig::create(Settings::getAppRoot() . '/tmpl'),
             $this->entityManager,
             new BrainRegistry($settings, $container),
             new ComfyUIWorkflowRegistry($settings),
@@ -131,7 +129,7 @@ final class ConfigControllerTest extends TestCase
         self::assertSame(400, $result->getStatusCode());
     }
 
-    public function testTelegramFormReturnsHtmlForm(): void
+    public function testTelegramFormReturnsJsonState(): void
     {
         $this->session->method('get')->with(Auth::USERID)->willReturn('user-123');
         $this->user->method('getTelegramId')->willReturn('987654321');
@@ -143,9 +141,9 @@ final class ConfigControllerTest extends TestCase
         $result = $this->controller->telegramForm($request, $response);
 
         self::assertSame(200, $result->getStatusCode());
-        $body = (string) $result->getBody();
-        self::assertStringContainsString('987654321', $body);
-        self::assertStringContainsString('Compte associé', $body);
+        self::assertSame('application/json', $result->getHeaderLine('Content-Type'));
+        self::assertSame(['telegramId' => '987654321', 'success' => null, 'error' => null],
+            json_decode((string) $result->getBody(), true, 512, JSON_THROW_ON_ERROR));
     }
 
     public function testTelegramRejectsNonNumericId(): void
@@ -159,8 +157,10 @@ final class ConfigControllerTest extends TestCase
         $result = $this->controller->telegram($request, $response);
 
         self::assertSame(422, $result->getStatusCode());
-        $body = (string) $result->getBody();
-        self::assertStringContainsString('doit être composé uniquement de chiffres', $body);
+        self::assertSame('application/json', $result->getHeaderLine('Content-Type'));
+        $body = json_decode((string) $result->getBody(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertNull($body['success']);
+        self::assertStringContainsString('doit être composé uniquement de chiffres', $body['error']);
     }
 
     public function testTelegramRejectsDuplicateIdFromAnotherUser(): void
@@ -185,8 +185,10 @@ final class ConfigControllerTest extends TestCase
         $result = $this->controller->telegram($request, $response);
 
         self::assertSame(409, $result->getStatusCode());
-        $body = (string) $result->getBody();
-        self::assertStringContainsString('déjà associé à un autre compte', $body);
+        self::assertSame('application/json', $result->getHeaderLine('Content-Type'));
+        $body = json_decode((string) $result->getBody(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertNull($body['success']);
+        self::assertStringContainsString('déjà associé à un autre compte', $body['error']);
     }
 
     public function testTelegramSavesValidIdSuccessfully(): void
@@ -204,9 +206,12 @@ final class ConfigControllerTest extends TestCase
         $result = $this->controller->telegram($request, $response);
 
         self::assertSame(200, $result->getStatusCode());
-        $body = (string) $result->getBody();
-        self::assertStringContainsString('Configuration Telegram enregistrée avec succès.', $body);
-        self::assertStringContainsString('123456789', $body);
+        self::assertSame('application/json', $result->getHeaderLine('Content-Type'));
+        self::assertSame([
+            'telegramId' => '123456789',
+            'success' => 'Configuration Telegram enregistrée avec succès.',
+            'error' => null,
+        ], json_decode((string) $result->getBody(), true, 512, JSON_THROW_ON_ERROR));
     }
 
     public function testTelegramUnlinksAccountWhenEmpty(): void
@@ -224,9 +229,11 @@ final class ConfigControllerTest extends TestCase
         $result = $this->controller->telegram($request, $response);
 
         self::assertSame(200, $result->getStatusCode());
-        $body = (string) $result->getBody();
-        self::assertStringContainsString('Association Telegram supprimée avec succès.', $body);
-        self::assertStringContainsString('Non associé', $body);
+        self::assertSame([
+            'telegramId' => null,
+            'success' => 'Association Telegram supprimée avec succès.',
+            'error' => null,
+        ], json_decode((string) $result->getBody(), true, 512, JSON_THROW_ON_ERROR));
     }
 
     private function createRequestWithSession(array $parsedBody = []): ServerRequestInterface

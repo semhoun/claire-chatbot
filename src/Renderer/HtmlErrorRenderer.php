@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace App\Renderer;
 
 use Psr\Log\LoggerInterface as Logger;
-use Slim\Views\Twig;
 use Slim\Interfaces\ErrorRendererInterface;
 use Throwable;
 
 final readonly class HtmlErrorRenderer implements ErrorRendererInterface
 {
     public function __construct(
-        private Twig $twig,
+        private VueShell $vueShell,
         private Logger $logger,
     ) {
     }
@@ -22,8 +21,8 @@ final readonly class HtmlErrorRenderer implements ErrorRendererInterface
         bool $displayErrorDetails
     ): string {
         if ($exception->getCode() === 404) {
-            return $this->twig->fetch('error.twig', [
-                'base_url' => '',
+            return $this->vueShell->document([
+                'page' => 'error', 'baseUrl' => '',
                 'code' => 404,
                 'title' => 'Oups ! La page que vous recherchez est introuvable.',
                 'details' => null,
@@ -31,7 +30,7 @@ final readonly class HtmlErrorRenderer implements ErrorRendererInterface
         }
 
         $title = is_a($exception, '\Slim\Exception\HttpException')
-            ? $exception->getTitle() : '500 - ' . $exception::class;
+            ? $exception->getTitle() : 'Une erreur est survenue.';
 
         $details = [
             'type' => $exception::class,
@@ -43,9 +42,9 @@ final readonly class HtmlErrorRenderer implements ErrorRendererInterface
 
         $this->logger->error('[' . $exception->getCode() . '] ' . $exception->getMessage(), ['exception' => $exception]);
 
-        return $this->twig->fetch('error.twig', [
-            'base_url' => '',
-            'code' => $exception->getCode(),
+        return $this->vueShell->document([
+            'page' => 'error', 'baseUrl' => '',
+            'code' => $exception instanceof \Slim\Exception\HttpException ? $exception->getCode() : 500,
             'title' => $title,
             'details' => $displayErrorDetails ? $details : null,
         ]);
