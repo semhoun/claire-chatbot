@@ -35,6 +35,10 @@ class UserChatHistory extends AbstractChatHistory
 
     public const string MESSAGE_ID_PATTERN = '/\A[A-Za-z][A-Za-z0-9_.:-]{0,127}\z/';
 
+    public const string AUDIO_REQUEST_ID_METADATA = 'claire_audio_request_id';
+
+    public const string AUDIO_REQUEST_ID_PATTERN = '/\A[A-Za-z0-9._-]{1,128}\z/';
+
     protected ?string $title = null;
 
     protected ?string $summary = null;
@@ -102,10 +106,14 @@ class UserChatHistory extends AbstractChatHistory
     }
 
     /** Persist the Web/audio identity on the final display message, without changing LLM context. */
-    public function identifyLastAssistantMessage(string $messageId): void
+    public function identifyLastAssistantMessage(string $messageId, ?string $audioRequestId = null): void
     {
         if (preg_match(self::MESSAGE_ID_PATTERN, $messageId) !== 1) {
             throw new \InvalidArgumentException('Invalid assistant message ID');
+        }
+
+        if ($audioRequestId !== null && preg_match(self::AUDIO_REQUEST_ID_PATTERN, $audioRequestId) !== 1) {
+            throw new \InvalidArgumentException('Invalid audio request ID');
         }
 
         $index = array_key_last($this->displayHistory);
@@ -114,7 +122,9 @@ class UserChatHistory extends AbstractChatHistory
             throw new \RuntimeException('Final assistant message is missing from display history');
         }
 
-        $this->displayHistory[$index] = (clone $message)->addMetadata(self::MESSAGE_ID_METADATA, $messageId);
+        $this->displayHistory[$index] = (clone $message)
+            ->addMetadata(self::MESSAGE_ID_METADATA, $messageId)
+            ->addMetadata(self::AUDIO_REQUEST_ID_METADATA, $audioRequestId);
         $this->persistHistories();
     }
 

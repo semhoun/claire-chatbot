@@ -790,6 +790,8 @@ class TelegramService implements QueueDoer
      */
     private function handleFileResponse(int $telegramChatId, string $responseText, array $fileIds): void
     {
+        $appUserId = (string) $this->telegramSession->get(Auth::USERID);
+
         // Remove file paths from text to create caption
         $caption = preg_replace(File::GENERATED_FILE_PATTERN, '', $responseText);
         // Filter OC tags
@@ -802,18 +804,40 @@ class TelegramService implements QueueDoer
             // Only add caption to the last file, or if there's only one file
             $fileCaption = $isLast || $fileCount === 1 ? $caption : null;
 
-            $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $fileId]);
-            if ($file === null) {
-                $this->logger->error('File not found for ID: ' . $fileId);
-                throw new \RuntimeException('Generated Telegram file is missing');
-            }
+            $send = function () use ($telegramChatId, $fileId, $fileCaption, $appUserId): void {
+                if ($appUserId === '' || $appUserId === '0') {
+                    throw new \RuntimeException('Generated Telegram file is missing');
+                }
 
-            if ($file->fileType() === File::FILE_TYPE_IMAGE) {
-                $this->sendPhoto($telegramChatId, $file, $fileCaption);
-            } elseif ($file->fileType() === File::FILE_TYPE_AUDIO) {
-                $this->sendAudio($telegramChatId, $file, $fileCaption);
+                $file = $this->entityManager->getRepository(File::class)->findOneBy([
+                    'fileId' => $fileId,
+                    'user' => $appUserId,
+                ]);
+                if ($file === null) {
+                    $this->logger->error('File not found for ID: ' . $fileId);
+                    throw new \RuntimeException('Generated Telegram file is missing');
+                }
+
+                if ($file->fileType() === File::FILE_TYPE_IMAGE) {
+                    $this->sendPhoto($telegramChatId, $file, $fileCaption);
+                } elseif ($file->fileType() === File::FILE_TYPE_AUDIO) {
+                    $this->sendAudio($telegramChatId, $file, $fileCaption);
+                } else {
+                    $this->sendDocument($telegramChatId, $file, $fileCaption);
+                }
+            };
+            if ($this->deliveryCheckpoint instanceof \Closure) {
+                // Use the original response and occurrence, never the remaining files.
+                $key = 'file:' . hash('sha256', $responseText) . ':' . $index . ':' . $fileId;
+                ($this->deliveryCheckpoint)($key, $send);
+
+                // Confirm the upload before delivering separately checkpointed text chunks.
+                $formattedCaption = $this->formatCaption($fileCaption);
+                if ($formattedCaption !== null && ! $this->shouldSendWithCaption($formattedCaption)) {
+                    $this->sendMessage($telegramChatId, $formattedCaption);
+                }
             } else {
-                $this->sendDocument($telegramChatId, $file, $fileCaption);
+                $send();
             }
         }
     }
@@ -995,7 +1019,7 @@ class TelegramService implements QueueDoer
             throw new \RuntimeException('Telegram rejected generated file delivery');
         }
 
-        if ($remainingCaption !== null) {
+        if ($remainingCaption !== null && ! $this->deliveryCheckpoint instanceof \Closure) {
             $this->sendMessage($telegramChatId, $remainingCaption);
         }
     }

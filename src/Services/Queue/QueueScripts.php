@@ -16,6 +16,22 @@ final class QueueScripts
             or (ARGV[6] ~= '' and not check(ARGV[6], 'hash')) then
             return redis.error_reply('Invalid dispatch key type')
         end
+        if ARGV[8] ~= '' and redis.call('EXISTS', KEYS[2]) == 1 then
+            if redis.call('HGET', KEYS[2], 'state') ~= 'dead' then return ARGV[1] end
+            if redis.call('HGET', KEYS[2], 'id') ~= ARGV[1]
+                or redis.call('HGET', KEYS[2], 'outbox_id') ~= ARGV[8]
+                or redis.call('HGET', KEYS[2], 'job_class') ~= ARGV[3]
+                or redis.call('HGET', KEYS[2], 'queue_name') ~= ARGV[2]
+                or redis.call('HGET', KEYS[2], 'payload') ~= ARGV[4] then
+                return redis.error_reply('Mismatched dead outbox cache')
+            end
+            if not check(KEYS[3], 'zset') then
+                return redis.error_reply('Invalid outbox dead index type')
+            end
+            -- SQL authorized this retry. Reset only an identical dead transport cache.
+            redis.call('ZREM', KEYS[3], ARGV[1])
+            redis.call('DEL', KEYS[2])
+        end
         if ARGV[5] ~= '' then
             local previous = redis.call('GET', ARGV[5])
             if previous then return previous end
@@ -25,12 +41,14 @@ final class QueueScripts
             local previous = redis.call('HGET', ARGV[6], 'messageId')
             if status == 'queued' or status == 'running' or status == 'deleted'
                 or previous == ARGV[7] then return 'CHAT_BUSY' end
-            redis.call('HSET', ARGV[6], 'messageId', ARGV[7], 'status', 'queued', 'attempted', '0')
+            redis.call('HSET', ARGV[6], 'messageId', ARGV[7], 'status', 'queued', 'attempted', '0',
+                'jobId', ARGV[1], 'queue', ARGV[2], 'jobMessageId', ARGV[7])
         end
         redis.call('HSET', KEYS[2], 'id', ARGV[1], 'queue_name', ARGV[2],
             'job_class', ARGV[3], 'payload', ARGV[4], 'attempts', 0, 'state', 'ready',
             'deduplication_key', ARGV[5])
         redis.call('LPUSH', KEYS[1], ARGV[1])
+        if ARGV[8] ~= '' then redis.call('HSET', KEYS[2], 'outbox_id', ARGV[8]) end
         if ARGV[5] ~= '' then redis.call('SET', ARGV[5], ARGV[1]) end
         return ARGV[1]
         LUA;

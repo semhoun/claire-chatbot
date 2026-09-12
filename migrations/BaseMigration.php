@@ -9,6 +9,11 @@ use Doctrine\Migrations\AbstractMigration;
 
 abstract class BaseMigration extends AbstractMigration
 {
+    public function isTransactional(): bool
+    {
+        return ! $this->isMySqlPlatform($this->connection->getDatabasePlatform());
+    }
+
     protected function isMySqlPlatform(AbstractPlatform $platform): bool
     {
         $platformClass = strtolower($platform::class);

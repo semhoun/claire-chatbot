@@ -136,10 +136,15 @@ export class SessionClient {
     const base = new URL(this.baseUrl || window.location.origin, window.location.href)
     const prefix = `${base.pathname.replace(/\/$/, '')}/files/serve/`
     if (url.origin !== base.origin || !url.pathname.startsWith(prefix)) return { url: url.toString(), renewAt: null }
-    const fileId = decodeURIComponent(url.pathname.slice(prefix.length).split('/')[0])
+    const encodedFileId = url.pathname.slice(prefix.length)
+    if (encodedFileId.includes('/')) return { url: url.toString(), renewAt: null }
+    const fileId = decodeURIComponent(encodedFileId)
     if (!fileId) return { url: url.toString(), renewAt: null }
     const capability = await this.resourceToken({ type: 'file', fileId })
     if (generation !== this.resourceGeneration || this.destroyed) throw new DOMException('Resource invalidated', 'AbortError')
+    // Match the server's RFC 3986 resource path, including persisted @@GENERATED@@ IDs.
+    url.pathname = prefix + encodeURIComponent(fileId).replace(/[!'()*]/g,
+      character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
     url.searchParams.set('token', capability.token)
     return { url: url.toString(), renewAt: capability.renewAt }
   }

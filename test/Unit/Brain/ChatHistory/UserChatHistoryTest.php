@@ -28,12 +28,13 @@ final class UserChatHistoryTest extends TestCase
         $history->addMessage(new ToolResultMessage([$tool]));
         $history->addMessage(new AssistantMessage('Final answer'));
         $llmBefore = $pdo->query('SELECT messages FROM chat_history')->fetchColumn();
-        $history->identifyLastAssistantMessage('assistant-message-roundtrip');
+        $history->identifyLastAssistantMessage('assistant-message-roundtrip', 'auto-assistant-message-roundtrip');
         self::assertSame($llmBefore, $pdo->query('SELECT messages FROM chat_history')->fetchColumn());
         $fresh = new UserChatHistory($session, $pdo, threadId: 'thread-1');
         self::assertSame('assistant-message-roundtrip', $fresh->getDisplayMessages()[3]
             ->getMetadata(UserChatHistory::MESSAGE_ID_METADATA));
         self::assertSame('assistant-message-roundtrip', $fresh->getFormattedMessages()[1]['id']);
+        self::assertSame('auto-assistant-message-roundtrip', $fresh->getFormattedMessages()[1]['audioRequestId']);
         self::assertSame('Tool result', $fresh->getFormattedMessages()[1]['toolsCall'][0]['result']);
         $fresh->addMessage(new UserMessage('Next question'));
         $fresh->addMessage(new AssistantMessage('Next answer'));
@@ -41,6 +42,37 @@ final class UserChatHistoryTest extends TestCase
         $reloaded = new UserChatHistory($session, $pdo, threadId: 'thread-1');
         self::assertSame(['history-message-0', 'assistant-message-roundtrip', 'history-message-2',
             'assistant-message-next'], array_column($reloaded->getFormattedMessages(), 'id'));
+        self::assertArrayNotHasKey('audioRequestId', $reloaded->getFormattedMessages()[3]);
+    }
+
+    public function testAudioIdentityCanBeClearedWithoutChangingLlmContext(): void
+    {
+        [$history, $pdo, $session] = $this->history();
+        $history->addMessage(new UserMessage('Question'));
+        $history->addMessage(new AssistantMessage('Answer'));
+        $llmBefore = $pdo->query('SELECT messages FROM chat_history')->fetchColumn();
+        $history->identifyLastAssistantMessage('assistant-answer', 'auto-assistant-answer');
+        $history->identifyLastAssistantMessage('assistant-answer');
+        $fresh = new UserChatHistory($session, $pdo, threadId: 'thread-1');
+        self::assertArrayNotHasKey('audioRequestId', $fresh->getFormattedMessages()[1]);
+        self::assertSame($llmBefore, $pdo->query('SELECT messages FROM chat_history')->fetchColumn());
+    }
+
+    public function testInvalidAudioIdentityDoesNotChangePersistedHistory(): void
+    {
+        [$history, $pdo] = $this->history();
+        $history->addMessage(new UserMessage('Question'));
+        $history->addMessage(new AssistantMessage('Answer'));
+        $before = $pdo->query('SELECT display_messages FROM chat_history')->fetchColumn();
+        foreach (['', 'request with spaces', "valid\n", str_repeat('a', 129)] as $invalid) {
+            try {
+                $history->identifyLastAssistantMessage('assistant-answer', $invalid);
+                self::fail('Invalid audio identity accepted');
+            } catch (\InvalidArgumentException $exception) {
+                self::assertSame('Invalid audio request ID', $exception->getMessage());
+            }
+            self::assertSame($before, $pdo->query('SELECT display_messages FROM chat_history')->fetchColumn());
+        }
     }
 
     public function testAssistantIdentityWriteRejectsStaleHistory(): void

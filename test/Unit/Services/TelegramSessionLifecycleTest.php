@@ -179,6 +179,8 @@ final class TelegramSessionLifecycleTest extends TestCase
         $manager = $this->createStub(\Doctrine\ORM\EntityManager::class);
         $manager->method('getRepository')->willReturn($repository);
         $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        require_once Settings::getAppRoot() . '/test/Support/TelegramSqlSchema.php';
+        \App\Test\Support\TelegramSqlSchema::create($connection, false);
         $manager->method('getConnection')->willReturn($connection);
         $settings = new Settings([
             'llm' => ['brains' => ['first' => LifecycleBrain::class, 'second' => LifecycleBrain::class]],
@@ -196,21 +198,16 @@ final class TelegramSessionLifecycleTest extends TestCase
             'test' => ['label' => 'Test', 'workflow' => 'unused.json'],
         ]);
         $service = new ReflectionClass(LifecycleTelegramService::class)->newInstanceWithoutConstructor();
-        $redis = $this->createStub(\App\Services\Queue\QueueRedisConnection::class);
-        $records = [];
-        $redis->method('evaluate')->willReturnCallback(static function (string $script, array $args) use (&$records, $cachedResponse): mixed {
-            if (str_starts_with($script, 'return')) {
-                return $records[$args[0]] ?? ($cachedResponse === null ? '' : json_encode([
-                    'threadId' => 'stable-thread', 'attempted' => true, 'response' => $cachedResponse,
-                ], JSON_THROW_ON_ERROR));
-            }
-            $records[$args[0]] = $args[2];
-            return 1;
-        });
+        if ($cachedResponse !== null) {
+            $record = ['userId' => 'user-42', 'threadId' => 'stable-thread', 'botId' => 'test',
+                'updateId' => 'update:42', 'attempted' => true, 'response' => $cachedResponse];
+            $journal = new \App\Services\TelegramJournal($connection);
+            $journal->save(\App\Services\TelegramJournal::id('test', 'update:42'), $record);
+        }
         $stateRedis = $this->createStub(\App\Services\RedisClient::class);
         $stateRedis->method('hgetall')->willReturn([]);
         $stateRedis->method('hset')->willReturn(1);
-        $generation = new \App\Services\TelegramGeneration($redis, $settings, $connection,
+        $generation = new \App\Services\TelegramGeneration($settings, $connection,
             new \App\Services\ChatGenerationState($stateRedis, $settings));
         foreach ([
             'entityManager' => $manager,

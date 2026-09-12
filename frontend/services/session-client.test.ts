@@ -11,6 +11,36 @@ function token(audience = 'session'): string {
 }
 
 describe('SessionClient', () => {
+  it.each(['@@GENERATED@@artifact@@', '%40%40GENERATED%40%40artifact%40%40'])(
+    'canonicalizes generated file identifiers for resource authorization: %s', async encodedId => {
+      const fetchMock = vi.fn(async (_input: string, _init: RequestInit) => new Response(JSON.stringify({
+        token: 'file-only', expiresAt: Math.floor(Date.now() / 1000) + 60,
+      })))
+      vi.stubGlobal('fetch', fetchMock)
+      const client = new SessionClient('https://claire.test', 120, 30)
+      client.initialize(token())
+      try {
+        const resource = await client.protectedResource(`/files/serve/${encodedId}`)
+        const url = new URL(resource.url)
+        expect(url.pathname).toBe('/files/serve/%40%40GENERATED%40%40artifact%40%40')
+        expect(url.searchParams.get('token')).toBe('file-only')
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body as string))
+          .toEqual({ type: 'file', fileId: '@@GENERATED@@artifact@@' })
+      } finally { client.destroy() }
+    },
+  )
+
+  it('does not mint a capability for additional path segments', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient('https://claire.test', 120, 30)
+    try {
+      expect(await client.protectedResource('/files/serve/file-1/unrelated'))
+        .toEqual({ url: 'https://claire.test/files/serve/file-1/unrelated', renewAt: null })
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally { client.destroy() }
+  })
+
   it('purges stored legacy mini-tokens and ignores legacy response headers', async () => {
     sessionStorage.setItem('claire_mini_token', JSON.stringify({ token: token('minitoken'), expiresAt: Date.now() + 60000 }))
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { headers: { 'X-Claire-Minitoken': token('minitoken') } })))

@@ -59,4 +59,40 @@ final class ChatGenerationStateTest extends TestCase
             });
         self::assertSame(['html' => 'complete', 'responding' => false, 'activeMessageId' => null], $snapshot);
     }
+
+    public function testDiagnosticOnlyReturnsExplicitMetadata(): void
+    {
+        $redis = $this->createStub(RedisClient::class);
+        $redis->method('hgetall')->willReturn(['status' => 'queued', 'attempted' => '1',
+            'messageId' => 'message', 'jobId' => 'job', 'queue' => 'default', 'jobMessageId' => 'message',
+            'response' => 'PRIVATE', 'last_error' => 'SECRET']);
+        $state = new ChatGenerationState($redis, new Settings(['redis' => ['prefix' => 'test:']]));
+        self::assertSame(['status' => 'queued', 'attempted' => '1', 'messageId' => 'message',
+            'jobId' => 'job', 'queue' => 'default'], $state->diagnostic('user', 'thread'));
+    }
+
+    public function testHsetTransitionIgnoresStaleAndLegacyJobPointersWithoutMutatingReads(): void
+    {
+        $storage = ['messageId' => 'web', 'status' => 'queued', 'attempted' => '0',
+            'jobId' => 'web-job', 'queue' => 'web-queue', 'jobMessageId' => 'web'];
+        $redis = $this->createStub(RedisClient::class);
+        $redis->method('hset')->willReturnCallback(static function (string $key, array $values) use (&$storage): int {
+            $storage = array_replace($storage, $values);
+            return 1;
+        });
+        $redis->method('hgetall')->willReturnCallback(static function () use (&$storage): array {
+            return $storage;
+        });
+        $state = new ChatGenerationState($redis, new Settings(['redis' => ['prefix' => 'test:']]));
+        $state->set('user', 'thread', 'web', 'done', true);
+        self::assertSame('web-job', $state->diagnostic('user', 'thread')['jobId']);
+        $state->set('user', 'thread', 'telegram', 'running', true);
+        self::assertNull($state->diagnostic('user', 'thread')['jobId']);
+        self::assertNull($state->diagnostic('user', 'thread')['queue']);
+        self::assertSame('web-job', $storage['jobId']);
+        unset($storage['jobMessageId']);
+        $storage['messageId'] = 'web';
+        self::assertNull($state->diagnostic('user', 'thread')['jobId']);
+        self::assertSame('web-job', $storage['jobId']);
+    }
 }

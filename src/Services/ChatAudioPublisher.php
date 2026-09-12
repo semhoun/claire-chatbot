@@ -25,6 +25,7 @@ final readonly class ChatAudioPublisher
         string $messageId,
         string $responseText,
         SessionInterface $session,
+        string $audioRequestId,
     ): void {
         if (! $this->audioService->isAvailable()
             || $session->get(AudioServiceInterface::ENABLED_SESSION_KEY, false) !== true) {
@@ -43,15 +44,18 @@ final readonly class ChatAudioPublisher
                 'sessionId' => $sessionId,
                 'messageId' => $messageId,
                 'mimeType' => $speech->mimeType,
+                'audioRequestId' => $audioRequestId,
                 'audioData' => base64_encode($speech->content),
             ]);
         } catch (Throwable $throwable) {
             $this->logger->error('Chat audio generation failed', [
+                'audioRequestId' => $audioRequestId,
                 'exception' => $throwable,
                 'threadId' => $threadId,
                 'messageId' => $messageId,
             ]);
             $this->chatStreamPublisher->publish($sessionId, 'chat.audio.error', [
+                'audioRequestId' => $audioRequestId,
                 'threadId' => $threadId,
                 'sessionId' => $sessionId,
                 'messageId' => $messageId,

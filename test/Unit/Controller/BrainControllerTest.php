@@ -48,6 +48,56 @@ final class BufferedBrainStreamBody extends \Slim\Psr7\Stream
 
 final class BrainControllerTest extends TestCase
 {
+    public static function audioRequestIds(): array
+    {
+        return [
+            'missing' => [null, 400],
+            'empty' => ['', 400],
+            'array' => [[], 400],
+            'number' => [123, 400],
+            'space' => [' request-1', 400],
+            'newline' => ["request-1\n", 400],
+            'slash' => ['request/1', 400],
+            'too long' => [str_repeat('a', 129), 400],
+            'uuid' => ['c989387b-b180-4bb2-9169-290c90cc3e93', 202],
+            'allowed characters' => ['Az09._-', 202],
+            'one character' => ['a', 202],
+            'maximum length' => [str_repeat('a', 128), 202],
+        ];
+    }
+
+    #[DataProvider('audioRequestIds')]
+    public function testManualAudioValidatesAndDispatchesExactRequestId(mixed $id, int $status): void
+    {
+        $queue = $this->createMock(QueueDispatcherInterface::class);
+        $audio = $this->createStub(AudioServiceInterface::class);
+        $audio->method('isAvailable')->willReturn(true);
+        [$controller, , $session] = $this->controller($queue, $audio);
+        $session->set(AudioServiceInterface::ENABLED_SESSION_KEY, true);
+        $queue->expects($status === 202 ? self::once() : self::never())->method('dispatch')
+            ->with(\App\Job\Web\GenerateAudioJob::class, self::callback(
+                static function (array $payload) use ($id, $session): bool {
+                    self::assertSame([
+                        'audioRequestId' => $id,
+                        'threadId' => 'thread',
+                        'sessionId' => 'tab',
+                        'messageId' => 'message-1',
+                        'text' => 'Bonjour',
+                        'session' => $session->all(),
+                    ], $payload);
+                    return true;
+                },
+            ), 'default');
+        $body = ['threadId' => 'thread', 'sessionId' => 'tab', 'messageId' => 'message-1', 'text' => 'Bonjour'];
+        if ($id !== null) {
+            $body['audioRequestId'] = $id;
+        }
+        $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/audio')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+            ->withParsedBody($body);
+        self::assertSame($status, $controller->generateAudio($request, new Response())->getStatusCode());
+    }
+
     public static function idleTransitions(): array
     {
         return [
@@ -266,15 +316,32 @@ final class BrainControllerTest extends TestCase
         self::assertSame(0, (int) $pdo->query('SELECT COUNT(*) FROM chat_history')->fetchColumn());
     }
 
+    public function testSnapshotRestoresPersistedAudioExpectationAfterReconnect(): void
+    {
+        [$controller, $publisher, $session, $pdo] = $this->controller(
+            $this->createStub(QueueDispatcherInterface::class),
+        );
+        $history = new \App\Brain\ChatHistory\UserChatHistory($session, $pdo, threadId: 'thread');
+        $history->addMessage(new \NeuronAI\Chat\Messages\UserMessage('Question'));
+        $history->addMessage(new \NeuronAI\Chat\Messages\AssistantMessage('Answer'));
+        $history->identifyLastAssistantMessage('assistant-snapshot', 'auto-assistant-snapshot');
+        $publisher->generationState()->set('user-1', 'thread', 'assistant-snapshot', 'done', true);
+        $snapshot = new \ReflectionMethod($controller, 'readSnapshot')->invoke($controller, $session, 'thread');
+        self::assertSame(['assistant-snapshot' => 'auto-assistant-snapshot'], $snapshot['audioRequestIds']);
+        self::assertFalse($snapshot['responding']);
+        self::assertStringContainsString('claire-message-assistant-snapshot', $snapshot['html']);
+    }
+
     /** @return array{BrainController, ChatStreamPublisher, InMemorySession, \PDO, RedisClient} */
-    private function controller(QueueDispatcherInterface $queue): array
+    private function controller(QueueDispatcherInterface $queue, ?AudioServiceInterface $audio = null): array
     {
         $settings = new Settings(['redis' => ['prefix' => 'test:'], 'llm' => ['openai' => ['contextWindow' => 50000]],
             'queue' => ['defaultQueue' => 'default'], 'sse' => ['pop_timeout' => 1],
             'security' => ['cors' => ['allowed_origins' => []]]]);
         $session = new InMemorySession([Auth::USERID => 'user-1']);
         $pdo = new \PDO('sqlite::memory:');
-        $pdo->exec("CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT, display_messages TEXT, title TEXT, summary TEXT)");
+        $pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT, '
+            . 'display_messages TEXT, display_messages_count INTEGER DEFAULT 0, title TEXT, summary TEXT)');
         $connection = $this->createStub(Connection::class);
         $connection->method('getNativeConnection')->willReturn($pdo);
         $user = new User();
@@ -301,7 +368,7 @@ final class BrainControllerTest extends TestCase
         $renderer = new ChatHtmlRenderer(new Markdown(), new GeneratedFileProcessor($settings, $entityManager));
         return [new BrainController(new NullLogger(), $renderer,
             new BrainRegistry($settings, $this->createStub(ContainerInterface::class)), $entityManager,
-            $this->createStub(Filesystem::class), $settings, $this->createStub(AudioServiceInterface::class),
+            $this->createStub(Filesystem::class), $settings, $audio ?? $this->createStub(AudioServiceInterface::class),
             $queue, $publisher, $subscriber, new SseEventFormatter(), new CorsHeaders($settings)),
             $publisher, $session, $pdo, $redis];
     }

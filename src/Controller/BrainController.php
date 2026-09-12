@@ -126,6 +126,13 @@ final readonly class BrainController
     public function generateAudio(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
+        $data = (array) ($request->getParsedBody() ?? []);
+        $audioRequestId = $data['audioRequestId'] ?? null;
+        if (! is_string($audioRequestId)
+            || preg_match(UserChatHistory::AUDIO_REQUEST_ID_PATTERN, $audioRequestId) !== 1) {
+            return $response->withStatus(400);
+        }
+
         if (! $this->audioService->isAvailable()) {
             return $response->withStatus(503);
         }
@@ -134,7 +141,6 @@ final readonly class BrainController
             return $response->withStatus(409);
         }
 
-        $data = (array) ($request->getParsedBody() ?? []);
         $threadId = trim((string) ($data['threadId'] ?? ''));
         $sessionId = trim((string) ($data['sessionId'] ?? ''));
         $messageId = trim((string) ($data['messageId'] ?? ''));
@@ -162,6 +168,7 @@ final readonly class BrainController
         $this->queueDispatcher->dispatch(
             GenerateAudioJob::class,
             [
+                'audioRequestId' => $audioRequestId,
                 'threadId' => $threadId,
                 'sessionId' => $sessionId,
                 'messageId' => $messageId,
@@ -359,10 +366,11 @@ final readonly class BrainController
                     threadId: $threadId,
                     createIfMissing: false,
                 );
-                return ['html' => $this->chatHtmlRenderer->messages(
-                    $userChatHistory->getFormattedMessages(),
-                    (string) $session->get(Auth::USERID),
-                ),
+                $messages = $userChatHistory->getFormattedMessages();
+                return [
+                    'html' => $this->chatHtmlRenderer->messages($messages, (string) $session->get(Auth::USERID)),
+                    'audioRequestIds' => array_column(array_filter($messages,
+                        static fn (array $message): bool => isset($message['audioRequestId'])), 'audioRequestId', 'id'),
                 ];
             },
         );

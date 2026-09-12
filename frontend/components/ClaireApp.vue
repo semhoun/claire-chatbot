@@ -74,6 +74,7 @@ const transcribing = ref(false)
 const playingMessageId = ref<string | null>(null)
 const readyAudio = new Map<string, Blob>()
 const pendingAudio = new Set<string>()
+const expectedAudio = new Map<string, string>()
 const failedAudio = new Set<string>()
 const autoPlayedAudio = new Set<string>()
 const invalidAudio = new Set<string>()
@@ -129,6 +130,7 @@ function resetAudio(): void {
   playingMessageId.value = null
   readyAudio.clear()
   pendingAudio.clear()
+  expectedAudio.clear()
   failedAudio.clear()
   autoPlayedAudio.clear()
 }
@@ -333,7 +335,7 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
       ? new Set(Array.from(messages.querySelectorAll<HTMLElement>('.claire-message--received[id^="claire-"]'),
         article => article.id.slice('claire-'.length)))
       : new Set<string>()
-    for (const cache of [readyAudio, pendingAudio, failedAudio, autoPlayedAudio]) {
+    for (const cache of [readyAudio, pendingAudio, failedAudio, autoPlayedAudio, expectedAudio]) {
       for (const id of cache.keys()) if (!retainedAudioIds.has(id)) {
         invalidAudio.add(id)
         cache.delete(id)
@@ -344,6 +346,9 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
       playingMessageId.value = null
     }
     audioThreadId = threadId.value
+    for (const [messageId, requestId] of Object.entries(update.audioRequestIds ?? {})) {
+      expectAutoAudio(messageId, requestId, false)
+    }
     if (typeof update.restoredMessage === 'string') message.value = update.restoredMessage
     if (typeof update.responding === 'boolean') {
       responding.value = update.responding
@@ -363,15 +368,12 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
       if (loader instanceof HTMLElement) loader.outerHTML = update.html ?? ''
       else messages.insertAdjacentHTML('beforeend', update.html ?? '')
     }
-    ensureAudioAction(
-      update.messageId,
-      audioAutoGenerate.value,
-    )
+    ensureAudioAction(update.messageId)
     enhanceRenderedMessages(findMessage(update.messageId), false)
   } else if (type === 'chat.assistant.update') {
     const element = rootElement.value?.querySelector(`#claire-message-${CSS.escape(update.messageId ?? '')}`)
     if (element instanceof HTMLElement) element.innerHTML = update.html ?? ''
-    ensureAudioAction(update.messageId, audioAutoGenerate.value)
+    ensureAudioAction(update.messageId)
     enhanceRenderedMessages(findMessage(update.messageId), false)
   } else if (type === 'chat.tool.update') {
     const element = rootElement.value?.querySelector(`#claire-toolscall-${CSS.escape(update.messageId ?? '')}`)
@@ -379,14 +381,12 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     if (element instanceof HTMLElement) enhanceRenderedMessages(element, false)
   } else if (type === 'chat.assistant.done') {
     finishResponse()
-    ensureAudioAction(
-      update.messageId,
-      audioAutoGenerate.value,
-    )
+    expectAutoAudio(update.messageId, update.audioRequestId)
+    ensureAudioAction(update.messageId)
   } else if (type === 'chat.audio.ready') {
     receiveReadyAudio(update)
   } else if (type === 'chat.audio.error' && update.messageId && audioEnabled.value
-    && !invalidAudio.has(update.messageId) && findMessage(update.messageId)) {
+    && matchesAudioRequest(update)) {
     pendingAudio.delete(update.messageId)
     failedAudio.add(update.messageId)
     ensureAudioAction(update.messageId)
@@ -471,11 +471,11 @@ function enhanceRenderedMessages(scope: Element | null = rootElement.value, audi
   for (const article of scope.querySelectorAll<HTMLElement>(
     '.claire-message--received[id^="claire-"]',
   )) {
-    ensureAudioAction(article.id.slice('claire-'.length), false, article)
+    ensureAudioAction(article.id.slice('claire-'.length), article)
   }
 }
 
-function ensureAudioAction(messageId?: string, autoPending = false, existingArticle?: HTMLElement): void {
+function ensureAudioAction(messageId?: string, existingArticle?: HTMLElement): void {
   if (!audioEnabled.value || !messageId || rootElement.value === null) return
   const article = existingArticle ?? rootElement.value.querySelector<HTMLElement>(
     `#claire-${CSS.escape(messageId)}`,
@@ -498,11 +498,6 @@ function ensureAudioAction(messageId?: string, autoPending = false, existingArti
     void toggleSpeech(button)
   })
   meta.appendChild(button)
-  if (autoPending
-    && !readyAudio.has(messageId)
-    && !failedAudio.has(messageId)) {
-    pendingAudio.add(messageId)
-  }
   updateAudioActionStates(article)
 }
 
@@ -541,9 +536,24 @@ function setAudioActionIcon(
   action.innerHTML = `<svg class="claire-icon" viewBox="0 0 24 24" aria-hidden="true">${paths[icon]}</svg>`
 }
 
+function expectAutoAudio(messageId?: string, requestId?: string | null, pending = true): void {
+  if (!audioEnabled.value || !messageId || !requestId || !findMessage(messageId)
+    || invalidAudio.has(messageId)) return
+  const expected = expectedAudio.get(messageId)
+  if (expected !== undefined && expected !== requestId) return
+  expectedAudio.set(messageId, requestId)
+  // Persisted identities also describe old, already delivered audio after a page reload.
+  if (pending && !readyAudio.has(messageId) && !failedAudio.has(messageId)) pendingAudio.add(messageId)
+}
+
+function matchesAudioRequest(update: SseUpdate): boolean {
+  return audioEnabled.value && !!update.messageId && !!update.audioRequestId
+    && expectedAudio.get(update.messageId) === update.audioRequestId
+    && !invalidAudio.has(update.messageId) && !!findMessage(update.messageId)
+}
+
 function receiveReadyAudio(update: SseUpdate): void {
-  if (!audioEnabled.value || !update.messageId || !update.audioData
-    || invalidAudio.has(update.messageId) || !findMessage(update.messageId)) return
+  if (!update.messageId || !update.audioData || !matchesAudioRequest(update)) return
   let audio: Blob | null = null
   try {
     const binary = atob(update.audioData)
@@ -728,7 +738,14 @@ async function requestSpeech(messageId: string, text: string): Promise<void> {
   if (!audioEnabled.value || !findMessage(messageId)) return
   const context = captureContext()
   const generation = audioGeneration
+  // HTTP embed hosts do not expose randomUUID, but still support secure random bytes.
+  const audioRequestId = typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
+  expectedAudio.set(messageId, audioRequestId)
   invalidAudio.delete(messageId)
+  readyAudio.delete(messageId)
+  autoPlayedAudio.delete(messageId)
   pendingAudio.add(messageId)
   failedAudio.delete(messageId)
   updateAudioActionStates()
@@ -739,11 +756,13 @@ async function requestSpeech(messageId: string, text: string): Promise<void> {
         threadId: threadId.value,
         sessionId: sessionId.value,
         messageId,
+        audioRequestId,
         text,
       }),
     })
   } catch (error) {
     if (!context() || generation !== audioGeneration || !audioEnabled.value
+      || expectedAudio.get(messageId) !== audioRequestId
       || invalidAudio.has(messageId) || !findMessage(messageId)) return
     console.error(error)
     pendingAudio.delete(messageId)

@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Services\Env;
 use App\Services\Settings;
 
+$transactionalDdl = Env::get('DATABASE_KIND') !== 'mysql';
+
 return [
     // Driver: sqlite, mysql, pgsql
     'driver' => Env::get('DATABASE_KIND'),
@@ -32,8 +34,8 @@ return [
             'migrations_paths' => [
                 'Migrations' => Settings::getAppRoot() . '/migrations',
             ],
-            'all_or_nothing' => true,
-            'transactional' => true,
+            'all_or_nothing' => $transactionalDdl,
+            'transactional' => $transactionalDdl,
             'check_database_platform' => true,
             'organize_migrations' => 'none',
             'connection' => null,

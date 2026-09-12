@@ -12,31 +12,40 @@ use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\RedisClient;
 use App\Services\Settings;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 final class GenerateAudioJobTest extends TestCase
 {
-    public function testPublishesRequestedAudioThroughSse(): void
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testPublishesRequestedAudioThroughSse(bool $fails): void
     {
         $audioService = $this->createMock(AudioServiceInterface::class);
         $audioService->method('isAvailable')->willReturn(true);
         $audioService->method('isAllowedVoice')->willReturn(true);
-        $audioService->expects(self::once())
+        $speech = $audioService->expects(self::exactly(2))
             ->method('speech')
-            ->with('Bonjour', 'voice-1', 'mp3')
-            ->willReturn(new SpeechResult('audio', 'audio/mpeg', 'mp3'));
+            ->with('Bonjour', 'voice-1', 'mp3');
+        if ($fails) {
+            $speech->willThrowException(new \RuntimeException('TTS failed'));
+        } else {
+            $speech->willReturn(new SpeechResult('audio', 'audio/mpeg', 'mp3'));
+        }
 
         $settings = new Settings([
             'redis' => ['prefix' => 'claire:'],
             'sse' => ['queue_ttl' => 60],
         ]);
         $redis = $this->createMock(RedisClient::class);
-        $redis->expects(self::once())->method('lpush')
+        $redis->expects(self::exactly(2))->method('lpush')
             ->with('claire:sse:chat:' . ChatStreamSubscriber::scope('user-1', 'session-1') . ':queue',
-                self::callback(static function (array $events): bool {
+                self::callback(static function (array $events) use ($fails): bool {
                     $event = json_decode($events[0], true, flags: JSON_THROW_ON_ERROR);
-                    return $event['payload']['sessionId'] === 'session-1';
+                    return $event['payload']['sessionId'] === 'session-1'
+                        && $event['payload']['audioRequestId'] === 'request-stable'
+                        && $event['event'] === ($fails ? 'chat.audio.error' : 'chat.audio.ready');
                 }))
             ->willReturn(1);
         $redis->method('expire')->willReturn(true);
@@ -50,7 +59,8 @@ final class GenerateAudioJobTest extends TestCase
             $this->createStub(LoggerInterface::class),
         );
 
-        new GenerateAudioJob($chatAudioPublisher)->handle([
+        $payload = [
+            'audioRequestId' => 'request-stable',
             'sessionId' => 'session-1',
             'threadId' => 'thread-1',
             'messageId' => 'message-1',
@@ -60,6 +70,29 @@ final class GenerateAudioJobTest extends TestCase
                 AudioServiceInterface::ENABLED_SESSION_KEY => true,
                 AudioServiceInterface::VOICE_SESSION_KEY => 'voice-1',
             ],
-        ]);
+        ];
+        $job = new GenerateAudioJob($chatAudioPublisher);
+        $job->handle($payload);
+        $job->handle(json_decode(json_encode($payload, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR));
+    }
+
+    public function testLegacyAndInvalidJobsFailWithoutGeneratingOrPublishingAudio(): void
+    {
+        $audio = $this->createMock(AudioServiceInterface::class);
+        $audio->expects(self::never())->method('speech');
+        $redis = $this->createMock(RedisClient::class);
+        $redis->expects(self::never())->method('lpush');
+        $settings = new Settings([]);
+        $job = new GenerateAudioJob(new ChatAudioPublisher($audio,
+            new ChatStreamPublisher($redis, new ChatStreamSubscriber($redis, $settings), $settings),
+            $this->createStub(LoggerInterface::class)));
+        foreach ([[], ['audioRequestId' => ''], ['audioRequestId' => []], ['audioRequestId' => "id\n"]] as $payload) {
+            try {
+                $job->handle($payload);
+                self::fail('Obsolete job was accepted');
+            } catch (\App\Services\Queue\NonRetryableJobException $exception) {
+                self::assertSame('Obsolete manual audio job: missing or invalid audioRequestId', $exception->getMessage());
+            }
+        }
     }
 }

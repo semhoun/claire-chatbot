@@ -39,6 +39,7 @@ final class ChatAudioPublisherTest extends TestCase
 
                 return $event['event'] === 'chat.audio.ready'
                     && $event['payload']['messageId'] === 'message-1'
+                    && $event['payload']['audioRequestId'] === 'request-1'
                     && $event['payload']['audioData'] === base64_encode('mp3 bytes');
             }),
         )->willReturn(1);
@@ -64,6 +65,34 @@ final class ChatAudioPublisherTest extends TestCase
             'message-1',
             '**Bonjour** Claire',
             $inMemorySession,
+            'request-1',
         );
+    }
+
+    public function testErrorPreservesTheRequestIdForEachAttempt(): void
+    {
+        $audio = $this->createMock(AudioServiceInterface::class);
+        $audio->method('isAvailable')->willReturn(true);
+        $audio->expects(self::exactly(2))->method('speech')->willThrowException(new \RuntimeException('TTS failed'));
+        $settings = new Settings(['redis' => ['prefix' => 'test:'], 'sse' => ['queue_ttl' => 60]]);
+        $events = [];
+        $redis = $this->createMock(RedisClient::class);
+        $redis->expects(self::exactly(2))->method('lpush')->willReturnCallback(
+            static function (string $key, array $messages) use (&$events): int {
+                $events[] = json_decode($messages[0], true, flags: JSON_THROW_ON_ERROR);
+                return 1;
+            },
+        );
+        $redis->method('expire')->willReturn(true);
+        $publisher = new ChatAudioPublisher($audio,
+            new ChatStreamPublisher($redis, new ChatStreamSubscriber($redis, $settings), $settings),
+            $this->createStub(LoggerInterface::class));
+        $session = new InMemorySession([AudioServiceInterface::ENABLED_SESSION_KEY => true]);
+        foreach (['request-old', 'request-new'] as $id) {
+            $publisher->publish(ChatStreamSubscriber::scope('user-1', 'session-1'),
+                'thread-1', 'message-1', 'Bonjour', $session, $id);
+        }
+        self::assertSame(['chat.audio.error', 'chat.audio.error'], array_column($events, 'event'));
+        self::assertSame(['request-old', 'request-new'], array_column(array_column($events, 'payload'), 'audioRequestId'));
     }
 }

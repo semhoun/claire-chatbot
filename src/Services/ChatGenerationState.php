@@ -19,7 +19,26 @@ final readonly class ChatGenerationState
             throw new \RuntimeException('Cannot read chat generation state');
         }
 
+        // HSET transitions preserve other fields. Only trust a generation-matched job link.
+        if (($state['messageId'] ?? '') === '' || ($state['jobMessageId'] ?? '') !== $state['messageId']) {
+            unset($state['jobId'], $state['queue'], $state['jobMessageId']);
+        }
+
         return $state;
+    }
+
+    /** @return array<string, string|null> */
+    public function diagnostic(string $userId, string $threadId): array
+    {
+        $state = $this->get($userId, $threadId);
+        // Explicit whitelist: never expose response bodies, errors or session fields.
+        return [
+            'status' => $state['status'] ?? 'missing',
+            'attempted' => $state['attempted'] ?? 'unknown',
+            'messageId' => $state['messageId'] ?? null,
+            'jobId' => $state['jobId'] ?? null,
+            'queue' => $state['queue'] ?? null,
+        ];
     }
 
     /** @return array{responding: bool, activeMessageId: ?string} */

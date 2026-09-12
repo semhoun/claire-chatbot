@@ -19,6 +19,8 @@ use RuntimeException;
 
 final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
 {
+    public const string OUTBOX_QUEUE_PREFIX = 'sql-outbox:';
+
     public function __construct(
         private QueueRedisConnection $queueRedisConnection,
         private Settings $settings,
@@ -91,7 +93,7 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
         try {
             $result = $this->queueRedisConnection->evaluate(QueueScripts::DISPATCH, [
                 $this->queueKey($queue), $this->jobKey($jobId),
-                $jobId, $queue, $jobClass, $this->serialize($payload), $deduplicationKey, $stateKey, $messageId,
+                $jobId, $queue, $jobClass, $this->serialize($payload), $deduplicationKey, $stateKey, $messageId, '',
             ], 2);
             if ($result === 'CHAT_BUSY') {
                 throw new ChatGenerationBusyException('Chat generation is busy or deleted');
@@ -131,6 +133,19 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
 
             usleep(100_000);
         } while (true);
+    }
+
+    /** Internal transport: caller holds the SQL outbox lock and authorizes nonterminal publication.
+     * Never use this path for atomic Web dispatch.
+     * @param array<string, mixed> $payload
+     */
+    public function dispatchWithId(string $id, string $jobClass, array $payload, string $queue): string
+    {
+        $queue = self::OUTBOX_QUEUE_PREFIX . $queue;
+        return (string) $this->queueRedisConnection->evaluate(QueueScripts::DISPATCH, [
+            $this->queueKey($queue), $this->jobKey($id), $this->queueKey($queue) . ':dead',
+            $id, $queue, $jobClass, $this->serialize($payload), '', '', '', $id,
+        ], 3);
     }
 
     public function delete(QueueMessage $queueMessage): void

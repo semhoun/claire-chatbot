@@ -56,6 +56,10 @@ final class ResourceTokenSecurityTest extends TestCase
     public static function requests(): iterable
     {
         yield 'file get' => ['file', 'GET', '/files/serve/file-1', [], false, 200];
+        yield 'generated file encoded path' => ['file', 'GET', '/files/serve/%40%40GENERATED%40%40artifact%40%40',
+            [], false, 200, '', '@@GENERATED@@artifact@@'];
+        yield 'generated file noncanonical path' => ['file', 'GET', '/files/serve/@@GENERATED@@artifact@@',
+            [], false, 403, '', '@@GENERATED@@artifact@@'];
         yield 'file head' => ['file', 'HEAD', '/files/serve/file-1', [], false, 200];
         yield 'prefixed file' => ['file', 'GET', '/claire/files/serve/file-1', [], false, 200, '/claire'];
         yield 'wrong deployment prefix' => ['file', 'GET', '/other/files/serve/file-1', [], false, 403, '/claire'];
@@ -99,13 +103,14 @@ final class ResourceTokenSecurityTest extends TestCase
 
     #[DataProvider('requests')]
     public function testMiddlewareConfinement(
-        string $type, string $method, string $path, array $query, bool $header, int $status, string $basePath = '',
+        string $type, string $method, string $path, array $query, bool $header, int $status,
+        string $basePath = '', string $fileId = 'file-1',
     ): void {
         $settings = $this->settings();
         $tokens = new JwtTokenService($settings);
         $session = $this->session();
         $token = match ($type) {
-            'file' => $tokens->generateFileToken($session, 'file-1'),
+            'file' => $tokens->generateFileToken($session, $fileId),
             'stream' => $tokens->generateStreamToken($session, 'thread-1', 'tab-1'),
             'mini' => $tokens->generateMiniToken($session),
             'session' => $tokens->generateSessionToken($session),

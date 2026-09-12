@@ -290,7 +290,12 @@ final readonly class HistoryController
             $threadId,
             function () use ($userChatHistory, $userId): array {
                 $userChatHistory?->refresh();
-                return ['html' => $this->chatHtmlRenderer->messages($userChatHistory?->getFormattedMessages(), $userId)];
+                $messages = $userChatHistory?->getFormattedMessages() ?? [];
+                return [
+                    'html' => $this->chatHtmlRenderer->messages($messages, $userId),
+                    'audioRequestIds' => array_column(array_filter($messages,
+                        static fn (array $message): bool => isset($message['audioRequestId'])), 'audioRequestId', 'id'),
+                ];
             },
         );
         $messagesHtml = $snapshot['html'];

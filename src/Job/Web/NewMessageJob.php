@@ -58,6 +58,8 @@ final class NewMessageJob implements QueueDoer
 
     private string $messageId = '';
 
+    private ?string $autoAudioRequestId = null;
+
     private string $userId = '';
 
     private InMemorySession $inMemorySession;
@@ -98,6 +100,7 @@ final class NewMessageJob implements QueueDoer
         $this->threadId = '';
         $this->sessionId = '';
         $this->messageId = '';
+        $this->autoAudioRequestId = null;
         $this->userId = '';
         unset($this->inMemorySession);
         $this->initContext($payload);
@@ -243,23 +246,25 @@ final class NewMessageJob implements QueueDoer
             throw new \RuntimeException('Persistent chat history is required for Web messages');
         }
 
-        $chatHistory->identifyLastAssistantMessage($this->messageId);
+        $this->autoAudioRequestId = $this->inMemorySession->get(
+            AudioServiceInterface::AUTO_GENERATE_SESSION_KEY,
+            false,
+        ) === true ? 'auto-' . $this->messageId : null;
+        $chatHistory->identifyLastAssistantMessage($this->messageId, $this->autoAudioRequestId);
 
         return $responseText;
     }
 
     private function publishAudio(string $responseText): void
     {
-        if ($this->inMemorySession->get(
-            AudioServiceInterface::AUTO_GENERATE_SESSION_KEY,
-            false,
-        ) === true) {
+        if ($this->autoAudioRequestId !== null) {
             $this->chatAudioPublisher->publish(
                 $this->sessionId,
                 $this->threadId,
                 $this->messageId,
                 $responseText,
                 $this->inMemorySession,
+                $this->autoAudioRequestId,
             );
         }
     }
@@ -349,6 +354,7 @@ final class NewMessageJob implements QueueDoer
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
+            'audioRequestId' => $this->autoAudioRequestId,
         ]);
     }
 

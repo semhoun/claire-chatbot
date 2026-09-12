@@ -94,6 +94,7 @@ final class NewMessageJobTest extends TestCase
             $handler,
             static function (array $event) use (&$summarySeen, &$doneSeen, &$publisher, &$pdo): void {
                 if ($event['event'] === 'chat.assistant.done') {
+                    self::assertSame('auto-message-completion-test', $event['payload']['audioRequestId']);
                     self::assertTrue($summarySeen);
                     self::assertFalse($publisher->generationState()->snapshot('user-1', 'completion-test')['responding']);
                     $lock = new ChatThreadLock(new \PDO('sqlite::memory:'), 'user-1', 'completion-test');
@@ -101,6 +102,8 @@ final class NewMessageJobTest extends TestCase
                     $doneSeen = true;
                 }
                 if ($event['event'] === 'chat.audio.ready') {
+                    self::assertTrue($doneSeen);
+                    self::assertSame('auto-message-completion-test', $event['payload']['audioRequestId']);
                     $history = new UserChatHistory(new \App\Services\Session\InMemorySession([
                         Auth::USERID => 'user-1',
                     ]), $pdo, threadId: 'completion-test', createIfMissing: false);
@@ -118,7 +121,9 @@ final class NewMessageJobTest extends TestCase
                 }
                 $display = json_decode($pdo->query('SELECT display_messages FROM chat_history')->fetchColumn(),
                     true, flags: JSON_THROW_ON_ERROR);
-                self::assertSame('message-completion-test', $display[1]['claire_message_id']);
+                    self::assertSame('message-completion-test', $display[1]['claire_message_id']);
+                    self::assertSame('auto-message-completion-test',
+                        $display[1][UserChatHistory::AUDIO_REQUEST_ID_METADATA]);
                 $summarySeen = true;
             },
             $audio,
@@ -168,6 +173,39 @@ final class NewMessageJobTest extends TestCase
         }
     }
 
+    public function testAutoAudioDecisionIsReusedAfterIdentityPersistence(): void
+    {
+        $handler = $this->createStub(AgentHandler::class);
+        $handler->method('events')->willReturnCallback(static function (): \Generator {
+            yield from [];
+        });
+        $handler->method('getMessage')->willReturn(new AssistantMessage('Answer'));
+        $audio = $this->createMock(AudioServiceInterface::class);
+        $audio->method('isAvailable')->willReturn(true);
+        $audio->expects(self::once())->method('speech')
+            ->willReturn(new \App\Services\Audio\SpeechResult('audio', 'audio/mpeg', 'mp3'));
+        $events = [];
+        $job = null;
+        [$job] = $this->job($handler,
+            static function (array $event) use (&$events, &$job): void {
+                if ($event['event'] === 'chat.assistant.done') {
+                    new \ReflectionProperty($job, 'inMemorySession')->getValue($job)
+                        ->set(AudioServiceInterface::AUTO_GENERATE_SESSION_KEY, false);
+                }
+                if (in_array($event['event'], ['chat.assistant.done', 'chat.audio.ready'], true)) {
+                    $events[$event['event']] = $event['payload']['audioRequestId'];
+                }
+            }, audio: $audio);
+        $payload = $this->payload('stable-auto');
+        $payload['session'][AudioServiceInterface::AUTO_GENERATE_SESSION_KEY] = true;
+        $payload['session'][AudioServiceInterface::ENABLED_SESSION_KEY] = true;
+        $job->handle($payload);
+        self::assertSame([
+            'chat.assistant.done' => 'auto-message-stable-auto',
+            'chat.audio.ready' => 'auto-message-stable-auto',
+        ], $events);
+    }
+
     public function testStartPrecedesEveryUpdateIncludingAStreamWithoutChunks(): void
     {
         foreach ([true, false] as $withChunks) {
@@ -186,6 +224,8 @@ final class NewMessageJobTest extends TestCase
             $names = array_column($events, 'event');
             self::assertSame('chat.assistant.start', $names[0]);
             self::assertSame('chat.assistant.done', $names[count($names) - 1]);
+            self::assertArrayHasKey('audioRequestId', $events[count($events) - 1]['payload']);
+            self::assertNull($events[count($events) - 1]['payload']['audioRequestId']);
             self::assertContains('chat.assistant.update', $names);
             foreach ($events as $event) {
                 self::assertSame('message-order-test', $event['payload']['messageId']);
@@ -209,7 +249,7 @@ final class NewMessageJobTest extends TestCase
         $job->handle($payload); // A redelivery must not enter the agent again.
 
         foreach (['streamedText' => 'LEAK', 'toolsCall' => ['old' => []], 'nbPublishedChunks' => 55,
-            'attachments' => [['content' => 'old']]] as $property => $value) {
+            'attachments' => [['content' => 'old']], 'autoAudioRequestId' => 'auto-previous'] as $property => $value) {
             new \ReflectionProperty($job, $property)->setValue($job, $value);
         }
         $job->handle($this->payload('second'));
@@ -217,6 +257,7 @@ final class NewMessageJobTest extends TestCase
         self::assertSame([], new \ReflectionProperty($job, 'toolsCall')->getValue($job));
         self::assertSame(1, new \ReflectionProperty($job, 'nbPublishedChunks')->getValue($job));
         self::assertNull(new \ReflectionProperty($job, 'attachments')->getValue($job));
+        self::assertNull(new \ReflectionProperty($job, 'autoAudioRequestId')->getValue($job));
         self::assertSame(['responding' => false, 'activeMessageId' => null],
             $publisher->generationState()->snapshot('user-1', 'second'));
     }

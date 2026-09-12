@@ -332,7 +332,8 @@ final class RedisQueueBackendTest extends TestCase
         $id = $this->backend->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'telegram');
         $key = $this->generationKey();
         $before = $this->redis->hGetAll($key);
-        self::assertSame(['messageId' => 'msg-test', 'status' => 'queued', 'attempted' => '0'], $before);
+        self::assertSame(['messageId' => 'msg-test', 'status' => 'queued', 'attempted' => '0',
+            'jobId' => $id, 'queue' => 'telegram', 'jobMessageId' => 'msg-test'], $before);
         try {
             $payload['messageId'] = 'msg-other';
             $this->backend->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'telegram');
@@ -490,8 +491,7 @@ final class RedisQueueBackendTest extends TestCase
             self::fail('Web queued state must block Telegram');
         } catch (\App\Services\ChatGenerationBusyException) {
             self::assertSame(0, $calls);
-            $key = $this->redis->keys($this->prefix . 'telegram:generation:*')[0];
-            $record = json_decode($this->redis->get($key), true, flags: JSON_THROW_ON_ERROR);
+            $record = $this->telegramJournal()->load(\App\Services\TelegramJournal::id('test-bot', 'update:43'));
             self::assertFalse($record['attempted']);
         }
         $state->set('user-test', 'thread-test', 'web-message', 'done', true);
@@ -540,8 +540,8 @@ final class RedisQueueBackendTest extends TestCase
             $generation->run('user-test', 'thread-test', 'update:101', $generate, $deliver);
             self::fail('Delivery error must propagate');
         } catch (\RuntimeException) {
-            $key = $this->redis->keys($this->prefix . 'telegram:generation:*')[0];
-            $record = json_decode($this->redis->get($key), true, flags: JSON_THROW_ON_ERROR);
+            $key = \App\Services\TelegramJournal::id('test-bot', 'update:101');
+            $record = $this->telegramJournal()->load($key);
             self::assertSame('confirmed', $record['deliveries']['text:0']['status']);
             self::assertSame('uncertain', $record['deliveries']['voice:0']['status']);
             self::assertStringContainsString('Ambiguous Telegram timeout', $record['deliveries']['voice:0']['lastError']);
@@ -551,7 +551,7 @@ final class RedisQueueBackendTest extends TestCase
         self::assertSame(1, $generated);
         self::assertSame(1, $textSends);
         self::assertSame(2, $voiceSends);
-        $record = json_decode($this->redis->get($key), true, flags: JSON_THROW_ON_ERROR);
+        $record = $this->telegramJournal()->load($key);
         self::assertSame('thread-test', $record['threadId']);
         self::assertTrue($record['delivered']);
         self::assertSame('confirmed', $record['deliveries']['voice:0']['status']);
@@ -559,14 +559,28 @@ final class RedisQueueBackendTest extends TestCase
         self::assertArrayHasKey('lastError', $record['deliveries']['voice:0']);
     }
 
+    private ?\Doctrine\DBAL\Connection $telegramConnection = null;
+
+    private function telegramJournal(): \App\Services\TelegramJournal
+    {
+        if ($this->telegramConnection === null) {
+            $this->telegramConnection = \Doctrine\DBAL\DriverManager::getConnection([
+                'driver' => 'pdo_sqlite', 'memory' => true,
+            ]);
+            require_once Settings::getAppRoot() . '/test/Support/TelegramSqlSchema.php';
+            \App\Test\Support\TelegramSqlSchema::create($this->telegramConnection, false);
+        }
+        return new \App\Services\TelegramJournal($this->telegramConnection);
+    }
+
     private function telegramGeneration(): array
     {
         $redis = new \App\Services\RedisClient();
         $redis->connect('127.0.0.1', (int) getenv('QUEUE_TEST_REDIS_PORT'), 2);
         $state = new \App\Services\ChatGenerationState($redis, $this->settings);
-        $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $this->telegramJournal();
         return [new \App\Services\TelegramGeneration(
-            new QueueRedisConnection($this->settings), $this->settings, $connection, $state,
+            $this->settings, $this->telegramConnection, $state,
         ), $state];
     }
 

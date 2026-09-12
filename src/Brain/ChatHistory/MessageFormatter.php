@@ -74,6 +74,11 @@ final class MessageFormatter
             && preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $messageId) === 1) {
             // Tool groups inherit the identity of their final assistant, not the tool call.
             $formattedMessage['id'] = $messageId;
+            $audioRequestId = $message->getMetadata(UserChatHistory::AUDIO_REQUEST_ID_METADATA);
+            if (is_string($audioRequestId)
+                && preg_match(UserChatHistory::AUDIO_REQUEST_ID_PATTERN, $audioRequestId) === 1) {
+                $formattedMessage['audioRequestId'] = $audioRequestId;
+            }
         }
 
         return $formattedMessage;

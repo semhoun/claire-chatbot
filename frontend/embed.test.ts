@@ -251,8 +251,9 @@ describe('embed public API', () => {
       await flushPromises()
       const source = FakeEventSource.instances[0]
       source.emit('chat.snapshot', { html: ['a', 'b'].map(id => `<article id="claire-${id}" class="claire-message claire-message--received"><span class="claire-message__text">Hello</span><span class="claire-message__meta"></span></article>`).join('') })
-      source.emit('chat.audio.ready', { messageId: 'a', audioData: btoa('mp3') })
-      source.emit('chat.audio.ready', { messageId: 'b', audioData: btoa('mp3') })
+      source.emit('chat.snapshot', { audioRequestIds: { a: 'auto-a', b: 'auto-b' }, html: wrapper.get('#claire-a').element.outerHTML + wrapper.get('#claire-b').element.outerHTML })
+      source.emit('chat.audio.ready', { messageId: 'a', audioRequestId: 'auto-a', audioData: btoa('mp3') })
+      source.emit('chat.audio.ready', { messageId: 'b', audioRequestId: 'auto-b', audioData: btoa('mp3') })
       reject(new DOMException('old playback', 'AbortError'))
       oldCallback(new Error('old decode'))
       await flushPromises()
@@ -464,6 +465,138 @@ describe('embed public API', () => {
       expect(wrapper.get('#claire-chat-stream').attributes('data-thread-id')).toBe('winner')
       expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('winner draft')
       expect(wrapper.text()).not.toContain('obsolete exchange')
+    } finally { wrapper.unmount() }
+  })
+
+  it.each([['retry', true], ['disable', true], ['retry', false]] as const)(
+    'correlates two audio generations across %s and stable snapshots (randomUUID: %s)', async (action, randomUuid) => {
+    if (!randomUuid) vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) })
+    const requests: Array<{ id: string; reject: (error: Error) => void }> = []
+    const play = vi.spyOn(BrowserAudio.prototype, 'playReady').mockResolvedValue()
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init: RequestInit) => {
+      const path = new URL(input).pathname
+      if (path === '/auth/resource-token') return new Response(capability())
+      if (path === '/brain/audio') return new Promise<Response>((_, reject) => {
+        requests.push({ id: (init.body as URLSearchParams).get('audioRequestId')!, reject })
+      })
+      return new Response('0')
+    }))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), baseUrl: 'https://claire.test', audioEnabled: true, audioAvailable: true } } })
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances[0]
+      const html = '<article id="claire-a" class="claire-message claire-message--received"><span class="claire-message__text">Hello</span><span class="claire-message__meta"></span></article>'
+      source.emit('chat.snapshot', { html })
+      await wrapper.get('[data-audio-listen]').trigger('click')
+      await flushPromises()
+      const a = requests[0].id
+      expect(a).toMatch(randomUuid
+        ? /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i
+        : /^[\da-f]{32}$/i)
+      if (action === 'retry') source.emit('chat.audio.error', { messageId: 'a', audioRequestId: a })
+      else {
+        await wrapper.get('[aria-label="Préférences"]').trigger('click')
+        const toggle = wrapper.findAll('input[type="checkbox"]').find(input => input.element.parentElement?.textContent?.trim() === 'Audio')!
+        await toggle.setValue(false)
+        await toggle.setValue(true)
+        await flushPromises()
+        source.emit('chat.snapshot', { html, audioRequestIds: { a: 'auto-a' } })
+        source.emit('chat.audio.ready', { messageId: 'a', audioRequestId: 'auto-a', audioData: btoa('obsolete') })
+        expect(wrapper.get('[data-audio-listen]').attributes('title')).toBe('Générer l’audio')
+        expect(play).not.toHaveBeenCalled()
+      }
+      await wrapper.get('[data-audio-listen]').trigger('click')
+      await flushPromises()
+      const b = requests[1].id
+      expect(b).not.toBe(a)
+      source.emit('chat.snapshot', { html, audioRequestIds: { a: 'auto-a' } })
+      source.emit('chat.assistant.start', { messageId: 'a' })
+      source.emit('chat.assistant.done', { messageId: 'a', audioRequestId: 'auto-a' })
+      for (const audioRequestId of [undefined, a, 'auto-a']) {
+        source.emit('chat.audio.ready', { messageId: 'a', audioRequestId, audioData: 'invalid base64!' })
+        source.emit('chat.audio.error', { messageId: 'a', audioRequestId })
+      }
+      requests[0].reject(new Error('obsolete HTTP error'))
+      await flushPromises()
+      expect(wrapper.get('[data-audio-listen]').attributes('title')).toBe('Génération audio en cours')
+      expect(wrapper.text()).not.toContain('La génération audio')
+      expect(play).not.toHaveBeenCalled()
+      source.emit('chat.audio.ready', { messageId: 'a', audioRequestId: b, audioData: btoa('new') })
+      await flushPromises()
+      const cached = play.mock.calls[0][0]
+      source.emit('chat.audio.ready', { messageId: 'a', audioRequestId: a, audioData: btoa('old') })
+      source.emit('chat.audio.error', { messageId: 'a', audioRequestId: a })
+      source.emit('chat.snapshot', { html })
+      await wrapper.get('[data-audio-listen]').trigger('click')
+      await wrapper.get('[data-audio-listen]').trigger('click')
+      expect(play.mock.calls[1][0]).toBe(cached)
+      source.emit('chat.snapshot', { html: '' })
+      source.emit('chat.snapshot', { html, audioRequestIds: { a: 'auto-a' } })
+      source.emit('chat.audio.ready', { messageId: 'a', audioRequestId: b, audioData: btoa('late') })
+      expect(wrapper.get('[data-audio-listen]').attributes('title')).toBe('Générer l’audio')
+      expect(play).toHaveBeenCalledTimes(2)
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['done', 'snapshot'] as const)('waits for explicit auto audio announcement through %s', async (announcement) => {
+    const play = vi.spyOn(BrowserAudio.prototype, 'playReady').mockResolvedValue()
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
+    )))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), baseUrl: 'https://claire.test', audioEnabled: true, audioAutoGenerate: true } } })
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances[0]
+      const html = '<article id="claire-a" class="claire-message claire-message--received"><span class="claire-message__text">Hello</span><span class="claire-message__meta"></span></article>'
+      const ready = { messageId: 'a', audioRequestId: 'auto-a', audioData: btoa('mp3') }
+      source.emit('chat.snapshot', { html })
+      source.emit('chat.audio.ready', ready)
+      expect(play).not.toHaveBeenCalled()
+      expect(wrapper.get('[data-audio-listen]').attributes('title')).toBe('Générer l’audio')
+      if (announcement === 'done') {
+        source.emit('chat.assistant.start', { messageId: 'a' })
+        source.emit('chat.assistant.done', { messageId: 'a', audioRequestId: 'auto-a' })
+      } else source.emit('chat.snapshot', { html, audioRequestIds: { a: 'auto-a' } })
+      expect(wrapper.get('[data-audio-listen]').attributes('title')).toBe(
+        announcement === 'done' ? 'Génération audio en cours' : 'Générer l’audio',
+      )
+      source.emit('chat.audio.ready', ready)
+      source.emit('chat.snapshot', { html, audioRequestIds: { a: 'auto-a' } })
+      source.emit('chat.audio.ready', ready)
+      await flushPromises()
+      expect(play).toHaveBeenCalledOnce()
+    } finally { wrapper.unmount() }
+  })
+
+  it('restores an auto audio expectation in a new component from snapshot metadata only', async () => {
+    const play = vi.spyOn(BrowserAudio.prototype, 'playReady').mockResolvedValue()
+    const fetchMock = vi.fn(async (input: string | URL) => new Response(
+      new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    const config = { ...bootstrap(), baseUrl: 'https://claire.test', audioEnabled: true, audioAutoGenerate: true }
+    const previous = mount(ClaireApp, { props: { config } })
+    await flushPromises()
+    previous.unmount()
+    const wrapper = mount(ClaireApp, { props: { config } })
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances.at(-1)!
+      source.emit('chat.snapshot', {
+        threadId: config.threadId,
+        responding: false,
+        html: '<article id="claire-a" class="claire-message claire-message--received"><span class="claire-message__text">Hello</span><span class="claire-message__meta"></span></article>',
+        audioRequestIds: { a: 'auto-a' },
+      })
+      await flushPromises()
+      expect(wrapper.get('[data-audio-listen]').attributes('title')).toBe('Générer l’audio')
+      expect(wrapper.get<HTMLButtonElement>('[data-audio-listen]').element.disabled).toBe(false)
+      expect(play).not.toHaveBeenCalled()
+      expect(fetchMock.mock.calls.some(([input]) => new URL(input).pathname === '/brain/audio')).toBe(false)
+      source.emit('chat.audio.ready', { messageId: 'a', audioRequestId: 'auto-a', audioData: btoa('mp3') })
+      await flushPromises()
+      expect(play).toHaveBeenCalledOnce()
+      expect(wrapper.get('[data-audio-listen]').attributes('title')).toBe('Arrêter la lecture')
     } finally { wrapper.unmount() }
   })
 
@@ -821,7 +954,7 @@ describe('embed public API', () => {
     config.audioVoices = [{ id: 'fr_marie_neutral', label: 'Marie — Neutre' }]
     const html = `<div class="claire-embed-bootstrap" data-base-url="https://claire.test" data-bootstrap='${JSON.stringify(config)}'></div>`
     const miniToken = jwt('minitoken')
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
       const url = String(input)
       if (url.includes('/embed')) {
         return new Response(html, {
@@ -902,6 +1035,8 @@ describe('embed public API', () => {
     expect(pendingButton?.title).toBe('Génération audio en cours')
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/brain/audio')))
       .toBe(true)
+    const audioRequest = fetchMock.mock.calls.find(([input]) => String(input).includes('/brain/audio'))!
+    const audioRequestId = ((audioRequest[1] as RequestInit).body as URLSearchParams).get('audioRequestId')
 
     FakeEventSource.instances[0].emit('chat.assistant.done', {
       threadId: 'thread-1',
@@ -920,6 +1055,7 @@ describe('embed public API', () => {
     FakeEventSource.instances[0].emit('chat.audio.ready', {
       threadId: 'thread-1',
       messageId: 'assistant-1',
+      audioRequestId,
       mimeType: 'audio/mpeg',
       audioData: btoa('mp3'),
     })
@@ -938,7 +1074,7 @@ describe('embed public API', () => {
     button = element?.shadowRoot?.querySelector<HTMLButtonElement>('#claire-assistant-1 [data-audio-listen]')
     expect(button?.title).toBe('Arrêter la lecture')
     FakeEventSource.instances[0].emit('chat.audio.ready', {
-      threadId: 'thread-1', messageId: 'assistant-1', mimeType: 'audio/mpeg', audioData: btoa('mp3'),
+      threadId: 'thread-1', messageId: 'assistant-1', audioRequestId, mimeType: 'audio/mpeg', audioData: btoa('mp3'),
     })
     await Promise.resolve()
     expect(playCount).toBe(1)

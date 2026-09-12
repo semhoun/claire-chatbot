@@ -5,14 +5,12 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Services\Queue\NonRetryableJobException;
-use App\Services\Queue\QueueRedisConnection;
 use Doctrine\DBAL\Connection;
 
 /** Durable per-update response journal. No TTL: ambiguous tool attempts must never become replayable. */
 final readonly class TelegramGeneration
 {
     public function __construct(
-        private QueueRedisConnection $queueRedisConnection,
         private Settings $settings,
         private Connection $connection,
         private ChatGenerationState $chatGenerationState,
@@ -28,25 +26,46 @@ final readonly class TelegramGeneration
             throw new NonRetryableJobException('Stable Telegram generation ID is required');
         }
 
-        $id = hash('sha256', json_encode([
-            explode(':', (string) $this->settings->get('telegram.bot_token'), 2)[0], $generationId,
-        ], JSON_THROW_ON_ERROR));
-        $key = $this->settings->get('redis.prefix') . 'telegram:generation:' . $id;
-        $updateLock = new ChatThreadLock($this->connection->getNativeConnection(), $userId, 'telegram-update:' . $id);
+        $botId = explode(':', (string) $this->settings->get('telegram.bot_token'), 2)[0];
+        $id = TelegramJournal::id($botId, $generationId);
+        $telegramJournal = new TelegramJournal($this->connection);
+        $updateLock = new ChatThreadLock($this->connection->getNativeConnection(), 'telegram-journal', $id);
         try {
-            $encoded = $this->queueRedisConnection->evaluate("return redis.call('GET', KEYS[1]) or ''", [$key], 1);
-            $record = is_string($encoded) && $encoded !== '' ? json_decode($encoded, true, flags: JSON_THROW_ON_ERROR) : [
+            $record = $telegramJournal->load($id) ?? [
                 'threadId' => $threadId, 'attempted' => false,
+                'userId' => $userId, 'updateId' => $generationId,
+                'botId' => $botId,
             ];
-            $threadId = $record['threadId'];
+            if ($record['userId'] !== $userId) {
+                throw new NonRetryableJobException('Telegram journal belongs to another user');
+            }
+
             if ($record['delivered'] ?? false) {
                 return;
             }
 
-            $this->save($key, $record);
+            $telegramJournal->save($id, $record);
+            if ($record['compacted']) {
+                throw new NonRetryableJobException('Telegram journal is compacted');
+            }
+
+            $threadId = $record['threadId'];
             $lock = new ChatThreadLock($this->connection->getNativeConnection(), $userId, $threadId);
             try {
-                $previous = $this->chatGenerationState->get($userId, $threadId);
+                try {
+                    $previous = $this->chatGenerationState->get($userId, $threadId);
+                } catch (\Throwable $error) {
+                    if (! array_key_exists('response', $record)) {
+                        if ($record['attempted']) {
+                            throw new NonRetryableJobException('Ambiguous Telegram agent attempt', 0, $error);
+                        }
+
+                        throw new ChatGenerationBusyException('Chat state is unavailable', 0, $error);
+                    }
+
+                    $previous = [];
+                }
+
                 if (($previous['status'] ?? '') === 'deleted') {
                     throw new NonRetryableJobException('Telegram thread was deleted');
                 }
@@ -54,87 +73,86 @@ final readonly class TelegramGeneration
                 if (! array_key_exists('response', $record)) {
                     if ($record['attempted']) {
                         if (($previous['messageId'] ?? '') === $id) {
-                            $this->chatGenerationState->set($userId, $threadId, $id, 'error', true);
+                            $this->project($userId, $threadId, $id, 'error');
                         }
 
                         throw new NonRetryableJobException('Ambiguous Telegram agent attempt; tools must not be replayed');
                     }
 
-                    if (in_array($previous['status'] ?? '', ['queued', 'running'], true)) {
+                    if (in_array($previous['status'] ?? '', ['queued', 'running'], true)
+                        && ($previous['messageId'] ?? '') !== $id) {
                         throw new ChatGenerationBusyException('Chat generation is busy');
                     }
 
+                    // Redis availability is checked before committing the irreversible SQL fence.
+                    try {
+                        $this->chatGenerationState->set($userId, $threadId, $id, 'running', false);
+                    } catch (\Throwable $error) {
+                        throw new ChatGenerationBusyException('Cannot project Telegram generation', 0, $error);
+                    }
+
                     $record['attempted'] = true;
-                    // A single Lua persists both fences before any agent/history access.
-                    $this->save($key, $record, $userId, $threadId, $id, 'running');
+                    $telegramJournal->save($id, $record);
+                    $this->project($userId, $threadId, $id, 'running');
                     try {
                         $record['response'] = $generate($threadId);
-                        $this->save($key, $record, $userId, $threadId, $id, 'done');
                     } catch (\Throwable $error) {
-                        $this->chatGenerationState->set($userId, $threadId, $id, 'error', true);
+                        $this->project($userId, $threadId, $id, 'error');
                         throw new NonRetryableJobException('Telegram attempt failed after agent entry', 0, $error);
                     }
+
+                    // A lost commit acknowledgement must be resolved from SQL on retry.
+                    try {
+                        $telegramJournal->save($id, $record);
+                    } catch (\Throwable $error) {
+                        $this->project($userId, $threadId, $id, 'error');
+                        throw $error;
+                    }
                 }
+
+                $this->project($userId, $threadId, $id, 'done');
             } finally {
                 $lock->release();
             }
 
-            $checkpoint = function (string $step, callable $operation) use ($key, &$record): void {
+            $checkpoint = function (string $step, callable $operation) use ($id, $telegramJournal, &$record): void {
                 if (($record['deliveries'][$step]['status'] ?? '') === 'confirmed') {
                     return;
                 }
 
                 $record['deliveries'][$step]['attempts'] = ($record['deliveries'][$step]['attempts'] ?? 0) + 1;
                 $record['deliveries'][$step]['status'] = 'sending';
-                $this->save($key, $record);
+                $telegramJournal->save($id, $record);
                 try {
                     $operation();
                 } catch (\Throwable $throwable) {
                     // A transport failure does not prove that Telegram rejected the send.
                     $record['deliveries'][$step]['status'] = 'uncertain';
                     $record['deliveries'][$step]['lastError'] = $throwable::class . ': ' . $throwable->getMessage();
-                    $this->save($key, $record);
+                    $telegramJournal->save($id, $record);
                     throw $throwable;
                 }
 
                 $record['deliveries'][$step]['status'] = 'confirmed';
-                $this->save($key, $record);
+                $telegramJournal->save($id, $record);
             };
             $deliver($record['response'], $checkpoint);
             $record['delivered'] = true;
-            $this->save($key, $record);
+            $telegramJournal->save($id, $record);
         } finally {
             $updateLock->release();
         }
     }
 
-    /** @param array<string, mixed> $record */
-    private function save(
-        string $key,
-        array $record,
-        string $userId = '',
-        string $threadId = '',
-        string $messageId = '',
-        string $status = '',
-    ): void {
-        $script = <<<'LUA'
-            local journalType = redis.call('TYPE', KEYS[1]).ok
-            if journalType ~= 'none' and journalType ~= 'string' then
-                return redis.error_reply('Invalid Telegram journal type')
-            end
-            if ARGV[2] ~= '' then
-                local stateType = redis.call('TYPE', KEYS[2]).ok
-                if stateType ~= 'none' and stateType ~= 'hash' then
-                    return redis.error_reply('Invalid generation state type')
-                end
-                redis.call('HSET', KEYS[2], 'messageId', ARGV[2], 'status', ARGV[3], 'attempted', '1')
-            end
-            redis.call('SET', KEYS[1], ARGV[1])
-            return 1
-            LUA;
-        $this->queueRedisConnection->evaluate($script, [
-            $key, $this->chatGenerationState->key($userId, $threadId),
-            json_encode($record, JSON_THROW_ON_ERROR), $messageId, $status,
-        ], 2);
+    private function project(string $userId, string $threadId, string $id, string $status): void
+    {
+        try {
+            $previous = $this->chatGenerationState->get($userId, $threadId);
+            if (($previous['messageId'] ?? '') === $id) {
+                $this->chatGenerationState->set($userId, $threadId, $id, $status, true);
+            }
+        } catch (\Throwable) {
+            // A disposable UI projection cannot invalidate an already committed SQL result.
+        }
     }
 }
