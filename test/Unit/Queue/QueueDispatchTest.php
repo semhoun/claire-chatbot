@@ -12,6 +12,23 @@ use RuntimeException;
 
 final class QueueDispatchTest extends TestCase
 {
+    public function testDependencyAliasesResolveToRedisBackend(): void
+    {
+        $builder = new \DI\ContainerBuilder();
+        $builder->addDefinitions(Settings::getAppRoot() . '/config/dependencies.php');
+        $builder->addDefinitions([
+            Settings::class => new Settings([]),
+            \Doctrine\DBAL\Connection::class => $this->createStub(\Doctrine\DBAL\Connection::class),
+        ]);
+        $container = $builder->build();
+        $backend = $container->get(\App\Services\Queue\QueueBackendInterface::class);
+
+        self::assertInstanceOf(RedisQueueBackend::class, $backend);
+        self::assertInstanceOf(\App\Services\Queue\LeasedQueueBackendInterface::class, $backend);
+        self::assertSame($container->get(RedisQueueBackend::class), $backend);
+        self::assertSame($backend, $container->get(\App\Services\Queue\QueueDispatcherInterface::class));
+    }
+
     public function testMalformedWebPayloadNeverTouchesRedisOrSql(): void
     {
         $redis = $this->createMock(QueueRedisConnection::class);

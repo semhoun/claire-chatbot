@@ -50,17 +50,15 @@ Completion dates use DB time and are never inferred from history. Permanent SQL 
 retain identity, dates and attempted/delivered barriers without TTL; only bodies become NULL.
 The same global telegram-journal/id lock as execution and revision CAS protect the update.
 Active, failed or ambiguous records retain their bodies for recovery and forensic inspection.
-Retained outbox rows do NOT block delivered journal compaction: runtime checks delivered
-before accessing response/checkpoints, so even a pending intent cannot replay a tombstone.
+Retained Redis jobs do NOT block delivered journal compaction: runtime checks delivered
+before accessing response/checkpoints, so a queued job cannot replay a tombstone.
 
 Diagnostics require BOTH user and thread. Reconciliation acquires the same ChatThreadLock
-as execution, checks SQL journals and outbox, then atomically checks ALL Redis job payloads, including
+as execution, checks SQL journals, then atomically checks ALL Redis job payloads, including
 pending, delayed, leased and dead. Any same-user/thread job blocks mutation, even for a
 different message. Malformed/unknown payload identities also block mutation.
 An undelivered SQL journal blocks only when its ID matches the current messageId and owner.
-Active SQL outbox intents (pending/published/processing) block when their journal belongs to
-this user/thread or its identity is still unknown. Known unrelated conversations do not block.
-Completed/dead outbox receipts and older failed journals do not block a new Web orphan;
+Older failed journals and journals owned by unrelated conversations do not block a new Web orphan;
 the full Redis queue proof is still required. No SQL response or payload is printed.
 Job pointers are trusted only when jobMessageId matches messageId; stale pointers
 are ignored and retained payloads are still fully scanned.

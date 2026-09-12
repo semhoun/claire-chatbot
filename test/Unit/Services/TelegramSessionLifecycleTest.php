@@ -180,7 +180,7 @@ final class TelegramSessionLifecycleTest extends TestCase
         $manager->method('getRepository')->willReturn($repository);
         $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         require_once Settings::getAppRoot() . '/test/Support/TelegramSqlSchema.php';
-        \App\Test\Support\TelegramSqlSchema::create($connection, false);
+        \App\Test\Support\TelegramSqlSchema::create($connection);
         $manager->method('getConnection')->willReturn($connection);
         $settings = new Settings([
             'llm' => ['brains' => ['first' => LifecycleBrain::class, 'second' => LifecycleBrain::class]],

@@ -8,25 +8,18 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Schema\Schema;
 use Doctrine\Migrations\AbstractMigration;
 use Migrations\Version20260912130000;
-use Migrations\Version20260912130001;
 use Psr\Log\NullLogger;
 
 /** Uses the actual migration SQL, only on connections explicitly supplied by tests. */
 final class TelegramSqlSchema
 {
-    public static function create(Connection $connection, bool $withOutbox = true): void
+    public static function create(Connection $connection): void
     {
         self::migrate($connection, Version20260912130000::class);
-        if ($withOutbox) {
-            self::migrate($connection, Version20260912130001::class);
-        }
     }
 
-    public static function drop(Connection $connection, bool $withOutbox = true): void
+    public static function drop(Connection $connection): void
     {
-        if ($withOutbox) {
-            self::migrate($connection, Version20260912130001::class, false);
-        }
         self::migrate($connection, Version20260912130000::class, false);
     }
 

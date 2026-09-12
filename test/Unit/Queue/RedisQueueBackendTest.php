@@ -71,6 +71,52 @@ final class RedisQueueBackendTest extends TestCase
         self::assertSame(0, $this->redis->zCard($this->key('leased')));
     }
 
+    public function testLogicalQueuesUseRawRedisWithoutSqlOutbox(): void
+    {
+        $sql = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $builder = new \DI\ContainerBuilder();
+        $builder->addDefinitions(Settings::getAppRoot() . '/config/dependencies.php');
+        $builder->addDefinitions([
+            Settings::class => $this->settings,
+            \Doctrine\DBAL\Connection::class => $sql,
+        ]);
+        $container = $builder->build();
+        $dispatcher = $container->get(\App\Services\Queue\QueueDispatcherInterface::class);
+        $backend = $container->get(\App\Services\Queue\QueueBackendInterface::class);
+        self::assertSame([], $sql->createSchemaManager()->listTableNames());
+
+        foreach ([
+            [TelegramService::class, ['update_json' => '{"update_id":456}'], 'telegram'],
+            [\App\Job\Telegram\StartThreadJob::class, [], 'telegram'],
+            [\App\Job\Web\NewMessageJob::class, $this->webPayload(), 'default'],
+            [\App\Job\Web\StartThreadJob::class,
+                array_replace($this->webPayload(), ['threadId' => 'opening-test']), 'web'],
+            ['ExampleJob', ['foo' => 'bar'], 'custom'],
+        ] as [$jobClass, $payload, $queue]) {
+            $id = $dispatcher->dispatch($jobClass, $payload, $queue);
+            $queueKey = $this->prefix . 'queue:' . $queue;
+            self::assertSame([$id], $this->redis->lRange($queueKey, 0, -1));
+            $raw = $this->redis->hGetAll($this->jobKey($id));
+            self::assertSame($queue, $raw['queue_name']);
+            self::assertSame($jobClass, $raw['job_class']);
+            self::assertArrayNotHasKey('outbox_id', $raw);
+            if ($jobClass === \App\Job\Telegram\StartThreadJob::class) {
+                $payload['generationId'] = $id;
+            }
+            self::assertSame($payload, json_decode($raw['payload'], true, flags: JSON_THROW_ON_ERROR));
+            $message = $backend->reserveNextAvailable($queue, 0);
+            self::assertNotNull($message);
+            self::assertSame($id, $message->id);
+            self::assertSame($queue, $message->queueName);
+            self::assertArrayNotHasKey('outbox_id', $message->metadata);
+            $backend->delete($message);
+            self::assertSame(0, $this->redis->exists($this->jobKey($id)));
+        }
+
+        self::assertSame([], $this->redis->keys($this->prefix . 'queue:sql-outbox:*'));
+        self::assertSame([], $sql->createSchemaManager()->listTableNames());
+    }
+
     public function testCrashRecoveryBackoffAndStaleOwnerFencing(): void
     {
         $id = $this->backend->dispatch('ExampleJob', [], 'telegram');
@@ -568,7 +614,7 @@ final class RedisQueueBackendTest extends TestCase
                 'driver' => 'pdo_sqlite', 'memory' => true,
             ]);
             require_once Settings::getAppRoot() . '/test/Support/TelegramSqlSchema.php';
-            \App\Test\Support\TelegramSqlSchema::create($this->telegramConnection, false);
+            \App\Test\Support\TelegramSqlSchema::create($this->telegramConnection);
         }
         return new \App\Services\TelegramJournal($this->telegramConnection);
     }

@@ -5,7 +5,6 @@ use App\Console\CacheClearConsoleCommand;
 use App\Console\CacheInitConsoleCommand;
 use App\Console\GenerateProxies;
 use App\Console\QueueWorkCommand;
-use App\Console\QueuePublishCommand;
 use App\Console\ChatMaintenanceCommand;
 use App\Console\TelegramSetCommandsCommand;
 use App\Console\TelegramMenuButtonCommand;
@@ -55,7 +54,6 @@ $cli = new Application('Claire Chat-Bot', $settings->get('version'));
     $container->get(CacheInitConsoleCommand::class),
     $container->get(GenerateProxies::class),
     $container->get(QueueWorkCommand::class),
-    $container->get(QueuePublishCommand::class),
     $container->get(ChatMaintenanceCommand::class),
     $container->get(TelegramSetCommandsCommand::class),
     $container->get(TelegramMenuButtonCommand::class),

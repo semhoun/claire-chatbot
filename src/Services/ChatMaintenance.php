@@ -96,19 +96,8 @@ final readonly class ChatMaintenance
                 . 'AND id = ? AND user_id = ? AND thread_id = ?',
                 [$state['messageId'], $user, $thread],
             );
-            // Only active intents can execute again; an absent journal leaves ownership unknown.
-            $outbox = $this->connection->fetchAssociative(
-                'SELECT o.id, o.status FROM queue_outbox o '
-                . 'LEFT JOIN telegram_generation g ON o.event_key = g.id '
-                . "WHERE o.status IN ('pending', 'published', 'processing') "
-                . 'AND (g.id IS NULL OR g.user_id IS NULL OR g.thread_id IS NULL '
-                . 'OR (g.user_id = ? AND g.thread_id = ?)) LIMIT 1',
-                [$user, $thread],
-            );
-            if ($journal !== false || $outbox !== false) {
-                return [...$state, 'result' => $journal !== false ? 'sql-journal-retained' : 'sql-outbox-retained',
-                    'journalId' => $journal === false ? null : $journal,
-                    'outbox' => $outbox === false ? null : $outbox];
+            if ($journal !== false) {
+                return [...$state, 'result' => 'sql-journal-retained', 'journalId' => $journal];
             }
 
             $script = self::PROOF . <<<'LUA'
@@ -264,7 +253,7 @@ final readonly class ChatMaintenance
                 return 'eligible';
             }
 
-            // Permanent replay barrier; do not delete even if the outbox still contains this event.
+            // Permanent replay barrier; retained Redis jobs must not replay this event.
             $changed = $this->connection->executeStatement(
                 'UPDATE telegram_generation SET compacted = 1, response = NULL, deliveries = NULL, '
                 . 'updated_at = ?, revision = revision + 1 WHERE id = ? AND revision = ? '

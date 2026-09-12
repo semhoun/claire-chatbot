@@ -27,7 +27,7 @@ final class TelegramJournalTest extends TestCase
     {
         require_once Settings::getAppRoot() . '/test/Support/TelegramSqlSchema.php';
         $this->connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        TelegramSqlSchema::create($this->connection, false);
+        TelegramSqlSchema::create($this->connection);
         $this->journal = new TelegramJournal($this->connection);
     }
 
@@ -36,7 +36,7 @@ final class TelegramJournalTest extends TestCase
         $this->connection->close();
         $this->connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true,
             'wrapperClass' => JournalCommitReplyLostConnection::class]);
-        TelegramSqlSchema::create($this->connection, false);
+        TelegramSqlSchema::create($this->connection);
         $this->journal = new TelegramJournal($this->connection);
         $redis = $this->createStub(RedisClient::class);
         $states = [];
@@ -142,7 +142,7 @@ final class TelegramJournalTest extends TestCase
         $this->connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $path]);
         $observer = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $path]);
         try {
-            TelegramSqlSchema::create($this->connection, false);
+            TelegramSqlSchema::create($this->connection);
             $redis = $this->createStub(RedisClient::class);
             $redis->method('hgetall')->willReturn([]);
             $redis->method('hset')->willReturn(1);
@@ -360,7 +360,7 @@ final class TelegramJournalTest extends TestCase
             }
             $connection = DriverManager::getConnection($params);
         }
-        TelegramSqlSchema::create($connection, false);
+        TelegramSqlSchema::create($connection);
         try {
             $journal = new TelegramJournal($connection);
             $record = ['botId' => '123', 'updateId' => 'update', 'threadId' => 'thread', 'userId' => 'user',
@@ -375,7 +375,7 @@ final class TelegramJournalTest extends TestCase
             $this->expectException(RuntimeException::class);
             $journal->save('matrix', $stale);
         } finally {
-            TelegramSqlSchema::drop($connection, false);
+            TelegramSqlSchema::drop($connection);
         }
     }
 }

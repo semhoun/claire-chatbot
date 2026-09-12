@@ -13,7 +13,6 @@ use Doctrine\Migrations\MigratorConfiguration;
 use Doctrine\Migrations\Version\Direction;
 use Doctrine\Migrations\Version\Version;
 use Migrations\Version20260912130000;
-use Migrations\Version20260912130001;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -35,7 +34,7 @@ final class TelegramStorageMigrationTest extends TestCase
     {
         $connection = $this->open($driver);
         $transactional = $driver !== 'pdo_mysql';
-        $classes = [Version20260912130000::class, Version20260912130001::class];
+        $classes = [Version20260912130000::class];
         foreach ($classes as $class) {
             self::assertSame($transactional, (new $class($connection, new NullLogger()))->isTransactional());
         }
@@ -54,7 +53,7 @@ final class TelegramStorageMigrationTest extends TestCase
             $factory->getMigrationPlanCalculator()->getPlanForVersions($versions, Direction::UP), $config,
         );
 
-        self::assertSame(2, (int) $connection->fetchOne('SELECT COUNT(*) FROM db_version_storage_test'));
+        self::assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM db_version_storage_test'));
         $schema = $connection->createSchemaManager();
         $journal = $schema->introspectTable('telegram_generation');
         self::assertCount(0, $journal->getForeignKeys());
@@ -64,7 +63,7 @@ final class TelegramStorageMigrationTest extends TestCase
         self::assertContains(['delivered', 'compacted', 'completed_at', 'id'], array_map(
             static fn ($index): array => $index->getColumns(), $journal->getIndexes(),
         ));
-        self::assertCount(0, $schema->introspectTable('queue_outbox')->getForeignKeys());
+        self::assertEqualsCanonicalizing(['db_version_storage_test', 'telegram_generation'], $schema->listTableNames());
 
         $body = str_repeat('reply:', 12_000);
         $connection->insert('telegram_generation', [
@@ -73,15 +72,7 @@ final class TelegramStorageMigrationTest extends TestCase
             'compacted' => 0, 'response' => $body, 'deliveries' => '{}',
             'completed_at' => 1700000000, 'created_at' => 1700000000, 'updated_at' => 1700000000, 'revision' => 1,
         ]);
-        $payload = json_encode(['response' => $body], JSON_THROW_ON_ERROR);
-        $connection->insert('queue_outbox', [
-            'id' => '00000000-0000-4000-8000-000000000001', 'event_key' => str_repeat('b', 64),
-            'job_class' => 'ExampleJob', 'queue_name' => 'telegram', 'payload' => $payload,
-            'status' => 'pending', 'attempts' => 0, 'available_at' => 1700000000,
-            'created_at' => 1700000000, 'updated_at' => 1700000000,
-        ]);
         self::assertSame($body, $connection->fetchOne('SELECT response FROM telegram_generation'));
-        self::assertSame($payload, $connection->fetchOne('SELECT payload FROM queue_outbox'));
 
         $factory = $makeFactory();
         $factory->getMigrator()->migrate(
@@ -89,14 +80,13 @@ final class TelegramStorageMigrationTest extends TestCase
         );
         $tables = $connection->createSchemaManager()->listTableNames();
         self::assertNotContains('telegram_generation', $tables);
-        self::assertNotContains('queue_outbox', $tables);
+        self::assertSame(['db_version_storage_test'], $tables);
         self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM db_version_storage_test'));
         $factory = $makeFactory();
         $factory->getMigrator()->migrate(
             $factory->getMigrationPlanCalculator()->getPlanForVersions($versions, Direction::UP), $config,
         );
         self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM telegram_generation'));
-        self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM queue_outbox'));
     }
 
     private function open(string $driver): Connection

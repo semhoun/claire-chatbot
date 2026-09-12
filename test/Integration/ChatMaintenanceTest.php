@@ -21,7 +21,6 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
 use Migrations\Version20260912130000;
-use Migrations\Version20260912130001;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Log\NullLogger;
@@ -65,13 +64,11 @@ final class ChatMaintenanceTest extends TestCase
             'password' => getenv('CLAIRE_MAINTENANCE_SQL_PASSWORD') ?: 'claire-test-only',
             'dbname' => 'claire_test',
         ]);
-        foreach ([Version20260912130000::class, Version20260912130001::class] as $class) {
-            $migration = new $class($this->sql, new NullLogger());
-            $migration->up(new Schema());
-            foreach ($migration->getSql() as $query) {
-                $this->sql->executeStatement(str_replace('CREATE TABLE ', 'CREATE TEMPORARY TABLE ',
-                    $query->getStatement()), $query->getParameters(), $query->getTypes());
-            }
+        $migration = new Version20260912130000($this->sql, new NullLogger());
+        $migration->up(new Schema());
+        foreach ($migration->getSql() as $query) {
+            $this->sql->executeStatement(str_replace('CREATE TABLE ', 'CREATE TEMPORARY TABLE ',
+                $query->getStatement()), $query->getParameters(), $query->getTypes());
         }
         $this->journal = new TelegramJournal($this->sql);
         $client = new RedisClient();
@@ -221,7 +218,7 @@ final class ChatMaintenanceTest extends TestCase
         self::assertSame('test', $this->states->get($this->user, 'thread')['queue']);
     }
 
-    public function testTerminalReceiptsOldFailuresAndUnrelatedActiveIntentsDoNotBlockNewWebOrphans(): void
+    public function testOldFailuresAndUnrelatedJournalsStillRequireFullRedisProof(): void
     {
         $id = TelegramJournal::id('123', 'old-failure');
         $record = ['botId' => '123', 'updateId' => 'old-failure', 'userId' => $this->user,
@@ -233,17 +230,11 @@ final class ChatMaintenanceTest extends TestCase
         self::assertSame('sql-journal-retained',
             $this->maintenance->diagnose($this->user, 'thread', true, true, 10000)['result']);
 
-        $this->sql->insert('queue_outbox', ['id' => 'fixture', 'event_key' => $id,
-            'job_class' => 'App\\Services\\TelegramService', 'queue_name' => 'telegram',
-            'status' => 'completed', 'payload' => 'SECRET SQL PAYLOAD', 'available_at' => 1,
-            'created_at' => 1, 'updated_at' => 1]);
-        foreach ([['completed', $this->user, 'thread'], ['dead', $this->user, 'thread'],
-            ['pending', $this->user, 'other-thread'], ['published', 'other-user', 'thread'],
-            ['processing', $this->user, 'other-thread'],
-        ] as [$status, $owner, $thread]) {
-            $this->sql->update('queue_outbox', ['status' => $status], ['id' => 'fixture']);
+        foreach ([[$this->user, 'thread', 'new-web-message'],
+            [$this->user, 'other-thread', $id], ['other-user', 'thread', $id],
+        ] as [$owner, $thread, $messageId]) {
             $this->sql->update('telegram_generation', ['user_id' => $owner, 'thread_id' => $thread], ['id' => $id]);
-            $this->states->set($this->user, 'thread', 'new-web-message', 'queued', false);
+            $this->states->set($this->user, 'thread', $messageId, 'queued', false);
             self::assertSame('orphan', $this->maintenance->diagnose($this->user, 'thread', true, false, 10000)['result']);
             self::assertSame('queued', $this->states->get($this->user, 'thread')['status']);
             // Passing the SQL check must still require the full Redis proof.

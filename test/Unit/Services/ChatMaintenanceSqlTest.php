@@ -17,7 +17,6 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
 use Migrations\Version20260912130000;
-use Migrations\Version20260912130001;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Log\NullLogger;
@@ -47,13 +46,11 @@ final class ChatMaintenanceSqlTest extends TestCase
             TelegramSqlSchema::create($this->sql);
         } else {
             // Server fixtures shadow shared table names for this connection only.
-            foreach ([Version20260912130000::class, Version20260912130001::class] as $class) {
-                $migration = new $class($this->sql, new NullLogger());
-                $migration->up(new Schema());
-                foreach ($migration->getSql() as $query) {
-                    $this->sql->executeStatement(str_replace('CREATE TABLE ', 'CREATE TEMPORARY TABLE ',
-                        $query->getStatement()), $query->getParameters(), $query->getTypes());
-                }
+            $migration = new Version20260912130000($this->sql, new NullLogger());
+            $migration->up(new Schema());
+            foreach ($migration->getSql() as $query) {
+                $this->sql->executeStatement(str_replace('CREATE TABLE ', 'CREATE TEMPORARY TABLE ',
+                    $query->getStatement()), $query->getParameters(), $query->getTypes());
             }
         }
         $this->journal = new TelegramJournal($this->sql);
@@ -74,7 +71,6 @@ final class ChatMaintenanceSqlTest extends TestCase
             $ids[] = $this->record('page-' . $i);
         }
         sort($ids);
-        $this->outbox($ids[0]);
         $service = $this->service();
         $first = $service->compact(7, 2);
         self::assertSame(['eligible' => 2], $first['counts']);
@@ -142,21 +138,6 @@ final class ChatMaintenanceSqlTest extends TestCase
         $id = $this->record('active', ['delivered' => false]);
         self::assertSame('sql-journal-retained',
             $this->service($id)->diagnose($this->user, 'thread', true, true, 100)['result']);
-    }
-
-    public function testActiveOutboxBlocksMatchingAndUnknownJournalIdentity(): void
-    {
-        $id = $this->record('active');
-        $this->outbox($id);
-        foreach ([$id, hash('sha256', 'unknown-journal')] as $event) {
-            foreach (['pending', 'published', 'processing'] as $status) {
-                $this->sql->update('queue_outbox', ['status' => $status, 'event_key' => $event], ['id' => 'fixture']);
-                $result = $this->service()->diagnose($this->user, 'thread', true, true, 100);
-                self::assertSame('sql-outbox-retained', $result['result']);
-                self::assertSame($status, $result['outbox']['status']);
-                self::assertStringNotContainsString('SECRET', json_encode($result, JSON_THROW_ON_ERROR));
-            }
-        }
     }
 
     public function testCommandCursorsDryRunAndRedaction(): void
@@ -253,14 +234,6 @@ final class ChatMaintenanceSqlTest extends TestCase
         } finally {
             $redis->del([$job, $states->key($this->user, 'thread')]);
         }
-    }
-
-    private function outbox(string $event): void
-    {
-        $this->sql->insert('queue_outbox', ['id' => 'fixture', 'event_key' => $event,
-            'job_class' => 'App\\Services\\TelegramService', 'queue_name' => 'telegram',
-            'status' => 'pending', 'payload' => 'SECRET PAYLOAD', 'available_at' => 1,
-            'created_at' => 1, 'updated_at' => 1]);
     }
 
     private function service(string $messageId = 'message'): ChatMaintenance

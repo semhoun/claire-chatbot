@@ -10,7 +10,7 @@ use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\PdfGeneratorService;
 use App\Services\Queue\QueueBackendInterface;
 use App\Services\Queue\QueueDispatcherInterface;
-use App\Services\Queue\SqlOutboxQueueBackend;
+use App\Services\Queue\RedisQueueBackend;
 use App\Services\RagService;
 use App\Services\RagServiceInterface;
 use App\Services\RedisClient;
@@ -139,7 +139,7 @@ return [
 
         return $client;
     },
-    QueueBackendInterface::class => DI\get(SqlOutboxQueueBackend::class),
+    QueueBackendInterface::class => DI\get(RedisQueueBackend::class),
     QueueDispatcherInterface::class => DI\get(QueueBackendInterface::class),
     RagServiceInterface::class => DI\get(RagService::class),
     EmbeddingsProviderInterface::class => static fn (Settings $settings): EmbeddingsProviderInterface => new OpenAILikeEmbeddings(

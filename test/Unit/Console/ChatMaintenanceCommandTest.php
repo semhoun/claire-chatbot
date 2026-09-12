@@ -53,10 +53,11 @@ final class ChatMaintenanceCommandTest extends TestCase
         foreach (['--apply', '--compact', '--user', '--thread', '--reconcile', '--retention-days',
             '--cursor', 'dry-run', 'DB time', 'sql:v1:', 'revision CAS', 'without TTL',
             'attempted=1', 'No re-enqueue', 'SQL retention never scans Redis',
+            'ALL Redis job payloads', 'matches the current messageId and owner',
         ] as $text) {
             self::assertStringContainsString($text, $help);
         }
-        foreach (['--import-redis', '--complete-import', '--writers-stopped', 'Redis TIME'] as $removed) {
+        foreach (['--import-redis', '--complete-import', '--writers-stopped', 'Redis TIME', 'outbox'] as $removed) {
             self::assertStringNotContainsString($removed, $help);
         }
     }
