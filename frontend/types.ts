@@ -86,10 +86,12 @@ export interface ToolCall {
   name: string
   inputs: Array<{ name: string; value: unknown }>
   running: boolean
+  interrupted?: boolean
   result: unknown
 }
 
 export interface ChatMessage {
+  error?: boolean
   id: string
   message: string
   sent: boolean
@@ -99,6 +101,7 @@ export interface ChatMessage {
 }
 
 export interface SseUpdate {
+  generationStatus?: 'queued' | 'running' | 'done' | 'error' | null
   audioRequestId?: string | null
   audioRequestIds?: Record<string, string>
   responding?: boolean

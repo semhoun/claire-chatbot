@@ -24,9 +24,22 @@ final readonly class ChatDataRenderer
     /** @param array<int, array<string, mixed>>|null $messages
      * @return array<int, array<string, mixed>>
      */
-    public function messages(?array $messages, string $userId): array
+    public function messages(?array $messages, string $userId, bool $running = false): array
     {
-        return array_map(fn (array $message): array => $this->message($message, $userId), $messages ?? []);
+        $messages = array_values($messages ?? []);
+        foreach ($messages as $index => &$message) {
+            $message = $this->message($message, $userId);
+            foreach ($message['toolsCall'] as &$tool) {
+                if (($tool['running'] ?? false) && (! $running || $index !== array_key_last($messages)
+                    || $message['sent'])) {
+                    $tool['running'] = false;
+                    $tool['interrupted'] = true;
+                }
+            }
+            unset($tool);
+        }
+        unset($message);
+        return $messages;
     }
 
     /** @param array<string, mixed> $message

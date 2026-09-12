@@ -112,6 +112,22 @@ describe('safe Vue chat rendering', () => {
     wrapper.unmount()
   })
 
+  it('does not present a returned tool error as success or offer speech for terminal errors', async () => {
+    const entry: ChatMessage = { id: 'answer', sent: false, time: '', message: '', files: [],
+      toolsCall: [{ id: 'tool', name: 'generate_pdf', inputs: [], running: false,
+        result: JSON.stringify({ status: 'error', message: 'PDF unavailable' }) }],
+    }
+    const wrapper = mount(ChatMessages, { props: { messages: [entry], loading: false, audioEnabled: true,
+      playing: null, pending: new Set<string>(), ready: new Map<string, Blob>(), failed: new Set<string>() } })
+    expect(wrapper.find('.claire-tools-failed').exists()).toBe(true)
+    expect(wrapper.find('.claire-toolcall__icon--done').exists()).toBe(false)
+    expect(wrapper.find('.claire-tools-running-flag').exists()).toBe(false)
+    await wrapper.setProps({ messages: [{ ...entry, id: 'generation-error', error: true, toolsCall: [], message: 'Failure' }] })
+    expect(wrapper.get('[role="alert"]').text()).toContain('Failure')
+    expect(wrapper.find('[data-audio-listen]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('renders Markdown, escaped tools, timestamps, pending resources and final attachments in Vue', async () => {
     const entry: ChatMessage = { id: 'answer', sent: false, time: '2026-09-12T12:30:00Z',
       message: '**Bonjour**\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\n@@GENERATED@@file@@',

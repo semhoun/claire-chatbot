@@ -19,6 +19,41 @@ use PHPUnit\Framework\TestCase;
 
 final class ChatDataRendererTest extends TestCase
 {
+    public function testHistoricalUnmatchedToolsAreInterruptedWhileOnlyCurrentTailCanRun(): void
+    {
+        $manager = $this->createStub(EntityManagerInterface::class);
+        $renderer = new ChatDataRenderer(new GeneratedFileProcessor(new Settings([]), $manager));
+        $tool = new \NeuronAI\Tools\Tool('generate_pdf', 'Test');
+        $tool->setCallId('old-tool');
+        $current = clone $tool;
+        $current->setCallId('current-tool');
+        $messages = new MessageFormatter([
+            new \NeuronAI\Chat\Messages\ToolCallMessage(null, [$tool]),
+            new \NeuronAI\Chat\Messages\UserMessage('Next turn'),
+            new \NeuronAI\Chat\Messages\ToolCallMessage(null, [$current]),
+        ])->format();
+        self::assertCount(3, $messages);
+        self::assertSame('Next turn', $messages[1]['message']);
+        self::assertSame([], $messages[1]['toolsCall']);
+        foreach ([false, true] as $running) {
+            $rendered = $renderer->messages($messages, 'owner', $running);
+            self::assertFalse($rendered[0]['toolsCall'][0]['running']);
+            self::assertTrue($rendered[0]['toolsCall'][0]['interrupted']);
+            self::assertSame($running, $rendered[2]['toolsCall'][0]['running']);
+            self::assertSame(! $running, $rendered[2]['toolsCall'][0]['interrupted'] ?? false);
+        }
+        $tool->setResult('Success');
+        $complete = new MessageFormatter([
+            new \NeuronAI\Chat\Messages\ToolCallMessage(null, [$tool]),
+            new \NeuronAI\Chat\Messages\ToolResultMessage([$tool]),
+            new AssistantMessage('Finished'),
+        ])->format();
+        $result = $renderer->messages($complete, 'owner')[0]['toolsCall'][0];
+        self::assertFalse($result['running']);
+        self::assertArrayNotHasKey('interrupted', $result);
+        self::assertSame('Success', $result['result']);
+    }
+
     public function testRealGeneratedImageSurvivesHistoryAndStreamingSerialization(): void
     {
         $user = new User();

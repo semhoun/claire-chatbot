@@ -102,6 +102,7 @@ final class BrainControllerTest extends TestCase
         return [
             'worker started' => ['queued', 'running', 'message-1', 1],
             'other tab completed' => ['running', 'done', 'message-1', 2],
+            'terminal error publication lost' => ['running', 'error', 'message-1', 2],
             'other tab submitted' => ['done', 'queued', 'message-2', 2],
             'fast generation completed elsewhere' => ['done', 'done', 'message-2', 2],
         ];
@@ -145,6 +146,8 @@ final class BrainControllerTest extends TestCase
         self::assertSame($expectedSnapshots, substr_count($output, 'event: chat.snapshot'));
         $responding = in_array($nextStatus, ['queued', 'running'], true);
         self::assertStringContainsString('"responding":' . ($responding ? 'true' : 'false'), $output);
+        self::assertStringContainsString('"generationStatus":"'
+            . ($expectedSnapshots === 1 ? $initialStatus : $nextStatus) . '"', $output);
     }
 
     public function testStreamRequiresUnexpiredAuthentication(): void
@@ -331,6 +334,28 @@ final class BrainControllerTest extends TestCase
         self::assertSame('assistant-snapshot', $snapshot['messages'][1]['id']);
         self::assertSame('Answer', $snapshot['messages'][1]['message']);
         self::assertArrayNotHasKey('html', $snapshot);
+    }
+
+    public function testSnapshotRestoresInterruptedToolsAndSafeErrorAfterReconnect(): void
+    {
+        [$controller, $publisher, $session, $pdo] = $this->controller(
+            $this->createStub(QueueDispatcherInterface::class),
+        );
+        $history = new \App\Brain\ChatHistory\UserChatHistory($session, $pdo, threadId: 'thread');
+        $history->addMessage(new \NeuronAI\Chat\Messages\UserMessage('Generate PDF'));
+        $tool = new \NeuronAI\Tools\Tool('generate_pdf', 'Test');
+        $tool->setCallId('pdf');
+        $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage(null, [$tool]));
+        foreach (['running', 'error', 'error'] as $status) {
+            $publisher->generationState()->set('user-1', 'thread', 'attempt', $status, true);
+            $snapshot = new \ReflectionMethod($controller, 'readSnapshot')->invoke($controller, $session, 'thread');
+            self::assertSame($status, $snapshot['generationStatus']);
+            self::assertSame($status === 'running', $snapshot['responding']);
+            $renderedTool = $snapshot['messages'][1]['toolsCall'][0];
+            self::assertSame($status === 'running', $renderedTool['running']);
+            self::assertSame($status !== 'running', $renderedTool['interrupted'] ?? false);
+            self::assertNull($renderedTool['result']);
+        }
     }
 
     /** @return array{BrainController, ChatStreamPublisher, InMemorySession, \PDO, RedisClient} */

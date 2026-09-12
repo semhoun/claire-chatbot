@@ -23,13 +23,13 @@ const time = computed(() => {
 </script>
 
 <template>
-  <article :id="entry.id ? `claire-${entry.id}` : undefined" class="claire-message" :class="entry.sent ? 'claire-message--sent' : 'claire-message--received'">
+  <article :id="entry.id ? `claire-${entry.id}` : undefined" :role="entry.error ? 'alert' : undefined" class="claire-message" :class="entry.sent ? 'claire-message--sent' : 'claire-message--received'">
     <div class="claire-message__bubble">
       <ChatTools :tools="entry.toolsCall" :message-id="entry.id" />
       <MarkdownContent :id="`claire-message-${entry.id}`" class="claire-message__text" :text="entry.message" :files="entry.files" />
     </div>
     <span class="claire-message__meta">{{ time }}{{ entry.sent ? ' • Vous' : '' }}
-      <button v-if="audioEnabled && !entry.sent && entry.id" type="button" class="claire-message__audio-action" :class="{ 'is-playing': playing === entry.id, 'is-loading': pending.has(entry.id) }" data-audio-listen="true" :data-audio-message-id="entry.id" :disabled="pending.has(entry.id)" :aria-label="audioLabel" :title="audioLabel">
+      <button v-if="audioEnabled && !entry.sent && !entry.error && entry.id" type="button" class="claire-message__audio-action" :class="{ 'is-playing': playing === entry.id, 'is-loading': pending.has(entry.id) }" data-audio-listen="true" :data-audio-message-id="entry.id" :disabled="pending.has(entry.id)" :aria-label="audioLabel" :title="audioLabel">
         <ClaireIcon :name="playing === entry.id ? 'stop' : pending.has(entry.id) ? 'refresh' : ready.has(entry.id) ? 'play' : 'volume'" />
       </button>
     </span>

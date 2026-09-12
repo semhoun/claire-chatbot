@@ -35,7 +35,8 @@ final readonly class PdfGeneratorService
     {
         $content = $params['content'] ?? '';
         $format = $params['format'] ?? $this->settings->get('tools.pdf.defaultFormat');
-        $displayName = $params['filename'] ?? null;
+        $displayName = trim($params['filename'] ?? '');
+        $displayName = $displayName !== '' ? $displayName : 'document';
         $pageSize = $params['pageSize'] ?? $this->settings->get('tools.pdf.defaultPageSize');
         $orientation = $params['orientation'] ?? 'portrait';
         $margins = $params['margins'] ?? [];

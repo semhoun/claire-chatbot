@@ -294,6 +294,61 @@ describe('embed public API', () => {
       expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
     } finally { wrapper.unmount() }
   })
+  it.each(['normal', 'embed'] as const)('keeps failed tools terminal and a safe error through snapshots and reconnect in %s', async mode => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
+    )))
+    const props = { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } }
+    let wrapper = mount(ClaireApp, { props })
+    const tool = { id: 'pdf', name: 'generate_pdf', inputs: [], running: true, result: null }
+    const completed = { ...tool, id: 'completed', running: false, result: 'Success' }
+    const snapshot = {
+      responding: false, activeMessageId: null, generationStatus: 'error',
+      messages: [{ ...entry('history-message-1', ''), toolsCall: [completed, { ...tool, running: false, interrupted: true }] }],
+    }
+    const assertTerminal = () => {
+      expect(wrapper.find('.claire-tools-running-flag').exists()).toBe(false)
+      expect(wrapper.find('.claire-toolcall__icon--done').exists()).toBe(false)
+      expect(wrapper.find('.claire-tools-interrupted').exists()).toBe(true)
+      expect(wrapper.text()).toContain('Success')
+      expect(wrapper.text()).toContain('une erreur est survenue')
+      expect(wrapper.text()).not.toContain('SECRET STACK')
+      expect(wrapper.find('[data-role="claire-assistant-loader"]').exists()).toBe(false)
+      expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
+    }
+    try {
+      await flushPromises()
+      let source = FakeEventSource.instances.at(-1)!
+      source.emit('chat.assistant.start', { messageId: 'a' })
+      source.emit('chat.tool.update', { messageId: 'a', toolsCall: [completed, tool] })
+      await flushPromises()
+      expect(wrapper.find('.claire-tools-running-flag').exists()).toBe(true)
+      source.emit('chat.error', { messageId: 'a', message: 'SECRET STACK' })
+      await flushPromises()
+      assertTerminal()
+      source.emit('chat.snapshot', snapshot)
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(5000)
+      assertTerminal()
+      wrapper.unmount()
+      wrapper = mount(ClaireApp, { props })
+      await flushPromises()
+      source = FakeEventSource.instances.at(-1)!
+      source.emit('chat.snapshot', snapshot)
+      await flushPromises()
+      assertTerminal()
+      source.emit('chat.snapshot', {
+        generationStatus: 'done', responding: false, activeMessageId: null,
+        messages: [{ ...entry('success', 'Finished'), toolsCall: [completed] }],
+      })
+      await flushPromises()
+      expect(wrapper.text()).not.toContain('une erreur est survenue')
+      expect(wrapper.find('.claire-tools-interrupted').exists()).toBe(false)
+      expect(wrapper.find('.claire-toolcall__icon--done').exists()).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+
   it.each(['normal', 'embed'] as const)('shares and renews 17 files of different media types in %s mode', async (mode) => {
     vi.useFakeTimers()
     let fileRequests = 0
@@ -1018,9 +1073,10 @@ describe('embed public API', () => {
     expect(input.disabled).toBe(false)
     source.emit('chat.assistant.start', { messageId: 'failed' })
     source.emit('chat.error', { messageId: 'failed', message: 'Current failure' })
-    source.emit('chat.snapshot', { responding: false, activeMessageId: null, messages: [] })
+    source.emit('chat.snapshot', { responding: false, activeMessageId: null, generationStatus: 'error', messages: [] })
     await Promise.resolve()
-    expect(element.shadowRoot!.textContent).toContain('Current failure')
+    expect(element.shadowRoot!.textContent).toContain('une erreur est survenue')
+    expect(element.shadowRoot!.textContent).not.toContain('Current failure')
   })
 
   it('allows a new dictation after stopping while microphone permission is pending', async () => {

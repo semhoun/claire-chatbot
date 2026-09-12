@@ -369,10 +369,10 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
 
   if (type === 'chat.error') {
     finishResponse()
-    notify(update.message ?? 'Une erreur est survenue.', 'error')
-    chatMessages.value.push({ id: '', message: update.message ?? 'Une erreur est survenue.', sent: false, time: '', toolsCall: [], files: [] })
+    showGenerationError()
   } else if (type === 'chat.snapshot') {
     chatMessages.value = update.messages ?? []
+    if (update.generationStatus === 'error') showGenerationError()
     const retainedAudioIds = audioThreadId === threadId.value
       ? new Set(chatMessages.value.filter(entry => !entry.sent).map(entry => entry.id))
       : new Set<string>()
@@ -439,6 +439,19 @@ function findMessage(messageId?: string): ChatMessage | null {
 function finishResponse(): void {
   responding.value = false
   activeMessageId.value = null
+  for (const entry of chatMessages.value) {
+    for (const tool of entry.toolsCall) {
+      if (tool.running) { tool.running = false; tool.interrupted = true }
+    }
+  }
+}
+
+function showGenerationError(): void {
+  if (chatMessages.value.some(entry => entry.id === 'generation-error')) return
+  chatMessages.value.push({
+    id: 'generation-error', error: true, sent: false, time: '', toolsCall: [], files: [],
+    message: 'Désolé, une erreur est survenue lors du traitement de votre message.',
+  })
 }
 
 function protectFileLink(link: HTMLAnchorElement): void {

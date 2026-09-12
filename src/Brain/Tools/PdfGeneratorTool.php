@@ -46,26 +46,29 @@ EOT;
 
     /**
      * @param string $content The HTML or Markdown content to convert to PDF
-     * @param string $format Input format: 'html' or 'markdown'
+     * @param string|null $format Input format: 'html' or 'markdown'
      * @param string|null $filename Human-readable display name for the PDF (without extension), shown to the user on download
-     * @param string $page_size Page size: A4, Letter, A3, A5
-     * @param string $orientation Page orientation: 'portrait' or 'landscape'
-     * @param int $margin_top Top margin in mm
-     * @param int $margin_bottom Bottom margin in mm
-     * @param int $margin_left Left margin in mm
-     * @param int $margin_right Right margin in mm
+     * @param string|null $page_size Page size: A4, Letter, A3, A5
+     * @param string|null $orientation Page orientation: 'portrait' or 'landscape'
+     * @param int|null $margin_top Top margin in mm
+     * @param int|null $margin_bottom Bottom margin in mm
+     * @param int|null $margin_left Left margin in mm
+     * @param int|null $margin_right Right margin in mm
      */
     public function __invoke(
         string $content,
-        string $format = 'html',
+        ?string $format = 'html',
         ?string $filename = null,
-        string $page_size = 'A4',
-        string $orientation = 'portrait',
-        int $margin_top = 15,
-        int $margin_bottom = 15,
-        int $margin_left = 15,
-        int $margin_right = 15,
+        ?string $page_size = 'A4',
+        ?string $orientation = 'portrait',
+        ?int $margin_top = 15,
+        ?int $margin_bottom = 15,
+        ?int $margin_left = 15,
+        ?int $margin_right = 15,
     ): string {
+        // Neuron passes explicit null for omitted optional properties.
+        $filename = trim($filename ?? '');
+        $filename = $filename !== '' ? $filename : 'document';
         try {
             $enabled = $this->settings->get('tools.pdf.enabled');
 
@@ -78,15 +81,15 @@ EOT;
 
             $pdfId = $this->pdfGeneratorService->generatePdf($this->session, $this->threadId, [
                 'content' => $content,
-                'format' => $format,
+                'format' => $format ?? 'html',
                 'filename' => $filename,
-                'pageSize' => $page_size,
-                'orientation' => $orientation,
+                'pageSize' => $page_size ?? 'A4',
+                'orientation' => $orientation ?? 'portrait',
                 'margins' => [
-                    'top' => $margin_top,
-                    'bottom' => $margin_bottom,
-                    'left' => $margin_left,
-                    'right' => $margin_right,
+                    'top' => $margin_top ?? 15,
+                    'bottom' => $margin_bottom ?? 15,
+                    'left' => $margin_left ?? 15,
+                    'right' => $margin_right ?? 15,
                 ],
             ]);
 

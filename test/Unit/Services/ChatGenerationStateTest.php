@@ -57,7 +57,23 @@ final class ChatGenerationStateTest extends TestCase
             ->capture('alice', 'thread', static function () use (&$reads): array {
                 return ['html' => ++$reads === 1 ? 'partial' : 'complete'];
             });
-        self::assertSame(['html' => 'complete', 'responding' => false, 'activeMessageId' => null], $snapshot);
+        self::assertSame(['html' => 'complete', 'responding' => false, 'activeMessageId' => null,
+            'generationStatus' => 'done'], $snapshot);
+    }
+
+    public function testCaptureProjectsOnlySafeTerminalStatusOnReconnect(): void
+    {
+        $redis = $this->createStub(RedisClient::class);
+        $redis->method('hgetall')->willReturn(['status' => 'error', 'messageId' => 'message',
+            'last_error' => 'SECRET STACK', 'response' => 'PRIVATE']);
+        $state = new ChatGenerationState($redis, new Settings(['redis' => ['prefix' => 'test:']]));
+        for ($i = 0; $i < 2; $i++) {
+            self::assertSame(['messages' => [], 'responding' => false, 'activeMessageId' => null,
+                'generationStatus' => 'error'], $state->capture('alice', 'thread', static function (array $generation): array {
+                    self::assertSame('error', $generation['status']);
+                    return ['messages' => []];
+                }));
+        }
     }
 
     public function testDiagnosticOnlyReturnsExplicitMetadata(): void

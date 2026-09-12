@@ -358,7 +358,7 @@ final readonly class BrainController
         return $this->chatStreamPublisher->generationState()->capture(
             (string) $session->get(Auth::USERID),
             $threadId,
-            function () use ($session, $threadId): array {
+            function (array $generation) use ($session, $threadId): array {
                 $userChatHistory = new UserChatHistory(
                     session: $session,
                     pdo: $this->entityManager->getConnection()->getNativeConnection(),
@@ -368,7 +368,11 @@ final readonly class BrainController
                 );
                 $messages = $userChatHistory->getFormattedMessages();
                 return [
-                    'messages' => $this->chatDataRenderer->messages($messages, (string) $session->get(Auth::USERID)),
+                    'messages' => $this->chatDataRenderer->messages(
+                        $messages,
+                        (string) $session->get(Auth::USERID),
+                        ($generation['status'] ?? '') === 'running',
+                    ),
                     'audioRequestIds' => array_column(array_filter($messages,
                         static fn (array $message): bool => isset($message['audioRequestId'])), 'audioRequestId', 'id'),
                 ];

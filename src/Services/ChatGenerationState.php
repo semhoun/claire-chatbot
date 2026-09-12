@@ -52,7 +52,7 @@ final readonly class ChatGenerationState
         ];
     }
 
-    /** @param callable(): array<string, mixed> $readHistory
+    /** @param callable(array<string, string>): array<string, mixed> $readHistory
      *
      * @return array<string, mixed>
      */
@@ -61,7 +61,7 @@ final readonly class ChatGenerationState
         // Do not pair pre-completion messages with a post-completion idle state.
         for ($attempt = 0; $attempt < 3; $attempt++) {
             $before = $this->get($userId, $threadId);
-            $history = $readHistory();
+            $history = $readHistory($before);
             $after = $this->get($userId, $threadId);
             if ($before === $after) {
                 $responding = in_array($after['status'] ?? '', ['queued', 'running'], true);
@@ -69,6 +69,8 @@ final readonly class ChatGenerationState
                     ...$history,
                     'responding' => $responding,
                     'activeMessageId' => $responding ? ($after['messageId'] ?? null) : null,
+                    'generationStatus' => in_array($after['status'] ?? '', ['queued', 'running', 'done', 'error'], true)
+                        ? $after['status'] : null,
                 ];
             }
         }

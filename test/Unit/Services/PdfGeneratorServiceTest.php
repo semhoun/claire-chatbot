@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Test\Unit\Services;
 
+use App\Brain\Tools\PdfGeneratorTool;
+use App\Entity\ChatHistory;
 use App\Entity\File;
 use App\Entity\User;
 use App\Services\Auth;
@@ -12,6 +14,7 @@ use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class PdfGeneratorServiceTest extends TestCase
@@ -20,20 +23,112 @@ final class PdfGeneratorServiceTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->imagesTempDir = sys_get_temp_dir() . '/images';
+        $this->imagesTempDir = sys_get_temp_dir() . '/claire-pdf-test-' . bin2hex(random_bytes(8));
+        mkdir($this->imagesTempDir, 0o700);
     }
 
     protected function tearDown(): void
     {
-        // Clean up temp files after each test
         if (is_dir($this->imagesTempDir)) {
-            $files = glob($this->imagesTempDir . '/*');
+            $files = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($this->imagesTempDir, \FilesystemIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::CHILD_FIRST,
+            );
             foreach ($files as $file) {
-                if (is_file($file)) {
-                    @unlink($file);
-                }
+                $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
             }
+            rmdir($this->imagesTempDir);
         }
+    }
+
+    public static function pdfInputs(): array
+    {
+        return [
+            'service missing filename' => [false, []],
+            'service null filename' => [false, ['filename' => null]],
+            'service blank filename' => [false, ['filename' => '  ']],
+            'neuron omitted options' => [true, []],
+            'neuron padded filename' => [true, ['filename' => ' Report '], 'Report.pdf'],
+            'neuron null options' => [true, array_fill_keys([
+                'format', 'filename', 'page_size', 'orientation',
+                'margin_top', 'margin_bottom', 'margin_left', 'margin_right',
+            ], null)],
+            'neuron explicit options' => [true, [
+                'format' => 'markdown', 'filename' => 'Report', 'page_size' => 'A5',
+                'orientation' => 'landscape', 'margin_top' => 0, 'margin_bottom' => 6,
+                'margin_left' => 7, 'margin_right' => 8,
+            ], 'Report.pdf'],
+        ];
+    }
+
+    #[DataProvider('pdfInputs')]
+    public function testRealPdfWithIsolatedStorageAndNeuronOptions(
+        bool $viaTool,
+        array $inputs,
+        string $expectedFilename = 'document.pdf',
+    ): void {
+        $settings = new Settings(['tools' => ['pdf' => [
+            'enabled' => true, 'tempDir' => $this->imagesTempDir,
+            'defaultFormat' => 'html', 'defaultPageSize' => 'A4',
+        ]]]);
+        $user = new User();
+        $user->setId('pdf-test');
+        $history = new ChatHistory();
+        $history->setUser($user);
+        $session = $this->createStub(SessionInterface::class);
+        $users = $this->createStub(\App\Repository\UserRepository::class);
+        $users->method('getCurrentUser')->willReturn($user);
+        $histories = $this->createStub(\App\Repository\ChatHistoryRepository::class);
+        $histories->method('getCurrentUserChatHistory')->willReturn($history);
+        $manager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $manager->method('getRepository')->willReturnMap([[User::class, $users], [ChatHistory::class, $histories]]);
+        $saved = null;
+        $manager->expects(self::once())->method('persist')->willReturnCallback(static function (File $file) use (&$saved): void {
+            $saved = $file;
+        });
+        $manager->expects(self::once())->method('flush');
+        $pdf = '';
+        $filesystem = $this->createMock(Filesystem::class);
+        $filesystem->expects(self::once())->method('write')->willReturnCallback(
+            static function (string $path, string $content) use (&$pdf): void {
+                self::assertStringStartsWith('generated/pdf-test/', $path);
+                self::assertStringStartsWith('%PDF-', $content);
+                $pdf = $content;
+            },
+        );
+        $markdown = $this->createMock(\App\Services\Markdown::class);
+        $isMarkdown = ($inputs['format'] ?? 'html') === 'markdown';
+        $markdown->expects($isMarkdown ? self::once() : self::never())->method('convert')
+            ->with('Diagnostic')->willReturn('<p>Diagnostic</p>');
+        $service = new PdfGeneratorService($settings, $filesystem, $manager, $markdown);
+        if ($viaTool) {
+            $tool = new PdfGeneratorTool($service, $settings, $session, 'test-thread');
+            $tool->setInputs(['content' => 'Diagnostic', ...$inputs]);
+            $tool->execute();
+            $result = json_decode($tool->getResult(), true, flags: JSON_THROW_ON_ERROR);
+            self::assertSame('success', $result['status']);
+            $id = $result['id'];
+            self::assertSame($saved->getFilename(), $result['name']);
+        } else {
+            $id = $service->generatePdf($session, 'test-thread', ['content' => 'Diagnostic', ...$inputs]);
+        }
+        self::assertSame($saved->getFileId(), $id);
+        self::assertSame($expectedFilename, $saved->getFilename());
+        self::assertSame(strlen($pdf), $saved->getSizeBytes());
+        self::assertSame([
+            'format' => $inputs['format'] ?? 'html', 'pageSize' => $inputs['page_size'] ?? 'A4',
+            'orientation' => $isMarkdown ? 'L' : 'P',
+        ], $saved->getMetadata());
+        // Compare page drawing commands to direct rendering, including all four margins (and zero).
+        $expected = new \ReflectionMethod($service, 'renderPdf')->invoke(
+            $service, $isMarkdown ? '<p>Diagnostic</p>' : 'Diagnostic',
+            $inputs['page_size'] ?? 'A4', $inputs['orientation'] ?? 'portrait',
+            ['top' => $inputs['margin_top'] ?? 15, 'bottom' => $inputs['margin_bottom'] ?? 15,
+                'left' => $inputs['margin_left'] ?? 15, 'right' => $inputs['margin_right'] ?? 15],
+        );
+        self::assertSame(1, preg_match('/stream\r?\n(.*?)\r?\nendstream/s', $pdf, $actualStream));
+        self::assertSame(1, preg_match('/stream\r?\n(.*?)\r?\nendstream/s', $expected, $expectedStream));
+        self::assertSame($expectedStream[1], $actualStream[1]);
     }
 
     public function testResolveGeneratedImagesReplacesImageTokensWithTempFiles(): void
@@ -41,7 +136,7 @@ final class PdfGeneratorServiceTest extends TestCase
         $settings = new Settings([
             'tools' => [
                 'pdf' => [
-                    'tempDir' => '/tmp',
+                    'tempDir' => $this->imagesTempDir,
                 ],
             ],
         ]);
@@ -98,7 +193,7 @@ final class PdfGeneratorServiceTest extends TestCase
         $settings = new Settings([
             'tools' => [
                 'pdf' => [
-                    'tempDir' => '/tmp',
+                    'tempDir' => $this->imagesTempDir,
                 ],
             ],
         ]);
@@ -140,7 +235,7 @@ final class PdfGeneratorServiceTest extends TestCase
         $settings = new Settings([
             'tools' => [
                 'pdf' => [
-                    'tempDir' => '/tmp',
+                    'tempDir' => $this->imagesTempDir,
                 ],
             ],
         ]);
@@ -184,7 +279,7 @@ final class PdfGeneratorServiceTest extends TestCase
         $settings = new Settings([
             'tools' => [
                 'pdf' => [
-                    'tempDir' => '/tmp',
+                    'tempDir' => $this->imagesTempDir,
                 ],
             ],
         ]);
@@ -223,7 +318,7 @@ final class PdfGeneratorServiceTest extends TestCase
         $settings = new Settings([
             'tools' => [
                 'pdf' => [
-                    'tempDir' => '/tmp',
+                    'tempDir' => $this->imagesTempDir,
                 ],
             ],
         ]);
@@ -301,7 +396,7 @@ final class PdfGeneratorServiceTest extends TestCase
         $settings = new Settings([
             'tools' => [
                 'pdf' => [
-                    'tempDir' => '/tmp',
+                    'tempDir' => $this->imagesTempDir,
                 ],
             ],
         ]);
@@ -338,7 +433,7 @@ final class PdfGeneratorServiceTest extends TestCase
         $settings = new Settings([
             'tools' => [
                 'pdf' => [
-                    'tempDir' => '/tmp',
+                    'tempDir' => $this->imagesTempDir,
                 ],
             ],
         ]);

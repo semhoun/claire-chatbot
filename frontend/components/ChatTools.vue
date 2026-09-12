@@ -3,6 +3,14 @@ import type { ToolCall } from '../types'
 import ClaireIcon from './ClaireIcon.vue'
 defineProps<{ tools: ToolCall[]; messageId: string }>()
 const display = (value: unknown): string => value == null ? '' : typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)
+const failed = (tool: ToolCall): boolean => {
+  if (tool.interrupted) return true
+  if (tool.running) return false
+  try {
+    const result = typeof tool.result === 'string' ? JSON.parse(tool.result) : tool.result
+    return result !== null && typeof result === 'object' && result.status === 'error'
+  } catch { return false }
+}
 </script>
 
 <template>
@@ -11,13 +19,17 @@ const display = (value: unknown): string => value == null ? '' : typeof value ==
       <summary class="claire-toolcall__summary" aria-label="Appels d’outils">
         <ClaireIcon name="settings" class="claire-toolcall__icon" />
         <svg class="claire-toolcall__icon claire-toolcall__icon--spinner" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="42 16" /></svg>
-        <ClaireIcon name="check" class="claire-toolcall__icon claire-toolcall__icon--done" />
+        <ClaireIcon v-if="!tools.some(failed)" name="check" class="claire-toolcall__icon claire-toolcall__icon--done" />
+        <span v-if="tools.some(tool => tool.interrupted)" class="claire-tools-interrupted">Exécution interrompue</span>
+        <span v-else-if="tools.some(failed)" class="claire-tools-failed">Échec d’un outil</span>
         <ClaireIcon name="chevron-down" class="claire-toolcall__chevron" />
         <span class="claire-visually-hidden">Appels d’outils</span>
       </summary>
       <div :id="`claire-toolscall-${messageId}`" class="claire-toolscall-data">
         <div v-for="tool in tools" :id="`claire-tool-${tool.id}`" :key="tool.id" class="claire-toolcall__text">
           <span v-if="tool.running" class="claire-tools-running-flag" hidden />
+          <span v-if="tool.interrupted">Exécution interrompue, aucun résultat confirmé.<br></span>
+          <span v-else-if="failed(tool)">Échec de l’outil.<br></span>
           Utilisation de l’outil : {{ tool.name }}<br>Paramètres :
           <ul><li v-for="(input, index) in tool.inputs" :key="index">{{ input.name }} : {{ display(input.value) }}</li></ul>
           Réponse :<pre v-if="tool.result != null && tool.result !== ''" class="claire-toolcall__result">{{ display(tool.result) }}</pre>

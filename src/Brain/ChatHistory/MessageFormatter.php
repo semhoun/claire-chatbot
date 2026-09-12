@@ -7,6 +7,7 @@ namespace App\Brain\ChatHistory;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
+use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Tools\ToolInterface;
 
 final class MessageFormatter
@@ -60,7 +61,10 @@ final class MessageFormatter
                 $formattedMessage['toolsCall'] = array_merge($formattedMessage['toolsCall'], $tools);
             }
 
-            if (count($this->displayHistory) === 0) {
+            // An interrupted tool group must not consume the next user turn.
+            if (count($this->displayHistory) === 0
+                || ($this->displayHistory[0] instanceof UserMessage
+                    && ! $this->displayHistory[0] instanceof ToolResultMessage)) {
                 return $formattedMessage;
             }
 
