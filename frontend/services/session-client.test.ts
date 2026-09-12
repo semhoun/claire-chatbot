@@ -11,6 +11,82 @@ function token(audience = 'session'): string {
 }
 
 describe('SessionClient', () => {
+  it('shares one bounded capability across 17 files and a stream, including renewal', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({
+      token: `batch-${fetchMock.mock.calls.length}`, expiresAt: Date.now() / 1000 + 10,
+    })))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient('https://claire.test', 120, 30)
+    try {
+      const files = Array.from({ length: 17 }, (_, index) => `/files/serve/file-${index}`)
+      const stream = { type: 'stream' as const, threadId: 'thread', sessionId: 'tab' }
+      const [urls, capability] = await Promise.all([
+        Promise.all(files.map(path => client.protectedResource(path))), client.resourceToken(stream),
+      ])
+      expect(fetchMock).toHaveBeenCalledOnce()
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).resources).toHaveLength(18)
+      expect(urls.every(({ url }) => new URL(url).searchParams.get('token') === capability.token)).toBe(true)
+      expect((await client.resourceToken(stream)).token).toBe(capability.token)
+      await vi.advanceTimersByTimeAsync(5000)
+      const renewed = await client.protectedResource(files[0])
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      for (const path of files) expect((await client.protectedResource(path)).url).toContain('token=batch-2')
+      expect(renewed.url).toContain('token=batch-2')
+      expect((await client.resourceToken(stream)).token).toBe('batch-2')
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally { client.destroy() }
+  })
+
+  it('splits large batches and retries failed batches without retaining rejected promises', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ token: 'batch', expiresAt: Date.now() / 1000 + 60 })))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient('https://claire.test', 120, 30)
+    try {
+      await Promise.all(Array.from({ length: 33 }, (_, index) => client.protectedResource(`/files/serve/${index}`)))
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      client.invalidateResources()
+      fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }))
+      const failed = await Promise.allSettled(['a', 'b'].map(id => client.protectedResource(`/files/serve/${id}`)))
+      expect(failed.every(result => result.status === 'rejected')).toBe(true)
+      await client.protectedResource('/files/serve/a')
+      expect(fetchMock).toHaveBeenCalledTimes(4)
+    } finally { client.destroy() }
+  })
+
+  it('bounds serialized claims even for long identifiers', async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      expect(JSON.stringify(JSON.parse(init.body as string).resources).length).toBeLessThanOrEqual(4000)
+      return new Response(JSON.stringify({ token: 'batch', expiresAt: Date.now() / 1000 + 60 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient('https://claire.test', 120, 30)
+    try {
+      await Promise.all(Array.from({ length: 17 }, (_, index) =>
+        client.protectedResource(`/files/serve/${'a'.repeat(250)}${index}`)))
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally { client.destroy() }
+  })
+
+  it('discards queued scopes before dispatch when the context changes', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({
+      token: 'new', expiresAt: Date.now() / 1000 + 60,
+    })))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient('https://claire.test', 120, 30)
+    try {
+      const old = client.protectedResource('/files/serve/old')
+      const rejected = expect(old).rejects.toMatchObject({ name: 'AbortError' })
+      client.invalidateResources()
+      await client.protectedResource('/files/serve/new')
+      await rejected
+      expect(fetchMock).toHaveBeenCalledOnce()
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+        resources: [{ type: 'file', fileId: 'new' }],
+      })
+    } finally { client.destroy() }
+  })
+
   it.each(['@@GENERATED@@artifact@@', '%40%40GENERATED%40%40artifact%40%40'])(
     'canonicalizes generated file identifiers for resource authorization: %s', async encodedId => {
       const fetchMock = vi.fn(async (_input: string, _init: RequestInit) => new Response(JSON.stringify({
@@ -25,7 +101,7 @@ describe('SessionClient', () => {
         expect(url.pathname).toBe('/files/serve/%40%40GENERATED%40%40artifact%40%40')
         expect(url.searchParams.get('token')).toBe('file-only')
         expect(JSON.parse(fetchMock.mock.calls[0][1].body as string))
-          .toEqual({ type: 'file', fileId: '@@GENERATED@@artifact@@' })
+          .toEqual({ resources: [{ type: 'file', fileId: '@@GENERATED@@artifact@@' }] })
       } finally { client.destroy() }
     },
   )
@@ -280,7 +356,7 @@ describe('SessionClient', () => {
     expect((await client.protectedResource('https://external.test/files/serve/file-1')).url).not.toContain('token=')
     expect((await client.protectedResource('//external.test/files/serve/file-1')).url).not.toContain('token=')
     expect(fetchMock).toHaveBeenCalledOnce()
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ type: 'file', fileId: 'file-1' })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ resources: [{ type: 'file', fileId: 'file-1' }] })
     client.destroy()
   })
 

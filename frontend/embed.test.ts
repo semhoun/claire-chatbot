@@ -80,15 +80,17 @@ function bootstrap(): ClaireBootstrap {
 }
 
 describe('embed public API', () => {
-  it.each(['normal', 'embed'] as const)('refreshes file links before TTL independently of snapshots in %s mode', async (mode) => {
+  it.each(['normal', 'embed'] as const)('shares and renews 17 files of different media types in %s mode', async (mode) => {
     vi.useFakeTimers()
     let fileRequests = 0
     const open = vi.spyOn(window, 'open').mockImplementation(() => null)
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init: RequestInit) => {
       if (new URL(input).pathname === '/auth/resource-token') {
-        const resource = JSON.parse(init.body as string)
+        const resources = JSON.parse(init.body as string).resources
+        const resource = resources[0]
         if (resource.type === 'file') {
           expect(resource).toEqual({ type: 'file', fileId: 'a' })
+          expect(resources).toHaveLength(17)
           return new Response(JSON.stringify({ token: `file-${++fileRequests}`, expiresAt: Date.now() / 1000 + 300 }))
         }
         return new Response(JSON.stringify({ token: 'stream', expiresAt: Date.now() / 1000 + 300 }))
@@ -97,11 +99,15 @@ describe('embed public API', () => {
     }))
     const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
     const html = '<article id="claire-a"><span id="claire-message-a"><a class="claire-generated-file" href="/files/serve/a" target="_blank" rel="noopener">Open</a><a class="claire-generated-file" href="/files/serve/a" download="result.txt">Download</a><a class="claire-generated-file" href="https://external.test/files/serve/b">External</a></span></article>'
+      + Array.from({ length: 15 }, (_, index) => `<img class="claire-generated-image" data-protected-src="/files/serve/image-${index}">`).join('')
+      + '<audio class="claire-generated-audio" data-protected-src="/files/serve/audio"></audio>'
     try {
       await flushPromises()
       FakeEventSource.instances[0].emit('chat.snapshot', { html, responding: true, activeMessageId: 'a' })
       await flushPromises()
       expect(fileRequests).toBe(1)
+      expect(wrapper.findAll<HTMLImageElement>('img.claire-generated-image').every(image => image.element.src.includes('token=file-1'))).toBe(true)
+      expect(wrapper.find<HTMLAudioElement>('audio.claire-generated-audio').element.src).toContain('token=file-1')
       // Replacing fragments during streaming must only reuse the cached capability.
       for (let index = 0; index < 20; index++) {
         FakeEventSource.instances[0].emit('chat.assistant.update', {
@@ -155,7 +161,7 @@ describe('embed public API', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init: RequestInit) => {
       const path = new URL(input).pathname
       if (path === '/auth/resource-token') {
-        if (JSON.parse(init.body as string).type === 'file') {
+        if (JSON.parse(init.body as string).resources[0].type === 'file') {
           if (++fileRequests === 2) {
             const response = new Response()
             vi.spyOn(response, 'json').mockImplementation(() => new Promise(resolve => { release = resolve }))

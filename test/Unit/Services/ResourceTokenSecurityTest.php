@@ -53,8 +53,51 @@ final class ResourceTokenSecurityTest extends TestCase
         self::assertNull($tokens->parseFileToken('malformed'));
     }
 
+    public function testBatchExpiryIsBoundedBySessionAndCannotAuthenticateAsSession(): void
+    {
+        $tokens = new JwtTokenService($this->settings());
+        $deadline = time() + 20;
+        $token = $tokens->generateResourcesToken($this->session(), [
+            ['type' => 'file', 'fileId' => 'file-1'],
+            ['type' => 'stream', 'threadId' => 'thread-1', 'sessionId' => 'tab-1'],
+        ], $deadline);
+        self::assertLessThanOrEqual($deadline, $tokens->parseResourcesToken($token)['expiresAt']);
+        self::assertNull($tokens->parseSessionToken($token));
+        self::assertNull($tokens->parseFileToken($token));
+        self::assertNull($tokens->parseResourcesToken($token . 'tampered'));
+        $this->expectException(\InvalidArgumentException::class);
+        $tokens->generateResourcesToken($this->session(), [['type' => 'file', 'fileId' => 'file-1']], time() - 1);
+    }
+
+    public function testMalformedSignedBatchScopesAreRejected(): void
+    {
+        $tokens = new JwtTokenService($this->settings());
+        $config = \Lcobucci\JWT\Configuration::forSymmetricSigner(
+            new \Lcobucci\JWT\Signer\Hmac\Sha256(), \Lcobucci\JWT\Signer\Key\InMemory::plainText(str_repeat('s', 32))
+        );
+        $now = new \DateTimeImmutable();
+        foreach ([null, [], 'all', [['type' => 'session']], [['type' => 'file', 'fileId' => '../x']],
+            [['type' => 'stream', 'threadId' => 'thread-1']],
+            array_fill(0, 33, ['type' => 'file', 'fileId' => 'a']),
+            array_fill(0, 20, ['type' => 'file', 'fileId' => str_repeat('a', 255)]),
+        ] as $resources) {
+            $token = $config->builder()->relatedTo('user-1')->permittedFor('resources')
+                ->issuedAt($now)->canOnlyBeUsedAfter($now)->expiresAt($now->modify('+60 seconds'))
+                ->withClaim('resources', $resources)->getToken($config->signer(), $config->signingKey())->toString();
+            self::assertNull($tokens->parseResourcesToken($token));
+        }
+    }
+
     public static function requests(): iterable
     {
+        yield 'batch file' => ['batch', 'GET', '/files/serve/file-1', [], false, 200];
+        yield 'batch second file' => ['batch', 'HEAD', '/files/serve/file-2', [], false, 200];
+        yield 'batch wrong file' => ['batch', 'GET', '/files/serve/file-3', [], false, 403];
+        yield 'batch stream' => ['batch', 'GET', '/brain/stream', ['threadId' => 'thread-1', 'sessionId' => 'tab-1'], false, 200];
+        yield 'batch scope cross product' => ['batch', 'GET', '/brain/stream', ['threadId' => 'thread-1', 'sessionId' => 'tab-2'], false, 403];
+        yield 'batch general' => ['batch', 'GET', '/history/list', [], true, 403];
+        yield 'batch mint' => ['batch', 'POST', '/auth/resource-token', [], true, 403];
+        yield 'batch write' => ['batch', 'POST', '/files/serve/file-1', [], false, 403];
         yield 'file get' => ['file', 'GET', '/files/serve/file-1', [], false, 200];
         yield 'generated file encoded path' => ['file', 'GET', '/files/serve/%40%40GENERATED%40%40artifact%40%40',
             [], false, 200, '', '@@GENERATED@@artifact@@'];
@@ -89,15 +132,20 @@ final class ResourceTokenSecurityTest extends TestCase
         );
         $now = new \DateTimeImmutable();
         foreach ([[-600, -1, false], [60, 120, false], [0, 301, false], [0, 60, true]] as [$iat, $exp, $multi]) {
-            $builder = $config->builder()->relatedTo('user-1')->permittedFor('resource-file')
-                ->issuedAt($now->modify(sprintf('%+d seconds', $iat)))
-                ->canOnlyBeUsedAfter($now->modify(sprintf('%+d seconds', $iat)))
-                ->expiresAt($now->modify(sprintf('%+d seconds', $exp)))
-                ->withClaim('fileId', 'file-1');
-            if ($multi) {
-                $builder = $builder->permittedFor('session');
+            foreach (['resource-file', 'resources'] as $audience) {
+                $builder = $config->builder()->relatedTo('user-1')->permittedFor($audience)
+                    ->issuedAt($now->modify(sprintf('%+d seconds', $iat)))
+                    ->canOnlyBeUsedAfter($now->modify(sprintf('%+d seconds', $iat)))
+                    ->expiresAt($now->modify(sprintf('%+d seconds', $exp)))
+                    ->withClaim('fileId', 'file-1')
+                    ->withClaim('resources', [['type' => 'file', 'fileId' => 'file-1']]);
+                if ($multi) {
+                    $builder = $builder->permittedFor('session');
+                }
+                $token = $builder->getToken($config->signer(), $config->signingKey())->toString();
+                self::assertNull($tokens->parseFileToken($token));
+                self::assertNull($tokens->parseResourcesToken($token));
             }
-            self::assertNull($tokens->parseFileToken($builder->getToken($config->signer(), $config->signingKey())->toString()));
         }
     }
 
@@ -110,6 +158,12 @@ final class ResourceTokenSecurityTest extends TestCase
         $tokens = new JwtTokenService($settings);
         $session = $this->session();
         $token = match ($type) {
+            'batch' => $tokens->generateResourcesToken($session, [
+                ['type' => 'file', 'fileId' => 'file-1'],
+                ['type' => 'file', 'fileId' => 'file-2'],
+                ['type' => 'stream', 'threadId' => 'thread-1', 'sessionId' => 'tab-1'],
+                ['type' => 'stream', 'threadId' => 'thread-2', 'sessionId' => 'tab-2'],
+            ], time() + 60),
             'file' => $tokens->generateFileToken($session, $fileId),
             'stream' => $tokens->generateStreamToken($session, 'thread-1', 'tab-1'),
             'mini' => $tokens->generateMiniToken($session),

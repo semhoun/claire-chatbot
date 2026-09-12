@@ -43,6 +43,23 @@ final class AuthResourceTokenTest extends TestCase
 
     public static function resources(): iterable
     {
+        yield 'mixed batch' => [['resources' => [
+            ['type' => 'file', 'fileId' => 'file-1'],
+            ['type' => 'stream', 'threadId' => 'thread-1', 'sessionId' => 'tab-1'],
+        ]], 'user-1', true, false, 200];
+        yield 'foreign batch' => [['resources' => [['type' => 'file', 'fileId' => 'file-1']]],
+            'other', true, false, 404];
+        yield 'foreign final resource rejects entire batch' => [['resources' => [
+            ['type' => 'file', 'fileId' => 'file-1'],
+            ['type' => 'stream', 'threadId' => 'thread-1', 'sessionId' => 'tab-1'],
+        ]], 'user-1', true, false, 404, [], true];
+        yield 'empty batch' => [['resources' => []], null, true, false, 400];
+        yield 'non-list batch' => [['resources' => ['file' => ['type' => 'file', 'fileId' => 'file-1']]],
+            null, true, false, 400];
+        yield 'oversized batch' => [['resources' => array_fill(0, 33, ['type' => 'file', 'fileId' => 'a'])],
+            null, true, false, 400];
+        yield 'unknown scope' => [['resources' => [['type' => 'file', 'fileId' => 'a', 'all' => true]]],
+            null, true, false, 400];
         yield 'owned file' => [['type' => 'file', 'fileId' => 'file-1'], 'user-1', true, false, 200];
         yield 'foreign file' => [['type' => 'file', 'fileId' => 'file-1'], 'other', true, false, 404];
         yield 'missing file' => [['type' => 'file', 'fileId' => 'file-1'], null, true, false, 404];
@@ -64,22 +81,29 @@ final class AuthResourceTokenTest extends TestCase
     #[DataProvider('resources')]
     public function testAuthenticatedOwnershipGuard(
         array $payload, ?string $owner, bool $authenticated, bool $resource, int $status, array $state = [],
+        bool $foreignLast = false,
     ): void {
         $entityManager = $this->createMock(EntityManager::class);
         $lookup = in_array($status, [200, 404], true);
         if ($lookup) {
-            $entity = null;
-            if ($owner !== null) {
-                $user = new User();
-                $user->setId($owner);
-                $entity = $payload['type'] === 'file' ? new File() : new ChatHistory();
-                $entity->setUser($user);
+            $scopes = $payload['resources'] ?? [$payload];
+            $repositories = [];
+            foreach ($scopes as $index => $scope) {
+                $entity = null;
+                if ($owner !== null) {
+                    $user = new User();
+                    $user->setId($foreignLast && $index === count($scopes) - 1 ? 'other' : $owner);
+                    $entity = $scope['type'] === 'file' ? new File() : new ChatHistory();
+                    $entity->setUser($user);
+                }
+                $repository = $this->createMock(EntityRepository::class);
+                $repository->expects(self::once())->method('findOneBy')->with(
+                    $scope['type'] === 'file' ? ['fileId' => 'file-1'] : ['threadId' => 'thread-1']
+                )->willReturn($entity);
+                $repositories[] = $repository;
             }
-            $repository = $this->createMock(EntityRepository::class);
-            $repository->expects(self::once())->method('findOneBy')->with(
-                $payload['type'] === 'file' ? ['fileId' => 'file-1'] : ['threadId' => 'thread-1']
-            )->willReturn($entity);
-            $entityManager->expects(self::once())->method('getRepository')->willReturn($repository);
+            $entityManager->expects(self::exactly(count($scopes)))->method('getRepository')
+                ->willReturnOnConsecutiveCalls(...$repositories);
         } else {
             $entityManager->expects(self::never())->method('getRepository');
         }
@@ -89,7 +113,7 @@ final class AuthResourceTokenTest extends TestCase
         $tokens = new JwtTokenService($settings);
         $redis = $this->createMock(RedisClient::class);
         $generation = new ChatGenerationState($redis, $settings);
-        if ($lookup && $payload['type'] === 'stream' && $owner === null) {
+        if ($lookup && ($payload['type'] ?? null) === 'stream' && $owner === null) {
             $redis->expects(self::once())->method('hgetall')
                 ->with($generation->key('user-1', 'thread-1'))->willReturn($state);
         } else {
@@ -116,8 +140,12 @@ final class AuthResourceTokenTest extends TestCase
         self::assertSame('no-store', $response->getHeaderLine('Cache-Control'));
         if ($status === 200) {
             $body = json_decode((string) $response->getBody(), true, 512, JSON_THROW_ON_ERROR);
-            $claims = $payload['type'] === 'file'
-                ? $tokens->parseFileToken($body['token']) : $tokens->parseStreamToken($body['token']);
+            $claims = isset($payload['resources']) ? $tokens->parseResourcesToken($body['token'])
+                : ($payload['type'] === 'file'
+                    ? $tokens->parseFileToken($body['token']) : $tokens->parseStreamToken($body['token']));
+            if (isset($payload['resources'])) {
+                self::assertSame($payload['resources'], $claims['resources']);
+            }
             self::assertSame('user-1', $claims['userId']);
             self::assertSame($claims['expiresAt'], $body['expiresAt']);
             self::assertNull($tokens->parseSessionToken($body['token']));

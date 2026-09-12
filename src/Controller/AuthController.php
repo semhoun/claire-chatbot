@@ -222,45 +222,60 @@ final readonly class AuthController
         }
 
         $payload = $this->extractEmbedExchangePayload($request);
-        $type = $payload['type'] ?? null;
-        $fields = match ($type) {
-            'file' => ['fileId'],
-            'stream' => ['threadId', 'sessionId'],
-            default => [],
-        };
-        if ($fields === []) {
-            return $this->jsonResponse($response, ['error' => 'invalid_resource_type'], 400);
+        $batched = array_key_exists('resources', $payload);
+        $resources = $batched ? $payload['resources'] : [$payload];
+        if ($batched && ! $this->jwtTokenService->validResources($resources)) {
+            return $this->jsonResponse($response, ['error' => 'invalid_resource_scope'], 400);
         }
 
-        foreach ($fields as $field) {
-            if (! is_string($payload[$field] ?? null) || $payload[$field] === ''
-                || strlen($payload[$field]) > 255 || preg_match('/[\x00-\x20\/\\\\?#]/', $payload[$field])) {
-                return $this->jsonResponse($response, ['error' => 'invalid_resource_scope'], 400);
-            }
-        }
-
-        if ($type === 'file') {
-            $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $payload['fileId']]);
-            if (! $file instanceof File || $file->getUser()->getId() !== $userId) {
-                return $this->jsonResponse($response, ['error' => 'resource_not_found'], 404);
-            }
-        } else {
-            $thread = $this->entityManager->getRepository(ChatHistory::class)
-                ->findOneBy(['threadId' => $payload['threadId']]);
-            if ($thread !== null && $thread->getUser()->getId() !== $userId) {
-                return $this->jsonResponse($response, ['error' => 'resource_not_found'], 404);
+        foreach ($resources as $payload) {
+            $type = $payload['type'] ?? null;
+            $fields = match ($type) {
+                'file' => ['fileId'],
+                'stream' => ['threadId', 'sessionId'],
+                default => [],
+            };
+            if ($fields === []) {
+                return $this->jsonResponse($response, ['error' => 'invalid_resource_type'], 400);
             }
 
-            if ($thread === null) {
-                $state = $this->chatGenerationState->get($userId, $payload['threadId']);
-                if (($state['messageId'] ?? '') === ''
-                    || ! in_array($state['status'] ?? '', ['queued', 'running', 'done', 'error'], true)) {
+            foreach ($fields as $field) {
+                if (! is_string($payload[$field] ?? null) || $payload[$field] === ''
+                    || strlen($payload[$field]) > 255 || preg_match('/[\x00-\x20\/\\\\?#]/', $payload[$field])) {
+                    return $this->jsonResponse($response, ['error' => 'invalid_resource_scope'], 400);
+                }
+            }
+
+            if ($type === 'file') {
+                $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $payload['fileId']]);
+                if (! $file instanceof File || $file->getUser()->getId() !== $userId) {
                     return $this->jsonResponse($response, ['error' => 'resource_not_found'], 404);
+                }
+            } else {
+                $thread = $this->entityManager->getRepository(ChatHistory::class)
+                    ->findOneBy(['threadId' => $payload['threadId']]);
+                if ($thread !== null && $thread->getUser()->getId() !== $userId) {
+                    return $this->jsonResponse($response, ['error' => 'resource_not_found'], 404);
+                }
+
+                if ($thread === null) {
+                    $state = $this->chatGenerationState->get($userId, $payload['threadId']);
+                    if (($state['messageId'] ?? '') === ''
+                        || ! in_array($state['status'] ?? '', ['queued', 'running', 'done', 'error'], true)) {
+                        return $this->jsonResponse($response, ['error' => 'resource_not_found'], 404);
+                    }
                 }
             }
         }
 
         try {
+            if ($batched) {
+                $token = $this->jwtTokenService->generateResourcesToken(
+                    $session, $resources, $request->getAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT)
+                );
+                $claims = $this->jwtTokenService->parseResourcesToken($token);
+                return $this->jsonResponse($response, ['token' => $token, 'expiresAt' => $claims['expiresAt']]);
+            }
             $token = $type === 'file'
                 ? $this->jwtTokenService->generateFileToken($session, $payload['fileId'])
                 : $this->jwtTokenService->generateStreamToken($session, $payload['threadId'], $payload['sessionId']);

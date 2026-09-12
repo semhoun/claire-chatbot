@@ -12,6 +12,11 @@ interface StoredToken {
 
 interface ResourceToken extends StoredToken {
   renewAt: number
+  resources: ResourceScope[]
+}
+
+type ResourceScope = { type: 'file'; fileId: string } | {
+  type: 'stream'; threadId: string; sessionId: string
 }
 
 function jwtExpiration(token: string): number | null {
@@ -58,6 +63,7 @@ export class SessionClient {
   private authQueue: Promise<unknown> = Promise.resolve()
   private resourceGeneration = 0
   private readonly resources = new Map<string, Promise<ResourceToken>>()
+  private resourceBatch: { resources: ResourceScope[]; promise: Promise<ResourceToken> } | null = null
   private readonly requests = new Set<AbortController>()
 
   public constructor(
@@ -152,11 +158,10 @@ export class SessionClient {
   public invalidateResources(): void {
     this.resourceGeneration++
     this.resources.clear()
+    this.resourceBatch = null
   }
 
-  public async resourceToken(resource: { type: 'file'; fileId: string } | {
-    type: 'stream'; threadId: string; sessionId: string
-  }): Promise<ResourceToken> {
+  public async resourceToken(resource: ResourceScope): Promise<ResourceToken> {
     const generation = this.resourceGeneration
     const key = JSON.stringify(resource)
     const cached = this.resources.get(key)
@@ -165,26 +170,46 @@ export class SessionClient {
       if (generation !== this.resourceGeneration || this.destroyed) throw new DOMException('Resource invalidated', 'AbortError')
       if (value.renewAt > Date.now()) return value
       if (this.resources.get(key) !== cached) return this.resourceToken(resource)
-      this.resources.delete(key)
+      // Renew the same explicit scope together, including native links with separate timers.
+      for (const scope of value.resources) {
+        const scopeKey = JSON.stringify(scope)
+        if (this.resources.get(scopeKey) === cached) this.resources.delete(scopeKey)
+      }
+      const renewal = value.resources.map(scope => this.resourceToken(scope))
+      const values = await Promise.all(renewal)
+      return values[value.resources.findIndex(scope => JSON.stringify(scope) === key)]
     }
-    const pending = (async () => {
-      const response = await this.request('/auth/resource-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: key,
+    let batch = this.resourceBatch
+    const scopes = [...(batch?.resources ?? []), resource]
+    // JSON's ASCII representation also bounds the signed claim size on the server.
+    const size = JSON.stringify(scopes).replace(/[^\x00-\x7f]/g,
+      character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`).replace(/\//g, '\\/').length
+    if (batch === null || scopes.length > 32 || size > 4000) {
+      const resources: ResourceScope[] = []
+      const promise = Promise.resolve().then(async () => {
+        if (this.resourceBatch?.resources === resources) this.resourceBatch = null
+        if (generation !== this.resourceGeneration || this.destroyed) throw new DOMException('Resource invalidated', 'AbortError')
+        const response = await this.request('/auth/resource-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resources }),
+        })
+        if (generation !== this.resourceGeneration || this.destroyed) throw new DOMException('Resource invalidated', 'AbortError')
+        if (!response.ok) throw new Error(`Resource authorization failed: HTTP ${response.status}`)
+        const value = await response.json() as StoredToken
+        if (generation !== this.resourceGeneration || this.destroyed) throw new DOMException('Resource invalidated', 'AbortError')
+        if (typeof value.token !== 'string' || !value.token || !Number.isFinite(value.expiresAt)
+          || value.expiresAt * 1000 <= Date.now()) throw new Error('Invalid resource capability')
+        const expiresAt = Math.min(value.expiresAt * 1000, Date.now() + 300000)
+        const renewAt = expiresAt - Math.min(5000, (expiresAt - Date.now()) / 2)
+        return { token: value.token, expiresAt, renewAt, resources }
       })
-      if (generation !== this.resourceGeneration || this.destroyed) throw new DOMException('Resource invalidated', 'AbortError')
-      if (!response.ok) throw new Error(`Resource authorization failed: HTTP ${response.status}`)
-      const value = await response.json() as StoredToken
-      if (generation !== this.resourceGeneration || this.destroyed) throw new DOMException('Resource invalidated', 'AbortError')
-      if (typeof value.token !== 'string' || !value.token || !Number.isFinite(value.expiresAt)
-        || value.expiresAt * 1000 <= Date.now()) throw new Error('Invalid resource capability')
-      const expiresAt = value.expiresAt * 1000
-      const renewAt = expiresAt - Math.min(5000, (expiresAt - Date.now()) / 2)
-      return { token: value.token, expiresAt, renewAt }
-    })()
-    // Stream reconnects always mint a fresh capability.
-    if (resource.type === 'file') this.resources.set(key, pending)
+      batch = { resources, promise }
+      this.resourceBatch = batch
+    }
+    batch.resources.push(resource)
+    const pending = batch.promise
+    this.resources.set(key, pending)
     try {
       const value = await pending
       if (generation !== this.resourceGeneration || this.destroyed) throw new DOMException('Resource invalidated', 'AbortError')

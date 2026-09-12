@@ -59,7 +59,8 @@ final class JwtSessionMiddleware implements MiddlewareInterface
 
         if ($tokenString !== null) {
             $resource = $this->jwtTokenService->parseFileToken($tokenString)
-                ?? $this->jwtTokenService->parseStreamToken($tokenString);
+                ?? $this->jwtTokenService->parseStreamToken($tokenString)
+                ?? $this->jwtTokenService->parseResourcesToken($tokenString);
             if ($resource !== null) {
                 if (! $this->resourceMatchesRequest($request, $resource)) {
                     return new \Slim\Psr7\Response(403);
@@ -186,9 +187,17 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         ];
     }
 
-    /** @param array<string,string|int> $resource */
+    /** @param array<string,mixed> $resource */
     private function resourceMatchesRequest(Request $request, array $resource): bool
     {
+        if (isset($resource['resources'])) {
+            foreach ($resource['resources'] as $scope) {
+                if ($this->resourceMatchesRequest($request, $scope)) {
+                    return true;
+                }
+            }
+            return false;
+        }
         $path = $request->getUri()->getPath();
         $basePath = rtrim((string) $request->getAttribute(\Slim\Routing\RouteContext::BASE_PATH, ''), '/');
         if (isset($resource['fileId'])) {

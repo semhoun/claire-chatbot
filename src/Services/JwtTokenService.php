@@ -25,6 +25,10 @@ final readonly class JwtTokenService
 
     public const int RESOURCE_TTL = 300;
 
+    public const int RESOURCE_LIMIT = 32;
+
+    public const int RESOURCE_SCOPE_BYTES = 4000;
+
     private const string AUDIENCE_CLAIM = 'aud';
 
     private const string SESSION_AUDIENCE = 'session';
@@ -128,6 +132,66 @@ final readonly class JwtTokenService
         return $this->generateResourceToken($session, 'resource-file', ['fileId' => $fileId]);
     }
 
+    /** @param list<array<string,string>> $resources */
+    public function generateResourcesToken(SessionInterface $session, array $resources, int $expiresAt): string
+    {
+        $userId = $this->extractUserIdFromSession($session);
+        if ($session->get(Auth::AUTHENTICATED) !== true || $userId === '' || $userId === '0') {
+            throw new RuntimeException('Cannot generate resource token without authenticated user');
+        }
+        if (! $this->validResources($resources) || $expiresAt <= time()) {
+            throw new InvalidArgumentException('Invalid resource scope');
+        }
+
+        return $this->buildToken($userId, ['resources' => $resources],
+            min(self::RESOURCE_TTL, max(1, $this->ttl())), 'resources', $expiresAt);
+    }
+
+    /** @return array{userId:string,expiresAt:int,resources:array}|null */
+    public function parseResourcesToken(string $token): ?array
+    {
+        try {
+            $identity = $this->parseResourceToken($token, 'resources', []);
+            if ($identity === null) {
+                return null;
+            }
+            $resources = $this->parse($token)->claims()->get('resources');
+            return $this->validResources($resources) ? $identity + ['resources' => $resources] : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    public function validResources(mixed $resources): bool
+    {
+        if (! is_array($resources) || ! array_is_list($resources) || $resources === []
+            || count($resources) > self::RESOURCE_LIMIT
+            || strlen(json_encode($resources, JSON_THROW_ON_ERROR)) > self::RESOURCE_SCOPE_BYTES) {
+            return false;
+        }
+        foreach ($resources as $resource) {
+            if (! is_array($resource)) {
+                return false;
+            }
+            $fields = match ($resource['type'] ?? null) {
+                'file' => ['type', 'fileId'],
+                'stream' => ['type', 'threadId', 'sessionId'],
+                default => [],
+            };
+            if ($fields === [] || count($resource) !== count($fields)) {
+                return false;
+            }
+            foreach ($fields as $field) {
+                $value = $resource[$field] ?? null;
+                if (! is_string($value) || $value === '' || strlen($value) > 255
+                    || preg_match('/[\x00-\x20\/\\\\?#]/', $value)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     public function generateStreamToken(SessionInterface $session, string $threadId, string $sessionId): string
     {
         return $this->generateResourceToken($session, 'resource-stream', [
@@ -208,15 +272,23 @@ final readonly class JwtTokenService
         array $claims,
         int $lifetime,
         string $audience,
+        ?int $expiresAt = null,
     ): string {
         $inMemory = InMemory::plainText($this->settings->get('session.jwt.secret'));
         $sha256 = new Sha256();
         $now = new DateTimeImmutable();
+        $expiration = $now->modify(sprintf('+%d seconds', $lifetime));
+        if ($expiresAt !== null) {
+            if ($expiresAt <= $now->getTimestamp()) {
+                throw new InvalidArgumentException('Resource authorization expired');
+            }
+            $expiration = $expiration->setTimestamp(min($expiration->getTimestamp(), $expiresAt));
+        }
 
         $builder = Builder::new(new JoseEncoder(), ChainedFormatter::withUnixTimestampDates())
             ->issuedAt($now)
             ->canOnlyBeUsedAfter($now)
-            ->expiresAt($now->modify(sprintf('+%d seconds', $lifetime)))
+            ->expiresAt($expiration)
             ->identifiedBy(Uuid::uuid4()->toString())
             ->relatedTo($subject)
             ->permittedFor($audience);
