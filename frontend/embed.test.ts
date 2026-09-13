@@ -90,6 +90,50 @@ function bootstrap(): ClaireBootstrap {
 }
 
 describe('embed public API', () => {
+  it.each(['normal', 'embed'] as const)('resizes the composer after edits, submission and restored messages in %s', async mode => {
+    const longMessage = 'Long message\n'.repeat(20)
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      const path = new URL(input).pathname
+      if (path === '/auth/resource-token') return new Response(capability())
+      if (path === '/history/exchange/last') return new Response(JSON.stringify({ messages: [], removedMessage: longMessage }))
+      return new Response('0')
+    }))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+    try {
+      await flushPromises()
+      if (mode === 'embed') await wrapper.get('.claire-embed-toolbar__left').trigger('click')
+      const input = wrapper.get<HTMLTextAreaElement>('textarea')
+      Object.defineProperty(input.element, 'scrollHeight', { configurable: true, get: () => {
+        expect(input.element.style.height).toBe('auto')
+        return input.element.value.length > 100 ? 400 : 24
+      } })
+      await input.setValue(longMessage)
+      expect(input.element.style.height).toBe('160px')
+      await input.setValue('Short')
+      expect(input.element.style.height).toBe('24px')
+      await input.setValue(longMessage)
+      await wrapper.get('form#claire-brain-chat').trigger('submit')
+      await flushPromises()
+      expect(input.element.value).toBe('')
+      expect(input.element.style.height).toBe('24px')
+      const source = FakeEventSource.instances[0]
+      source.emit('chat.snapshot', { responding: false, messages: [] })
+      await flushPromises()
+      await wrapper.get('[aria-label="Annuler le dernier échange"]').trigger('click')
+      await flushPromises()
+      expect(input.element.value).toBe(longMessage)
+      expect(input.element.style.height).toBe('160px')
+      source.emit('chat.snapshot', { messages: [], restoredMessage: 'Short' })
+      await flushPromises()
+      expect(input.element.style.height).toBe('24px')
+      source.emit('chat.snapshot', { messages: [], restoredMessage: longMessage })
+      await flushPromises()
+      expect(input.element.style.height).toBe('160px')
+      await input.setValue('')
+      expect(input.element.style.height).toBe('24px')
+    } finally { wrapper.unmount() }
+  })
+
   it.each(['normal', 'embed'] as const)('preserves the header avatar outside message groups in %s', async mode => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
       new URL(input).pathname === '/auth/resource-token' ? capability() : '0',

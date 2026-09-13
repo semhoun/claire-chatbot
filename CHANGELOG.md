@@ -50,6 +50,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Documentation** : exemples Docker et développement local complétés avec Redis, SSO et workers ; contrats API et procédures de migration et maintenance actualisés
 
 ### Fixed
+- **Saisie** : recalcul de la hauteur du champ après chaque modification du contenu dans le chat normal et le widget, avec réduction après effacement ou envoi et agrandissement lors de la restauration du dernier échange annulé ; tests de régression dans les deux modes
 - **Coloration syntaxique** : maintien des couleurs pendant les mises à jour SSE et sur les blocs Markdown encore ouverts, sans manipulation concurrente du DOM
 - **PWA** : identité dérivée de `start_url` en omettant `id`, afin d'éviter une identité partagée entre plusieurs chemins de montage sur la même origine
 - **Authentification** : comparaison des routes publiques relativement au chemin de montage, tout en conservant la protection de `/auth/refresh` et `/auth/resource-token`

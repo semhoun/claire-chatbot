@@ -773,11 +773,14 @@ function handleComposerKeydown(event: KeyboardEvent): void {
   }
 }
 
-function resizeComposer(event: Event): void {
-  const input = event.target as HTMLTextAreaElement
+function resizeComposer(): void {
+  const input = messageInput.value
+  if (input === null) return
   input.style.height = 'auto'
   input.style.height = `${Math.min(input.scrollHeight, 160)}px`
 }
+
+watch([message, collapsed], resizeComposer, { flush: 'post' })
 
 function selectLocalFiles(event: Event): void {
   const input = event.target as HTMLInputElement
@@ -1239,7 +1242,7 @@ onBeforeUnmount(() => {
             <input id="claire-session-id-input" type="hidden" :value="sessionId">
             <input id="claire-chat-upload" ref="chatFileInput" class="claire-chat-input__file" type="file" multiple :accept="config.acceptedExt" :disabled="composerDisabled" @change="selectLocalFiles">
             <span id="claire-chat-attached-files-chat" class="claire-chat-attached"><span v-for="(file, index) in localFiles" :key="`${file.name}-${file.lastModified}`" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" :disabled="composerDisabled" @click="removeLocalFile(index)"><ClaireIcon name="close" /></button></span><span v-for="file in storedFiles" :key="file.id" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" :disabled="composerDisabled" @click="removeStoredFile(file.id)"><ClaireIcon name="close" /></button></span></span>
-            <textarea ref="messageInput" v-model="message" class="claire-chat-input__field claire-chat-input__field--multiline" aria-label="Votre message" :placeholder="responding ? '' : 'Message...'" rows="1" required :disabled="composerDisabled" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
+            <textarea ref="messageInput" v-model="message" class="claire-chat-input__field claire-chat-input__field--multiline" aria-label="Votre message" :placeholder="responding ? '' : 'Message...'" rows="1" required :disabled="composerDisabled" @keydown="handleComposerKeydown"></textarea>
             <button v-if="config.audioAvailable && audioEnabled" class="claire-chat-icon-btn claire-chat-input__toggleable" :class="{ 'claire-is-recording': recording }" type="button" :aria-label="recording ? 'Arrêter l’enregistrement' : 'Dicter un message'" :disabled="composerDisabled || transcribing" @click="toggleRecording"><ClaireIcon name="microphone" /></button>
             <div class="claire-chat-input__actions"><button class="claire-chat-icon-btn claire-chat-input__toggleable" type="button" aria-label="Annuler le dernier échange" :disabled="composerDisabled" @click="deleteLastExchange"><ClaireIcon name="undo" /></button><button class="claire-chat-icon-btn" type="submit" aria-label="Envoyer" :disabled="composerDisabled || message.trim() === ''"><ClaireIcon name="send" /></button></div>
           </form></footer>
@@ -1269,7 +1272,7 @@ onBeforeUnmount(() => {
             <input id="claire-session-id-input" type="hidden" :value="sessionId">
             <input id="claire-chat-upload" ref="chatFileInput" class="claire-chat-input__file" type="file" multiple :accept="config.acceptedExt" :disabled="composerDisabled" @change="selectLocalFiles">
             <span id="claire-chat-attached-files-chat" class="claire-chat-attached"><span v-for="(file, index) in localFiles" :key="`${file.name}-${file.lastModified}`" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" :disabled="composerDisabled" @click="removeLocalFile(index)"><ClaireIcon name="close" /></button></span><span v-for="file in storedFiles" :key="file.id" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" :disabled="composerDisabled" @click="removeStoredFile(file.id)"><ClaireIcon name="close" /></button></span></span>
-            <textarea ref="messageInput" v-model="message" class="claire-chat-input__field claire-chat-input__field--multiline" aria-label="Votre message" :placeholder="responding ? '' : 'Message...'" rows="1" required :disabled="composerDisabled" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
+            <textarea ref="messageInput" v-model="message" class="claire-chat-input__field claire-chat-input__field--multiline" aria-label="Votre message" :placeholder="responding ? '' : 'Message...'" rows="1" required :disabled="composerDisabled" @keydown="handleComposerKeydown"></textarea>
             <button v-if="config.audioAvailable && audioEnabled" class="claire-chat-icon-btn claire-chat-input__toggleable" :class="{ 'claire-is-recording': recording }" type="button" :aria-label="recording ? 'Arrêter l’enregistrement' : 'Dicter un message'" :disabled="composerDisabled || transcribing" @click="toggleRecording"><ClaireIcon name="microphone" /></button>
             <div class="claire-chat-input__actions"><button class="claire-chat-icon-btn claire-chat-input__toggleable" type="button" aria-label="Annuler le dernier échange" :disabled="composerDisabled" @click="deleteLastExchange"><ClaireIcon name="undo" /></button><button class="claire-chat-icon-btn" type="submit" aria-label="Envoyer" :disabled="composerDisabled || message.trim() === ''"><ClaireIcon name="send" /></button></div>
           </form></footer>
