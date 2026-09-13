@@ -101,6 +101,38 @@ final class VueShellTest extends TestCase
         yield 'empty CSS path' => ['{"frontend/main.ts":{"css":[""]}}', RuntimeException::class];
     }
 
+    #[DataProvider('applicationNames')]
+    public function testApplicationMetadata(array $data, string $escapedName): void
+    {
+        copy(dirname(__DIR__, 3) . '/frontend/shell.html', $this->appRoot . '/frontend/shell.html');
+        $html = new VueShell($this->appRoot)->document($data);
+        $baseUrl = $data['baseUrl'] ?? '';
+
+        self::assertStringContainsString('<title>' . $escapedName . '</title>', $html);
+        self::assertStringContainsString(
+            '<meta name="apple-mobile-web-app-title" content="' . $escapedName . '">', $html
+        );
+        self::assertStringContainsString('<meta name="apple-mobile-web-app-capable" content="yes">', $html);
+        self::assertStringContainsString(
+            '<link rel="manifest" href="' . $baseUrl . '/manifest.webmanifest">', $html
+        );
+        self::assertStringContainsString(
+            '<link rel="apple-touch-icon" href="' . $baseUrl . '/image/icon-192.png">', $html
+        );
+        self::assertStringNotContainsString('__APP_NAME__', $html);
+        self::assertStringNotContainsString('<script>alert(1)</script>', $html);
+    }
+
+    public static function applicationNames(): iterable
+    {
+        yield 'default' => [[], 'Claire'];
+        yield 'custom subpath' => [['appName' => 'My Chat', 'baseUrl' => '/chat'], 'My Chat'];
+        yield 'HTML escaped' => [
+            ['appName' => '<script>alert(1)</script> & "AI" \'chat\'', 'baseUrl' => '/chat'],
+            '&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;AI&quot; &#039;chat&#039;',
+        ];
+    }
+
     private function manifest(string $contents): void
     {
         file_put_contents($this->appRoot . '/public/build/.vite/manifest.json', $contents);

@@ -23,6 +23,7 @@ final readonly class VueShell
         }
 
         return strtr($shell, [
+            '__APP_NAME__' => htmlspecialchars((string) ($data['appName'] ?? 'Claire'), ENT_QUOTES, 'UTF-8'),
             '__BASE_URL__' => htmlspecialchars((string) ($data['baseUrl'] ?? ''), ENT_QUOTES, 'UTF-8'),
             '__APP_CSS__' => $this->stylesheets($appRoot, (string) ($data['baseUrl'] ?? '')),
             '__PAGE_DATA__' => json_encode($data, JSON_THROW_ON_ERROR | JSON_HEX_TAG

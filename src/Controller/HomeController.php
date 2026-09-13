@@ -35,6 +35,7 @@ final readonly class HomeController
         if (! str_contains($request->getHeaderLine('Accept'), 'application/json')) {
             return $this->vueShell->respond($response, [
                 'page' => 'app', 'baseUrl' => (string) $request->getAttribute('base_url'),
+                'appName' => $this->settings->get('name'),
             ]);
         }
 

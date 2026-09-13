@@ -76,6 +76,12 @@ final readonly class AuthMiddleware implements MiddlewareInterface
     private function isPublicRoute(Request $request): bool
     {
         $path = $request->getUri()->getPath();
+        // Slim's RouteRunner sets BASE_PATH only after global middleware.
+        $basePath = rtrim((string) parse_url((string) $request->getAttribute('base_url'), PHP_URL_PATH), '/');
+        if ($basePath !== '' && str_starts_with($path, $basePath . '/')) {
+            $path = substr($path, strlen($basePath));
+        }
+
         if (in_array($path, ['/auth/refresh', '/auth/resource-token'], true)) {
             return false;
         }
@@ -100,6 +106,7 @@ final readonly class AuthMiddleware implements MiddlewareInterface
 
         return $this->vueShell->respond(new SlimResponse(200), [
             'page' => 'app', 'baseUrl' => (string) $request->getAttribute('base_url'),
+            'appName' => $this->settings->get('name'),
         ]);
     }
 }

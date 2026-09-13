@@ -15,6 +15,7 @@ services:
     environment:
       # === Configuration serveur ===
       BASE_URL: https://claire.example.com
+      APP_NAME: ${APP_NAME:-Claire}
       SERVER_NAME: claire.example.com
       ACME_EMAIL: admin@example.com
       ENABLE_LETSENCRYPT: true

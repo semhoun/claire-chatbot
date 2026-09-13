@@ -56,6 +56,7 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript 
 
 | Variable | Description | Défaut                    |
 |----------|-------------|---------------------------|
+| `APP_NAME` | Nom de l'application normale et de la PWA (sans modifier les agents ni le widget) | `Claire` |
 | `OPENAPI_MODEL_SUMMARY` | Modèle pour les résumés | valeur de `OPENAPI_MODEL` |
 | `OPENAPI_MODEL_EMBED` | Modèle pour embeddings (RAG) | désactivé                 |
 | `RAG_CHUNK_SIZE` | Taille maximale des segments RAG | `1000`                    |

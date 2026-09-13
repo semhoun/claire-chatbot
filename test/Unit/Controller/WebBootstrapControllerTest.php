@@ -97,6 +97,7 @@ final class WebBootstrapControllerTest extends TestCase
     public function testBootstrapReturnsJsonAndQueuesOnlyOnce(string $mode): void
     {
         $settings = new Settings([
+            'name' => 'My <Chat> & "AI"',
             'llm' => ['brains' => ['test' => BootstrapTestBrain::class], 'yamlBrains' => ['path' => '/tmp/kilo/no-brains']],
             'tools' => ['comfyui' => ['enabled' => false]],
             'files' => ['upload' => ['acceptedExt' => '.txt']],
@@ -133,6 +134,10 @@ final class WebBootstrapControllerTest extends TestCase
             $shell = $controller->index($request->withHeader('Accept', 'text/html'), new Response());
             self::assertSame('no-store', $shell->getHeaderLine('Cache-Control'));
             self::assertStringContainsString('id="claire-vue-app"', (string) $shell->getBody());
+            self::assertStringContainsString(
+                '<title>My &lt;Chat&gt; &amp; &quot;AI&quot;</title>',
+                (string) $shell->getBody()
+            );
             self::assertStringNotContainsString('<article', (string) $shell->getBody());
             self::assertSame([], $queued);
         }

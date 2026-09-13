@@ -10,6 +10,7 @@ return [
     ],
     'public_routes' => [
         '/health',
+        '/manifest.webmanifest',
         '/embed',
         '/logout',
         '/auth',

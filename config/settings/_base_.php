@@ -10,6 +10,7 @@ Env::require([
 ]);
 
 return [
+    'name' => Env::get('APP_NAME', 'Claire'),
     'version' => Env::get('CLAIRE_APP_VERSION', 'wip'),
     'debug' => Env::get('DEBUG_MODE', false),
     'cache_dir' => Settings::getAppRoot() . '/var/cache',
