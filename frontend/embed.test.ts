@@ -18,6 +18,7 @@ function file(id = 'a', type = 'pdf', name = 'result.txt'): GeneratedFile {
 class FakeEventSource {
   public static instances: FakeEventSource[] = []
   public onerror: (() => void) | null = null
+  public onopen: (() => void) | null = null
   public closed = false
   private readonly listeners = new Map<string, Array<(event: MessageEvent<string>) => void>>()
 
@@ -775,7 +776,7 @@ describe('embed public API', () => {
     expect(requests).toBe(3)
   })
 
-  it('cancels renewal on error and cancels reconnect backoff on navigation', async () => {
+  it('reauthorizes on error and cancels reconnect backoff on navigation', async () => {
     vi.useFakeTimers()
     let requests = 0
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
@@ -1127,7 +1128,7 @@ describe('embed public API', () => {
     } finally { wrapper.unmount() }
   })
 
-  it.each([[30, 25000], [600, 295000], [1, 500]])('renews a %ss capability after %sms without overlapping sources', async (ttl, renewalDelay) => {
+  it.each([1, 30, 600])('keeps a stream beyond its %ss token TTL and local cap, reauthorizing only on disconnect', async ttl => {
     vi.useFakeTimers()
     const config = { ...bootstrap(), baseUrl: 'https://claire.test' }
     let release!: (response: Response) => void
@@ -1143,14 +1144,17 @@ describe('embed public API', () => {
     const wrapper = mount(ClaireApp, { props: { config } })
     await flushPromises()
     expect(String(FakeEventSource.instances[0].url)).toContain('token=stream-1')
-    await vi.advanceTimersByTimeAsync(renewalDelay - 1)
+    await vi.advanceTimersByTimeAsync(Math.max(301000, ttl * 1000 + 1000))
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(FakeEventSource.instances[0].closed).toBe(false)
-    await vi.advanceTimersByTimeAsync(1)
+    expect(capabilities).toBe(1)
+    FakeEventSource.instances[0].onerror?.()
+    await vi.advanceTimersByTimeAsync(1500)
     expect(FakeEventSource.instances[0].closed).toBe(true)
     expect(String(FakeEventSource.instances[1].url)).toContain('token=stream-2')
     expect(FakeEventSource.instances.filter(source => !source.closed)).toHaveLength(1)
-    await vi.advanceTimersByTimeAsync(renewalDelay)
+    FakeEventSource.instances[1].onerror?.()
+    await vi.advanceTimersByTimeAsync(3000)
     wrapper.unmount()
     release(new Response(capability()))
     await flushPromises()
@@ -1158,7 +1162,188 @@ describe('embed public API', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  it.each(['normal', 'embed'] as const)('abandons lost audio by request ID but retains received audio in %s', async mode => {
+    vi.useFakeTimers()
+    const play = vi.spyOn(BrowserAudio.prototype, 'playReady').mockResolvedValue()
+    const requests: string[] = []
+    let rejectOld!: (error: Error) => void
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init: RequestInit) => {
+      const path = new URL(input).pathname
+      if (path === '/auth/resource-token') return new Response(capability())
+      if (path === '/brain/audio') {
+        requests.push((init.body as URLSearchParams).get('audioRequestId')!)
+        if (requests.length === 1) return new Promise<Response>((_, reject) => { rejectOld = reject })
+      }
+      return new Response('0')
+    }))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test', audioEnabled: true } } })
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances[0]
+      const messages = [entry('a'), entry('b'), entry('c'), entry('d')]
+      source.emit('chat.snapshot', { messages, audioRequestIds: { b: 'cached' } })
+      source.emit('chat.audio.ready', { messageId: 'b', audioRequestId: 'cached', audioData: btoa('cached') })
+      await flushPromises()
+      const cached = play.mock.calls[0][0]
+      source.emit('chat.assistant.start', { messageId: 'd' })
+      source.emit('chat.assistant.done', { messageId: 'd', audioRequestId: 'auto-d' })
+      await wrapper.get('#claire-a [data-audio-listen]').trigger('click')
+      source.emit('chat.snapshot', { messages, responding: false, audioRequestIds: { a: requests[0], b: 'cached' } })
+      await flushPromises()
+      expect(wrapper.get('#claire-a [data-audio-listen]').attributes('disabled')).toBeDefined()
+      expect(wrapper.get('#claire-d [data-audio-listen]').attributes('disabled')).toBeDefined()
+      source.onerror?.()
+      await flushPromises()
+      expect(wrapper.get('#claire-a [data-audio-listen]').attributes('disabled')).toBeUndefined()
+      expect(wrapper.get('#claire-d [data-audio-listen]').attributes('disabled')).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(1500)
+      const recovered = FakeEventSource.instances[1]
+      const snapshot = { messages, audioRequestIds: { a: requests[0], b: 'cached', c: 'missed-done', d: 'auto-d' } }
+      recovered.emit('chat.snapshot', snapshot)
+      recovered.emit('chat.snapshot', snapshot)
+      recovered.emit('chat.audio.ready', { messageId: 'a', audioRequestId: requests[0], audioData: btoa('lost') })
+      recovered.emit('chat.audio.ready', { messageId: 'c', audioRequestId: 'missed-done', audioData: btoa('lost') })
+      recovered.emit('chat.audio.ready', { messageId: 'd', audioRequestId: 'auto-d', audioData: btoa('lost') })
+      source.emit('chat.audio.ready', { messageId: 'a', audioRequestId: requests[0], audioData: btoa('stale') })
+      await flushPromises()
+      expect(play).toHaveBeenCalledTimes(1)
+      await wrapper.get('#claire-b [data-audio-listen]').trigger('click')
+      await wrapper.get('#claire-b [data-audio-listen]').trigger('click')
+      expect(play.mock.calls[1][0]).toBe(cached)
+      await wrapper.get('#claire-a [data-audio-listen]').trigger('click')
+      expect(requests).toHaveLength(2)
+      expect(requests[1]).not.toBe(requests[0])
+      rejectOld(new Error('obsolete HTTP failure'))
+      recovered.emit('chat.snapshot', snapshot)
+      recovered.emit('chat.audio.error', { messageId: 'a', audioRequestId: requests[0] })
+      await flushPromises()
+      expect(wrapper.get('#claire-a [data-audio-listen]').attributes('disabled')).toBeDefined()
+      recovered.emit('chat.audio.ready', { messageId: 'a', audioRequestId: requests[1], audioData: btoa('new') })
+      await flushPromises()
+      expect(play).toHaveBeenCalledTimes(3)
+      expect(wrapper.get('#claire-a [data-audio-listen]').attributes('disabled')).toBeUndefined()
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['normal', 'embed'] as const)('blocks audio retries during the reconnect gap until a snapshot in %s', async mode => {
+    vi.useFakeTimers()
+    const play = vi.spyOn(BrowserAudio.prototype, 'playReady').mockResolvedValue()
+    const requests: string[] = []
+    let capabilities = 0
+    let release!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init: RequestInit) => {
+      const path = new URL(input).pathname
+      if (path === '/auth/resource-token') {
+        if (++capabilities === 2) return new Promise<Response>(resolve => { release = resolve })
+        return new Response(capability())
+      }
+      if (path === '/brain/audio') requests.push((init.body as URLSearchParams).get('audioRequestId')!)
+      return new Response('0')
+    }))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test', audioEnabled: true } } })
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances[0]
+      const messages = [entry('a')]
+      source.emit('chat.snapshot', { messages })
+      await flushPromises()
+      const button = () => wrapper.get('#claire-a [data-audio-listen]')
+      await button().trigger('click')
+      await flushPromises()
+      expect(requests).toHaveLength(1)
+      source.onerror?.()
+      await flushPromises()
+      // The first result is lost. Retry clicks must not submit another exposed request.
+      await button().trigger('click')
+      await vi.advanceTimersByTimeAsync(1500)
+      await button().trigger('click')
+      await flushPromises()
+      expect(requests).toHaveLength(1)
+      expect(button().attributes('disabled')).toBeUndefined()
+      release(new Response(capability()))
+      await flushPromises()
+      const recovered = FakeEventSource.instances[1]
+      recovered.onopen?.()
+      await button().trigger('click')
+      // Neither a stale callback nor a snapshot for another context admits audio.
+      source.emit('chat.snapshot', { messages })
+      recovered.emit('chat.snapshot', { threadId: 'other', messages })
+      await button().trigger('click')
+      await flushPromises()
+      expect(requests).toHaveLength(1)
+      recovered.emit('chat.snapshot', { messages, audioRequestIds: { a: requests[0] } })
+      await flushPromises()
+      expect(button().attributes('disabled')).toBeUndefined()
+      await button().trigger('click')
+      await flushPromises()
+      expect(requests).toHaveLength(2)
+      expect(requests[1]).not.toBe(requests[0])
+      recovered.emit('chat.snapshot', { messages, responding: false, audioRequestIds: { a: requests[1] } })
+      await flushPromises()
+      expect(button().attributes('disabled')).toBeDefined()
+      recovered.emit('chat.audio.ready', { messageId: 'a', audioRequestId: requests[1], audioData: btoa('new') })
+      await flushPromises()
+      expect(play).toHaveBeenCalledOnce()
+      expect(button().attributes('disabled')).toBeUndefined()
+    } finally { wrapper.unmount() }
+  })
+
+  it.each([0, -1])('rejects a capability already expired by %ss and retries with a fresh token', async ttl => {
+    vi.useFakeTimers()
+    let requests = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      if (new URL(input).pathname !== '/auth/resource-token') return new Response('0')
+      requests++
+      return new Response(JSON.stringify({ token: `stream-${requests}`, expiresAt: Date.now() / 1000 + (requests === 1 ? ttl : 60) }))
+    }))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), baseUrl: 'https://claire.test' } } })
+    try {
+      await flushPromises()
+      expect(FakeEventSource.instances).toHaveLength(0)
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(String(FakeEventSource.instances[0].url)).toContain('token=stream-2')
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['navigate', 'destroy'] as const)('ignores a deferred reconnect capability after %s', async action => {
+    vi.useFakeTimers()
+    let release!: (response: Response) => void
+    let requests = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      const path = new URL(input).pathname
+      if (path === '/auth/resource-token') {
+        if (++requests === 2) return new Promise<Response>(resolve => { release = resolve })
+        return new Response(capability())
+      }
+      if (path === '/history/new') return new Response(JSON.stringify({ threadId: 'new', sessionId: 'new' }))
+      return new Response('0')
+    }))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), baseUrl: 'https://claire.test' } } })
+    await flushPromises()
+    const old = FakeEventSource.instances[0]
+    old.onerror?.()
+    await vi.advanceTimersByTimeAsync(1500)
+    if (action === 'navigate') {
+      await wrapper.get('[aria-label="Nouvelle conversation"]').trigger('click')
+      await flushPromises()
+    } else wrapper.unmount()
+    release(new Response(capability()))
+    await flushPromises()
+    old.onopen?.()
+    old.onerror?.()
+    old.emit('chat.snapshot', { messages: [entry('obsolete')] })
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(FakeEventSource.instances).toHaveLength(action === 'navigate' ? 2 : 1)
+    if (action === 'navigate') {
+      expect(String(FakeEventSource.instances[1].url)).toContain('threadId=new')
+      expect(wrapper.find('#claire-obsolete').exists()).toBe(false)
+      wrapper.unmount()
+    }
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   beforeEach(async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
     document.body.innerHTML = '<div id="target"></div>'
     sessionStorage.clear()
     // Direct component mounts represent an already authenticated bootstrap.

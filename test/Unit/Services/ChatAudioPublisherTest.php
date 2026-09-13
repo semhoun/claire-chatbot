@@ -29,13 +29,12 @@ final class ChatAudioPublisherTest extends TestCase
 
         $settings = new Settings([
             'redis' => ['prefix' => 'claire:'],
-            'sse' => ['queue_ttl' => 60],
         ]);
         $redis = $this->createMock(RedisClient::class);
-        $redis->expects(self::once())->method('lpush')->with(
-            'claire:sse:chat:' . ChatStreamSubscriber::scope('user-1', 'session-1') . ':queue',
-            self::callback(static function (array $messages): bool {
-                $event = json_decode((string) $messages[0], true, flags: JSON_THROW_ON_ERROR);
+        $redis->expects(self::once())->method('publish')->with(
+            'claire:sse:chat:' . ChatStreamSubscriber::scope('user-1', 'session-1'),
+            self::callback(static function (string $message): bool {
+                $event = json_decode($message, true, flags: JSON_THROW_ON_ERROR);
 
                 return $event['event'] === 'chat.audio.ready'
                     && $event['payload']['messageId'] === 'message-1'
@@ -46,7 +45,7 @@ final class ChatAudioPublisherTest extends TestCase
         $redis->method('expire')->willReturn(true);
         $chatStreamPublisher = new ChatStreamPublisher(
             $redis,
-            new ChatStreamSubscriber($redis, $settings),
+            new ChatStreamSubscriber($settings),
             $settings,
         );
         $chatAudioPublisher = new ChatAudioPublisher(
@@ -74,18 +73,18 @@ final class ChatAudioPublisherTest extends TestCase
         $audio = $this->createMock(AudioServiceInterface::class);
         $audio->method('isAvailable')->willReturn(true);
         $audio->expects(self::exactly(2))->method('speech')->willThrowException(new \RuntimeException('TTS failed'));
-        $settings = new Settings(['redis' => ['prefix' => 'test:'], 'sse' => ['queue_ttl' => 60]]);
+        $settings = new Settings(['redis' => ['prefix' => 'test:']]);
         $events = [];
         $redis = $this->createMock(RedisClient::class);
-        $redis->expects(self::exactly(2))->method('lpush')->willReturnCallback(
-            static function (string $key, array $messages) use (&$events): int {
-                $events[] = json_decode($messages[0], true, flags: JSON_THROW_ON_ERROR);
+        $redis->expects(self::exactly(2))->method('publish')->willReturnCallback(
+            static function (string $key, string $message) use (&$events): int {
+                $events[] = json_decode($message, true, flags: JSON_THROW_ON_ERROR);
                 return 1;
             },
         );
         $redis->method('expire')->willReturn(true);
         $publisher = new ChatAudioPublisher($audio,
-            new ChatStreamPublisher($redis, new ChatStreamSubscriber($redis, $settings), $settings),
+            new ChatStreamPublisher($redis, new ChatStreamSubscriber($settings), $settings),
             $this->createStub(LoggerInterface::class));
         $session = new InMemorySession([AudioServiceInterface::ENABLED_SESSION_KEY => true]);
         foreach (['request-old', 'request-new'] as $id) {

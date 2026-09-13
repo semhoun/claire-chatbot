@@ -12,6 +12,5 @@ return static function (
     $app->group('/brain', static function (Group $group): void {
         $group->post('/messages', [BrainController::class, 'submitMessage'])->setName('brain.messages');
         $group->post('/audio', [BrainController::class, 'generateAudio'])->setName('brain.audio');
-        $group->get('/stream', [BrainController::class, 'stream'])->setName('brain.stream');
     });
 };

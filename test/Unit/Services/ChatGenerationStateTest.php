@@ -11,6 +11,59 @@ use PHPUnit\Framework\TestCase;
 
 final class ChatGenerationStateTest extends TestCase
 {
+    public function testStaticKeyAndFilteringRules(): void
+    {
+        $redis = $this->createMock(RedisClient::class);
+        $key = ChatGenerationState::stateKey('test:', 'alice', 'thread');
+        $redis->expects(self::once())->method('hgetall')->with($key)->willReturn([]);
+        $state = new ChatGenerationState($redis, new Settings(['redis' => ['prefix' => 'test:']]));
+        self::assertSame($key, $state->key('alice', 'thread'));
+        self::assertSame([], $state->get('alice', 'thread'));
+        self::assertNotSame($key, ChatGenerationState::stateKey('test:', 'bob', 'thread'));
+        self::assertNotSame(ChatGenerationState::stateKey('', 'a:b', 'c'),
+            ChatGenerationState::stateKey('', 'a', 'b:c'));
+        self::assertFalse(ChatGenerationState::acceptsState([], 'chat.assistant.start', ''));
+        self::assertFalse(ChatGenerationState::acceptsState(
+            ['messageId' => 'm', 'status' => 'running'], 'chat.snapshot', 'm',
+        ));
+    }
+
+    public function testCaptureKeepsRawGenerationButWhitelistsPublicStatus(): void
+    {
+        $redis = $this->createStub(RedisClient::class);
+        $redis->method('hgetall')->willReturn(['messageId' => 'm', 'status' => 'deleted']);
+        $snapshot = new ChatGenerationState($redis, new Settings(['redis' => ['prefix' => 'test:']]))
+            ->capture('alice', 'thread', static fn (): array => []);
+        self::assertSame('m', $snapshot['generationMessageId']);
+        self::assertSame(['messageId' => 'm', 'status' => 'deleted'], $snapshot['generation']);
+        self::assertNull($snapshot['generationStatus']);
+        self::assertNull($snapshot['activeMessageId']);
+    }
+
+    public function testCaptureOfMissingGenerationHasAnEmptyRawIdentity(): void
+    {
+        $redis = $this->createStub(RedisClient::class);
+        $redis->method('hgetall')->willReturn([]);
+        $snapshot = new ChatGenerationState($redis, new Settings(['redis' => ['prefix' => 'test:']]))
+            ->capture('alice', 'thread', static fn (): array => []);
+        self::assertNull($snapshot['generationMessageId']);
+        self::assertSame(['messageId' => '', 'status' => ''], $snapshot['generation']);
+        self::assertNull($snapshot['generationStatus']);
+    }
+
+    public function testCaptureFailsRatherThanReturningContinuouslyChangingState(): void
+    {
+        $redis = $this->createMock(RedisClient::class);
+        $redis->expects(self::exactly(6))->method('hgetall')->willReturn(
+            ['messageId' => 'a'], ['messageId' => 'b'],
+            ['messageId' => 'b'], ['messageId' => 'c'],
+            ['messageId' => 'c'], ['messageId' => 'd'],
+        );
+        $this->expectException(\RuntimeException::class);
+        new ChatGenerationState($redis, new Settings(['redis' => ['prefix' => 'test:']]))
+            ->capture('alice', 'thread', static fn (): array => []);
+    }
+
     public function testPersistentQueuedRunningAndTerminalSnapshotsAreUserScoped(): void
     {
         $storage = [];
@@ -40,6 +93,9 @@ final class ChatGenerationStateTest extends TestCase
                     default => $responding,
                 };
                 self::assertSame($accepted, $state->acceptsEvent('alice', 'thread', $event, 'message'));
+                self::assertSame($accepted, ChatGenerationState::acceptsState(
+                    ['messageId' => 'message', 'status' => $status], $event, 'message',
+                ));
                 self::assertFalse($state->acceptsEvent('alice', 'thread', $event, 'older-message'));
                 self::assertFalse($state->acceptsEvent('bob', 'thread', $event, 'message'));
             }
@@ -58,6 +114,7 @@ final class ChatGenerationStateTest extends TestCase
                 return ['html' => ++$reads === 1 ? 'partial' : 'complete'];
             });
         self::assertSame(['html' => 'complete', 'responding' => false, 'activeMessageId' => null,
+            'generationMessageId' => 'message', 'generation' => ['messageId' => 'message', 'status' => 'done'],
             'generationStatus' => 'done'], $snapshot);
     }
 
@@ -69,6 +126,7 @@ final class ChatGenerationStateTest extends TestCase
         $state = new ChatGenerationState($redis, new Settings(['redis' => ['prefix' => 'test:']]));
         for ($i = 0; $i < 2; $i++) {
             self::assertSame(['messages' => [], 'responding' => false, 'activeMessageId' => null,
+                'generationMessageId' => 'message', 'generation' => ['messageId' => 'message', 'status' => 'error'],
                 'generationStatus' => 'error'], $state->capture('alice', 'thread', static function (array $generation): array {
                     self::assertSame('error', $generation['status']);
                     return ['messages' => []];

@@ -66,7 +66,7 @@ describe('SessionClient', () => {
     client.destroy()
   })
 
-  it('shares one bounded capability across 17 files and a stream, including renewal', async () => {
+  it('batches 17 files independently of fresh stream capabilities, including renewal', async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({
       token: `batch-${fetchMock.mock.calls.length}`, expiresAt: Date.now() / 1000 + 10,
@@ -79,17 +79,19 @@ describe('SessionClient', () => {
       const [urls, capability] = await Promise.all([
         Promise.all(files.map(path => client.protectedResource(path))), client.resourceToken(stream),
       ])
-      expect(fetchMock).toHaveBeenCalledOnce()
-      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).resources).toHaveLength(18)
-      expect(urls.every(({ url }) => new URL(url).searchParams.get('token') === capability.token)).toBe(true)
-      expect((await client.resourceToken(stream)).token).toBe(capability.token)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).resources).toHaveLength(17)
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body as string).resources).toEqual([stream])
+      expect(urls.every(({ url }) => new URL(url).searchParams.get('token') === 'batch-1')).toBe(true)
+      expect(capability.token).toBe('batch-2')
+      expect((await client.resourceToken(stream)).token).toBe('batch-3')
       await vi.advanceTimersByTimeAsync(5000)
       const renewed = await client.protectedResource(files[0])
-      expect(fetchMock).toHaveBeenCalledTimes(2)
-      for (const path of files) expect((await client.protectedResource(path)).url).toContain('token=batch-2')
-      expect(renewed.url).toContain('token=batch-2')
-      expect((await client.resourceToken(stream)).token).toBe('batch-2')
-      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(fetchMock).toHaveBeenCalledTimes(4)
+      for (const path of files) expect((await client.protectedResource(path)).url).toContain('token=batch-4')
+      expect(renewed.url).toContain('token=batch-4')
+      expect((await client.resourceToken(stream)).token).toBe('batch-5')
+      expect(fetchMock).toHaveBeenCalledTimes(5)
     } finally { client.destroy() }
   })
 

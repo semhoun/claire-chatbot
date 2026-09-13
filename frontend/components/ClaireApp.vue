@@ -77,6 +77,8 @@ const playingMessageId = ref<string | null>(null)
 const readyAudio = reactive(new Map<string, Blob>())
 const pendingAudio = reactive(new Set<string>())
 const expectedAudio = new Map<string, string>()
+const abandonedAudio = new Set<string>()
+let resyncAudio = false
 const failedAudio = reactive(new Set<string>())
 const autoPlayedAudio = new Set<string>()
 const invalidAudio = new Set<string>()
@@ -142,6 +144,7 @@ manageDialogFocus(() => modal.value !== null, modalElement)
 manageDialogFocus(() => lightboxUrl.value !== null, lightboxElement)
 
 let eventSource: EventSource | null = null
+let streamReady = false
 let reconnectTimer: number | null = null
 let notificationTimer: number | null = null
 let destroyed = false
@@ -189,6 +192,7 @@ function resetAudio(): void {
 }
 
 function beginNavigation(): void {
+  streamReady = false
   contextGeneration++
   connectionGeneration++
   eventSource?.close()
@@ -199,6 +203,8 @@ function beginNavigation(): void {
   client.invalidateResources()
   resetAudio()
   invalidAudio.clear()
+  abandonedAudio.clear()
+  resyncAudio = false
   finishResponse()
   busy.value = false
   pendingActions.clear()
@@ -326,6 +332,7 @@ async function loadRag(): Promise<void> {
 
 async function connectStream(): Promise<void> {
   if (destroyed) return
+  streamReady = false
   const connection = ++connectionGeneration
   const context = captureContext()
   const current = () => context() && connection === connectionGeneration
@@ -335,19 +342,28 @@ async function connectStream(): Promise<void> {
   reconnectTimer = null
   const retry = () => {
     if (!current()) return
+    streamReady = false
     eventSource?.close()
     eventSource = null
+    resyncAudio = true
+    for (const [messageId, requestId] of expectedAudio) {
+      if (readyAudio.has(messageId)) continue
+      abandonedAudio.add(requestId)
+      expectedAudio.delete(messageId)
+      pendingAudio.delete(messageId)
+    }
     if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
     reconnectTimer = window.setTimeout(() => {
       if (current()) void connectStream()
-    }, reconnectDelay)
+    }, reconnectDelay * (1 + Math.random() * 0.2))
     reconnectDelay = Math.min(30000, reconnectDelay * 2)
   }
   try {
     const capability = await client.resourceToken({ type: 'stream', threadId: threadId.value, sessionId: sessionId.value })
     if (!current()) return
-    const lifetime = Math.min(300000, capability.expiresAt - Date.now())
-    if (lifetime <= 0) throw new Error('Stream capability expired before connection')
+    if (!Number.isFinite(capability.expiresAt) || capability.expiresAt <= Date.now()) {
+      throw new Error('Stream capability expired before connection')
+    }
     const url = new URL(endpoint('/brain/stream'), window.location.href)
     url.searchParams.set('sessionId', sessionId.value)
     url.searchParams.set('threadId', threadId.value)
@@ -380,10 +396,6 @@ async function connectStream(): Promise<void> {
       retry()
     }
     source.onopen = () => { if (current() && eventSource === source) reconnectDelay = 1500 }
-    // Renew five seconds early, or halfway through a very short remaining TTL.
-    reconnectTimer = window.setTimeout(() => {
-      if (current()) void connectStream()
-    }, Math.max(1, lifetime - Math.min(5000, lifetime / 2)))
   } catch {
     retry()
   }
@@ -418,8 +430,12 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     }
     audioThreadId = threadId.value
     for (const [messageId, requestId] of Object.entries(update.audioRequestIds ?? {})) {
+      // Pub/Sub cannot replay results missed during the gap, including unknown requests.
+      if (resyncAudio && expectedAudio.get(messageId) !== requestId) abandonedAudio.add(requestId)
       expectAutoAudio(messageId, requestId, false)
     }
+    resyncAudio = false
+    streamReady = true
     if (typeof update.restoredMessage === 'string') message.value = update.restoredMessage
     if (typeof update.responding === 'boolean') {
       responding.value = update.responding
@@ -554,7 +570,7 @@ function enhanceRenderedMessages(scope: Element | null = rootElement.value): voi
 
 function expectAutoAudio(messageId?: string, requestId?: string | null, pending = true): void {
   if (!audioEnabled.value || !messageId || !requestId || !chatMessages.value.some(entry => entry.id === messageId)
-    || invalidAudio.has(messageId)) return
+    || invalidAudio.has(messageId) || abandonedAudio.has(requestId)) return
   const expected = expectedAudio.get(messageId)
   if (expected !== undefined && expected !== requestId) return
   expectedAudio.set(messageId, requestId)
@@ -565,6 +581,7 @@ function expectAutoAudio(messageId?: string, requestId?: string | null, pending 
 function matchesAudioRequest(update: SseUpdate): boolean {
   return audioEnabled.value && !!update.messageId && !!update.audioRequestId
     && expectedAudio.get(update.messageId) === update.audioRequestId
+    && !abandonedAudio.has(update.audioRequestId)
     && !invalidAudio.has(update.messageId) && !!findMessage(update.messageId)
 }
 
@@ -732,7 +749,8 @@ async function playSpeech(messageId: string, audio: Blob): Promise<void> {
 }
 
 async function requestSpeech(messageId: string, text: string): Promise<void> {
-  if (!audioEnabled.value || !findMessage(messageId)) return
+  // Only the initial snapshot confirms that the replacement subscription is ready.
+  if (!streamReady || !audioEnabled.value || !findMessage(messageId)) return
   const context = captureContext()
   const generation = audioGeneration
   // HTTP embed hosts do not expose randomUUID, but still support secure random bytes.

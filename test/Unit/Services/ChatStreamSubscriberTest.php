@@ -5,44 +5,30 @@ declare(strict_types=1);
 namespace App\Test\Unit\Services;
 
 use App\Services\ChatStreamSubscriber;
-use App\Services\RedisClient;
 use App\Services\Settings;
 use PHPUnit\Framework\TestCase;
 
 final class ChatStreamSubscriberTest extends TestCase
 {
-    public function testPopMessageCallsBrpopOnCorrectChannel(): void
+    public function testStaticAndInstanceChannelsMatch(): void
     {
         $settings = new Settings([
             'redis' => [
                 'prefix' => 'claire:',
             ],
         ]);
-        $redis = $this->createMock(RedisClient::class);
         $channel = ChatStreamSubscriber::scope('user-1', 'sess-123');
 
-        $redis->expects($this->once())
-            ->method('brpop')
-            ->with(['claire:sse:chat:' . $channel . ':queue'], 15)
-            ->willReturn(['claire:sse:chat:' . $channel . ':queue', '{"msg":"hello"}']);
-
-        $subscriber = new ChatStreamSubscriber($redis, $settings);
-        $message = $subscriber->popMessage($channel, 15);
-
-        $this->assertSame('{"msg":"hello"}', $message);
+        $subscriber = new ChatStreamSubscriber($settings);
+        self::assertSame('claire:sse:chat:' . $channel, $subscriber->channel($channel));
+        self::assertSame($subscriber->channel($channel), ChatStreamSubscriber::channelName('claire:', $channel));
+        self::assertSame('sess-123', ChatStreamSubscriber::unScope($channel));
     }
 
-    public function testPopMessageReturnsNullOnTimeout(): void
+    public function testStaticChannelRejectsUnscopedInput(): void
     {
-        $settings = new Settings(['redis' => ['prefix' => 'claire:']]);
-        $redis = $this->createMock(RedisClient::class);
-
-        $redis->expects($this->once())
-            ->method('brpop')
-            ->willReturn(null);
-
-        $subscriber = new ChatStreamSubscriber($redis, $settings);
-        $this->assertNull($subscriber->popMessage(ChatStreamSubscriber::scope('user-1', 'sess-123'), 15));
+        $this->expectException(\InvalidArgumentException::class);
+        ChatStreamSubscriber::channelName('claire:', 'sess-123');
     }
 
     public function testUsersCannotConsumeEachOthersSessionChannel(): void

@@ -82,6 +82,8 @@ services:
       # === Sécurité ===
       # Générer avec : openssl rand -hex 32
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?SESSION_JWT_SECRET is required}
+      SSE_DURATION: 1800
+      SSE_CHECK_INTERVAL: 15
 
       # === Bot Telegram (optionnel) ===
       TELEGRAM_BOT_TOKEN: ""

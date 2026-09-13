@@ -36,13 +36,12 @@ final class GenerateAudioJobTest extends TestCase
 
         $settings = new Settings([
             'redis' => ['prefix' => 'claire:'],
-            'sse' => ['queue_ttl' => 60],
         ]);
         $redis = $this->createMock(RedisClient::class);
-        $redis->expects(self::exactly(2))->method('lpush')
-            ->with('claire:sse:chat:' . ChatStreamSubscriber::scope('user-1', 'session-1') . ':queue',
-                self::callback(static function (array $events) use ($fails): bool {
-                    $event = json_decode($events[0], true, flags: JSON_THROW_ON_ERROR);
+        $redis->expects(self::exactly(2))->method('publish')
+            ->with('claire:sse:chat:' . ChatStreamSubscriber::scope('user-1', 'session-1'),
+                self::callback(static function (string $message) use ($fails): bool {
+                    $event = json_decode($message, true, flags: JSON_THROW_ON_ERROR);
                     return $event['payload']['sessionId'] === 'session-1'
                         && $event['payload']['audioRequestId'] === 'request-stable'
                         && $event['event'] === ($fails ? 'chat.audio.error' : 'chat.audio.ready');
@@ -53,7 +52,7 @@ final class GenerateAudioJobTest extends TestCase
             $audioService,
             new ChatStreamPublisher(
                 $redis,
-                new ChatStreamSubscriber($redis, $settings),
+                new ChatStreamSubscriber($settings),
                 $settings,
             ),
             $this->createStub(LoggerInterface::class),
@@ -81,10 +80,10 @@ final class GenerateAudioJobTest extends TestCase
         $audio = $this->createMock(AudioServiceInterface::class);
         $audio->expects(self::never())->method('speech');
         $redis = $this->createMock(RedisClient::class);
-        $redis->expects(self::never())->method('lpush');
+        $redis->expects(self::never())->method('publish');
         $settings = new Settings([]);
         $job = new GenerateAudioJob(new ChatAudioPublisher($audio,
-            new ChatStreamPublisher($redis, new ChatStreamSubscriber($redis, $settings), $settings),
+            new ChatStreamPublisher($redis, new ChatStreamSubscriber($settings), $settings),
             $this->createStub(LoggerInterface::class)));
         foreach ([[], ['audioRequestId' => ''], ['audioRequestId' => []], ['audioRequestId' => "id\n"]] as $payload) {
             try {

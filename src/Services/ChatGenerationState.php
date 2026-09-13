@@ -69,6 +69,11 @@ final readonly class ChatGenerationState
                     ...$history,
                     'responding' => $responding,
                     'activeMessageId' => $responding ? ($after['messageId'] ?? null) : null,
+                    'generationMessageId' => $after['messageId'] ?? null,
+                    'generation' => [
+                        'messageId' => $after['messageId'] ?? '',
+                        'status' => $after['status'] ?? '',
+                    ],
                     'generationStatus' => in_array($after['status'] ?? '', ['queued', 'running', 'done', 'error'], true)
                         ? $after['status'] : null,
                 ];
@@ -91,7 +96,12 @@ final readonly class ChatGenerationState
 
     public function acceptsEvent(string $userId, string $threadId, string $event, string $messageId): bool
     {
-        $state = $this->get($userId, $threadId);
+        return self::acceptsState($this->get($userId, $threadId), $event, $messageId);
+    }
+
+    /** @param array<string, string> $state */
+    public static function acceptsState(array $state, string $event, string $messageId): bool
+    {
         if ($messageId === '' || ($state['messageId'] ?? '') !== $messageId) {
             return false;
         }
@@ -107,7 +117,12 @@ final readonly class ChatGenerationState
 
     public function key(string $userId, string $threadId): string
     {
-        return $this->settings->get('redis.prefix') . 'chat:generation:'
+        return self::stateKey($this->settings->get('redis.prefix'), $userId, $threadId);
+    }
+
+    public static function stateKey(string $prefix, string $userId, string $threadId): string
+    {
+        return $prefix . 'chat:generation:'
             . hash('sha256', json_encode([$userId, $threadId], JSON_THROW_ON_ERROR));
     }
 }

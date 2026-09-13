@@ -95,6 +95,11 @@ class RedisClient
         return $this->redis->close();
     }
 
+    public function publish(string $channel, string $message): int|false
+    {
+        return $this->redis->publish($channel, $message);
+    }
+
     public function expire(string $key, int $seconds): bool
     {
         return $this->redis->expire($key, $seconds);

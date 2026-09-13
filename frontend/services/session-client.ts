@@ -222,7 +222,8 @@ export class SessionClient {
       const values = await Promise.all(renewal)
       return values[value.resources.findIndex(scope => JSON.stringify(scope) === key)]
     }
-    let batch = this.resourceBatch
+    // Stream admission always needs a fresh capability, independently of file caches.
+    let batch = resource.type === 'stream' ? null : this.resourceBatch
     const scopes = [...(batch?.resources ?? []), resource]
     // JSON's ASCII representation also bounds the signed claim size on the server.
     const size = JSON.stringify(scopes).replace(/[^\x00-\x7f]/g,
@@ -243,16 +244,16 @@ export class SessionClient {
         if (generation !== this.resourceGeneration || this.destroyed) throw new DOMException('Resource invalidated', 'AbortError')
         if (typeof value.token !== 'string' || !value.token || !Number.isFinite(value.expiresAt)
           || value.expiresAt * 1000 <= Date.now()) throw new Error('Invalid resource capability')
-        const expiresAt = Math.min(value.expiresAt * 1000, Date.now() + 300000)
+        const expiresAt = value.expiresAt * 1000
         const renewAt = expiresAt - Math.min(5000, (expiresAt - Date.now()) / 2)
         return { token: value.token, expiresAt, renewAt, resources }
       })
       batch = { resources, promise }
-      this.resourceBatch = batch
+      if (resource.type !== 'stream') this.resourceBatch = batch
     }
     batch.resources.push(resource)
     const pending = batch.promise
-    this.resources.set(key, pending)
+    if (resource.type !== 'stream') this.resources.set(key, pending)
     try {
       const value = await pending
       if (generation !== this.resourceGeneration || this.destroyed) throw new DOMException('Resource invalidated', 'AbortError')

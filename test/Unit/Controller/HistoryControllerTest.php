@@ -35,7 +35,7 @@ final class HistoryControllerTest extends TestCase
         $entityManager->method('getRepository')->willReturn($repository);
         $redis = $this->createStub(\App\Services\RedisClient::class);
         $publisher = new \App\Services\ChatStreamPublisher($redis,
-            new \App\Services\ChatStreamSubscriber($redis, $settings), $settings);
+            new \App\Services\ChatStreamSubscriber($settings), $settings);
         $controller = new HistoryController($this->chatRenderer($settings, $entityManager),
             $entityManager, $settings, $publisher,
             $this->createStub(\App\Services\Queue\QueueDispatcherInterface::class),
@@ -62,9 +62,9 @@ final class HistoryControllerTest extends TestCase
         $entityManager->method('getConnection')->willReturn($connection);
         $redis = $this->createMock(\App\Services\RedisClient::class);
         $redis->expects(self::never())->method('hset');
-        $redis->expects(self::never())->method('lpush');
+        $redis->expects(self::never())->method('publish');
         $publisher = new \App\Services\ChatStreamPublisher($redis,
-            new \App\Services\ChatStreamSubscriber($redis, $settings), $settings);
+            new \App\Services\ChatStreamSubscriber($settings), $settings);
         $queue = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);
         $captured = [];
         $queue->expects(self::once())->method('dispatch')->willReturnCallback(
@@ -105,7 +105,7 @@ final class HistoryControllerTest extends TestCase
         $redis = $this->createStub(\App\Services\RedisClient::class);
         $redis->method('hgetall')->willReturn(['status' => 'queued', 'messageId' => 'pending']);
         $publisher = new \App\Services\ChatStreamPublisher($redis,
-            new \App\Services\ChatStreamSubscriber($redis, $settings), $settings);
+            new \App\Services\ChatStreamSubscriber($settings), $settings);
         $controller = new HistoryController($this->chatRenderer($settings, $entityManager),
             $entityManager, $settings, $publisher,
             $this->createStub(\App\Services\Queue\QueueDispatcherInterface::class),
@@ -117,7 +117,9 @@ final class HistoryControllerTest extends TestCase
         self::assertSame(409, $response->getStatusCode());
     }
 
-    public function testDeleteLastExchangeUsesRequestedThreadInsteadOfStaleSessionThread(): void
+    #[\PHPUnit\Framework\Attributes\TestWith(['sess-current'])]
+    #[\PHPUnit\Framework\Attributes\TestWith([''])]
+    public function testDeleteLastExchangeUsesRequestedThreadInsteadOfStaleSessionThread(string $sessionId): void
     {
         $settings = new Settings([
             'llm' => [
@@ -126,7 +128,6 @@ final class HistoryControllerTest extends TestCase
                 'yamlBrains' => ['path' => '/tmp/brains'],
             ],
             'redis' => ['prefix' => 'claire:'],
-            'sse' => ['queue_ttl' => 3600],
         ]);
         $session = $this->createMock(SessionInterface::class);
         $session->method('get')->willReturnCallback(static fn (string $key): ?string => match ($key) {
@@ -172,12 +173,12 @@ final class HistoryControllerTest extends TestCase
         $redis = $this->createMock(\App\Services\RedisClient::class);
         $redis->method('hgetall')->willReturn([]);
         $redis->method('expire')->willReturn(true);
-        $redis->expects($this->once())
-            ->method('lpush')
+        $redis->expects($sessionId === '' ? self::never() : self::once())
+            ->method('publish')
             ->with(
-                'claire:sse:chat:' . \App\Services\ChatStreamSubscriber::scope('user-1', 'sess-current') . ':queue',
-                $this->callback(static function (array $messages): bool {
-                    $event = json_decode($messages[0], true);
+                'claire:sse:chat:' . \App\Services\ChatStreamSubscriber::scope('user-1', 'sess-current'),
+                $this->callback(static function (string $message): bool {
+                    $event = json_decode($message, true, flags: JSON_THROW_ON_ERROR);
 
                     return is_array($event)
                         && $event['event'] === 'chat.snapshot'
@@ -185,7 +186,7 @@ final class HistoryControllerTest extends TestCase
                 })
             )
             ->willReturn(1);
-        $subscriber = new \App\Services\ChatStreamSubscriber($redis, $settings);
+        $subscriber = new \App\Services\ChatStreamSubscriber($settings);
         $publisher = new \App\Services\ChatStreamPublisher($redis, $subscriber, $settings);
 
         $controller = new HistoryController(
@@ -205,7 +206,7 @@ final class HistoryControllerTest extends TestCase
         $request->method('getQueryParams')->willReturn([
             'threadId' => 'current-thread',
             'message' => '',
-            'sessionId' => 'sess-current',
+            'sessionId' => $sessionId,
         ]);
 
         $result = $controller->deleteLastExchange(
@@ -233,9 +234,6 @@ final class HistoryControllerTest extends TestCase
             'redis' => [
                 'prefix' => 'claire:',
             ],
-            'sse' => [
-                'queue_ttl' => 3600,
-            ],
         ]);
         $session = $this->createMock(SessionInterface::class);
         $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
@@ -259,22 +257,9 @@ final class HistoryControllerTest extends TestCase
         $redis = $this->createMock(\App\Services\RedisClient::class);
         $redis->method('hgetall')->willReturn([]);
         $redis->method('expire')->willReturn(true);
-        $redis->expects($this->once())
-            ->method('lpush')
-            ->with(
-                'claire:sse:chat:' . \App\Services\ChatStreamSubscriber::scope('user-1', 'thread-1') . ':queue',
-                $this->callback(static function (array $payloadArr): bool {
-                    $payload = $payloadArr[0];
-                    $data = json_decode($payload, true);
-
-                    return is_array($data)
-                        && $data['event'] === 'chat.snapshot'
-                        && $data['threadId'] === 'thread-1'
-                        && $data['payload']['messages'][0]['message'] === 'Bonjour';
-                })
-            )
-            ->willReturn(1);
-        $subscriber = new \App\Services\ChatStreamSubscriber($redis, $settings);
+        $redis->expects(self::never())->method('publish');
+        $redis->expects(self::never())->method('lpush');
+        $subscriber = new \App\Services\ChatStreamSubscriber($settings);
         $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber, $settings);
         $filesystem = $this->createMock(Filesystem::class);
         $queueDispatcher = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);
@@ -314,9 +299,6 @@ final class HistoryControllerTest extends TestCase
             'redis' => [
                 'prefix' => 'claire:',
             ],
-            'sse' => [
-                'queue_ttl' => 3600,
-            ],
         ]);
         $session = $this->createMock(SessionInterface::class);
         $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
@@ -339,14 +321,13 @@ final class HistoryControllerTest extends TestCase
         $redis = $this->createMock(\App\Services\RedisClient::class);
         $redis->method('hgetall')->willReturn(['status' => 'running', 'messageId' => 'active-1']);
         $redis->method('expire')->willReturn(true);
-        // Snapshot should be pushed to sessionId queue, not threadId
+        // Snapshot is published to the user's tab, not the conversation.
         $redis->expects($this->once())
-            ->method('lpush')
+            ->method('publish')
             ->with(
-                'claire:sse:chat:' . \App\Services\ChatStreamSubscriber::scope('user-1', 'sess-abc123') . ':queue',
-                $this->callback(static function (array $payloadArr): bool {
-                    $payload = $payloadArr[0];
-                    $data = json_decode($payload, true);
+                'claire:sse:chat:' . \App\Services\ChatStreamSubscriber::scope('user-1', 'sess-abc123'),
+                $this->callback(static function (string $payload): bool {
+                    $data = json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
 
                     return is_array($data)
                         && $data['event'] === 'chat.snapshot'
@@ -359,7 +340,7 @@ final class HistoryControllerTest extends TestCase
                 })
             )
             ->willReturn(1);
-        $subscriber = new \App\Services\ChatStreamSubscriber($redis, $settings);
+        $subscriber = new \App\Services\ChatStreamSubscriber($settings);
         $chatStreamPublisher = new \App\Services\ChatStreamPublisher($redis, $subscriber, $settings);
         $filesystem = $this->createMock(Filesystem::class);
         $queueDispatcher = $this->createMock(\App\Services\Queue\QueueDispatcherInterface::class);

@@ -351,7 +351,7 @@ final class NewMessageJobTest extends TestCase
         ?AudioServiceInterface $audio = null,
     ): array
     {
-        $settings = new Settings(['redis' => ['prefix' => 'test:'], 'sse' => ['queue_ttl' => 60],
+        $settings = new Settings(['redis' => ['prefix' => 'test:'],
             'llm' => ['brains' => ['test' => StreamingJobTestAgent::class],
                 'yamlBrains' => ['path' => '/tmp/kilo/no-brains']]]);
         $redis = $this->createStub(RedisClient::class);
@@ -363,14 +363,14 @@ final class NewMessageJobTest extends TestCase
             $storage[$key] = array_map(strval(...), $value);
             return 1;
         });
-        $redis->method('lpush')->willReturnCallback(static function (string $key, array $messages) use ($onPublish): int {
+        $redis->method('publish')->willReturnCallback(static function (string $key, string $message) use ($onPublish): int {
             if ($onPublish !== null) {
-                $onPublish(json_decode($messages[0], true, flags: JSON_THROW_ON_ERROR));
+                $onPublish(json_decode($message, true, flags: JSON_THROW_ON_ERROR));
             }
             return 1;
         });
         $redis->method('expire')->willReturn(true);
-        $publisher = new ChatStreamPublisher($redis, new ChatStreamSubscriber($redis, $settings), $settings);
+        $publisher = new ChatStreamPublisher($redis, new ChatStreamSubscriber($settings), $settings);
         $pdo = new \PDO('sqlite::memory:');
         $pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT,'
             . " display_messages TEXT, display_messages_count INTEGER, title TEXT, summary TEXT)");

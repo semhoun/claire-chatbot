@@ -28,6 +28,17 @@ use Slim\Psr7\Response;
 final class RememberSessionTest extends TestCase
 {
     private array $records = [];
+
+    public function testSharedRememberKeyAndPureRecordValidity(): void
+    {
+        self::assertSame('test:auth:remember:id', RememberSession::rememberKey('test:', 'id'));
+        self::assertTrue(RememberSession::validRecord(['user_id' => 'u', 'expires' => 101], 100));
+        foreach ([null, false, [], ['user_id' => '', 'expires' => 101],
+            ['user_id' => 'u', 'expires' => '101'], ['user_id' => 'u', 'expires' => 100],
+            ['user_id' => 'u', 'expires' => 99]] as $record) {
+            self::assertFalse(RememberSession::validRecord($record, 100));
+        }
+    }
     private RememberSession $remember;
     private JwtTokenService $tokens;
     private JwtSessionMiddleware $middleware;

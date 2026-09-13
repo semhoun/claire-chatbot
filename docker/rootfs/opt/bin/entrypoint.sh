@@ -2,6 +2,10 @@
 
 set -e
 
+# One fresh container-local secret shared by FrankenPHP and the SSE daemon.
+SSE_INTERNAL_SECRET=$(php -r 'echo bin2hex(random_bytes(32));')
+export SSE_INTERNAL_SECRET
+
 cp /opt/conf/php/*  "${PHP_INI_DIR}/conf.d/"
 if [ "${DEBUG_MODE}" == "true" ]; then
   cp  "${PHP_INI_DIR}/php.ini-development"  "${PHP_INI_DIR}/php.ini"
@@ -36,9 +40,15 @@ if [ ! -d "${ADDONS_PATH}/agents" ]; then
 fi
 
 TRACING_BLOCK=''
+# Match the same base path used by stream capability validation without rewriting it.
+BASE_PATH=$(php -r 'echo rtrim((string) parse_url(getenv("BASE_URL") ?: "", PHP_URL_PATH), "/");')
+if [[ ! "$BASE_PATH" =~ ^(/[a-zA-Z0-9._~%-]+)*$ ]]; then
+  printf '%s\n' 'BASE_URL contains an unsupported path' >&2
+  exit 1
+fi
 if [ -n "${OTEL_EXPORTER_OTLP_ENDPOINT}" ]; then
 TRACING_BLOCK='  tracing {
-      span "{method} {uri}"
+      span "{method} {http.request.uri.path}"
     }
     request_header X-Trace-Id {http.vars.trace_id}
 '
@@ -58,32 +68,90 @@ cat > /etc/caddy/Caddyfile << EOF
   frankenphp
   order php_server before file_server
   metrics
+  # Access-log filters do not apply to reverse-proxy error logs.
   log {
     output stderr
+    format filter {
+      wrap json
+      fields {
+        request>uri query {
+          delete token
+        }
+        request>headers>X-Claire-Auth delete
+        request>headers>X-Claire-Sse-Secret delete
+        request>headers>Referer delete
+        resp_headers>X-Claire-Auth delete
+        resp_headers>X-Claire-Token delete
+        resp_headers>X-Claire-Minitoken delete
+      }
+    }
   }
   ${CADDY_HTTPS_OPTIONS}
 }
 
 ${SITE_ADDRESS} {
   root * /opt/www/public
-  encode zstd gzip
-
-  php_server {
-    index index.php
-  }
-  file_server
 
   log {
     output stdout
-    format formatted "{common_log}"
+    format filter {
+      wrap json
+      fields {
+        request>uri query {
+          delete token
+        }
+        request>headers>X-Claire-Auth delete
+        request>headers>X-Claire-Sse-Secret delete
+        request>headers>Referer delete
+        resp_headers>X-Claire-Auth delete
+        resp_headers>X-Claire-Token delete
+        resp_headers>X-Claire-Minitoken delete
+      }
+    }
   }
   ${LOG_SKIP}
 
-  handle /* {
-    ${TRACING_BLOCK}
+  route {
+    @private path /sse-internal.php /sse-internal.php/*
+    respond @private 404
+
+    @stream path ${BASE_PATH}/brain/stream
+    handle @stream {
+      reverse_proxy 127.0.0.1:8081 {
+        flush_interval -1
+        transport http {
+          compression off
+          response_header_timeout 30s
+        }
+      }
+    }
+    handle {
+      ${TRACING_BLOCK}
+      encode zstd gzip
+      php_server {
+        index index.php
+      }
+      file_server
+    }
   }
-  handle /health {
-      header Cache-Control "no-store"
+}
+
+http://127.0.0.1:8082 {
+  bind 127.0.0.1
+  root * /opt/www/public
+  route {
+    @internal {
+      method POST
+      path /open /snapshot /close
+    }
+    handle @internal {
+      rewrite * /sse-internal.php
+      php_server {
+        env SERVER_ADDR {http.request.local.host}
+        env SERVER_PORT {http.request.local.port}
+      }
+    }
+    respond 404
   }
 }
 EOF

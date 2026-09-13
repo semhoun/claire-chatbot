@@ -304,9 +304,11 @@ final readonly class HistoryController
         );
         $messages = $snapshot['messages'];
 
-        // Use sessionId as channel if provided, otherwise fall back to threadId
-        $channelId = $sessionId !== '' ? $sessionId : $threadId;
-        $this->chatStreamPublisher->publish(ChatStreamSubscriber::scope($userId, $channelId), 'chat.snapshot', [
+        // HTTP-only callers have no tab channel to notify.
+        if ($sessionId === '') {
+            return $messages;
+        }
+        $this->chatStreamPublisher->publish(ChatStreamSubscriber::scope($userId, $sessionId), 'chat.snapshot', [
             'threadId' => $threadId,
             'sessionId' => $sessionId,
             'messages' => $messages,

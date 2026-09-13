@@ -65,8 +65,8 @@ final class StartThreadJobTest extends TestCase
         $redis = $this->createMock(RedisClient::class);
         $redis->method('hgetall')->willReturn(['messageId' => 'newer-message', 'status' => 'queued']);
         $redis->expects(self::never())->method('hset');
-        $redis->expects(self::never())->method('lpush');
-        $publisher = new ChatStreamPublisher($redis, new ChatStreamSubscriber($redis, $settings), $settings);
+        $redis->expects(self::never())->method('publish');
+        $publisher = new ChatStreamPublisher($redis, new ChatStreamSubscriber($settings), $settings);
         $container = $this->createMock(ContainerInterface::class);
         $container->expects(self::never())->method('get');
         $renderer = new ChatDataRenderer(new GeneratedFileProcessor(
@@ -101,7 +101,6 @@ final class StartThreadJobTest extends TestCase
                 'yamlBrains' => ['path' => '/tmp/missing-brains'],
             ],
             'redis' => ['prefix' => 'claire:'],
-            'sse' => ['queue_ttl' => 3600],
         ]);
         $container = $this->createMock(ContainerInterface::class);
         $container->method('get')->with(UserChatHistory::class)->willReturn($userChatHistory);
@@ -109,12 +108,12 @@ final class StartThreadJobTest extends TestCase
         $redis = $this->createMock(RedisClient::class);
         $redis->method('hgetall')->willReturn([]);
         $redis->method('hset')->willReturn(1);
-        $redis->expects(self::once())->method('lpush')->with(
+        $redis->expects(self::once())->method('publish')->with(
             self::anything(),
-            self::callback(static function (array $messages) use ($pdo): bool {
+            self::callback(static function (string $message) use ($pdo): bool {
                 $lock = new \App\Services\ChatThreadLock($pdo, 'user-1', 'web-thread-1');
                 $lock->release();
-                $event = json_decode($messages[0], true, flags: JSON_THROW_ON_ERROR);
+                $event = json_decode($message, true, flags: JSON_THROW_ON_ERROR);
                 self::assertArrayNotHasKey('html', $event['payload']);
                 self::assertSame('Bienvenue générée', $event['payload']['messages'][0]['message']);
                 return $event['event'] === 'chat.snapshot'
@@ -125,7 +124,7 @@ final class StartThreadJobTest extends TestCase
         $redis->method('expire')->willReturn(true);
         $chatStreamPublisher = new ChatStreamPublisher(
             $redis,
-            new ChatStreamSubscriber($redis, $settings),
+            new ChatStreamSubscriber($settings),
             $settings,
         );
 

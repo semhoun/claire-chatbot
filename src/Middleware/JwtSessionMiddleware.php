@@ -7,6 +7,7 @@ namespace App\Middleware;
 use App\Services\Auth;
 use App\Services\JwtTokenService;
 use App\Services\RememberSession;
+use App\Services\ResourceRequestScope;
 use App\Services\Session\ArraySession;
 use App\Services\Settings;
 use DateTimeImmutable;
@@ -14,7 +15,6 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface as Handler;
-use Slim\Psr7\NonBufferedBody;
 
 /**
  * Middleware for JWT-based session management via X-Claire-Auth header.
@@ -64,7 +64,7 @@ final class JwtSessionMiddleware implements MiddlewareInterface
                 ?? $this->jwtTokenService->parseStreamToken($tokenString)
                 ?? $this->jwtTokenService->parseResourcesToken($tokenString);
             if ($resource !== null) {
-                if (! $this->resourceMatchesRequest($request, $resource)) {
+                if (! ResourceRequestScope::matches($request, $resource)) {
                     return new \Slim\Psr7\Response(403);
                 }
 
@@ -105,12 +105,6 @@ final class JwtSessionMiddleware implements MiddlewareInterface
         $request = $request->withAttribute(self::SESSION_ATTRIBUTE, $arraySession);
 
         $response = $handler->handle($request);
-
-        // Don't modify headers if response is streaming (NonBufferedBody)
-        // as output has already started
-        if ($response->getBody() instanceof NonBufferedBody) {
-            return $response;
-        }
 
         // Return X-Claire-Token header if data changed or token needs refresh
         if ($this->shouldReturnToken($arraySession)) {
@@ -197,30 +191,6 @@ final class JwtSessionMiddleware implements MiddlewareInterface
             'iat' => $parsedToken['issuedAt'],
             'exp' => $parsedToken['expiresAt'],
         ];
-    }
-
-    /** @param array<string,mixed> $resource */
-    private function resourceMatchesRequest(Request $request, array $resource): bool
-    {
-        if (isset($resource['resources'])) {
-            foreach ($resource['resources'] as $scope) {
-                if ($this->resourceMatchesRequest($request, $scope)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        $path = $request->getUri()->getPath();
-        $basePath = rtrim((string) $request->getAttribute(\Slim\Routing\RouteContext::BASE_PATH, ''), '/');
-        if (isset($resource['fileId'])) {
-            return in_array($request->getMethod(), ['GET', 'HEAD'], true)
-                && $path === $basePath . '/files/serve/' . rawurlencode($resource['fileId']);
-        }
-
-        $query = $request->getQueryParams();
-        return $request->getMethod() === 'GET' && $path === $basePath . '/brain/stream'
-            && ($query['threadId'] ?? null) === $resource['threadId']
-            && ($query['sessionId'] ?? null) === $resource['sessionId'];
     }
 
     private function writeSessionToHeader(ArraySession $arraySession, Response $response): Response

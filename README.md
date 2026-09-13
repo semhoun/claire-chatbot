@@ -103,8 +103,39 @@ La version **2.1.0** rassemble l'audio Mistral, les thèmes d'agents, l'installa
 | `QUEUE_WORKER_TIMEOUT` | Durée d'attente maximale d'un job par le worker (secondes) | `5` |
 | `QUEUE_WORKER_MAX_JOBS` | Nombre max de jobs par worker (`0` : illimité) | `256` |
 | `QUEUE_WORKER_MAX_TIME` | Durée de vie max d'un worker en secondes (`0` : illimitée) | `3600` |
-| `SSE_QUEUE_TTL` | Durée de vie des messages SSE en file d'attente (secondes) | `60`                      |
-| `SSE_POP_TIMEOUT` | Timeout de lecture bloquante SSE (secondes) | `15`                      |
+| `SSE_DURATION` | Durée autorisée d'une connexion SSE, indépendante du JWT d'ouverture (secondes, max 86400) | `1800` |
+| `SSE_CHECK_INTERVAL` | Intervalle des contrôles génération et révocation remember (secondes) | `15` |
+| `SSE_KEEPALIVE` | Intervalle des commentaires SSE (secondes) | `15` |
+| `SSE_HTTP_TIMEOUT` | Timeout des appels HTTP internes (secondes) | `10` |
+| `SSE_MAX_CONNECTIONS` | Nombre maximal de connexions par daemon | `1000` |
+| `SSE_MAX_HTTP_REQUESTS` | Concurrence maximale des appels internes | `16` |
+| `SSE_MAX_REDIS_COMMANDS` | Commandes Redis simultanées maximales | `64` |
+| `SSE_MAX_PENDING_EVENTS` | Événements en attente maximaux par connexion | `256` |
+| `SSE_MAX_CLIENT_BUFFER` | Budget de tampon par connexion (octets) | `16777216` |
+| `SSE_MAX_GLOBAL_BUFFER` | Budget global des tampons (octets) | `134217728` |
+| `SSE_WRITE_TIMEOUT` | Durée maximale de blocage d'un client lent (secondes) | `15` |
+| `SSE_SHUTDOWN_TIMEOUT` | Délai maximal d'arrêt du daemon (secondes) | `5` |
+
+Le transport SSE utilise Redis Pub/Sub sans persistance ni rejeu `Last-Event-ID`.
+Chaque reconnexion obtient un nouveau jeton et un snapshot SQL ; les demandes audio
+perdues sont abandonnées et peuvent être relancées manuellement. Caddy route
+exclusivement `/brain/stream` vers le daemon ReactPHP supervisé. Ses listeners et
+le backend Slim interne restent sur loopback, sans ports Docker publiés.
+Le routage livré utilise `127.0.0.1:8081` pour le daemon et
+`http://127.0.0.1:8082` pour le backend interne ; conserver ces adresses avec
+le Caddyfile fourni.
+
+Dans Docker, l'entrypoint génère un nouveau `SSE_INTERNAL_SECRET` aléatoire à
+chaque démarrage du conteneur et l'exporte aux processus FrankenPHP et SSE.
+Il remplace toute valeur préexistante, n'est ni journalisé ni écrit sur disque,
+et reste identique lors du redémarrage individuel d'un processus par Supervisor.
+Aucune configuration de ce secret dans Compose n'est nécessaire.
+
+Pour cette migration, déployer producteurs, daemon, proxy et frontend ensemble,
+redémarrer les workers persistants et invalider les caches de conteneur/routes.
+Prévoir une courte coupure avec reconnexion, sans vider Redis : les anciennes
+listes SSE expirent seules. Un rollback doit restaurer la version complète.
+Les réglages SSE sont chargés une fois ; leur modification exige un redémarrage.
 
 ### API audio
 
@@ -668,14 +699,20 @@ export OPENAPI_KEY=votre-clé-api
 export OPENAPI_URL=https://api.openai.com/v1
 export OPENAPI_MODEL=gpt-4o-mini
 export SESSION_JWT_SECRET=$(openssl rand -hex 32)
+# Hors Docker uniquement : partager ce secret entre le daemon et le backend Slim.
+export SSE_INTERNAL_SECRET=$(openssl rand -hex 32)
 
 # Initialiser et lancer
 ./console migrations:migrate
 npm run build            # Compiler les bundles Vue (normal + embed)
-composer start
+composer start           # HTTP seul ; pour HTTP + SSE, utiliser Caddy/Supervisor
 ```
 
-Dans un second terminal disposant du même environnement, lancez `./console queue:work`. Configurez le fournisseur OIDC pour autoriser `http://localhost:8080/auth/callback` et exportez aussi `OPENID_CLIENT_SECRET` si nécessaire.
+Hors Supervisor, `php bin/sse` lance le daemon et `./console queue:work` lance un
+worker avec le même environnement. Le daemon nécessite aussi le listener Slim
+interne et le reverse proxy Caddy ; un serveur PHP seul ne sert plus le SSE.
+Configurez le fournisseur OIDC pour autoriser `http://localhost:8080/auth/callback`
+et exportez aussi `OPENID_CLIENT_SECRET` si nécessaire.
 
 ### Développement frontend
 

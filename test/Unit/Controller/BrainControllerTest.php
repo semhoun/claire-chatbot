@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Test\Unit\Controller;
 
-use App\Brain\BrainRegistry;
-use App\Services\ThemeRegistry;
 use App\Controller\BrainController;
 use App\Entity\User;
 use App\Middleware\JwtSessionMiddleware;
@@ -16,35 +14,20 @@ use App\Services\Audio\AudioServiceInterface;
 use App\Services\Auth;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
-use App\Services\CorsHeaders;
+use App\Services\ChatSnapshot;
 use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\RedisClient;
 use App\Services\Rendering\GeneratedFileProcessor;
 use App\Services\Session\InMemorySession;
 use App\Services\Settings;
-use App\Services\SseEventFormatter;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
-use Psr\Container\ContainerInterface;
 use Psr\Log\NullLogger;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
-
-final class BufferedBrainStreamBody extends \Slim\Psr7\Stream
-{
-    public static self $instance;
-
-    public function __construct()
-    {
-        parent::__construct(fopen('php://temp', 'r+'));
-        self::$instance = $this;
-    }
-}
 
 final class BrainControllerTest extends TestCase
 {
@@ -96,135 +79,6 @@ final class BrainControllerTest extends TestCase
             ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
             ->withParsedBody($body);
         self::assertSame($status, $controller->generateAudio($request, new Response())->getStatusCode());
-    }
-
-    public static function idleTransitions(): array
-    {
-        return [
-            'worker started' => ['queued', 'running', 'message-1', 1],
-            'other tab completed' => ['running', 'done', 'message-1', 2],
-            'terminal error publication lost' => ['running', 'error', 'message-1', 2],
-            'other tab submitted' => ['done', 'queued', 'message-2', 2],
-            'fast generation completed elsewhere' => ['done', 'done', 'message-2', 2],
-        ];
-    }
-
-    #[DataProvider('idleTransitions')]
-    #[RunInSeparateProcess]
-    #[PreserveGlobalState(false)]
-    public function testIdleStreamReconcilesWithoutReplacingActiveGeneration(
-        string $initialStatus,
-        string $nextStatus,
-        string $nextMessageId,
-        int $expectedSnapshots,
-    ): void {
-        class_alias(BufferedBrainStreamBody::class, \Slim\Psr7\NonBufferedBody::class);
-        [$controller, $publisher, $session, , $redis] = $this->controller(
-            $this->createStub(QueueDispatcherInterface::class),
-        );
-        $publisher->generationState()->set('user-1', 'thread', 'message-1', $initialStatus, false);
-        $calls = 0;
-        $redis->method('brpop')->willReturnCallback(
-            static function () use (&$calls, $publisher, $nextStatus, $nextMessageId): ?array {
-                if (++$calls > 1) {
-                    throw new \RuntimeException('End isolated stream');
-                }
-                $publisher->generationState()->set('user-1', 'thread', $nextMessageId, $nextStatus, true);
-                return null;
-            },
-        );
-        $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/stream')
-            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
-            ->withAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT, time() + 60)
-            ->withQueryParams(['threadId' => 'thread', 'sessionId' => 'tab']);
-        try {
-            $controller->stream($request, new Response());
-            self::fail('Test stream did not terminate');
-        } catch (\RuntimeException $exception) {
-            self::assertSame('End isolated stream', $exception->getMessage());
-        }
-        $output = (string) BufferedBrainStreamBody::$instance;
-        self::assertSame($expectedSnapshots, substr_count($output, 'event: chat.snapshot'));
-        $responding = in_array($nextStatus, ['queued', 'running'], true);
-        self::assertStringContainsString('"responding":' . ($responding ? 'true' : 'false'), $output);
-        self::assertStringContainsString('"generationStatus":"'
-            . ($expectedSnapshots === 1 ? $initialStatus : $nextStatus) . '"', $output);
-    }
-
-    public function testStreamRequiresUnexpiredAuthentication(): void
-    {
-        [$controller, , $session, , $redis] = $this->controller($this->createStub(QueueDispatcherInterface::class));
-        $redis->method('brpop')->willReturnCallback(static function (): never {
-            self::fail('Expired authentication must not read Redis events');
-        });
-        foreach ([null, time() - 1] as $expiry) {
-            $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/stream')
-                ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
-                ->withAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT, $expiry)
-                ->withQueryParams(['threadId' => 'thread', 'sessionId' => 'tab']);
-            $response = $controller->stream($request, new Response());
-            self::assertSame(401, $response->getStatusCode());
-            self::assertSame('', (string) $response->getBody());
-        }
-    }
-
-    #[RunInSeparateProcess]
-    #[PreserveGlobalState(false)]
-    public function testStreamDoesNotPublishAnEventReturnedAfterAuthenticationExpires(): void
-    {
-        class_alias(BufferedBrainStreamBody::class, \Slim\Psr7\NonBufferedBody::class);
-        [$controller, , $session, , $redis] = $this->controller($this->createStub(QueueDispatcherInterface::class));
-        $expiresAt = time() + 2;
-        $calls = 0;
-        $redis->method('brpop')->willReturnCallback(
-            static function (array $keys, int|float $timeout) use ($expiresAt, &$calls): array {
-                self::assertSame(1, ++$calls);
-                self::assertGreaterThan(0, $timeout);
-                self::assertLessThanOrEqual(1, $timeout);
-                usleep((int) (max(0, $expiresAt - microtime(true) + 0.01) * 1_000_000));
-                return [$keys[0], json_encode(['event' => 'chat.audio.ready', 'payload' => [
-                    'sessionId' => 'tab', 'threadId' => 'thread', 'messageId' => 'late', 'audioData' => 'expired-data',
-                ]], JSON_THROW_ON_ERROR)];
-            },
-        );
-        $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/stream')
-            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
-            ->withAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT, $expiresAt)
-            ->withQueryParams(['threadId' => 'thread', 'sessionId' => 'tab']);
-        $response = $controller->stream($request, new Response());
-        self::assertSame(200, $response->getStatusCode());
-        self::assertSame(1, $calls);
-        self::assertStringNotContainsString('expired-data', (string) $response->getBody());
-        self::assertStringNotContainsString('chat.audio.ready', (string) $response->getBody());
-    }
-
-    #[RunInSeparateProcess]
-    #[PreserveGlobalState(false)]
-    public function testStreamDoesNotForwardAnotherThreadOnTheSameTab(): void
-    {
-        class_alias(BufferedBrainStreamBody::class, \Slim\Psr7\NonBufferedBody::class);
-        [$controller, , $session, , $redis] = $this->controller($this->createStub(QueueDispatcherInterface::class));
-        $calls = 0;
-        $redis->method('brpop')->willReturnCallback(static function (array $keys) use (&$calls): array {
-            if (++$calls > 1) {
-                throw new \RuntimeException('End isolated stream');
-            }
-            return [$keys[0], json_encode(['event' => 'chat.audio.ready', 'payload' => [
-                'sessionId' => 'tab', 'threadId' => 'other-thread', 'messageId' => 'other', 'audioData' => 'other-data',
-            ]], JSON_THROW_ON_ERROR)];
-        });
-        $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/stream')
-            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
-            ->withAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT, time() + 60)
-            ->withQueryParams(['threadId' => 'thread', 'sessionId' => 'tab']);
-        try {
-            $controller->stream($request, new Response());
-            self::fail('Test stream did not terminate');
-        } catch (\RuntimeException $exception) {
-            self::assertSame('End isolated stream', $exception->getMessage());
-        }
-        self::assertStringNotContainsString('other-data', (string) BufferedBrainStreamBody::$instance);
-        self::assertSame(1, substr_count((string) BufferedBrainStreamBody::$instance, 'event: chat.snapshot'));
     }
 
     public function testSubmissionDelegatesQueuedStateToDispatchAndRejectsSecondGeneration(): void
@@ -307,13 +161,13 @@ final class BrainControllerTest extends TestCase
 
     public function testReconnectSnapshotUsesAuthenticatedUserAndDoesNotCreateMissingHistory(): void
     {
-        [$controller, $publisher, $session, $pdo] = $this->controller($this->createStub(QueueDispatcherInterface::class));
+        [, $publisher, $session, $pdo, , $snapshots] = $this->controller($this->createStub(QueueDispatcherInterface::class));
         $publisher->generationState()->set('user-1', 'thread', 'active', 'queued', false);
-        $snapshot = new \ReflectionMethod($controller, 'readSnapshot')->invoke($controller, $session, 'thread');
+        $snapshot = $snapshots->read($session, 'thread');
         self::assertTrue($snapshot['responding']);
         self::assertSame('active', $snapshot['activeMessageId']);
         $otherUser = new InMemorySession([Auth::USERID => 'other-user']);
-        $otherSnapshot = new \ReflectionMethod($controller, 'readSnapshot')->invoke($controller, $otherUser, 'thread');
+        $otherSnapshot = $snapshots->read($otherUser, 'thread');
         self::assertFalse($otherSnapshot['responding']);
         self::assertNull($otherSnapshot['activeMessageId']);
         self::assertSame(0, (int) $pdo->query('SELECT COUNT(*) FROM chat_history')->fetchColumn());
@@ -321,7 +175,7 @@ final class BrainControllerTest extends TestCase
 
     public function testSnapshotRestoresPersistedAudioExpectationAfterReconnect(): void
     {
-        [$controller, $publisher, $session, $pdo] = $this->controller(
+        [, $publisher, $session, $pdo, , $snapshots] = $this->controller(
             $this->createStub(QueueDispatcherInterface::class),
         );
         $history = new \App\Brain\ChatHistory\UserChatHistory($session, $pdo, threadId: 'thread');
@@ -329,9 +183,11 @@ final class BrainControllerTest extends TestCase
         $history->addMessage(new \NeuronAI\Chat\Messages\AssistantMessage('Answer'));
         $history->identifyLastAssistantMessage('assistant-snapshot', 'auto-assistant-snapshot');
         $publisher->generationState()->set('user-1', 'thread', 'assistant-snapshot', 'done', true);
-        $snapshot = new \ReflectionMethod($controller, 'readSnapshot')->invoke($controller, $session, 'thread');
+        $snapshot = $snapshots->read($session, 'thread');
         self::assertSame(['assistant-snapshot' => 'auto-assistant-snapshot'], $snapshot['audioRequestIds']);
         self::assertFalse($snapshot['responding']);
+        self::assertSame(['messageId' => 'assistant-snapshot', 'status' => 'done'], $snapshot['generation']);
+        self::assertSame('assistant-snapshot', $snapshot['generationMessageId']);
         self::assertSame('assistant-snapshot', $snapshot['messages'][1]['id']);
         self::assertSame('Answer', $snapshot['messages'][1]['message']);
         self::assertArrayNotHasKey('html', $snapshot);
@@ -339,7 +195,7 @@ final class BrainControllerTest extends TestCase
 
     public function testSnapshotRestoresInterruptedToolsAndSafeErrorAfterReconnect(): void
     {
-        [$controller, $publisher, $session, $pdo] = $this->controller(
+        [, $publisher, $session, $pdo, , $snapshots] = $this->controller(
             $this->createStub(QueueDispatcherInterface::class),
         );
         $history = new \App\Brain\ChatHistory\UserChatHistory($session, $pdo, threadId: 'thread');
@@ -349,7 +205,7 @@ final class BrainControllerTest extends TestCase
         $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage(null, [$tool]));
         foreach (['running', 'error', 'error'] as $status) {
             $publisher->generationState()->set('user-1', 'thread', 'attempt', $status, true);
-            $snapshot = new \ReflectionMethod($controller, 'readSnapshot')->invoke($controller, $session, 'thread');
+            $snapshot = $snapshots->read($session, 'thread');
             self::assertSame($status, $snapshot['generationStatus']);
             self::assertSame($status === 'running', $snapshot['responding']);
             $renderedTool = $snapshot['messages'][1]['toolsCall'][0];
@@ -359,11 +215,11 @@ final class BrainControllerTest extends TestCase
         }
     }
 
-    /** @return array{BrainController, ChatStreamPublisher, InMemorySession, \PDO, RedisClient} */
+    /** @return array{BrainController, ChatStreamPublisher, InMemorySession, \PDO, RedisClient, ChatSnapshot} */
     private function controller(QueueDispatcherInterface $queue, ?AudioServiceInterface $audio = null): array
     {
         $settings = new Settings(['redis' => ['prefix' => 'test:'], 'llm' => ['openai' => ['contextWindow' => 50000]],
-            'queue' => ['defaultQueue' => 'default'], 'sse' => ['pop_timeout' => 1],
+            'queue' => ['defaultQueue' => 'default'],
             'security' => ['cors' => ['allowed_origins' => []]]]);
         $session = new InMemorySession([Auth::USERID => 'user-1']);
         $pdo = new \PDO('sqlite::memory:');
@@ -390,14 +246,14 @@ final class BrainControllerTest extends TestCase
             $storage[$key] = array_map(strval(...), $value);
             return 1;
         });
-        $subscriber = new ChatStreamSubscriber($redis, $settings);
+        $subscriber = new ChatStreamSubscriber($settings);
         $publisher = new ChatStreamPublisher($redis, $subscriber, $settings);
         $renderer = new ChatDataRenderer(new GeneratedFileProcessor($settings, $entityManager));
-        return [new BrainController(new NullLogger(), $renderer,
-            new BrainRegistry($settings, $this->createStub(ContainerInterface::class), new ThemeRegistry($settings)),
+        return [new BrainController(new NullLogger(),
             $entityManager,
             $this->createStub(Filesystem::class), $settings, $audio ?? $this->createStub(AudioServiceInterface::class),
-            $queue, $publisher, $subscriber, new SseEventFormatter(), new CorsHeaders($settings)),
-            $publisher, $session, $pdo, $redis];
+            $queue, $publisher),
+            $publisher, $session, $pdo, $redis,
+            new ChatSnapshot($publisher->generationState(), $entityManager, $renderer, $settings)];
     }
 }

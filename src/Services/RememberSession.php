@@ -62,8 +62,7 @@ final readonly class RememberSession
         } catch (\JsonException) {
             return null;
         }
-        if (! is_array($data) || ! is_int($data['expires'] ?? null) || $data['expires'] <= time()
-            || ! is_string($data['user_id'] ?? null) || $data['user_id'] === '') {
+        if (! self::validRecord($data, time())) {
             return null;
         }
         return ['user_id' => $data['user_id'], 'expires' => $data['expires']];
@@ -104,6 +103,17 @@ final readonly class RememberSession
 
     private function key(string $id): string
     {
-        return $this->settings->get('redis.prefix') . 'auth:remember:' . $id;
+        return self::rememberKey($this->settings->get('redis.prefix'), $id);
+    }
+
+    public static function rememberKey(string $prefix, string $id): string
+    {
+        return $prefix . 'auth:remember:' . $id;
+    }
+
+    public static function validRecord(mixed $data, int $now): bool
+    {
+        return is_array($data) && is_int($data['expires'] ?? null) && $data['expires'] > $now
+            && is_string($data['user_id'] ?? null) && $data['user_id'] !== '';
     }
 }

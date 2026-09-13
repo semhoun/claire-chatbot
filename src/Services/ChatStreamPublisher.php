@@ -14,11 +14,11 @@ readonly class ChatStreamPublisher
     }
 
     /** @param array<string, mixed> $payload */
-    public function publish(string $threadId, string $event, array $payload): void
+    public function publish(string $scope, string $event, array $payload): void
     {
-        $channel = $this->chatStreamSubscriber->channel($threadId);
+        $channel = $this->chatStreamSubscriber->channel($scope);
         // Audio forwarding receives the internal token as sessionId; do not expose it to clients.
-        $payload['sessionId'] = ChatStreamSubscriber::unScope($threadId);
+        $payload['sessionId'] = ChatStreamSubscriber::unScope($scope);
 
         $message = json_encode([
             'version' => 1,
@@ -27,14 +27,10 @@ readonly class ChatStreamPublisher
             'payload' => $payload,
         ], JSON_THROW_ON_ERROR);
 
-        // Push to a session-specific queue for reliable delivery (wait/notify pattern)
-        $queueKey = $channel . ':queue';
-        if ($this->redisClient->lpush($queueKey, [$message]) === false) {
+        // Pub/Sub is ephemeral: zero listeners is a successful publication.
+        if ($this->redisClient->publish($channel, $message) === false) {
             throw new \RuntimeException('Cannot publish chat stream event');
         }
-
-        // BRPOP may consume the last event and remove the key before EXPIRE returns false.
-        $this->redisClient->expire($queueKey, $this->settings->get('sse.queue_ttl'));
     }
 
     public function generationState(): ChatGenerationState

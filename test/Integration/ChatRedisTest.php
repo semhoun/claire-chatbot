@@ -16,9 +16,10 @@ final class ChatRedisTest extends TestCase
 {
     private RedisClient $writer;
     private RedisClient $reader;
-    private \Redis $inspector;
     private Settings $settings;
     private string $prefix;
+    /** @var list<resource> */
+    private array $sockets = [];
 
     protected function setUp(): void
     {
@@ -28,88 +29,55 @@ final class ChatRedisTest extends TestCase
         }
         $host = getenv('CLAIRE_CHAT_TEST_REDIS_HOST') ?: '127.0.0.1';
         $this->prefix = 'claire-chat-integration:' . bin2hex(random_bytes(16)) . ':';
-        $this->settings = new Settings(['redis' => ['prefix' => $this->prefix], 'sse' => ['queue_ttl' => 60]]);
+        $this->settings = new Settings(['redis' => ['prefix' => $this->prefix]]);
         $this->writer = new RedisClient();
         $this->reader = new RedisClient();
-        $this->inspector = new \Redis();
         self::assertTrue($this->writer->connect($host, (int) $port, 3.0));
         self::assertTrue($this->reader->connect($host, (int) $port, 3.0));
-        self::assertTrue($this->inspector->connect($host, (int) $port, 3.0));
     }
 
     protected function tearDown(): void
     {
-        if (! isset($this->inspector)) {
+        foreach ($this->sockets as $socket) {
+            fclose($socket);
+        }
+        if (! isset($this->writer)) {
             return;
         }
-        // Exact keys only: no FLUSHDB, KEYS, SCAN or deletion of another agent's data.
-        foreach (['alice', 'bob'] as $user) {
-            $this->inspector->del(
-                $this->prefix . 'chat:generation:'
-                    . hash('sha256', json_encode([$user, 'thread'], JSON_THROW_ON_ERROR)),
-                $this->prefix . 'sse:chat:' . ChatStreamSubscriber::scope($user, 'shared-tab') . ':queue',
-            );
-        }
+        // Exact keys only: never flush or enumerate the Redis database.
+        $this->writer->del(ChatGenerationState::stateKey($this->prefix, 'alice', 'thread'));
         $this->writer->close();
         $this->reader->close();
-        $this->inspector->close();
     }
 
-    public function testSnapshotStateAndSseRoutingAcrossIndependentRedisConnections(): void
+    public function testPublicationIsEphemeralIsolatedAndFansOutAfterSubscriptionAck(): void
     {
-        $subscriber = new ChatStreamSubscriber($this->reader, $this->settings);
+        $subscriber = new ChatStreamSubscriber($this->settings);
         $publisher = new ChatStreamPublisher($this->writer, $subscriber, $this->settings);
-        $state = $publisher->generationState();
-        $observer = new ChatGenerationState($this->reader, $this->settings);
-        $channel = ChatStreamSubscriber::scope('alice', 'shared-tab');
-        $state->set('alice', 'thread', 'active-message', 'queued', false);
-        self::assertSame(['responding' => false, 'activeMessageId' => null], $observer->snapshot('bob', 'thread'));
+        $scope = ChatStreamSubscriber::scope('alice', 'tab');
+        $channel = $subscriber->channel($scope);
+        self::assertSame(0, $this->writer->publish($channel, 'lost'));
+        $publisher->publish($scope, 'chat.snapshot', ['threadId' => 'thread', 'marker' => 'lost']);
 
-        foreach (['queued', 'running', 'done', 'error', 'deleted'] as $status) {
-            $state->set('alice', 'thread', 'active-message', $status, $status !== 'queued');
-            $snapshot = $observer->snapshot('alice', 'thread');
-            $responding = in_array($status, ['queued', 'running'], true);
-            self::assertSame($responding,
-                $observer->acceptsEvent('alice', 'thread', 'chat.assistant.start', 'active-message'));
-            self::assertSame($status === 'done',
-                $observer->acceptsEvent('alice', 'thread', 'chat.assistant.done', 'active-message'));
-            self::assertSame($status === 'error',
-                $observer->acceptsEvent('alice', 'thread', 'chat.error', 'active-message'));
-            self::assertSame(['responding' => $responding,
-                'activeMessageId' => $responding ? 'active-message' : null], $snapshot);
-            $publisher->publish($channel, 'chat.snapshot', [
-                'threadId' => 'thread', 'sessionId' => $channel, 'html' => '<p>History</p>', ...$snapshot,
-            ]);
-            $ttl = $this->inspector->ttl($subscriber->channel($channel) . ':queue');
-            self::assertGreaterThan(0, $ttl);
-            self::assertLessThanOrEqual(60, $ttl);
-            if ($status === 'queued') {
-                self::assertNull($subscriber->popMessage(ChatStreamSubscriber::scope('bob', 'shared-tab'), 1));
-            }
-            $message = $subscriber->popMessage($channel, 1);
-            self::assertNotNull($message);
-            $event = json_decode($message, true, flags: JSON_THROW_ON_ERROR);
+        $first = $this->subscribe($channel);
+        $second = $this->subscribe($channel);
+        $otherUser = $this->subscribe($subscriber->channel(ChatStreamSubscriber::scope('bob', 'tab')));
+        $otherTab = $this->subscribe($subscriber->channel(ChatStreamSubscriber::scope('alice', 'other-tab')));
+        $publisher->publish($scope, 'chat.snapshot', ['threadId' => 'thread', 'marker' => 'live']);
+        foreach ([$first, $second] as $socket) {
+            $frame = $this->readFrame($socket);
+            self::assertSame(['message', $channel], array_slice($frame, 0, 2));
+            $event = json_decode($frame[2], true, flags: JSON_THROW_ON_ERROR);
+            self::assertSame(1, $event['version']);
             self::assertSame('chat.snapshot', $event['event']);
             self::assertSame('thread', $event['threadId']);
-            self::assertSame('shared-tab', $event['payload']['sessionId']);
-            self::assertSame($responding, $event['payload']['responding']);
-            self::assertSame($snapshot['activeMessageId'], $event['payload']['activeMessageId']);
+            self::assertSame('tab', $event['payload']['sessionId']);
+            self::assertSame('live', $event['payload']['marker']);
         }
-        self::assertTrue($this->reader->reconnect());
-        $persisted = new ChatGenerationState($this->reader, $this->settings)->get('alice', 'thread');
-        self::assertSame('deleted', $persisted['status']);
-        self::assertSame('1', $persisted['attempted']);
-        self::assertSame(-1, $this->inspector->ttl($this->prefix . 'chat:generation:'
-            . hash('sha256', json_encode(['alice', 'thread'], JSON_THROW_ON_ERROR))));
-    }
-
-    public function testFractionalBlockingTimeoutDoesNotBecomeAnInfiniteWait(): void
-    {
-        $this->reader->setReadTimeout(2);
-        $subscriber = new ChatStreamSubscriber($this->reader, $this->settings);
-        $started = microtime(true);
-        self::assertNull($subscriber->popMessage(ChatStreamSubscriber::scope('alice', 'shared-tab'), 0.05));
-        self::assertLessThan(1, microtime(true) - $started);
+        $read = [$first, $second, $otherUser, $otherTab];
+        $write = $except = [];
+        self::assertSame(0, stream_select($read, $write, $except, 0, 50000));
+        self::assertSame([], $this->reader->hgetall($channel . ':queue'));
     }
 
     public function testCaptureReloadsAfterCompletionWrittenThroughAnotherConnection(): void
@@ -117,6 +85,7 @@ final class ChatRedisTest extends TestCase
         $state = new ChatGenerationState($this->writer, $this->settings);
         $observer = new ChatGenerationState($this->reader, $this->settings);
         $state->set('alice', 'thread', 'message', 'running', true);
+        self::assertSame([], $observer->get('bob', 'thread'));
         $reads = 0;
         $snapshot = $observer->capture('alice', 'thread', static function () use ($state, &$reads): array {
             if (++$reads === 1) {
@@ -126,43 +95,66 @@ final class ChatRedisTest extends TestCase
             return ['html' => 'complete'];
         });
         self::assertSame(2, $reads);
-        self::assertSame(['html' => 'complete', 'responding' => false, 'activeMessageId' => null], $snapshot);
+        self::assertSame(['html' => 'complete', 'responding' => false, 'activeMessageId' => null,
+            'generationMessageId' => 'message', 'generation' => ['messageId' => 'message', 'status' => 'done'],
+            'generationStatus' => 'done'], $snapshot);
+        self::assertTrue($this->reader->reconnect());
+        self::assertTrue($observer->acceptsEvent('alice', 'thread', 'chat.assistant.done', 'message'));
+        self::assertFalse($observer->acceptsEvent('alice', 'thread', 'chat.assistant.update', 'message'));
     }
 
-    public function testPublicationSucceedsWhenEventIsConsumedBeforeExpire(): void
+    public function testQueuePrimitivesStillSupportFractionalBlockingTimeouts(): void
     {
-        $this->writer->close();
-        $this->writer = new class ($this->reader) extends RedisClient {
-            public ?array $consumed = null;
-            public ?bool $expired = null;
+        $key = $this->prefix . 'jobs';
+        self::assertSame(1, $this->writer->lpush($key, ['job']));
+        self::assertSame([$key, 'job'], $this->reader->brpop([$key], 1));
+        $this->reader->setReadTimeout(2);
+        $started = microtime(true);
+        self::assertNull($this->reader->brpop([$key], 0.05));
+        self::assertLessThan(1, microtime(true) - $started);
+    }
 
-            public function __construct(private readonly RedisClient $consumer)
-            {
-                parent::__construct();
+    /** @return resource */
+    private function subscribe(string $channel)
+    {
+        $host = getenv('CLAIRE_CHAT_TEST_REDIS_HOST') ?: '127.0.0.1';
+        $socket = stream_socket_client('tcp://' . $host . ':' . getenv('CLAIRE_CHAT_TEST_REDIS_PORT'),
+            timeout: 3);
+        self::assertIsResource($socket);
+        $this->sockets[] = $socket;
+        stream_set_timeout($socket, 2);
+        $command = "*2\r\n$9\r\nSUBSCRIBE\r\n$" . strlen($channel) . "\r\n" . $channel . "\r\n";
+        self::assertSame(strlen($command), fwrite($socket, $command));
+        self::assertSame(['subscribe', $channel, 1], $this->readFrame($socket));
+        return $socket;
+    }
+
+    /** Minimal RESP2 reader for subscription ACKs and message frames.
+     * @param resource $socket
+     */
+    private function readFrame($socket): array|string|int
+    {
+        $line = fgets($socket);
+        self::assertIsString($line, 'Redis frame timed out');
+        $length = (int) substr($line, 1);
+        if ($line[0] === ':') {
+            return $length;
+        }
+        if ($line[0] === '*') {
+            $items = [];
+            for ($i = 0; $i < $length; $i++) {
+                $items[] = $this->readFrame($socket);
             }
-
-            public function expire(string $key, int $seconds): bool
-            {
-                $this->consumed = $this->consumer->brpop([$key], 1);
-                return $this->expired = parent::expire($key, $seconds);
-            }
-        };
-        self::assertTrue($this->writer->connect(
-            getenv('CLAIRE_CHAT_TEST_REDIS_HOST') ?: '127.0.0.1',
-            (int) getenv('CLAIRE_CHAT_TEST_REDIS_PORT'),
-            3.0,
-        ));
-        $subscriber = new ChatStreamSubscriber($this->reader, $this->settings);
-        $channel = ChatStreamSubscriber::scope('alice', 'shared-tab');
-        new ChatStreamPublisher($this->writer, $subscriber, $this->settings)->publish(
-            $channel, 'chat.snapshot', ['threadId' => 'thread', 'html' => '<p>Delivered</p>'],
-        );
-
-        self::assertNotNull($this->writer->consumed);
-        self::assertFalse($this->writer->expired);
-        self::assertSame(0, $this->inspector->exists($subscriber->channel($channel) . ':queue'));
-        $event = json_decode($this->writer->consumed[1], true, flags: JSON_THROW_ON_ERROR);
-        self::assertSame('chat.snapshot', $event['event']);
-        self::assertSame('<p>Delivered</p>', $event['payload']['html']);
+            return $items;
+        }
+        self::assertSame('$', $line[0]);
+        $value = '';
+        while (strlen($value) < $length + 2) {
+            $chunk = fread($socket, $length + 2 - strlen($value));
+            self::assertNotSame(false, $chunk);
+            self::assertNotSame('', $chunk);
+            $value .= $chunk;
+        }
+        return substr($value, 0, $length);
     }
 }

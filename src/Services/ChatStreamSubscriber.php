@@ -6,16 +6,19 @@ namespace App\Services;
 
 final readonly class ChatStreamSubscriber
 {
-    public function __construct(
-        private RedisClient $redisClient,
-        private Settings $settings,
-    ) {
+    public function __construct(private Settings $settings)
+    {
     }
 
-    public function channel(string $threadId): string
+    public function channel(string $scope): string
     {
-        self::unScope($threadId);
-        return $this->settings->get('redis.prefix') . 'sse:chat:' . $threadId;
+        return self::channelName($this->settings->get('redis.prefix'), $scope);
+    }
+
+    public static function channelName(string $prefix, string $scope): string
+    {
+        self::unScope($scope);
+        return $prefix . 'sse:chat:' . $scope;
     }
 
     /** Internal routing token, never accepted directly from an HTTP request. */
@@ -36,12 +39,5 @@ final readonly class ChatStreamSubscriber
         }
 
         return hex2bin($matches[2]);
-    }
-
-    public function popMessage(string $threadId, int|float $timeout): ?string
-    {
-        $result = $this->redisClient->brpop([$this->channel($threadId) . ':queue'], $timeout);
-
-        return $result !== null ? $result[1] : null;
     }
 }
