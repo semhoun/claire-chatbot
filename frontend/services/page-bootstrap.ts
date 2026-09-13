@@ -5,10 +5,17 @@ import { SessionClient } from './session-client'
 export async function loadNormalBootstrap(baseUrl: string, sessionToken?: string): Promise<ClaireBootstrap | null> {
   const target = new URL(`${baseUrl}/`, window.location.origin)
   if (target.origin !== window.location.origin) throw new Error('Invalid bootstrap origin')
-  const client = new SessionClient(baseUrl, 120, 30)
+  const client = new SessionClient(baseUrl, 120, 30, true)
   try {
     client.initialize(sessionToken)
-    const response = await client.request('/', { headers: { Accept: 'application/json' }, cache: 'no-store' })
+    let response = await client.request('/', { headers: { Accept: 'application/json' }, cache: 'no-store' })
+    if (response.status === 401 && sessionStorage.getItem('claire_session_token') !== null) {
+      const restored = await client.remember()
+      if (!restored.ok && ![401, 403].includes(restored.status)) throw new Error(`HTTP ${restored.status}`)
+      response = restored.ok
+        ? await client.request('/', { headers: { Accept: 'application/json' }, cache: 'no-store' })
+        : restored
+    }
     if ([401, 403].includes(response.status)) { client.clear(); return null }
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return parseBootstrap(await response.json(), baseUrl)

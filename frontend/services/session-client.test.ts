@@ -11,6 +11,61 @@ function token(audience = 'session'): string {
 }
 
 describe('SessionClient', () => {
+  it('renews once for concurrent normal requests after background expiry', async () => {
+    const fetchMock = vi.fn(async (url: string) => new URL(url).pathname === '/auth/remember'
+      ? new Response(null, { status: 204, headers: { 'X-Claire-Token': token() } })
+      : new Response('0'))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient(window.location.origin, 120, 30, true)
+    try {
+      client.initialize()
+      await Promise.all([client.request('/history/count'), client.request('/files/count')])
+      expect(fetchMock.mock.calls.filter(([url]) => new URL(url).pathname === '/auth/remember')).toHaveLength(1)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    } finally { client.destroy() }
+  })
+
+  it('does not send remember cookies or renew for an embed session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 401 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient(window.location.origin, 120, 30)
+    try {
+      await client.request('/auth/refresh')
+      expect(fetchMock).toHaveBeenCalledOnce()
+      expect(fetchMock.mock.calls[0][1].credentials).toBe('omit')
+      await expect(client.remember()).rejects.toThrow('origin')
+    } finally { client.destroy() }
+  })
+
+  it('revokes before clearing local credentials and keeps them when logout fails', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const client = new SessionClient(window.location.origin, 120, 30, true)
+    try {
+      client.initialize(token())
+      expect((await client.remember(true)).status).toBe(503)
+      expect(sessionStorage.getItem('claire_session_token')).not.toBeNull()
+      expect((await client.remember(true)).status).toBe(204)
+      expect(sessionStorage.getItem('claire_session_token')).toBeNull()
+      expect(new URL(fetchMock.mock.calls[1][0]).pathname).toBe('/logout')
+      expect(new Headers(fetchMock.mock.calls[1][1].headers).has('X-Claire-Auth')).toBe(false)
+    } finally { client.destroy() }
+  })
+
+  it('cannot restore a late remember response after logout clears the client', async () => {
+    let release!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { release = resolve })))
+    const client = new SessionClient(window.location.origin, 120, 30, true)
+    const pending = client.remember()
+    client.clear()
+    release(new Response(null, { status: 204, headers: { 'X-Claire-Token': token() } }))
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    expect(sessionStorage.getItem('claire_session_token')).toBeNull()
+    client.destroy()
+  })
+
   it('shares one bounded capability across 17 files and a stream, including renewal', async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({

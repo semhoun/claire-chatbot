@@ -9,10 +9,11 @@ use Slim\Interfaces\RouteCollectorProxyInterface as Group;
 
 return static function (App $app): void {
     // SSO-only: no local login form route
-    $app->get('/logout', [AuthController::class, 'logout'])->setName('logout');
+    $app->post('/logout', [AuthController::class, 'logout'])->setName('logout');
 
     // OpenID Connect (SSO)
     $app->group('/auth', static function (Group $group): void {
+        $group->post('/remember', [AuthController::class, 'remember'])->setName('auth.remember');
         $group->get('/refresh', [SessionController::class, 'refresh'])
             ->setName('auth.refresh');
         $group->post('/resource-token', [AuthController::class, 'resourceToken'])

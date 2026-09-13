@@ -187,7 +187,8 @@ final class ResourceTokenSecurityTest extends TestCase
                 return (new Response())->withHeader('X-Claire-Token', 'must-not-leak')
                     ->withHeader('X-Claire-Minitoken', 'must-not-leak');
             });
-        $middleware = new JwtSessionMiddleware($tokens, $settings);
+        $middleware = new JwtSessionMiddleware($tokens, $settings,
+            new \App\Services\RememberSession($this->createStub(\App\Services\RedisClient::class), $settings));
         $response = $middleware->process($request, $handler);
         self::assertSame($status, $response->getStatusCode());
         if ($type !== 'session' || $status !== 200) {

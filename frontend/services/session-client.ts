@@ -65,12 +65,48 @@ export class SessionClient {
   private readonly resources = new Map<string, Promise<ResourceToken>>()
   private resourceBatch: { resources: ResourceScope[]; promise: Promise<ResourceToken> } | null = null
   private readonly requests = new Set<AbortController>()
+  private remembering: Promise<Response> | null = null
 
   public constructor(
     private readonly baseUrl: string,
     private readonly refreshBeforeExpire: number,
     private readonly refreshMinInterval: number,
+    private readonly normalMode = false,
   ) {}
+
+  public async remember(logout = false): Promise<Response> {
+    const url = new URL(this.absolute(logout ? '/logout' : '/auth/remember'))
+    if (!this.normalMode || url.origin !== window.location.origin) throw new Error('Invalid remember origin')
+    if (this.destroyed) throw new DOMException('Session destroyed', 'AbortError')
+    if (!logout && this.remembering) return this.remembering
+    const generation = this.generation
+    const controller = new AbortController()
+    this.requests.add(controller)
+    const pending = (async () => {
+      try {
+        const response = await window.fetch(url.toString(), {
+          method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+          headers: { Accept: 'application/json', 'X-Claire-Remember': '1' }, signal: controller.signal,
+        })
+        controller.signal.throwIfAborted()
+        if (generation !== this.generation) throw new DOMException('Session invalidated', 'AbortError')
+        if (logout) {
+          if (response.ok) this.clear()
+        } else if (response.ok) {
+          const token = response.headers.get(TOKEN_HEADER)
+          if (!token || jwtAudience(token) !== 'session' || (jwtExpiration(token) ?? 0) <= Date.now()) {
+            throw new Error('Invalid remembered session')
+          }
+          this.captureTokens(response)
+        } else if ([401, 403].includes(response.status)) this.clear()
+        return response
+      } finally {
+        this.requests.delete(controller)
+      }
+    })()
+    if (!logout) this.remembering = pending
+    try { return await pending } finally { if (this.remembering === pending) this.remembering = null }
+  }
 
   public initialize(sessionToken?: string): void {
     if (this.destroyed) return
@@ -107,7 +143,7 @@ export class SessionClient {
   private async performRequest(path: string, init: RequestInit, authUpdate = false): Promise<Response> {
     if (this.destroyed) throw new DOMException('Session destroyed', 'AbortError')
     const generation = this.generation
-    const revision = this.tokenRevision
+    let revision = this.tokenRevision
     const controller = new AbortController()
     const abort = () => controller.abort(init.signal?.reason)
     if (init.signal?.aborted) abort()
@@ -115,14 +151,21 @@ export class SessionClient {
     this.requests.add(controller)
     try {
       const headers = new Headers(init.headers)
-      const token = this.getSessionToken()
       const url = new URL(this.absolute(path))
       if (url.origin !== new URL(this.baseUrl || window.location.origin, window.location.href).origin) {
         throw new Error('Authenticated requests must target the Claire origin')
       }
+      if (this.normalMode && this.getSessionToken() === null) {
+        const restored = await this.remember()
+        if (!restored.ok) return restored
+        revision = this.tokenRevision
+      }
+      const token = this.getSessionToken()
       if (token !== null) headers.set(AUTH_HEADER, token)
       controller.signal.throwIfAborted()
-      const response = await window.fetch(url.toString(), { ...init, headers, signal: controller.signal, redirect: 'error' })
+      const response = await window.fetch(url.toString(), {
+        ...init, headers, signal: controller.signal, redirect: 'error', credentials: 'omit',
+      })
       controller.signal.throwIfAborted()
       if (generation !== this.generation) throw new DOMException('Session invalidated', 'AbortError')
       if (revision === this.tokenRevision && token === this.getSessionToken() && (authUpdate || !this.authUpdating)) {

@@ -57,6 +57,16 @@ class RedisClient
         return $this->redis->del($keys);
     }
 
+    public function setex(string $key, int $seconds, string $value): bool
+    {
+        return $this->redis->setex($key, $seconds, $value);
+    }
+
+    public function get(string $key): string|false
+    {
+        return $this->redis->get($key);
+    }
+
     public function connect(string $host, int $port, float $timeout): bool
     {
         $this->host = $host;

@@ -296,14 +296,18 @@ final class OidcSecurityTest extends TestCase
             ->with(self::isInstanceOf(ArraySession::class), 'user-123', self::anything())
             ->willReturnCallback(static function (ArraySession $session, string $id): void {
                 $session->set(Auth::USERID, $id);
+                $session->set(Auth::AUTHENTICATED, true);
             });
         $tokens = new JwtTokenService(new Settings([
             'session' => ['lifetime' => 300, 'jwt' => ['secret' => str_repeat('s', 32)]],
         ]));
+        $rememberRedis = $this->createStub(RedisClient::class);
+        $rememberRedis->method('setex')->willReturn(true);
         $controller = new AuthController(new NullLogger(), $client, $auth, $tokens,
             new VueShell(), new OidcTransaction($redis),
             $this->createStub(\Doctrine\ORM\EntityManager::class),
-            new \App\Services\ChatGenerationState($this->createStub(RedisClient::class), new Settings([])));
+            new \App\Services\ChatGenerationState($this->createStub(RedisClient::class), new Settings([])),
+            new \App\Services\RememberSession($rememberRedis, new Settings(['redis' => ['prefix' => 'test:']])));
         $factory = new ServerRequestFactory();
         $initial = new ArraySession();
         $response = $controller->ssoRedirect(
@@ -408,7 +412,8 @@ final class OidcSecurityTest extends TestCase
             new NullLogger(), $this->client($provider), $auth, new JwtTokenService(new Settings([])),
             new VueShell(), $transactions,
             $this->createStub(\Doctrine\ORM\EntityManager::class),
-            new \App\Services\ChatGenerationState($this->createStub(RedisClient::class), new Settings([]))
+            new \App\Services\ChatGenerationState($this->createStub(RedisClient::class), new Settings([])),
+            new \App\Services\RememberSession($this->createStub(RedisClient::class), new Settings([]))
         );
         $session = new ArraySession();
         // Legacy/header session state must never replace the browser cookie binding.

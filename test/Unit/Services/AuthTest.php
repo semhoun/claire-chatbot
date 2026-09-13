@@ -29,7 +29,10 @@ final class AuthTest extends TestCase
     {
         $this->session = $this->createMock(SessionInterface::class);
         $this->entityManager = $this->createMock(EntityManager::class);
-        $this->settings = new Settings(['session' => ['defaultParams' => ['brain_avatar' => 'claire', 'layout_mode' => 'full']]]);
+        $this->settings = new Settings([
+            'session' => ['defaultParams' => ['brain_avatar' => 'claire', 'layout_mode' => 'full']],
+            'llm' => ['brains' => ['claire' => \App\Brain\Claire::class]],
+        ]);
         $container = $this->createMock(ContainerInterface::class);
         $brainRegistry = new BrainRegistry($this->settings, $container, new ThemeRegistry($this->settings));
         $this->auth = new Auth($this->entityManager, $this->settings, $brainRegistry);
@@ -56,5 +59,36 @@ final class AuthTest extends TestCase
             ->method('clear');
 
         $this->auth->logout($this->session);
+    }
+
+    public function testRestoreRejectsDeletedUserWithoutCreatingIt(): void
+    {
+        $repository = $this->createStub(\App\Repository\UserRepository::class);
+        $repository->method('find')->willReturn(null);
+        $this->entityManager->method('getRepository')->willReturn($repository);
+        $this->entityManager->expects(self::never())->method('persist');
+        self::assertFalse($this->auth->restore($this->session, 'deleted'));
+    }
+
+    public function testRestoreLoadsCurrentProfileAndPreferences(): void
+    {
+        $user = new \App\Entity\User();
+        $user->setId('user-1');
+        $user->setFirstName('Current');
+        $user->setLastName('Name');
+        $user->setEmail('current@example.test');
+        $user->setParams(['layout_mode' => 'compact']);
+        $repository = $this->createStub(\App\Repository\UserRepository::class);
+        $repository->method('find')->willReturn($user);
+        $this->entityManager->method('getRepository')->willReturn($repository);
+        $this->entityManager->expects(self::never())->method('flush');
+        $session = new \App\Services\Session\ArraySession();
+        $session->set('stale', true);
+        self::assertTrue($this->auth->restore($session, 'user-1'));
+        self::assertFalse($session->has('stale'));
+        self::assertSame(true, $session->get(Auth::AUTHENTICATED));
+        self::assertSame('user-1', $session->get(Auth::USERID));
+        self::assertSame('compact', $session->get('layout_mode'));
+        self::assertSame('Current Name', $session->get(Auth::USERINFO)['displayName']);
     }
 }

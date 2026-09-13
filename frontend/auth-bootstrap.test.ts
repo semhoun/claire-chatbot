@@ -14,6 +14,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); sessionStorage.cl
 
 describe('normal JSON authentication bootstrap', () => {
   it('mounts with the bootstrap theme without fetching a stylesheet', async () => {
+    sessionStorage.setItem(sessionKey, JSON.stringify({ token: token(1), expiresAt: Date.now() + 3600_000 }))
     const fetchMock = vi.fn(async (input: string | URL) => {
       expect(new URL(input).pathname).toBe('/')
       return new Response(JSON.stringify({ ...config, layoutMode: 'compact' }))
@@ -35,6 +36,7 @@ describe('normal JSON authentication bootstrap', () => {
   })
 
   it('does not mount a late bootstrap after unmount', async () => {
+    sessionStorage.setItem(sessionKey, JSON.stringify({ token: token(1), expiresAt: Date.now() + 3600_000 }))
     let release!: (response: Response) => void
     const fetchMock = vi.fn(() => new Promise<Response>(resolve => { release = resolve }))
     vi.stubGlobal('fetch', fetchMock)
@@ -102,6 +104,39 @@ describe('normal JSON authentication bootstrap', () => {
   it('does not accept HTML as authenticated bootstrap', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>login</html>')))
     await expect(loadNormalBootstrap('')).rejects.toThrow()
+  })
+
+  it('restores a closed PWA using the cookie endpoint then header-only bootstrap', async () => {
+    const restored = token(4)
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204, headers: { 'X-Claire-Token': restored } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(config)))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await loadNormalBootstrap('')).toMatchObject(config)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(new URL(url).pathname).toBe('/auth/remember')
+    expect(init).toMatchObject({ method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error' })
+    expect(new Headers(init.headers).get('X-Claire-Remember')).toBe('1')
+    expect(new Headers(init.headers).has('X-Claire-Auth')).toBe(false)
+    expect(fetchMock.mock.calls[1][1].credentials).toBe('omit')
+    expect(new Headers(fetchMock.mock.calls[1][1].headers).get('X-Claire-Auth')).toBe(restored)
+    expect(localStorage.getItem(sessionKey)).toBeNull()
+  })
+
+  it('recovers a server-rejected cached JWT only once', async () => {
+    sessionStorage.setItem(sessionKey, JSON.stringify({ token: token(1), expiresAt: Date.now() + 3600_000 }))
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204, headers: { 'X-Claire-Token': token(2) } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(config)))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await loadNormalBootstrap('')).toMatchObject(config)
+    expect(fetchMock.mock.calls.map(call => new URL(call[0]).pathname)).toEqual(['/', '/auth/remember', '/'])
+  })
+
+  it('does not mistake unavailable remember storage for a logged-out browser', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 503 })))
+    await expect(loadNormalBootstrap('')).rejects.toThrow('503')
   })
 
   it('renders error details as text and never attempts authentication on error pages', async () => {

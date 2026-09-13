@@ -13,6 +13,7 @@ use App\Services\ChatGenerationState;
 use App\Services\JwtTokenService;
 use App\Services\OidcClient;
 use App\Services\OidcTransaction;
+use App\Services\RememberSession;
 use App\Services\Session\SessionInterface;
 use App\Services\Session\SessionManagerInterface;
 use App\Services\Session\Trait\SessionFromRequest;
@@ -33,6 +34,7 @@ final readonly class AuthController
         private OidcTransaction $oidcTransaction,
         private \Doctrine\ORM\EntityManager $entityManager,
         private ChatGenerationState $chatGenerationState,
+        private RememberSession $rememberSession,
     ) {
     }
 
@@ -101,6 +103,9 @@ final readonly class AuthController
 
         $this->auth->login($session, $result['id'], $result['data']);
 
+        $this->rememberSession->revoke($request->getCookieParams()[RememberSession::COOKIE] ?? null);
+        $response = $response->withAddedHeader('Set-Cookie', $this->rememberSession->issue($session));
+
         $sessionToken = $this->jwtTokenService->generateSessionToken($session);
 
         // Render callback page that stores token client-side then redirects
@@ -116,13 +121,37 @@ final readonly class AuthController
 
     public function logout(Request $request, Response $response): Response
     {
+        if (! $this->rememberSession->allows($request)) {
+            return $this->jsonResponse($response, ['error' => 'forbidden'], 403);
+        }
         $session = $request->getAttribute('session');
         if (! $session instanceof SessionInterface) {
             return $response->withStatus(500);
         }
 
+        $this->rememberSession->revoke($request->getCookieParams()[RememberSession::COOKIE] ?? null);
         $this->auth->logout($session);
-        return $response->withStatus(302)->withHeader('Location', '/');
+        return $response->withStatus(204)->withHeader('Cache-Control', 'no-store')
+            ->withAddedHeader('Set-Cookie', $this->rememberSession->clearCookie());
+    }
+
+    public function remember(Request $request, Response $response): Response
+    {
+        if (! $this->rememberSession->allows($request)) {
+            return $this->jsonResponse($response, ['error' => 'forbidden'], 403);
+        }
+        $id = $this->rememberSession->cookieId($request->getCookieParams()[RememberSession::COOKIE] ?? null);
+        $data = $this->rememberSession->find($id);
+        $session = $this->getSession($request);
+        if ($data === null || ! $this->auth->restore($session, $data['user_id'])) {
+            $this->rememberSession->revoke($request->getCookieParams()[RememberSession::COOKIE] ?? null);
+            return $this->jsonResponse($response, ['error' => 'unauthorized'], 401)
+                ->withAddedHeader('Set-Cookie', $this->rememberSession->clearCookie());
+        }
+        $session->set(RememberSession::ID, $id);
+        $session->set(RememberSession::EXPIRES, $data['expires']);
+        // JWT middleware emits the short-lived header. Never extend the cookie or Redis TTL here.
+        return $response->withStatus(204)->withHeader('Cache-Control', 'no-store');
     }
 
     public function embedExchange(Request $request, Response $response): Response

@@ -6,6 +6,7 @@ namespace App\Middleware;
 
 use App\Services\Auth;
 use App\Services\JwtTokenService;
+use App\Services\RememberSession;
 use App\Services\Session\ArraySession;
 use App\Services\Settings;
 use DateTimeImmutable;
@@ -44,6 +45,7 @@ final class JwtSessionMiddleware implements MiddlewareInterface
     public function __construct(
         private readonly JwtTokenService $jwtTokenService,
         private readonly Settings $settings,
+        private readonly RememberSession $rememberSession,
     ) {
     }
 
@@ -69,6 +71,13 @@ final class JwtSessionMiddleware implements MiddlewareInterface
                 $arraySession->start();
                 $arraySession->set(Auth::USERID, $resource['userId']);
                 $arraySession->set(Auth::AUTHENTICATED, true);
+                if (array_key_exists(RememberSession::ID, $resource)) {
+                    $arraySession->set(RememberSession::ID, $resource[RememberSession::ID]);
+                    $arraySession->set(RememberSession::EXPIRES, $resource[RememberSession::EXPIRES] ?? null);
+                    if (! $this->rememberSession->valid($arraySession)) {
+                        return (new \Slim\Psr7\Response(401))->withHeader('Cache-Control', 'no-store');
+                    }
+                }
                 $request = $request->withAttribute(self::SESSION_ATTRIBUTE, $arraySession)
                     ->withAttribute(self::AUTH_RESOURCE, $resource)
                     ->withAttribute(self::AUTH_EXPIRES_AT, $resource['expiresAt']);
@@ -84,6 +93,9 @@ final class JwtSessionMiddleware implements MiddlewareInterface
             }
 
             $this->decodeAndPopulateSession($arraySession, $parsedSession);
+            if (! $this->rememberSession->valid($arraySession)) {
+                return (new \Slim\Psr7\Response(401))->withHeader('Cache-Control', 'no-store');
+            }
             $request = $request->withAttribute(self::AUTH_EXPIRES_AT, $this->tokenClaims['exp']->getTimestamp());
         } else {
             $arraySession->start();

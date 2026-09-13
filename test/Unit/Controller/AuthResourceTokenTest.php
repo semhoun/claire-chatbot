@@ -123,6 +123,7 @@ final class AuthResourceTokenTest extends TestCase
             new NullLogger(), (new ReflectionClass(OidcClient::class))->newInstanceWithoutConstructor(),
             $this->createStub(Auth::class), $tokens, new VueShell(),
             new OidcTransaction($this->createStub(RedisClient::class)), $entityManager, $generation,
+            new \App\Services\RememberSession($this->createStub(RedisClient::class), $settings),
         );
         $session = new ArraySession();
         $session->start();

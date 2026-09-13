@@ -10,6 +10,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [2.1.0] - 2026-09-13
 
 ### Added
+- **Authentification** : connexion persistante de l'interface normale et de la PWA pendant 7 jours maximum après connexion SSO, via un cookie `HttpOnly`, `Secure`, `SameSite=Lax` et une session Redis ; restauration par `POST /auth/remember` avec contrôle d'origine, sans prolonger la date limite ni stocker de jeton longue durée dans `localStorage`
+- **Tests** : couverture de la restauration après fermeture, de l'expiration absolue, de la révocation des jetons dérivés, des protections inter-origines et de l'isolation du widget
 - **Copie** : bouton transparent en superposition dans les blocs de code, de texte préformaté et les citations, sans espace réservé, avec confirmation accessible et copie du contenu actualisé dans le chat normal et le widget
 - **Tests** : couverture de la coloration réactive pendant le streaming, des alias de langages, de l'échappement du code et de la copie des blocs et citations
 - **PWA** : installation de l'interface normale en mode `standalone`, avec manifeste dynamique public `/manifest.webmanifest`, icônes PNG 192x192 et 512x512 et métadonnées d'installation iOS ; connexion Internet requise, sans service worker ni mode hors ligne
@@ -37,6 +39,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Tests** : couverture renforcée de l'isolation des conversations, des retries et baux de queue, des jetons de ressources, des journaux Telegram, des thèmes et du rendu PDF
 
 ### Changed
+- **Déconnexion** : remplacement de `GET /logout` par `POST /logout`, avec révocation de la session persistante et de ses jetons dérivés ; affichage d'une erreur si la révocation ne peut pas être confirmée
 - **Coloration syntaxique** : remplacement de Highlight.js par Refractor comme tokenizer et rendu des tokens par Vue, avec cache des blocs inchangés et conservation des couleurs du thème ; les blocs sans langage ou avec un langage inconnu restent en texte brut
 - **Messages** : attribution d'identifiants stables (`history-message-*`) aux messages d'historique dans `MessageFormatter`
 - **Docker Compose** : ajout des variables de configuration pour l'audio Mistral (`MISTRAL_AUDIO_*`)
@@ -50,6 +53,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Documentation** : exemples Docker et développement local complétés avec Redis, SSO et workers ; contrats API et procédures de migration et maintenance actualisés
 
 ### Fixed
+- **PWA** : restauration automatique de la connexion à la réouverture lorsque le stockage de session a disparu ou que le jeton court a expiré, dans la limite des 7 jours de connexion persistante
 - **Saisie** : recalcul de la hauteur du champ après chaque modification du contenu dans le chat normal et le widget, avec réduction après effacement ou envoi et agrandissement lors de la restauration du dernier échange annulé ; tests de régression dans les deux modes
 - **Coloration syntaxique** : maintien des couleurs pendant les mises à jour SSE et sur les blocs Markdown encore ouverts, sans manipulation concurrente du DOM
 - **PWA** : identité dérivée de `start_url` en omettant `id`, afin d'éviter une identité partagée entre plusieurs chemins de montage sur la même origine
@@ -70,6 +74,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Rendu web** : retrait de `ChatHtmlRenderer` et des fragments HTML serveur du pipeline de chat, remplacés par le rendu Vue
 
 ### Migration
+- Déployer ensemble le backend et les bundles frontend pour la nouvelle déconnexion en POST ; une nouvelle connexion SSO active la persistance sur 7 jours, qui nécessite HTTPS et la conservation des sessions dans Redis
 - Sauvegarder les données et suspendre les traitements avant d'appliquer `./console migrations:migrate`, puis vider le cache compilé et redémarrer les processus web et les workers
 - Migrer les thèmes des agents externes et les clients API utilisant les anciens liens de fichiers ou mini-tokens ; reconstruire les bundles pour les installations depuis les sources
 - Conserver les données Redis : le journal SQL Telegram ne remplace pas la queue Redis et la version finale ne comporte pas d'outbox SQL

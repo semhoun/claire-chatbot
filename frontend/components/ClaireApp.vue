@@ -22,6 +22,7 @@ const client = new SessionClient(
   props.config.baseUrl,
   props.config.refreshBeforeExpire,
   props.config.refreshMinInterval,
+  props.config.mode === 'normal',
 )
 client.initialize(props.config.sessionToken)
 const browserAudio = new BrowserAudio(client, props.config.audioMaxRecordingSeconds)
@@ -1079,13 +1080,22 @@ async function toggleLayout(): Promise<void> {
   await postSetting('/config/layout_mode', { mode: layoutMode.value })
 }
 
-function logout(): void {
+async function logout(): Promise<void> {
+  if (props.config.mode === 'normal') {
+    try {
+      const response = await client.remember(true)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    } catch {
+      notify('La déconnexion a échoué. Réessayez une fois la connexion rétablie.')
+      return
+    }
+  }
   beginNavigation()
   destroyed = true
   client.clear()
   sessionStorage.removeItem('claireStreamSessionId')
   if (props.config.mode === 'normal') {
-    window.location.assign(endpoint('/logout'))
+    window.location.assign(endpoint('/'))
   } else {
     rootElement.value?.dispatchEvent(new CustomEvent('claire:logout', { bubbles: true, composed: true }))
   }

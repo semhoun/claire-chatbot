@@ -57,6 +57,7 @@ final readonly class JwtTokenService
             [self::SESSION_DATA_CLAIM => $sessionData],
             $ttl,
             self::SESSION_AUDIENCE,
+            $sessionManager->has(RememberSession::ID) ? $sessionManager->get(RememberSession::EXPIRES) : null,
         );
     }
 
@@ -143,7 +144,10 @@ final readonly class JwtTokenService
             throw new InvalidArgumentException('Invalid resource scope');
         }
 
-        return $this->buildToken($userId, ['resources' => $resources],
+        if ($session->has(RememberSession::ID)) {
+            $expiresAt = min($expiresAt, $session->get(RememberSession::EXPIRES));
+        }
+        return $this->buildToken($userId, $this->rememberClaims($session) + ['resources' => $resources],
             min(self::RESOURCE_TTL, max(1, $this->ttl())), 'resources', $expiresAt);
     }
 
@@ -225,7 +229,18 @@ final readonly class JwtTokenService
             }
         }
 
-        return $this->buildToken($userId, $scope, min(self::RESOURCE_TTL, max(1, $this->ttl())), $audience);
+        return $this->buildToken($userId, $this->rememberClaims($session) + $scope,
+            min(self::RESOURCE_TTL, max(1, $this->ttl())), $audience,
+            $session->has(RememberSession::ID) ? $session->get(RememberSession::EXPIRES) : null);
+    }
+
+    /** @return array<string,mixed> */
+    private function rememberClaims(SessionInterface $session): array
+    {
+        return $session->has(RememberSession::ID) ? [
+            RememberSession::ID => $session->get(RememberSession::ID),
+            RememberSession::EXPIRES => $session->get(RememberSession::EXPIRES),
+        ] : [];
     }
 
     /** @param list<string> $fields
@@ -249,6 +264,10 @@ final readonly class JwtTokenService
             }
 
             $result = ['userId' => $userId, 'expiresAt' => $expires];
+            if ($claims->has(RememberSession::ID)) {
+                $result[RememberSession::ID] = $claims->get(RememberSession::ID);
+                $result[RememberSession::EXPIRES] = $claims->get(RememberSession::EXPIRES);
+            }
             foreach ($fields as $field) {
                 $value = $claims->get($field);
                 if (! is_string($value) || $value === '') {

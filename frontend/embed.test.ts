@@ -1161,6 +1161,8 @@ describe('embed public API', () => {
   beforeEach(async () => {
     document.body.innerHTML = '<div id="target"></div>'
     sessionStorage.clear()
+    // Direct component mounts represent an already authenticated bootstrap.
+    sessionStorage.setItem('claire_session_token', JSON.stringify({ token: jwt('session'), expiresAt: Date.now() + 3600_000 }))
     FakeEventSource.instances = []
     vi.stubGlobal('EventSource', FakeEventSource)
     vi.stubGlobal('CSS', { escape: (value: string) => value })

@@ -69,6 +69,20 @@ class Auth
         $session->clear();
     }
 
+    public function restore(SessionInterface $session, string $userId): bool
+    {
+        $user = $this->entityManager->getRepository(User::class)->find($userId);
+        if (! $user instanceof User) {
+            return false;
+        }
+        $session->clear();
+        $this->initializeUserSession($session, $user, $userId, [
+            'firstName' => $user->getFirstName(), 'lastName' => $user->getLastName(),
+            'email' => $user->getEmail(),
+        ]);
+        return true;
+    }
+
     private function findOrCreateUser(string $userId): User
     {
         /** @var User|null $user */
