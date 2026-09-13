@@ -3,6 +3,18 @@ import type { Token } from 'markdown-it'
 import { generatedReference, renderMarkdown } from '../markdown'
 import type { GeneratedFile } from '../types'
 import GeneratedAttachment from './GeneratedAttachment.vue'
+import CodeBlock from './CodeBlock'
+import CopyableBlock from './CopyableBlock.vue'
+
+function quoteText(tokens: Token[]): string {
+  return tokens.map(token => {
+    if (token.children) return quoteText(token.children)
+    if (token.type === 'softbreak' || token.type === 'hardbreak') return '\n'
+    if (token.nesting === -1 && token.block) return '\n'
+    if (token.nesting !== 0) return ''
+    return token.content
+  }).join('')
+}
 
 export default defineComponent({
   props: {
@@ -36,7 +48,7 @@ export default defineComponent({
             nodes.push(token.type === 'text' ? token.content : h('code', token.content))
           } else if (token.type === 'fence' || token.type === 'code_block') {
             const language = token.info.trim().split(/\s+/)[0]
-            nodes.push(h('pre', [h('code', { class: language ? `language-${language}` : undefined }, token.content)]))
+            nodes.push(h(CodeBlock, { code: token.content, language }))
           } else if (token.type === 'softbreak' || token.type === 'hardbreak') {
             nodes.push(h('br'))
           } else if (token.type === 'image') {
@@ -49,6 +61,11 @@ export default defineComponent({
               tabindex: 0,
               'aria-label': token.content ? `Agrandir l’image : ${token.content}` : 'Agrandir l’image',
             }))
+          } else if (token.type === 'blockquote_open') {
+            nodes.push(h(CopyableBlock, {
+              text: quoteText(tokens.slice(start, index - 1)).trim(),
+              label: 'Copier la citation',
+            }, () => h('blockquote', content)))
           } else if (token.tag) {
             // Tags and attributes come only from markdown-it's core rules (raw HTML disabled).
             nodes.push(h(token.tag, Object.fromEntries(token.attrs ?? []), content))

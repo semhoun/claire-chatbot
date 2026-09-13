@@ -1,17 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type Ref } from 'vue'
-import hljs from 'highlight.js/lib/core'
-import bash from 'highlight.js/lib/languages/bash'
-import css from 'highlight.js/lib/languages/css'
-import javascript from 'highlight.js/lib/languages/javascript'
-import json from 'highlight.js/lib/languages/json'
-import markdown from 'highlight.js/lib/languages/markdown'
-import php from 'highlight.js/lib/languages/php'
-import python from 'highlight.js/lib/languages/python'
-import sql from 'highlight.js/lib/languages/sql'
-import typescript from 'highlight.js/lib/languages/typescript'
-import xml from 'highlight.js/lib/languages/xml'
-import yaml from 'highlight.js/lib/languages/yaml'
 import { SessionClient } from '../services/session-client'
 import { protectAudio } from '../services/protected-audio'
 import { BrowserAudio } from '../services/browser-audio'
@@ -29,18 +17,6 @@ import type {
 } from '../options-types'
 
 const props = defineProps<{ config: ClaireBootstrap }>()
-
-hljs.registerLanguage('bash', bash)
-hljs.registerLanguage('css', css)
-hljs.registerLanguage('javascript', javascript)
-hljs.registerLanguage('json', json)
-hljs.registerLanguage('markdown', markdown)
-hljs.registerLanguage('php', php)
-hljs.registerLanguage('python', python)
-hljs.registerLanguage('sql', sql)
-hljs.registerLanguage('typescript', typescript)
-hljs.registerLanguage('xml', xml)
-hljs.registerLanguage('yaml', yaml)
 
 const client = new SessionClient(
   props.config.baseUrl,
@@ -572,9 +548,6 @@ function enhanceRenderedMessages(scope: Element | null = rootElement.value): voi
       protectedAudio.set(audio, binding)
     }
     void protectedAudio.get(audio)!.refresh()
-  }
-  for (const code of scope.querySelectorAll<HTMLElement>('pre code:not(.hljs)')) {
-    hljs.highlightElement(code)
   }
 }
 

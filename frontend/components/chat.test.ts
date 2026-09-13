@@ -63,7 +63,7 @@ describe('safe Vue chat rendering', () => {
   ])('does not create active markup from %s', text => {
     const wrapper = mount(MarkdownContent, { props: { text, files: [] } })
     const root = wrapper.element
-    expect(root.querySelector('script, iframe, svg, [onerror], [onload]')).toBeNull()
+    expect(root.querySelector('script, iframe, svg:not(.claire-icon), [onerror], [onload]')).toBeNull()
     for (const element of root.querySelectorAll('[href], [src]')) {
       expect(element.getAttribute('href') || element.getAttribute('src')).not.toMatch(/^(javascript|vbscript|data|file):/i)
     }

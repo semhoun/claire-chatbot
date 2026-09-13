@@ -10,6 +10,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 ## [2.1.0] - 2026-09-13
 
 ### Added
+- **Copie** : bouton transparent en superposition dans les blocs de code, de texte préformaté et les citations, sans espace réservé, avec confirmation accessible et copie du contenu actualisé dans le chat normal et le widget
+- **Tests** : couverture de la coloration réactive pendant le streaming, des alias de langages, de l'échappement du code et de la copie des blocs et citations
 - **PWA** : installation de l'interface normale en mode `standalone`, avec manifeste dynamique public `/manifest.webmanifest`, icônes PNG 192x192 et 512x512 et métadonnées d'installation iOS ; connexion Internet requise, sans service worker ni mode hors ligne
 - **Configuration** : variable facultative `APP_NAME` (défaut : `Claire`) pour le titre de la page avant et après connexion et le nom de la PWA, sans renommer les agents, le widget ou le service OpenTelemetry
 - **Tests** : couverture du manifeste, de l'échappement du nom dans le shell et des routes publiques et protégées avec le vrai routage Slim, à la racine et sous un chemin de montage
@@ -35,6 +37,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Tests** : couverture renforcée de l'isolation des conversations, des retries et baux de queue, des jetons de ressources, des journaux Telegram, des thèmes et du rendu PDF
 
 ### Changed
+- **Coloration syntaxique** : remplacement de Highlight.js par Refractor comme tokenizer et rendu des tokens par Vue, avec cache des blocs inchangés et conservation des couleurs du thème ; les blocs sans langage ou avec un langage inconnu restent en texte brut
 - **Messages** : attribution d'identifiants stables (`history-message-*`) aux messages d'historique dans `MessageFormatter`
 - **Docker Compose** : ajout des variables de configuration pour l'audio Mistral (`MISTRAL_AUDIO_*`)
 - **Rendu web** : shell HTML servi par `VueShell` et données HTTP/SSE structurées par `ChatDataRenderer` ; Vue assure le rendu des messages, du Markdown et des outils hors Telegram
@@ -47,6 +50,7 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Documentation** : exemples Docker et développement local complétés avec Redis, SSO et workers ; contrats API et procédures de migration et maintenance actualisés
 
 ### Fixed
+- **Coloration syntaxique** : maintien des couleurs pendant les mises à jour SSE et sur les blocs Markdown encore ouverts, sans manipulation concurrente du DOM
 - **PWA** : identité dérivée de `start_url` en omettant `id`, afin d'éviter une identité partagée entre plusieurs chemins de montage sur la même origine
 - **Authentification** : comparaison des routes publiques relativement au chemin de montage, tout en conservant la protection de `/auth/refresh` et `/auth/resource-token`
 - **Authentification** : correction de l'exception `No base path defined.` en récupérant le chemin depuis `base_url`, disponible avant `RouteRunner`, plutôt que depuis `RouteContext::getBasePath()`

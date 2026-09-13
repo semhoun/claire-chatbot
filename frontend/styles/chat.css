@@ -90,6 +90,53 @@
     padding-inline-start: var(--claire-space-3);
     border-inline-start: 3px solid currentColor;
 }
+.claire-message__text .claire-copyable-block {
+    position: relative;
+    margin-block: var(--claire-space-3);
+    min-width: 0;
+}
+.claire-copyable-block__toolbar {
+    position: absolute;
+    pointer-events: none;
+    inset-block-start: var(--claire-space-2);
+    inset-inline: var(--claire-space-3) var(--claire-space-2);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--claire-space-2);
+}
+.claire-copyable-block__status {
+    font-size: var(--claire-text-xs);
+}
+.claire-copyable-block__copy {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: max(36px, var(--claire-control-small));
+    height: max(36px, var(--claire-control-small));
+    padding: var(--claire-space-2);
+    border: 1px solid transparent;
+    border-radius: var(--claire-radius-sm);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+.claire-copyable-block__copy:hover {
+    color: var(--claire-accent-light);
+}
+.claire-copyable-block__copy:focus-visible {
+    outline: var(--claire-focus-width) solid var(--claire-focus-ring);
+    outline-offset: var(--claire-focus-offset);
+}
+.claire-copyable-block__copy .claire-icon {
+    width: var(--claire-icon-small);
+    height: var(--claire-icon-small);
+}
+.claire-message__text .claire-copyable-block > :is(pre, blockquote) {
+    margin-block: 0;
+}
 .claire-message__text :where(pre, table),
 .claire-toolcall__result {
     max-width: 100%;
@@ -109,37 +156,37 @@
 .claire-toolcall__result {
     font-family: var(--claire-font-mono);
 }
-.claire-message__text .hljs {
+.claire-message__text .claire-code {
     display: block;
     color: var(--claire-text-primary);
 }
-.claire-message__text :is(.hljs-comment, .hljs-punctuation, .hljs-tag) {
+.claire-message__text :is(.token.comment, .token.prolog, .token.punctuation, .token.tag) {
     color: var(--claire-text-secondary);
 }
 .claire-message__text :is(
-    .hljs-keyword, .hljs-meta, .hljs-name, .hljs-type, .hljs-number,
-    .hljs-literal, .hljs-regexp, .hljs-link, .hljs-variable,
-    .hljs-template-variable, .hljs-symbol, .hljs-built_in, .hljs-bullet,
-    .hljs-selector-tag, .hljs-title, .hljs-section
+    .token.keyword, .token.doctype, .token.class-name, .token.number,
+    .token.boolean, .token.regex, .token.url, .token.variable,
+    .token.symbol, .token.builtin, .token.function, .token.title,
+    .token.constant, .token.operator, .token.property
 ) {
     color: var(--claire-accent-light);
 }
 .claire-message__text :is(
-    .hljs-string, .hljs-addition, .hljs-quote, .hljs-template-tag,
-    .hljs-selector-class, .hljs-selector-id, .hljs-selector-attr, .hljs-selector-pseudo
+    .token.string, .token.char, .token.inserted, .token.attr-value,
+    .token.selector
 ) {
     color: var(--claire-success-text);
 }
-.claire-message__text .hljs-deletion {
+.claire-message__text .token.deleted {
     color: var(--claire-danger-text);
 }
 .claire-message__text :is(
-    .hljs-strong, .hljs-keyword, .hljs-selector-tag, .hljs-title,
-    .hljs-section, .hljs-attribute, .hljs-doctag, .hljs-name
+    .token.bold, .token.keyword, .token.function, .token.title,
+    .token.attr-name
 ) {
     font-weight: var(--claire-weight-semibold);
 }
-.claire-message__text .hljs-emphasis {
+.claire-message__text .token.italic {
     font-style: italic;
 }
 .claire-message__text table {

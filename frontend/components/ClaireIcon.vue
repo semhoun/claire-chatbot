@@ -1,5 +1,6 @@
 <script setup lang="ts">
 type IconName =
+  | 'copy'
   | 'arrow-down'
   | 'close'
   | 'file'
@@ -28,6 +29,7 @@ type IconName =
 const props = defineProps<{ name: IconName }>()
 
 const paths: Record<IconName, string> = {
+  copy: 'M9 9h12v12H9zM15 9V3H3v12h6',
   check: 'M5 12l4 4L19 6',
   'chevron-down': 'M8 10l4 4 4-4',
   play: 'M8 5v14l11-7z',
