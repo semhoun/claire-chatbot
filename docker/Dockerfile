@@ -23,7 +23,6 @@ WORKDIR /src
 
 COPY package.json package-lock.json tsconfig.json vite.config.ts vite.embed.config.ts ./
 COPY frontend ./frontend
-COPY public/css ./public/css
 
 RUN --mount=type=cache,target=/root/.npm \
     npm ci \
