@@ -18,10 +18,10 @@ services:
       APP_NAME: ${APP_NAME:-Claire}
       SERVER_NAME: claire.example.com
       ACME_EMAIL: admin@example.com
-      ENABLE_LETSENCRYPT: true
+      ENABLE_LETSENCRYPT: "true"
 
       # === Observabilité (OpenTelemetry) ===
-      OTEL_PHP_AUTOLOAD_ENABLED: true
+      OTEL_PHP_AUTOLOAD_ENABLED: "true"
       OTEL_SERVICE_NAME: claire
       OTEL_PHP_EXCLUDED_URLS: /health
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
@@ -53,7 +53,7 @@ services:
       OPENAPI_CONTEXT_WINDOW: 256000
       OPENAPI_REQUEST_TIMEOUT: 600.0
 
-      MISTRAL_AUDIO_ENABLED: true
+      MISTRAL_AUDIO_ENABLED: "true"
       MISTRAL_AUDIO_API_URL: https://api.mistral.ai/v1
       MISTRAL_AUDIO_API_KEY: ""
       MISTRAL_AUDIO_TRANSCRIPTION_MODEL: voxtral-mini-latest
@@ -88,14 +88,14 @@ services:
       TELEGRAM_WEBHOOK_SECRET: ""
 
       # === Génération d'images (optionnel) ===
-      COMFYUI_ENABLED: false
+      COMFYUI_ENABLED: "false"
       COMFYUI_URL: http://comfyui:8188/
       COMFYUI_DEFAULT_WORKFLOW: flux
 
       # === Redis (queue de fond et notifications) ===
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_DB: 0
+      REDIS_DATABASE: 0
       # REDIS_PASSWORD: ""  # Décommenter si authentification requise
 
   # === Service Redis (queue de fond et notifications) ===
@@ -103,8 +103,11 @@ services:
     image: redis:7-alpine
     container_name: claire-redis
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - claire-redis:/data
 
- # === otel gui ===
+  # === otel gui ===
   otel-gui:
     image: ghcr.io/metafab/otel-gui:latest
     container_name: claire-otel-gui
@@ -129,4 +132,5 @@ services:
 volumes:
   claire-data:
   claire-addons:
+  claire-redis:
   # claire-db:  # Décommenter pour MariaDB

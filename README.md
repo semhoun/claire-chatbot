@@ -6,21 +6,25 @@
 
 Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript et Neuron AI. Elle s'exécute dans un conteneur Docker basé sur FrankenPHP/Caddy et fournit une interface web, une API REST, une intégration Telegram et une observabilité complète via OpenTelemetry.
 
+La version **2.1.0** rassemble l'audio Mistral, les thèmes d'agents, l'installation PWA et les améliorations de fiabilité du chat. Consultez le [CHANGELOG](CHANGELOG.md#210---2026-09-13) et les [consignes de mise à niveau](#mise-à-niveau-vers-210) avant déploiement.
 
 ## Fonctionnalités
 
 - Interface web de chat avec streaming SSE, horodatage, suppression du dernier message
+- Application web installable (PWA) sur ordinateur et mobile, avec nom configurable et connexion Internet requise
 - Mode widget embarqué (`/embed`) injecté via `window.claireEmbed(...)` pour intégration sur site tiers
 - API REST `POST /brain/messages` et healthcheck `GET /health`
 - Multi-brain : sélection dynamique d'agents IA (Claire, Einstein, Calliope...)
 - Création d'agents personnalisés via fichiers YAML dans `/opt/addons/agents/`
+- Six thèmes intégrés, personnalisables par agent et partagés entre le chat web et le widget
+- Restauration de la dernière conversation après rechargement, avec isolation des générations par utilisateur et conversation
 - Mémoire courte avec résumé automatique de l'historique
 - Mémoire long terme optionnelle, évolutive entre les conversations et reconstructible depuis les résumés
 - Recherche web via SearXNG et RAG par documents (fichiers, texte, URL) avec embeddings
 - Transcription audio (dictée vocale) et synthèse vocale (TTS) avec l'API audio Mistral
 - Génération d'images avec ComfyUI (workflows multiples)
 - Génération de documents PDF depuis HTML ou Markdown
-- Intégration Telegram complète (messages, photos, documents, Mini-App)
+- Intégration Telegram complète (messages, photos, documents, audio, Mini-App)
 - Queue de fond Redis pour traitements asynchrones
 - Observabilité OpenTelemetry (traces, métriques, logs)
 - Authentification SSO OpenID Connect obligatoire
@@ -33,7 +37,7 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript 
 - **Rendu web** : shell HTML via `VueShell`, données HTTP/SSE préparées par `ChatDataRenderer` ; Markdown, messages et outils rendus par Vue
 - **ORM** : Doctrine ORM/DBAL (SQLite, MySQL, PostgreSQL)
 - **LLM** : Neuron AI avec support OpenAI-compatible
-- **Queue** : Redis (BRPOP/LPUSH)
+- **Queue** : Redis avec réservation, renouvellement des baux, retries et conservation des jobs en échec
 - **Observabilité** : OpenTelemetry SDK + auto-instrumentation
 - **PDF** : mPDF (génération de documents)
 - **Bot** : phptg/bot-api (Telegram)
@@ -51,6 +55,7 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript 
 | `OPENID_WELLKNOWN_URL` | URL de découverte OpenID Connect |
 | `OPENID_CLIENT_ID` | Identifiant client OIDC |
 | `SESSION_JWT_SECRET` | Clé secrète JWT (min 32 caractères) |
+| `REDIS_HOST` | Hôte Redis accessible depuis l'application et les workers |
 
 ### Variables optionnelles
 
@@ -76,6 +81,13 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript 
 | `SESSION_LIFETIME` | Durée de vie des JWT de session (secondes) | `900`                     |
 | `SESSION_REFRESH_BEFORE_EXPIRE` | Marge avant expiration pour déclencher le refresh (secondes) | `120`                     |
 | `SESSION_REFRESH_MIN_INTERVAL` | Intervalle minimal entre deux tentatives de refresh (secondes) | `30`                      |
+| `OPENID_CLIENT_SECRET` | Secret client OIDC, selon le fournisseur | - |
+| `REDIS_PORT` | Port Redis | `6379` |
+| `REDIS_DATABASE` | Numéro de base Redis | `0` |
+| `REDIS_PASSWORD` | Mot de passe Redis | - |
+| `REDIS_TIMEOUT` | Timeout de connexion Redis (secondes) | `2.0` |
+| `REDIS_READ_TIMEOUT` | Timeout de lecture Redis (secondes) | `20.0` |
+| `REDIS_PREFIX` | Préfixe des clés Redis | `claire:` |
 | `SEARXNG_URL` | URL SearXNG pour recherche web | -                         |
 | `TELEGRAM_BOT_TOKEN` | Token du bot Telegram | -                         |
 | `TELEGRAM_WEBHOOK_SECRET` | Secret webhook Telegram | -                         |
@@ -88,9 +100,9 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript 
 | `DATABASE_KIND` | Type de base (`sqlite`, `mysql`, `postgres`) | `sqlite`                  |
 | `DEBUG_MODE` | Mode debug | `false`                   |
 | `QUEUE_WORKERS` | Nombre de workers de queue | `8`                       |
-| `QUEUE_WORKER_TIMEOUT` | Timeout BRPOP du worker (secondes) | `5`                       |
-| `QUEUE_WORKER_MAX_JOBS` | Nombre max de jobs par worker | `0` (illimité)            |
-| `QUEUE_WORKER_MAX_TIME` | Durée de vie max d'un worker (secondes) | `0` (illimité)            |
+| `QUEUE_WORKER_TIMEOUT` | Durée d'attente maximale d'un job par le worker (secondes) | `5` |
+| `QUEUE_WORKER_MAX_JOBS` | Nombre max de jobs par worker (`0` : illimité) | `256` |
+| `QUEUE_WORKER_MAX_TIME` | Durée de vie max d'un worker en secondes (`0` : illimitée) | `3600` |
 | `SSE_QUEUE_TTL` | Durée de vie des messages SSE en file d'attente (secondes) | `60`                      |
 | `SSE_POP_TIMEOUT` | Timeout de lecture bloquante SSE (secondes) | `15`                      |
 
@@ -120,7 +132,9 @@ l'outil `generate_speech`. Il transforme jusqu'à 4096 caractères en fichier
 MP3, avec une voix et un nom de fichier optionnels. Le fichier est conservé
 avec la conversation et affiché directement dans un lecteur audio protégé.
 
-Voir [`docker/compose.yml`](docker/compose.yml) pour un exemple complet avec toutes les variables.
+Voir [`docker/compose.yml`](docker/compose.yml) pour un exemple étendu de configuration, avec `REDIS_DATABASE`, un volume Redis persistant, la journalisation AOF et la politique `noeviction`.
+
+L'application lit les variables d'environnement système, sans charger de fichier `.env`. Docker Compose peut toutefois utiliser son propre `.env` pour substituer les variables de son fichier YAML.
 
 ### Volumes
 
@@ -144,9 +158,75 @@ docker compose exec claire ./console cache:clear
 docker compose exec claire ./console telegram:set-commands
 docker compose exec claire ./console telegram:webhook --set
 
-# Lancer le worker de queue
+# Lancer un worker supplémentaire au premier plan (déjà supervisés dans l'image)
 docker compose exec claire ./console queue:work
 ```
+
+## Mise à niveau vers 2.1.0
+
+1. Sauvegardez la base, les volumes persistants et les agents locaux. Suspendez les nouvelles requêtes et arrêtez les anciens workers avant de migrer.
+2. Déployez la nouvelle image ou le nouveau code et appliquez `./console migrations:migrate` dans cet environnement, avant de remettre les workers en service. La migration `Version20260912130000` crée le journal SQL `telegram_generation` ; le démarrage Docker n'applique pas les migrations automatiquement.
+3. Migrez les agents personnalisés de `CSS` / `css` / `css_inline` vers `THEME` / `theme`, selon le guide ci-dessous. Les anciens styles d'agents ne sont plus chargés.
+4. Videz le cache compilé avec `./console cache:clear`, puis redémarrez les processus web et tous les workers. Pour une installation depuis les sources, reconstruisez également les bundles avec `npm run build`.
+5. Rechargez les interfaces ouvertes. Les clients API externes doivent utiliser `/files/serve/{id}` et les jetons de ressources dédiés pour leurs liens et flux SSE, plutôt que les anciens mini-tokens ou un JWT de session dans l'URL.
+
+Les queues restent exclusivement dans Redis : le journal SQL Telegram ne constitue pas une queue ni un outbox SQL. Conservez les données Redis pendant la mise à niveau ; ne purgez pas les jobs pour débloquer une conversation.
+
+## Application installable (PWA)
+
+L'interface normale peut être installée comme une application et ouverte dans une
+fenêtre dédiée (`standalone`). Ouvrez directement l'URL publique de Claire en
+**HTTPS**, hors navigation privée : l'installation ne concerne pas le widget
+embarqué sur un site tiers. L'authentification SSO reste nécessaire pour utiliser
+le chat.
+
+### Installation
+
+- **Chrome / Edge sur ordinateur** : utilisez l'icône d'installation dans la barre
+  d'adresse, ou l'entrée d'installation du site dans le menu du navigateur.
+- **Chrome sur Android** : ouvrez le menu du navigateur, puis choisissez
+  **Installer l'application** ou **Ajouter à l'écran d'accueil**.
+- **Safari sur iPhone / iPad** : ouvrez **Partager**, puis **Sur l'écran d'accueil**.
+  Activez **Ouvrir comme app web** si cette option est proposée, puis confirmez.
+
+Les libellés et la disponibilité des commandes dépendent du navigateur et de sa
+version. Aucun service worker, cache applicatif ou mode hors ligne n'est fourni :
+**une connexion Internet reste requise**, même après installation.
+
+### Nom de l'application
+
+La variable facultative `APP_NAME` vaut `Claire` par défaut. Avec l'exemple Docker
+Compose, vous pouvez la définir dans le fichier `.env` utilisé par Compose :
+
+```dotenv
+APP_NAME="Mon assistant"
+```
+
+Elle définit le titre de la page avant et après connexion, le nom proposé à
+l'installation et les métadonnées iOS. Elle ne renomme ni les agents, ni le widget,
+ni le service OpenTelemetry. Le nom est échappé dans le HTML.
+
+Après modification, recréez le service pour appliquer l'environnement
+(`docker compose up -d --force-recreate claire`), videz le cache compilé
+(`docker compose exec claire ./console cache:clear`), puis rechargez les processus
+web persistants (`docker compose restart claire`) et la page. Un simple redémarrage
+ne met pas à jour les variables d'environnement d'un conteneur existant.
+Le navigateur peut conserver temporairement l'ancien nom d'une application déjà
+installée.
+
+### Manifeste et diagnostic
+
+Le manifeste dynamique `GET /manifest.webmanifest` est public avant authentification
+et renvoyé avec le type `application/manifest+json`. Il déclare les icônes PNG
+192x192 et 512x512, la langue française et le mode `standalone`. Les chemins
+`start_url` et `scope` valent `./` ; `id` est omis pour que l'identité dérive de
+`start_url` et reste propre au chemin de montage, à la racine ou sous un sous-chemin.
+
+Si l'installation n'est pas proposée, vérifiez que la page se charge sans erreur
+en HTTPS et que le manifeste ainsi que ses icônes sont accessibles. Sous un chemin
+de montage tel que `/chat`, vérifiez `/chat/manifest.webmanifest`. Le manifeste doit
+renvoyer du JSON, pas une page SSO ni une erreur. Rechargez la page après toute
+mise à jour du déploiement.
 
 ## Cerveaux personnalisés (BrainRegistry)
 
@@ -274,14 +354,15 @@ workflow: |
 
 ## Génération de PDF
 
-Activez par défaut (`PDF_ENABLED=true`). Les agents peuvent générer des documents PDF depuis du HTML ou du Markdown via l'outil `generate_pdf` :
+Activée par défaut (`PDF_ENABLED=true`), la génération de PDF permet aux agents de produire des documents depuis du HTML ou du Markdown via l'outil `generate_pdf` :
 
 - Formats supportés : HTML, Markdown
 - Formats de page : A4, Letter, A3, A5
 - Orientations : portrait, paysage
 - Marges configurables
+- Styles de document intégrés pour la typographie, les tableaux et la pagination
 
-Les fichiers générés sont liés à la conversation et accessibles dans l'historique de chat.
+Les fichiers générés sont liés à la conversation et accessibles dans l'historique de chat via des liens protégés. Le répertoire `PDF_TEMP_DIR` doit être accessible en écriture aux workers.
 
 ## RAG (Recherche augmentée)
 
@@ -321,19 +402,45 @@ Le bot supporte les commandes `/start`, `/help`, `/brain`, `/comfyui`.
 
 Depuis l'interface web, chaque utilisateur peut associer son identifiant Telegram (User ID) à son compte pour recevoir les notifications. L'identifiant est validé (numérique uniquement) et doit être unique ; il peut être dissocié à tout moment en effaçant le champ.
 
+Les messages vocaux et fichiers audio entrants sont transcrits lorsque l'audio Mistral est configuré. Le bot peut répondre en audio et envoyer les fichiers produits par `generate_speech` ; la voix se choisit dans les préférences de la Mini-App.
+
+### Journaux et maintenance
+
+Les générations Telegram et leurs étapes de livraison sont journalisées dans la table SQL `telegram_generation` pour éviter de rejouer des outils ou des envois déjà tentés. La commande `chat:maintenance` permet le diagnostic et la compaction, **en simulation par défaut** :
+
+```bash
+# Examiner une conversation bloquée, sans rejouer la génération
+docker compose exec claire ./console chat:maintenance --user USER --thread THREAD
+
+# Simuler la compaction des corps des journaux livrés depuis plus de 7 jours
+docker compose exec claire ./console chat:maintenance --compact --retention-days 7
+
+# Appliquer la compaction, depuis le début du parcours
+docker compose exec claire ./console chat:maintenance --compact --retention-days 7 --apply --cursor 0
+```
+
+Poursuivez chaque parcours avec le curseur `sql:v1:` renvoyé, via `--cursor`, jusqu'à `0`. Après une simulation, recommencez le parcours d'application à `0`. La rétention de sept jours est une valeur par défaut de la commande, pas une tâche planifiée automatiquement.
+
+Seuls les corps des journaux entièrement confirmés et livrés sont effacés ; les identifiants et marqueurs anti-rejeu restent en SQL sans expiration. Les journaux actifs, en échec ou ambigus sont conservés. Pour une génération orpheline, `--user USER --thread THREAD --reconcile --apply` ne marque une erreur que si l'absence de travail restant est démontrée, sans relancer le LLM ni les outils. Cette preuve suppose que les données de queue n'ont pas été supprimées ou évincées de Redis.
+
 ## Queue Redis
 
-Nécessaire pour Telegram et le streaming SSE multi-instance :
+Redis et au moins un worker sont nécessaires au chat web, au widget, à l'audio asynchrone et à Telegram, y compris sur une seule instance. L'image Docker démarre déjà les workers sous Supervisor (`QUEUE_WORKERS=8` par défaut). Hors Docker, lancez et supervisez-les séparément ; les extensions PHP `pcntl` et `posix` sont requises pour le renouvellement des baux.
 
 ```bash
 # Lancer le worker
 docker compose exec claire ./console queue:work
 
 # Options
---once        # Traiter un seul job
---timeout=5   # Timeout BRPOP
+--max-jobs=1  # S'arrêter après un job traité
+--timeout=5   # Attente maximale d'un job (secondes)
 --max-jobs=100
+--max-time=3600
 ```
+
+Les jobs sont réservés avec un bail renouvelable et peuvent être retentés avec un délai progressif. Les échecs non récupérables sont conservés en dead-letter ; une génération ayant déjà tenté des appels d'outils n'est pas rejouée aveuglément. Utilisez le diagnostic `chat:maintenance` avant toute intervention sur une conversation bloquée.
+
+En production, configurez un volume Redis persistant, une politique de persistance adaptée et `maxmemory-policy noeviction`. Redis contient les jobs et des états de génération, pas seulement un cache jetable ; une perte de ces données compromet la reprise sûre des traitements.
 
 ## Mode embarqué (Widget)
 
@@ -368,10 +475,19 @@ Le widget est distribué comme un **Custom Element Vue** (`<claire-chat-widget>`
 ### Authentification session (JWT)
 
 - Le frontend envoie le JWT de session via l'en-tête `X-Claire-Auth`.
-- Le backend peut renvoyer un JWT rafraîchi via `X-Claire-Token` et un mini-token via `X-Claire-Minitoken`.
+- Le backend peut renvoyer un JWT rafraîchi via `X-Claire-Token`.
 - Endpoint de refresh silencieux: `GET /auth/refresh` (retour `204` avec en-têtes de session si renouvellement).
 - Endpoint d'échange SSO pour le widget: `POST /auth/embed/exchange`.
-- Les ressources protégées (fichiers servis) acceptent un paramètre de query `token` pour les liens/images signés côté client.
+- `POST /auth/resource-token`, authentifié par le JWT de session, délivre un jeton limité aux fichiers ou au flux SSE demandés.
+- Les URL de ressources acceptent ce jeton dédié dans `token`. Les JWT de session dans l'URL et les anciens mini-tokens ne sont plus acceptés pour les authentifier.
+
+Exemple de corps JSON pour obtenir un jeton partagé entre un fichier et un flux :
+
+```json
+{"resources":[{"type":"file","fileId":"FILE_ID"},{"type":"stream","threadId":"THREAD_ID","sessionId":"SESSION_ID"}]}
+```
+
+Une portée unique peut aussi être envoyée directement, par exemple `{"type":"file","fileId":"FILE_ID"}`. La réponse contient `{token, expiresAt}`. Le jeton expire au plus tard après 300 secondes ; un lot accepte au maximum 32 portées et 4000 octets sérialisés. Le client doit renouveler les jetons expirés et reconnecter les flux avec la portée exacte, sans transmettre ces jetons à des URL tierces.
 
 ### Healthcheck
 
@@ -381,6 +497,7 @@ Le widget est distribué comme un **Custom Element Vue** (`<claire-chat-widget>`
 
 ```http
 POST /brain/messages HTTP/1.1
+X-Claire-Auth: <JWT_SESSION>
 Content-Type: multipart/form-data; boundary=----BOUND
 
 ------BOUND
@@ -391,15 +508,25 @@ Bonjour Claire !
 Content-Disposition: form-data; name="sessionId"
 
 sess-abc123
+------BOUND
+Content-Disposition: form-data; name="threadId"
+
+<THREAD_ID>
 ------BOUND--
 ```
+
+Utilisez le `threadId` d'une conversation créée par `POST /history/new` ou ouverte depuis l'historique. La réponse `202` contient `{threadId, messageId, accepted: true}` : le traitement est asynchrone. Une conversation occupée ou supprimée peut produire un conflit `409`.
+
+La création via `POST /history/new` est elle aussi asynchrone et renvoie `{threadId, sessionId}`. Réutilisez ce `sessionId`, obtenez le jeton du flux et attendez la fin de l'initialisation (`chat.snapshot` avec `responding: false`) avant d'envoyer un premier message.
+
+Le résultat arrive sur `GET /brain/stream?threadId=THREAD_ID&sessionId=SESSION_ID&token=RESOURCE_TOKEN`, avec un jeton autorisant ce couple conversation/session. Le `sessionId` identifie le canal SSE du client, pas son JWT d'authentification.
 
 ### Gestion des fichiers
 
 - `GET /files/count`, `GET /files/list`
 - `POST /files/upload`, `POST /files/upload_rag`
 - `DELETE /files/delete/{id}`
-- `GET /files/img_serve/{id}` ou `/files/serve/{id}` (images, audio et PDF générés)
+- `GET /files/serve/{id}` (images, audio, PDF et autres fichiers ; l'ancienne route `/files/img_serve/{id}` est supprimée)
 
 ### RAG
 
@@ -424,11 +551,22 @@ sess-abc123
 ## Démarrage rapide (Docker)
 
 ```bash
+# Réseau et Redis persistants pour cet exemple local
+docker network create claire-net
+docker run -d --name claire-redis --network claire-net \
+  -v claire_redis:/data redis:7-alpine \
+  redis-server --appendonly yes --maxmemory-policy noeviction
+
 # Lancer Claire avec Docker
 docker run -d \
   --name claire \
+  --network claire-net \
   -p 8080:80 \
   -v claire_data:/opt/data \
+  -e BASE_URL=http://localhost:8080 \
+  -e REDIS_HOST=claire-redis \
+  -e OPENID_WELLKNOWN_URL=https://votre-sso.example.com/.well-known/openid-configuration \
+  -e OPENID_CLIENT_ID=votre-client-id \
   -e OPENAPI_KEY=votre-clé-api \
   -e OPENAPI_URL=https://api.openai.com/v1 \
   -e OPENAPI_MODEL=gpt-4o-mini \
@@ -448,12 +586,16 @@ docker exec claire ./console migrations:migrate
 
 **Avec Docker Compose:**
 
+Adaptez le domaine et le fournisseur OIDC (URI de retour : `BASE_URL/auth/callback`). Ajoutez `OPENID_CLIENT_SECRET` si votre fournisseur l'exige. L'exemple HTTP local nécessite un fournisseur acceptant une URI de retour localhost ; utilisez HTTPS pour la production et l'installation PWA.
+
 ```yaml
 services:
   claire:
     image: semhoun/claire-chatbot:latest
     container_name: claire
     restart: unless-stopped
+    depends_on:
+      - redis
     ports:
       - "80:80"
       - "443:443"
@@ -463,8 +605,9 @@ services:
     environment:
       # === Configuration serveur ===
       BASE_URL: https://claire.example.com
+      APP_NAME: ${APP_NAME:-Claire}
       SERVER_NAME: claire.example.com
-      ENABLE_LETSENCRYPT: true
+      ENABLE_LETSENCRYPT: "true"
       ACME_EMAIL: admin@example.com
 
       # === LLM Configuration ===
@@ -479,8 +622,12 @@ services:
       # === Sécurité ===
       SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?set_me}
 
+      # === Queue et états de génération ===
+      REDIS_HOST: redis
+      REDIS_DATABASE: 0
+
       # === Observabilité ===
-      OTEL_PHP_AUTOLOAD_ENABLED: true
+      OTEL_PHP_AUTOLOAD_ENABLED: "true"
       OTEL_SERVICE_NAME: claire
       OTEL_LOGS_EXPORTER: console
       OTEL_LOGS_PROCESSOR: simple
@@ -488,6 +635,9 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - claire-redis:/data
 
 volumes:
   claire-data:
@@ -500,7 +650,7 @@ Image Docker : [semhoun/claire-chatbot](https://hub.docker.com/r/semhoun/claire-
 
 ## Développement local (optionnel)
 
-Pour contribuer ou modifier le code :
+Prérequis : PHP 8.5+, Composer, Node.js/npm, Redis et une base de données configurée (SQLite par défaut). Les extensions `pcntl` et `posix` sont nécessaires aux workers. Pour contribuer ou modifier le code :
 
 ```bash
 # Cloner et installer
@@ -510,6 +660,10 @@ composer install
 npm install
 
 # Exporter les variables
+export BASE_URL=http://localhost:8080
+export REDIS_HOST=127.0.0.1
+export OPENID_WELLKNOWN_URL=https://votre-sso.example.com/.well-known/openid-configuration
+export OPENID_CLIENT_ID=votre-client-id
 export OPENAPI_KEY=votre-clé-api
 export OPENAPI_URL=https://api.openai.com/v1
 export OPENAPI_MODEL=gpt-4o-mini
@@ -520,6 +674,8 @@ export SESSION_JWT_SECRET=$(openssl rand -hex 32)
 npm run build            # Compiler les bundles Vue (normal + embed)
 composer start
 ```
+
+Dans un second terminal disposant du même environnement, lancez `./console queue:work`. Configurez le fournisseur OIDC pour autoriser `http://localhost:8080/auth/callback` et exportez aussi `OPENID_CLIENT_SECRET` si nécessaire.
 
 ### Développement frontend
 
@@ -556,7 +712,9 @@ composer pre-commit        # Tous les checks
 | Pas de logs | Définissez `OTEL_LOGS_EXPORTER=console` |
 | RAG inactif | Vérifiez `OPENAPI_MODEL_EMBED` |
 | ComfyUI non dispo | Vérifiez `COMFYUI_ENABLED=true` et les workflows |
-| Worker bloqué | Vérifiez Redis et `REDIS_READ_TIMEOUT` |
+| Worker bloqué | Vérifiez Redis, les workers supervisés et `REDIS_READ_TIMEOUT` ; diagnostiquez la conversation avec `chat:maintenance` sans purger Redis |
+| Fichier ou flux SSE refusé | Renouvelez le jeton via `POST /auth/resource-token` et vérifiez sa portée ; utilisez `/files/serve/{id}` |
+| Erreur SQL Telegram après mise à niveau | Appliquez les migrations, puis redémarrez les workers |
 
 ## Licence
 

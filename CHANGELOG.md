@@ -5,14 +5,20 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
-## [2.1.0] - 2026-08-20
+## [Unreleased]
+
+## [2.1.0] - 2026-09-13
 
 ### Added
+- **PWA** : installation de l'interface normale en mode `standalone`, avec manifeste dynamique public `/manifest.webmanifest`, icônes PNG 192x192 et 512x512 et métadonnées d'installation iOS ; connexion Internet requise, sans service worker ni mode hors ligne
+- **Configuration** : variable facultative `APP_NAME` (défaut : `Claire`) pour le titre de la page avant et après connexion et le nom de la PWA, sans renommer les agents, le widget ou le service OpenTelemetry
+- **Tests** : couverture du manifeste, de l'échappement du nom dans le shell et des routes publiques et protégées avec le vrai routage Slim, à la racine et sous un chemin de montage
+- **Documentation** : guide d'installation sur ordinateur, Android et iOS, configuration du nom et diagnostic du manifeste
 - **Audio & Voix** : intégration de l'API audio Mistral pour la transcription (STT / whisper) et la synthèse vocale (TTS)
 - **Audio & Voix** : routes compatibles OpenAI `POST /v1/audio/transcriptions` et `POST /v1/audio/speech` protégées par session Claire
 - **Audio & Voix** : outil agent `generate_speech` permettant aux agents de générer des fichiers audio MP3 intégrés dans la conversation
 - **Audio & Voix** : support de la dictée vocale dans l'interface web et le widget embarqué avec gestion de l'enregistrement et transcription
-- **Audio & Voix** : synthèse vocale automatique ou à la demande dans le chat web et l'embed avec diffusion en streaming SSE (`chat.audio.ready`) et lecteur audio intégré
+- **Audio & Voix** : synthèse vocale automatique ou à la demande dans le chat web et l'embed avec livraison du résultat en Base64 par SSE (`chat.audio.ready`) et lecteur audio intégré, sans streaming audio natif du fournisseur
 - **Audio & Voix** : panneau de préférences audio (activation, synthèse auto, mode dictée, choix de la voix) dans l'interface web, le widget et la Mini-App Telegram
 - **Audio & Voix** : nouvel endpoint `POST /config/audio` pour persister les préférences audio par utilisateur
 - **Audio & Voix** : nouvel endpoint `POST /brain/audio` pour demander la synthèse vocale d'un message spécifique
@@ -21,10 +27,48 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 - **Telegram** : envoi des fichiers audio générés par les agents sous forme de message audio/vocal Telegram
 - **Telegram** : sélection de la voix préférée dans la Mini-App Telegram
 - **Tests** : tests unitaires complets pour les services audio (`MistralAudioService`, `TelegramAudioService`, `AudioGeneratorService`, `ChatAudioPublisher`), les contrôleurs (`AudioController`, `ConfigController`), les jobs (`GenerateAudioJob`), le tool `TextToSpeechTool` et les composants frontend associés
+- **Thèmes** : registre de thèmes d'agents et six presets versionnés (`cyberpunk`, `neon`, `energy`, `light`, `romantic`, `dark`), avec contrat de 71 tokens publics et variantes de contrôles et d'effets
+- **Thèmes** : configuration YAML scalaire ou objet (`preset`, `tokens`, `variants`), appliquée à chaud dans l'interface normale et le Shadow DOM du widget
+- **Authentification** : endpoint `POST /auth/resource-token` pour délivrer des jetons à durée courte, limités à un fichier, un flux conversation/session ou un lot de ressources
+- **Telegram** : journal SQL `telegram_generation` avec suivi des tentatives et des livraisons de fichiers, et migration `Version20260912130000`
+- **Maintenance** : commande `chat:maintenance` pour diagnostiquer les conversations, réconcilier les générations dont l'état orphelin est démontré et compacter les corps des journaux Telegram livrés, en simulation par défaut
+- **Tests** : couverture renforcée de l'isolation des conversations, des retries et baux de queue, des jetons de ressources, des journaux Telegram, des thèmes et du rendu PDF
 
 ### Changed
 - **Messages** : attribution d'identifiants stables (`history-message-*`) aux messages d'historique dans `MessageFormatter`
 - **Docker Compose** : ajout des variables de configuration pour l'audio Mistral (`MISTRAL_AUDIO_*`)
+- **Rendu web** : shell HTML servi par `VueShell` et données HTTP/SSE structurées par `ChatDataRenderer` ; Vue assure le rendu des messages, du Markdown et des outils hors Telegram
+- **Styles** : unification du socle CSS et de la coloration du code autour des tokens sémantiques, avec isolation des thèmes du widget vis-à-vis de la page hôte
+- **Queue** : backend exclusivement Redis avec réservations, baux renouvelables, retries différés et conservation des jobs en échec ; protection contre le rejeu d'une génération ayant déjà tenté des outils
+- **Workers** : recyclage par défaut après 256 jobs ou 3600 secondes, avec supervision dans l'image Docker
+- **Telegram** : renouvellement des notifications de saisie pendant les traitements longs et conservation SQL des marqueurs anti-rejeu après compaction des journaux
+- **PDF** : typographie, tableaux et pagination améliorés dans les documents générés
+- **Dépendances** : mise à jour des paquets et limite mémoire PHPUnit portée à 256 Mo
+- **Documentation** : exemples Docker et développement local complétés avec Redis, SSO et workers ; contrats API et procédures de migration et maintenance actualisés
+
+### Fixed
+- **PWA** : identité dérivée de `start_url` en omettant `id`, afin d'éviter une identité partagée entre plusieurs chemins de montage sur la même origine
+- **Authentification** : comparaison des routes publiques relativement au chemin de montage, tout en conservant la protection de `/auth/refresh` et `/auth/resource-token`
+- **Authentification** : correction de l'exception `No base path defined.` en récupérant le chemin depuis `base_url`, disponible avant `RouteRunner`, plutôt que depuis `RouteContext::getBasePath()`
+- **Conversations** : restauration de la dernière conversation au rechargement et meilleure isolation des utilisateurs, conversations et opérations asynchrones
+- **Chat** : fiabilisation des états de génération, du traitement des conflits, des retries et de l'affichage des outils interrompus
+- **SSE** : réduction de la latence Redis, sécurisation des flux par portée et fermeture des connexions et timers lors du démontage du frontend
+- **Audio** : corrélation des demandes et résultats pour éviter d'appliquer une synthèse à un message ou une conversation obsolète
+- **Fichiers** : rendu des images protégées et partage des jetons de ressources entre fichiers et flux, sans propager les identifiants d'authentification aux URL tierces
+- **PDF** : correction des valeurs par défaut de génération et de la gestion des appels d'outils interrompus
+- **Interface** : ajustements des espacements et du comportement responsive du chat
+
+### Removed
+- **Thèmes (rupture)** : `BrainAvatar::CSS` remplacé par `THEME` ; champs YAML `css` / `css_inline` ignorés et retrait de `cssInline` / `dynamicCss` du contrat frontend
+- **Authentification (rupture)** : abandon des anciens mini-tokens et des JWT de session dans les URL pour authentifier les fichiers et les flux ; utiliser les jetons de ressources dédiés
+- **Fichiers (rupture)** : suppression de `/files/img_serve/{id}` au profit de `/files/serve/{id}`
+- **Rendu web** : retrait de `ChatHtmlRenderer` et des fragments HTML serveur du pipeline de chat, remplacés par le rendu Vue
+
+### Migration
+- Sauvegarder les données et suspendre les traitements avant d'appliquer `./console migrations:migrate`, puis vider le cache compilé et redémarrer les processus web et les workers
+- Migrer les thèmes des agents externes et les clients API utilisant les anciens liens de fichiers ou mini-tokens ; reconstruire les bundles pour les installations depuis les sources
+- Conserver les données Redis : le journal SQL Telegram ne remplace pas la queue Redis et la version finale ne comporte pas d'outbox SQL
+- Voir les [consignes de mise à niveau](README.md#mise-à-niveau-vers-210) et la [maintenance des journaux](README.md#journaux-et-maintenance)
 
 ## [2.0.0] - 2026-08-20
 
@@ -577,7 +621,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[2.1.0]: https://github.com/semhoun/claire-chatbot/compare/2.0.0...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/2.1.0...HEAD
+[2.1.0]: https://github.com/semhoun/claire-chatbot/compare/2.0.0...2.1.0
 [2.0.0]: https://github.com/semhoun/claire-chatbot/compare/1.6.0...2.0.0
 [1.6.0]: https://github.com/semhoun/claire-chatbot/compare/1.5.3...1.6.0
 [1.5.3]: https://github.com/semhoun/claire-chatbot/compare/1.5.2...1.5.3
