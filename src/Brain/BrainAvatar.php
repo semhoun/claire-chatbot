@@ -21,5 +21,5 @@ interface BrainAvatar
 
     public const string AVATAR = '';
 
-    public const string CSS = '';
+    public const string THEME = 'cyberpunk';
 }

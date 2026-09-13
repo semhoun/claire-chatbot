@@ -6,24 +6,26 @@ namespace App\Brain;
 
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
+use App\Services\ThemeRegistry;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Yaml\Yaml;
 
 final class BrainRegistry
 {
-    /** @var array<string, array{name:string, description:string, avatar:string, css:string, welcomes:array<string>, instruction:string}>|null */
+    /** @var array<string, array{name:string, description:string, avatar:string, theme:array{preset:string, tokens:array<string, string>, variants:array<string, string>}, welcomes:array<string>, instruction:string}>|null */
     private ?array $yamlBrainsCache = null;
 
     public function __construct(
         private readonly Settings $settings,
         private readonly ContainerInterface $container,
+        private readonly ThemeRegistry $themeRegistry,
     ) {
     }
 
     /**
      * Retourne la liste complète des assistants disponibles avec leurs métadonnées.
      *
-     * @return array<int, array{slug:string, class:string, name:string, description:string, avatar:string}>
+     * @return array<int, array{slug:string, class:string, name:string, description:string, avatar:string, theme:array{preset:string, tokens:array<string, string>, variants:array<string, string>}}>
      */
     public function list(): array
     {
@@ -54,8 +56,7 @@ final class BrainRegistry
                 'name' => $class::NAME,
                 'description' => $class::DESCRIPTION,
                 'avatar' => $class::AVATAR,
-                'css' => $class::CSS,
-                'css_inline' => '',
+                'theme' => $this->themeRegistry->resolve($class::THEME),
             ];
         }
 
@@ -68,8 +69,7 @@ final class BrainRegistry
                 'name' => $config['name'],
                 'description' => $config['description'],
                 'avatar' => $config['avatar'] ?? '',
-                'css' => $config['css'] ?? '',
-                'css_inline' => $config['css_inline'] ?? '',
+                'theme' => $config['theme'],
             ];
         }
 
@@ -111,7 +111,7 @@ final class BrainRegistry
     }
 
     /**
-     * @return array{name:string, description:string, avatar:string, class:string, css:string, css_inline:string}
+     * @return array{name:string, description:string, avatar:string, class:string, theme:array{preset:string, tokens:array<string, string>, variants:array<string, string>}}
      */
     public function getMeta(string $slug): array
     {
@@ -127,8 +127,7 @@ final class BrainRegistry
                     'description' => $config['description'],
                     'avatar' => $config['avatar'] ?? '',
                     'class' => YamlBrain::class,
-                    'css' => $config['css'] ?? '',
-                    'css_inline' => $config['css_inline'] ?? '',
+                    'theme' => $config['theme'],
                 ];
             }
 
@@ -141,13 +140,12 @@ final class BrainRegistry
             'description' => $class::DESCRIPTION,
             'avatar' => $class::AVATAR,
             'class' => $class,
-            'css' => $class::CSS,
-            'css_inline' => '',
+            'theme' => $this->themeRegistry->resolve($class::THEME),
         ];
     }
 
     /**
-     * @return array<string, array{name:string, description:string, avatar:string, css:string, css_inline:string, welcomes:array<string>, instruction:string}>
+     * @return array<string, array{name:string, description:string, avatar:string, theme:array{preset:string, tokens:array<string, string>, variants:array<string, string>}, welcomes:array<string>, instruction:string}>
      */
     private function loadYamlBrains(): array
     {
@@ -203,8 +201,7 @@ final class BrainRegistry
                     'name' => (string) ($data['name'] ?? $slug),
                     'description' => (string) ($data['description'] ?? ''),
                     'avatar' => (string) ($data['avatar'] ?? ''),
-                    'css' => (string) ($data['css'] ?? ''),
-                    'css_inline' => (string) ($data['css_inline'] ?? ''),
+                    'theme' => $this->themeRegistry->resolve($data['theme'] ?? null),
                     'welcomes' => (array) ($data['welcomes'] ?? []),
                     'instruction' => (string) ($data['instruction'] ?? ''),
                 ],

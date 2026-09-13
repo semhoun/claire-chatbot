@@ -1,0 +1,101 @@
+/* Chat adaptations follow its actual width, including a 400px widget on desktop. */
+@container claire-chat (max-width: 680px) {
+    .claire-chat-shell {
+        --claire-chat-gutter: var(--claire-space-2);
+        --claire-header-padding: var(--claire-space-2) var(--claire-space-3);
+        --claire-header-gutter: var(--claire-space-3);
+        --claire-bubble-width: 94%;
+        --claire-composer-padding: var(--claire-space-2);
+    }
+
+    .claire-chat-header {
+        padding-top: max(var(--claire-space-2), env(safe-area-inset-top));
+    }
+    .claire-chat-input {
+        padding-bottom: max(var(--claire-space-2), env(safe-area-inset-bottom));
+    }
+}
+
+@container claire-chat (max-width: 480px) {
+    .claire-chat-input__toggleable:not(.claire-chat-icon-btn--upload) {
+        width: var(--claire-control-small);
+    }
+}
+
+@container claire-widget (max-width: 340px) {
+    .claire-embed-toolbar__right {
+        gap: 0;
+    }
+    .claire-embed-toolbar__item {
+        width: var(--claire-space-8);
+    }
+}
+
+/* Page and viewport overlays use viewport queries, not chat/container queries. */
+@media (min-width: 681px) {
+    .claire-app[data-mode="normal"][data-layout="compact"] > .claire-chat-panel {
+        max-width: 800px;
+        margin: 24px auto;
+        height: calc(100vh - 48px);
+        height: calc(100dvh - 48px);
+        border: var(--claire-border-width) solid var(--claire-border);
+        border-radius: var(--claire-radius);
+        box-shadow: var(--claire-shadow);
+    }
+}
+
+@media (max-width: 680px) {
+    .claire-app {
+        --claire-embed-inset: var(--claire-space-2);
+    }
+    #claire-toggle-layout-mode {
+        display: none;
+    }
+}
+
+@media (max-width: 480px) {
+    .claire-modal {
+        align-items: flex-end;
+        padding: 0;
+    }
+    .claire-modal__container {
+        width: 100%;
+        max-height: calc(100dvh - env(safe-area-inset-top));
+        border-radius: var(--claire-dialog-radius) var(--claire-dialog-radius) 0 0;
+    }
+    .claire-modal__footer {
+        padding-bottom: max(var(--claire-space-3), env(safe-area-inset-bottom));
+    }
+    .claire-modal__footer .claire-btn {
+        min-width: 0;
+        flex: 1;
+    }
+    .welcome-page {
+        padding: var(--claire-space-3);
+    }
+    .claire-panel,
+    .claire-error-panel {
+        padding: var(--claire-space-5);
+    }
+}
+
+@media (pointer: coarse) {
+    .claire-message__audio-action,
+    .claire-option-item__button,
+    .claire-file-upload__icons .claire-btn,
+    .claire-chat-chip > button {
+        min-height: var(--claire-control-size);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    /* Accessibility override applies to every shared animation and finish. */
+    :is(.claire-app, .claire-app-base),
+    :is(.claire-app, .claire-app-base) *,
+    :is(.claire-app, .claire-app-base) *::before,
+    :is(.claire-app, .claire-app-base) *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}

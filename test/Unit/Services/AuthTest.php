@@ -8,6 +8,7 @@ use App\Brain\BrainRegistry;
 use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
+use App\Services\ThemeRegistry;
 use Doctrine\ORM\EntityManager;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
@@ -30,7 +31,7 @@ final class AuthTest extends TestCase
         $this->entityManager = $this->createMock(EntityManager::class);
         $this->settings = new Settings(['session' => ['defaultParams' => ['brain_avatar' => 'claire', 'layout_mode' => 'full']]]);
         $container = $this->createMock(ContainerInterface::class);
-        $brainRegistry = new BrainRegistry($this->settings, $container);
+        $brainRegistry = new BrainRegistry($this->settings, $container, new ThemeRegistry($this->settings));
         $this->auth = new Auth($this->entityManager, $this->settings, $brainRegistry);
     }
 

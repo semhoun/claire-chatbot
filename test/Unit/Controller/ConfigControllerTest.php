@@ -13,6 +13,7 @@ use App\Services\Audio\AudioServiceInterface;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
+use App\Services\ThemeRegistry;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\EntityRepository;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -68,7 +69,7 @@ final class ConfigControllerTest extends TestCase
 
         $this->controller = new ConfigController(
             $this->entityManager,
-            new BrainRegistry($settings, $container),
+            new BrainRegistry($settings, $container, new ThemeRegistry($settings)),
             new ComfyUIWorkflowRegistry($settings),
             $settings,
             $audioService,

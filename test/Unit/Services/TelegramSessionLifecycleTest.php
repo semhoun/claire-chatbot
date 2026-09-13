@@ -7,6 +7,7 @@ namespace App\Test\Unit\Services;
 use App\Brain\Agent;
 use App\Brain\BrainAvatar;
 use App\Brain\BrainRegistry;
+use App\Services\ThemeRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\TelegramSession as SessionEntity;
 use App\Repository\TelegramSessionRepository;
@@ -191,7 +192,7 @@ final class TelegramSessionLifecycleTest extends TestCase
         $history = $this->createStub(UserChatHistory::class);
         $container = $this->createStub(ContainerInterface::class);
         $container->method('get')->willReturn($history);
-        $registry = new BrainRegistry($settings, $container);
+        $registry = new BrainRegistry($settings, $container, new ThemeRegistry($settings));
         new ReflectionProperty($registry, 'yamlBrainsCache')->setValue($registry, []);
         $workflows = new ComfyUIWorkflowRegistry($settings);
         new ReflectionProperty($workflows, 'cache')->setValue($workflows, [

@@ -6,7 +6,9 @@ describe('frontend bootstrap', () => {
   afterEach(() => vi.restoreAllMocks())
 
   it('parses server data and applies its base URL', () => {
-    const config = parseBootstrap({ mode: 'embed', threadId: 'thread-1', sessionId: 'tab', brainInfo: {}, brains: [] }, 'https://claire.test/')
+    const config = parseBootstrap({ mode: 'embed', threadId: 'thread-1', sessionId: 'tab', brainInfo: {
+      name: 'Claire', description: '', avatar: '', theme: { preset: 'cyberpunk', tokens: {}, variants: {} },
+    }, brains: [] }, 'https://claire.test/')
 
     expect(config.baseUrl).toBe('https://claire.test')
     expect(config.threadId).toBe('thread-1')

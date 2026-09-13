@@ -1,0 +1,27 @@
+{
+  "tokens": [
+    "--claire-font", "--claire-font-heading", "--claire-font-mono", "--claire-color-scheme",
+    "--claire-body-background", "--claire-surface-chat", "--claire-header-bg", "--claire-input-bar-bg",
+    "--claire-surface-muted", "--claire-surface-hover", "--claire-surface-active", "--claire-surface-code",
+    "--claire-text-primary", "--claire-text-secondary", "--claire-accent", "--claire-accent-light",
+    "--claire-border", "--claire-border-strong", "--claire-focus-ring", "--claire-placeholder",
+    "--claire-radius", "--claire-radius-sm", "--claire-radius-md", "--claire-radius-lg", "--claire-bubble-radius",
+    "--claire-bubble-sent-background", "--claire-bubble-sent-text", "--claire-bubble-sent-meta",
+    "--claire-bubble-received-background", "--claire-bubble-received-text", "--claire-bubble-received-meta",
+    "--claire-bubble-border", "--claire-bubble-shadow",
+    "--claire-control-background", "--claire-control-text", "--claire-control-hover",
+    "--claire-control-primary-background", "--claire-control-primary-text",
+    "--claire-control-send-background", "--claire-control-send-text", "--claire-control-shadow",
+    "--claire-field-background", "--claire-field-focus-background", "--claire-field-border", "--claire-field-focus-shadow",
+    "--claire-panel-background", "--claire-dialog-background", "--claire-dialog-shadow", "--claire-tooltip-bg",
+    "--claire-overlay-dialog", "--claire-overlay-drawer", "--claire-shadow", "--claire-elevation-low", "--claire-elevation-raised",
+    "--claire-avatar-border", "--claire-avatar-shadow", "--claire-effect-glow", "--claire-effect-satin",
+    "--claire-danger", "--claire-danger-text", "--claire-danger-background", "--claire-danger-border", "--claire-danger-on",
+    "--claire-success", "--claire-success-text", "--claire-success-background", "--claire-success-border",
+    "--claire-scrollbar-track", "--claire-scrollbar-thumb", "--claire-scrollbar-hover", "--claire-telegram-link"
+  ],
+  "variants": {
+    "controls": ["solid", "outline", "soft"],
+    "effects": ["none", "glow", "satin"]
+  }
+}

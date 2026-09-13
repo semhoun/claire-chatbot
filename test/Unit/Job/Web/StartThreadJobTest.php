@@ -16,6 +16,7 @@ use App\Services\RedisClient;
 use App\Services\Rendering\GeneratedFileProcessor;
 use App\Services\Session\InMemorySession;
 use App\Services\Settings;
+use App\Services\ThemeRegistry;
 use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\UserMessage;
@@ -32,7 +33,7 @@ final class GeneratedOpeningTestAgent extends Agent implements \App\Brain\BrainA
 
     public const string AVATAR = '';
 
-    public const string CSS = '';
+    public const string THEME = 'cyberpunk';
 
     private readonly UserChatHistory $userChatHistory;
 
@@ -72,7 +73,8 @@ final class StartThreadJobTest extends TestCase
             $settings, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         ));
         $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        $job = new StartThreadJob($renderer, new BrainRegistry($settings, $container), $publisher, $connection);
+        $job = new StartThreadJob($renderer,
+            new BrainRegistry($settings, $container, new ThemeRegistry($settings)), $publisher, $connection);
         $job->handle(['threadId' => 'thread', 'sessionId' => 'tab', 'session' => [Auth::USERID => 'user']]);
     }
 
@@ -103,7 +105,7 @@ final class StartThreadJobTest extends TestCase
         ]);
         $container = $this->createMock(ContainerInterface::class);
         $container->method('get')->with(UserChatHistory::class)->willReturn($userChatHistory);
-        $brainRegistry = new BrainRegistry($settings, $container);
+        $brainRegistry = new BrainRegistry($settings, $container, new ThemeRegistry($settings));
         $redis = $this->createMock(RedisClient::class);
         $redis->method('hgetall')->willReturn([]);
         $redis->method('hset')->willReturn(1);

@@ -48,8 +48,7 @@ final readonly class FrontendConfigFactory
                 'name' => $brainInfo['name'],
                 'description' => $brainInfo['description'],
                 'avatar' => $brainInfo['avatar'],
-                'css' => $brainInfo['css'],
-                'cssInline' => $brainInfo['css_inline'],
+                'theme' => self::formatTheme($brainInfo['theme']),
             ],
             'currentBrain' => $brainSlug,
             'brains' => array_map(
@@ -58,8 +57,7 @@ final readonly class FrontendConfigFactory
                     'name' => $brain['name'],
                     'description' => $brain['description'],
                     'avatar' => $brain['avatar'],
-                    'css' => $brain['css'],
-                    'cssInline' => $brain['css_inline'],
+                    'theme' => self::formatTheme($brain['theme']),
                 ],
                 $this->brainRegistry->list()
             ),
@@ -101,6 +99,20 @@ final readonly class FrontendConfigFactory
             'refreshMinInterval' => $this->settings->get(
                 'session.refresh_min_interval'
             ),
+        ];
+    }
+
+    /**
+     * @param array{preset:string, tokens:array<string, string>, variants:array<string, string>} $theme
+     * @return array{preset:string, tokens:object, variants:object}
+     */
+    private static function formatTheme(array $theme): array
+    {
+        // Empty maps must serialize as JSON objects, not arrays.
+        return [
+            'preset' => $theme['preset'],
+            'tokens' => (object) $theme['tokens'],
+            'variants' => (object) $theme['variants'],
         ];
     }
 

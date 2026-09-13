@@ -1,10 +1,15 @@
+export interface Theme {
+  preset: string
+  tokens: Record<string, string>
+  variants: Record<string, string>
+}
+
 export interface BrainOption {
   slug: string
   name: string
   description: string
   avatar: string
-  css?: string
-  cssInline?: string
+  theme: Theme
 }
 
 export interface PageData {
@@ -26,8 +31,7 @@ export interface BrainInfo {
   name: string
   description: string
   avatar: string
-  css?: string
-  cssInline?: string
+  theme: Theme
 }
 
 export interface UserInfo {
@@ -71,7 +75,6 @@ export interface ClaireBootstrap {
   refreshBeforeExpire: number
   refreshMinInterval: number
   sessionToken?: string
-  dynamicCss?: string
 }
 
 export interface GeneratedFile {

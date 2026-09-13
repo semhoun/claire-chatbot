@@ -2,8 +2,7 @@ import { defineCustomElement } from 'vue'
 import ClaireApp from './components/ClaireApp.vue'
 import { jwtAudience, parseBootstrap } from './bootstrap'
 import type { ClaireBootstrap } from './types'
-import claireCss from '../public/css/style.css?inline'
-import highlightCss from '../public/css/highlight.min.css?inline'
+import claireCss from './styles/index.css?inline'
 
 const ELEMENT_NAME = 'claire-chat-widget'
 const CONTAINER_ID = 'claire-embed-root'
@@ -59,20 +58,10 @@ async function fetchBootstrap(baseUrl: string, signal: AbortSignal, authToken?: 
   return config
 }
 
-async function loadDynamicCss(config: ClaireBootstrap, signal: AbortSignal): Promise<void> {
-  const parts = [config.brainInfo.cssInline ?? '']
-  if (config.brainInfo.css) {
-    const response = await window.fetch(`${config.baseUrl}/css/${config.brainInfo.css}`, { signal })
-    if (response.ok) parts.unshift(await response.text())
-  }
-  config.dynamicCss = parts.filter(Boolean).join('\n')
-}
-
 function registerElement(): void {
   if (customElements.get(ELEMENT_NAME)) return
-  const scopedCss = claireCss.replace(/^:root\s*\{/m, ':host, :root {')
   const ClaireElementConstructor = defineCustomElement(ClaireApp, {
-    styles: [scopedCss, highlightCss],
+    styles: [claireCss],
   })
   customElements.define(ELEMENT_NAME, ClaireElementConstructor)
 }
@@ -120,8 +109,6 @@ async function claireEmbed(options: ClaireEmbedConfig = {}): Promise<HTMLElement
     const config = await fetchBootstrap(baseUrl, controller.signal, sessionToken)
     assertCurrent()
     config.sessionToken ||= sessionToken || undefined
-    await loadDynamicCss(config, controller.signal)
-    assertCurrent()
     registerElement()
 
     const container = document.createElement('div')

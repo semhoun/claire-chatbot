@@ -5,7 +5,7 @@ import { BrowserAudio } from './services/browser-audio'
 import { SessionClient } from './services/session-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import ClaireApp from './components/ClaireApp.vue'
-import type { ChatMessage, ClaireBootstrap, GeneratedFile } from './types'
+import type { ChatMessage, ClaireBootstrap, GeneratedFile, Theme } from './types'
 
 function entry(id = 'a', message = 'Hello', files: GeneratedFile[] = []): ChatMessage {
   return { id, message: [message, ...files.map(file => file.id)].join('\n\n'), files, sent: false, time: '2026-09-12T12:00:00Z', toolsCall: [] }
@@ -60,13 +60,14 @@ function bootstrap(): ClaireBootstrap {
     acceptedExt: '.txt',
     threadId: 'thread-1',
     sessionId: 'session-1',
-    brainInfo: { name: 'Claire', description: 'Assistant', avatar: '/avatar.png' },
+    brainInfo: { name: 'Claire', description: 'Assistant', avatar: '/avatar.png', theme: { preset: 'cyberpunk', tokens: {}, variants: {} } },
     currentBrain: 'claire',
     brains: [{
       slug: 'claire',
       name: 'Claire',
       description: 'Assistant',
       avatar: '/avatar.png',
+      theme: { preset: 'cyberpunk', tokens: {}, variants: {} },
     }],
     comfyuiEnabled: false,
     workflows: [],
@@ -89,6 +90,42 @@ function bootstrap(): ClaireBootstrap {
 }
 
 describe('embed public API', () => {
+  it.each(['normal', 'embed'] as const)('preserves the header avatar outside message groups in %s', async mode => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
+    )))
+    const config: ClaireBootstrap = { ...bootstrap(), mode, baseUrl: 'https://claire.test' }
+    config.brains.push({ slug: 'other', name: 'Other', description: '', avatar: '/other.png', theme: { preset: 'light', tokens: {}, variants: {} } })
+    const wrapper = mount(ClaireApp, { props: { config } })
+    const avatarSelector = mode === 'embed' ? '.claire-embed-toolbar__avatar' : '.claire-chat-header__avatar'
+    try {
+      await flushPromises()
+      expect(wrapper.get(avatarSelector).attributes('src')).toBe('/avatar.png')
+      expect(wrapper.get('textarea.claire-chat-input__field').attributes()).toMatchObject({
+        'aria-label': 'Votre message', placeholder: 'Message...',
+      })
+      if (mode === 'embed') expect(wrapper.get('.claire-embed').classes()).toContain('is-collapsed')
+      FakeEventSource.instances[0].emit('chat.snapshot', { messages: [entry('a'), entry('b')] })
+      await flushPromises()
+      expect(wrapper.findAll('.claire-message')).toHaveLength(2)
+      expect(wrapper.find('.claire-message img, .claire-message [class*="avatar"]').exists()).toBe(false)
+      expect(wrapper.get(avatarSelector).attributes('src')).toBe('/avatar.png')
+      if (mode === 'embed') {
+        await wrapper.get('.claire-embed-toolbar__left').trigger('click')
+        expect(wrapper.get('.claire-embed').classes()).not.toContain('is-collapsed')
+        await wrapper.get('[aria-label="Préférences"]').trigger('click')
+      }
+      await wrapper.get('#claire-brain-selector').setValue('other')
+      await flushPromises()
+      expect(wrapper.get(avatarSelector).attributes('src')).toBe('/other.png')
+      if (mode === 'embed') {
+        await wrapper.get('.claire-embed-toolbar__left').trigger('click')
+        expect(wrapper.get('.claire-embed').classes()).toContain('is-collapsed')
+        expect(wrapper.get(avatarSelector).attributes('src')).toBe('/other.png')
+      }
+    } finally { wrapper.unmount() }
+  })
+
   it('does not let a late image authorization overwrite a reused streaming img or retain a denied source', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(capability())))
     let finishOld!: (value: { url: string; renewAt: null }) => void
@@ -159,23 +196,151 @@ describe('embed public API', () => {
     } finally { wrapper.unmount() }
   })
 
-  it('applies a late initial theme without replacing a subsequently selected persona theme', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
-      new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
-    )))
-    const config: ClaireBootstrap = { ...bootstrap(), mode: 'normal', baseUrl: 'https://claire.test', dynamicCss: '.inline{}' }
-    config.brains.push({ slug: 'other', name: 'Other', description: '', avatar: '', cssInline: '.other{}' })
+  it.each(['full', 'compact'] as const)('initializes persisted %s layout and toggles only the normal app boundary', async layoutMode => {
+    const fetchMock = vi.fn(async (input: string | URL, _init?: RequestInit) =>
+      new Response(new URL(input).pathname === '/auth/resource-token' ? capability() : '0'))
+    vi.stubGlobal('fetch', fetchMock)
+    const bodyAttributes = document.body.outerHTML.split('>')[0]
+    const config: ClaireBootstrap = { ...bootstrap(), mode: 'normal', layoutMode, baseUrl: 'https://claire.test' }
     const wrapper = mount(ClaireApp, { props: { config } })
     try {
-      await flushPromises()
-      await wrapper.setProps({ config: { ...config, dynamicCss: '.external{}\n.inline{}' } })
-      expect(wrapper.get('style').text()).toBe('.external{}\n.inline{}')
-      await wrapper.get('#claire-brain-selector').setValue('other')
-      await flushPromises()
-      expect(wrapper.get('style').text()).toBe('.other{}')
-      await wrapper.setProps({ config: { ...config, dynamicCss: '.obsolete{}' } })
-      expect(wrapper.get('style').text()).toBe('.other{}')
+      const root = wrapper.get('.claire-app')
+      expect(root.attributes('data-layout')).toBe(layoutMode)
+      expect(wrapper.find('.claire-chat-panel > .claire-options-panel').exists()).toBe(true)
+      expect(wrapper.find('.claire-chat-panel > .claire-options-backdrop').exists()).toBe(true)
+      await wrapper.get('.claire-options-toggle').trigger('click')
+      for (const next of [layoutMode === 'compact' ? 'full' : 'compact', layoutMode]) {
+        await wrapper.get('#claire-toggle-layout-mode').trigger('click')
+        await flushPromises()
+        expect(root.attributes('data-layout')).toBe(next)
+        expect(wrapper.get('.claire-options-panel').classes()).toContain('claire-is-open')
+        expect(wrapper.get('#claire-toggle-layout-mode').text()).toContain(next === 'compact' ? 'Largeur 800px' : 'Plein écran')
+      }
+      const saves = fetchMock.mock.calls.filter(([url]) => new URL(url).pathname === '/config/layout_mode')
+      expect(saves.map(([, init]) => ({ method: init?.method, mode: (init?.body as URLSearchParams).get('mode') }))).toEqual([
+        { method: 'POST', mode: layoutMode === 'compact' ? 'full' : 'compact' },
+        { method: 'POST', mode: layoutMode },
+      ])
+      expect(document.body.outerHTML.split('>')[0]).toBe(bodyAttributes)
     } finally { wrapper.unmount() }
+  })
+
+  it.each(['normal', 'embed'] as const)('replaces theme bindings on the same compact root before settings resolve in %s', async mode => {
+    const pending: Array<(response: Response) => void> = []
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      const path = new URL(input).pathname
+      if (path === '/config/brain_avatar') return new Promise<Response>(resolve => pending.push(resolve))
+      return new Response(path === '/auth/resource-token' ? capability() : '0')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const bodyAttributes = document.body.outerHTML.split('>')[0]
+    const config: ClaireBootstrap = { ...bootstrap(), mode, layoutMode: 'compact', baseUrl: 'https://claire.test' }
+    config.brainInfo.theme = {
+      preset: 'neon', tokens: { '--claire-accent': '#ff0000', '--claire-body-background': '#160b24', '--custom-old': '12px' },
+      variants: { controls: 'outline', effects: 'glow', custom: 'old' },
+    }
+    config.brains.push({ slug: 'other', name: 'Other', description: '', avatar: '/other.png',
+      theme: { preset: 'light', tokens: { '--claire-accent': '#005c9f', '--claire-body-background': '#ffffff' }, variants: { controls: 'solid' } },
+    })
+    config.brains.push({ slug: 'bare', name: 'Bare', description: '', avatar: '',
+      theme: { preset: 'dark', tokens: {}, variants: {} },
+    })
+    const wrapper = mount(ClaireApp, { props: { config } })
+    try {
+      const root = wrapper.get<HTMLElement>('.claire-app').element
+      expect(root.dataset.layout).toBe('compact')
+      expect(root.style.getPropertyValue('--claire-body-background')).toBe('#160b24')
+      expect(root.dataset.theme).toBe('neon')
+      expect(root.dataset.themeControls).toBe('outline')
+      expect(root.dataset.themeEffects).toBe('glow')
+      expect(root.dataset.themeCustom).toBeUndefined()
+      expect(root.style.getPropertyValue('--custom-old')).toBe('12px')
+      await flushPromises()
+      if (mode === 'embed') await wrapper.get('[aria-label="Préférences"]').trigger('click')
+      await wrapper.get('#claire-brain-selector').setValue('other')
+      expect(wrapper.get('.claire-app').element).toBe(root)
+      expect(root.dataset.theme).toBe('light')
+      expect(root.dataset.layout).toBe('compact')
+      expect(root.style.getPropertyValue('--claire-body-background')).toBe('#ffffff')
+      expect(root.dataset.themeControls).toBe('solid')
+      expect(root.hasAttribute('data-theme-effects')).toBe(false)
+      expect(root.style.getPropertyValue('--claire-accent')).toBe('#005c9f')
+      expect(root.style.getPropertyValue('--custom-old')).toBe('')
+      await wrapper.get('#claire-brain-selector').setValue('bare')
+      expect(root.dataset.theme).toBe('dark')
+      expect(root.style.length).toBe(0)
+      expect(root.hasAttribute('data-theme-controls')).toBe(false)
+      expect(root.hasAttribute('data-theme-effects')).toBe(false)
+      await flushPromises()
+      for (const resolve of pending.reverse()) resolve(new Response('0'))
+      await flushPromises()
+      expect(root.dataset.theme).toBe('dark')
+      expect(root.style.length).toBe(0)
+      expect(wrapper.find('style, link[rel="stylesheet"]').exists()).toBe(false)
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/css/'))).toBe(false)
+      expect(document.body.outerHTML.split('>')[0]).toBe(bodyAttributes)
+    } finally { wrapper.unmount() }
+  })
+
+  it.each([null, undefined, {}, { preset: '', tokens: {}, variants: {} },
+    { preset: 'light', tokens: [], variants: {} },
+    { preset: 'light', tokens: { color: 'red' }, variants: {} },
+    { preset: 'light', tokens: {}, variants: { controls: null } },
+  ])('falls back to common cyberpunk CSS for malformed theme %j', async invalid => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('0')))
+    const config = bootstrap()
+    config.baseUrl = 'https://claire.test'
+    config.brainInfo.theme = invalid as unknown as Theme
+    const wrapper = mount(ClaireApp, { props: { config } })
+    try {
+      const root = wrapper.get<HTMLElement>('.claire-app').element
+      expect(root.dataset.theme).toBe('cyberpunk')
+      expect(root.style.length).toBe(0)
+      expect(root.hasAttribute('data-theme-controls')).toBe(false)
+      expect(root.hasAttribute('data-theme-effects')).toBe(false)
+      expect(wrapper.find('style, link[rel="stylesheet"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+
+  it('applies and clears themes inside the same Shadow DOM without adding stylesheets or touching the host', async () => {
+    const config = bootstrap()
+    config.brainInfo.theme = { preset: 'romantic', tokens: { '--claire-accent': '#aa3366' },
+      variants: { controls: 'soft', effects: 'satin' } }
+    config.brains.push({ slug: 'bare', name: 'Bare', description: '', avatar: '/other.png',
+      theme: { preset: 'dark', tokens: {}, variants: {} } })
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      const path = new URL(input).pathname
+      if (path === '/embed') return new Response(JSON.stringify(config))
+      if (path === '/config/brain_avatar') return new Promise<Response>(() => {})
+      return new Response(path === '/auth/resource-token' ? capability() : '0')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const hostStyle = document.body.getAttribute('style')
+    const element = await window.claireEmbed!({ baseUrl: 'https://claire.test', target: '#target' })
+    await flushPromises()
+    const shadow = element.shadowRoot!
+    const root = shadow.querySelector<HTMLElement>('.claire-app')!
+    const styles = Array.from(shadow.querySelectorAll('style, link[rel="stylesheet"]'))
+    expect(styles).toHaveLength(1) // Syntax highlighting is part of the shared CSS bundle.
+    expect(root.style.getPropertyValue('--claire-accent')).toBe('#aa3366')
+    expect(root.dataset.theme).toBe('romantic')
+    expect(root.dataset.themeControls).toBe('soft')
+    expect(root.dataset.themeEffects).toBe('satin')
+    shadow.querySelector<HTMLButtonElement>('[aria-label="Préférences"]')!.click()
+    await Promise.resolve()
+    const selector = shadow.querySelector<HTMLSelectElement>('#claire-brain-selector')!
+    selector.value = 'bare'
+    selector.dispatchEvent(new Event('change', { bubbles: true }))
+    await Promise.resolve()
+    expect(shadow.querySelector('.claire-app')).toBe(root)
+    expect(root.style.length).toBe(0)
+    expect(root.dataset.theme).toBe('dark')
+    expect(root.hasAttribute('data-theme-controls')).toBe(false)
+    expect(root.hasAttribute('data-theme-effects')).toBe(false)
+    expect(Array.from(shadow.querySelectorAll('style, link[rel="stylesheet"]'))).toEqual(styles)
+    expect(document.body.getAttribute('style')).toBe(hostStyle)
+    expect(document.body.hasAttribute('data-theme')).toBe(false)
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/css/'))).toBe(false)
   })
 
   it.each(['normal', 'embed'] as const)('renews an unchanged keyed audio attachment across expiry/reconnect without interrupting playback in %s', async mode => {
@@ -966,9 +1131,8 @@ describe('embed public API', () => {
     vi.useRealTimers()
   })
 
-  it.each(['exchange', 'bootstrap', 'body', 'css'])('never remounts after destroy during %s', async (stage) => {
+  it.each(['exchange', 'bootstrap', 'body'])('never remounts after destroy during %s', async (stage) => {
     const config = bootstrap()
-    config.brainInfo.css = 'agent.css'
     const html = JSON.stringify(config)
     let release!: () => void
     let reached!: () => void
@@ -977,14 +1141,13 @@ describe('embed public API', () => {
     let signal: AbortSignal | null | undefined
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init: RequestInit) => {
       const url = String(input)
-      const current = url.includes('/exchange') ? 'exchange' : url.includes('/css/') ? 'css' : 'bootstrap'
+      const current = url.includes('/exchange') ? 'exchange' : 'bootstrap'
       if (current === stage || (stage === 'body' && current === 'bootstrap')) {
         signal = init.signal
         reached()
         if (stage !== 'body') await deferred
       }
       if (current === 'exchange') return new Response(JSON.stringify({ session_token: jwt('session') }))
-      if (current === 'css') return new Response('.agent {}')
       const response = new Response(html)
       if (stage === 'body') vi.spyOn(response, 'json').mockImplementation(async () => { await deferred; return config })
       return response
@@ -1229,7 +1392,8 @@ describe('embed public API', () => {
     await Promise.resolve()
 
     expect(input?.disabled).toBe(false)
-    expect(input?.placeholder).toBe('Écrivez votre message...')
+    expect(input?.placeholder).toBe('Message...')
+    expect(input?.getAttribute('aria-label')).toBe('Votre message')
     expect(upload?.disabled).toBe(false)
     expect(uploadButton?.getAttribute('aria-disabled')).toBe('false')
   })

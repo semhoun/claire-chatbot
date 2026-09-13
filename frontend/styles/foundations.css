@@ -1,0 +1,243 @@
+/* Public defaults and private aliases resolve together at each application boundary.
+   Inline theme values win here; neither document nor host palettes are inherited. */
+.claire-app,
+.claire-app-base {
+    --claire-font: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --claire-font-heading: var(--claire-font);
+    --claire-color-scheme: dark;
+    --claire-body-background: linear-gradient(135deg, #341348, #160b24 50%, #4a1238);
+    --claire-accent: #ff3cac;
+    --claire-accent-light: #ff7ce5;
+    --claire-text-primary: #f8efff;
+    --claire-text-secondary: #c9b4d9;
+    --claire-border: #513460;
+    --claire-border-strong: #80608f;
+    --claire-radius: 22px;
+    --claire-shadow: 0 22px 50px rgba(18, 0, 35, 0.6);
+    --claire-embed-collapsed-size: 64px;
+    --claire-embed-collapsed-avatar: 56px;
+    --claire-background: #000000;
+    --claire-header-bg: #28133d;
+    --claire-input-bar-bg: #20102f;
+    --claire-placeholder: var(--claire-text-secondary);
+    --claire-focus-ring: #ffb5ef;
+    --claire-accent-border: color-mix(in srgb, var(--claire-accent) 45%, var(--claire-border));
+    --claire-accent-border-strong: var(--claire-accent);
+    --claire-tooltip-bg: var(--claire-panel-background);
+    --claire-effect-glow: 0 0 18px color-mix(in srgb, var(--claire-accent) 24%, transparent);
+    --claire-effect-satin: linear-gradient(115deg, transparent, color-mix(in srgb, var(--claire-accent-light) 9%, transparent) 48%, transparent 75%);
+    --claire-success: #34d399;
+    --claire-font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+    --claire-text-xs: 0.6875rem;
+    --claire-text-sm: 0.8125rem;
+    --claire-text-md: 0.875rem;
+    --claire-text-base: 1rem;
+    --claire-text-lg: 1.0625rem;
+    --claire-line-height: 1.5;
+    --claire-weight-medium: 500;
+    --claire-weight-semibold: 600;
+    --claire-weight-bold: 700;
+    --claire-space-1: 4px;
+    --claire-space-2: 8px;
+    --claire-space-3: 12px;
+    --claire-space-4: 16px;
+    --claire-space-5: 20px;
+    --claire-space-6: 24px;
+    --claire-space-8: 32px;
+    --claire-radius-sm: 6px;
+    --claire-radius-md: 10px;
+    --claire-radius-lg: 16px;
+    --claire-radius-pill: 999px;
+    --claire-border-width: 1px;
+    --claire-focus-width: 2px;
+    --claire-focus-offset: 3px;
+    --claire-motion-fast: 150ms;
+    --claire-motion-normal: 220ms;
+    --claire-motion-spin: 900ms;
+    --claire-motion-pulse: 1.2s;
+    --claire-disabled-opacity: 0.45;
+    --claire-surface-chat: #1e1030;
+    --claire-surface-muted: color-mix(in srgb, var(--claire-text-primary) 5%, transparent);
+    --claire-surface-hover: color-mix(in srgb, var(--claire-text-primary) 8%, transparent);
+    --claire-surface-active: color-mix(in srgb, var(--claire-accent) 16%, transparent);
+    --claire-surface-code: #10091a;
+    --claire-panel-background: #21122f;
+    --claire-panel-width: 360px;
+    --claire-dialog-background: var(--claire-panel-background);
+    --claire-dialog-width: 520px;
+    --claire-dialog-radius: var(--claire-radius-lg);
+    --claire-dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    --claire-overlay-dialog: rgba(6, 0, 20, 0.6);
+    --claire-overlay-drawer: rgba(8, 0, 14, 0.45);
+    --claire-overlay-lightbox: rgba(0, 0, 0, 0.92);
+    --claire-overlay-public: rgba(0, 0, 0, 0.65);
+    --claire-elevation-low: 0 2px 8px rgba(0, 0, 0, 0.25);
+    --claire-elevation-raised: 0 8px 24px rgba(0, 0, 0, 0.42);
+    --claire-elevation-image: var(--claire-elevation-raised);
+    --claire-elevation-lightbox: var(--claire-dialog-shadow);
+    --claire-reading-width: 800px;
+    --claire-chat-gutter: var(--claire-space-6);
+    --claire-header-padding: var(--claire-space-3) var(--claire-space-6);
+    --claire-header-gutter: var(--claire-space-6);
+    --claire-avatar-size: 44px;
+    --claire-avatar-border: color-mix(in srgb, var(--claire-accent) 45%, var(--claire-border));
+    --claire-avatar-shadow: var(--claire-elevation-low);
+    --claire-bubble-width: 82%;
+    --claire-bubble-radius: 18px;
+    --claire-bubble-join-radius: 5px;
+    --claire-bubble-tail-radius: 5px;
+    --claire-message-gap: var(--claire-space-3);
+    --claire-message-group-gap: 3px;
+    --claire-bubble-padding: var(--claire-space-2) var(--claire-space-3);
+    --claire-bubble-sent-background: linear-gradient(135deg, var(--claire-accent), var(--claire-accent-light));
+    --claire-bubble-sent-text: #2b0052;
+    --claire-bubble-sent-meta: #401050;
+    --claire-bubble-received-background: #3c2058;
+    --claire-bubble-received-text: var(--claire-text-primary);
+    --claire-bubble-received-meta: var(--claire-text-secondary);
+    --claire-bubble-border: var(--claire-border);
+    --claire-bubble-shadow: var(--claire-elevation-low);
+    --claire-control-size: 44px;
+    --claire-control-small: 36px;
+    --claire-icon-size: 20px;
+    --claire-icon-small: 16px;
+    --claire-control-background: var(--claire-surface-muted);
+    --claire-control-text: var(--claire-text-secondary);
+    --claire-control-hover: var(--claire-surface-hover);
+    --claire-control-primary-background: linear-gradient(135deg, var(--claire-accent), var(--claire-accent-light));
+    --claire-control-primary-text: #2b0052;
+    --claire-control-send-background: var(--claire-accent-light);
+    --claire-control-send-text: #2b0052;
+    --claire-control-shadow: var(--claire-elevation-low);
+    --claire-field-background: #321a48;
+    --claire-field-focus-background: color-mix(in srgb, var(--claire-field-background), var(--claire-accent) 8%);
+    --claire-field-border: var(--claire-border);
+    --claire-field-radius: var(--claire-radius-md);
+    --claire-composer-field-padding: 10px var(--claire-space-2);
+    --claire-field-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--claire-focus-ring) 20%, transparent);
+    --claire-composer-padding: var(--claire-space-3) var(--claire-chat-gutter);
+    --claire-composer-radius: var(--claire-radius);
+    --claire-composer-max-height: 160px;
+    --claire-badge-background: var(--claire-surface-active);
+    --claire-badge-text: var(--claire-text-primary);
+    --claire-danger: #ff848f;
+    --claire-danger-on: #350810;
+    --claire-danger-background: color-mix(in srgb, var(--claire-danger) 14%, transparent);
+    --claire-danger-border: color-mix(in srgb, var(--claire-danger) 45%, transparent);
+    --claire-danger-text: #fca5a5;
+    --claire-success-background: color-mix(in srgb, var(--claire-success) 12%, transparent);
+    --claire-success-border: color-mix(in srgb, var(--claire-success) 35%, transparent);
+    --claire-success-text: #6ee7b7;
+    --claire-indicator-background: var(--claire-panel-background);
+    --claire-indicator-track: var(--claire-border-strong);
+    --claire-typing-dot-size: 7px;
+    --claire-telegram-brand: #229ed9;
+    --claire-telegram-brand-text: #ffffff;
+    --claire-telegram-link: #90caf9;
+    --claire-telegram-surface: color-mix(in srgb, var(--claire-telegram-brand) 12%, transparent);
+    --claire-telegram-border: color-mix(in srgb, var(--claire-telegram-brand) 30%, transparent);
+    --claire-scrollbar-size: 8px;
+    --claire-scrollbar-track: var(--claire-surface-muted);
+    --claire-scrollbar-thumb: color-mix(in srgb, var(--claire-accent-light) 55%, transparent);
+    --claire-scrollbar-hover: var(--claire-accent-light);
+    --claire-embed-width: 400px;
+    --claire-embed-height: 600px;
+    --claire-embed-inset: var(--claire-space-5);
+    --claire-embed-toolbar-height: 56px;
+    --claire-embed-avatar-size: 32px;
+    --claire-public-title-size: 4.5rem;
+    font-family: var(--claire-font);
+    font-size: var(--claire-text-base);
+    line-height: var(--claire-line-height);
+    color: var(--claire-text-primary);
+    color-scheme: var(--claire-color-scheme);
+    background: var(--claire-body-background);
+}
+
+:where(.claire-app, .claire-app-base),
+:where(.claire-app, .claire-app-base) *,
+:where(.claire-app, .claire-app-base) *::before,
+:where(.claire-app, .claire-app-base) *::after {
+    box-sizing: border-box;
+}
+
+:where(.claire-app, .claire-app-base) :where(button, input, textarea, select) {
+    font: inherit;
+    color: inherit;
+}
+
+:where(.claire-app, .claire-app-base) :where(button, [role="button"], label[for], summary, select) {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+:where(.claire-app, .claire-app-base) :where(p) {
+    margin: 0 0 var(--claire-space-2);
+}
+:where(.claire-app, .claire-app-base) :where(a) {
+    color: var(--claire-accent-light);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+:where(.claire-app, .claire-app-base) :where(a:hover) {
+    color: var(--claire-accent);
+}
+
+.claire-visually-hidden,
+.claire-chat-input__file,
+.claire-file-upload__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+:where(.claire-app, .claire-app-base) :where(*) {
+    scrollbar-width: thin;
+    scrollbar-color: var(--claire-scrollbar-thumb) var(--claire-scrollbar-track);
+}
+:where(.claire-app, .claire-app-base) ::-webkit-scrollbar {
+    width: var(--claire-scrollbar-size);
+    height: var(--claire-scrollbar-size);
+}
+:where(.claire-app, .claire-app-base) ::-webkit-scrollbar-track {
+    background: var(--claire-scrollbar-track);
+}
+:where(.claire-app, .claire-app-base) ::-webkit-scrollbar-thumb {
+    background: var(--claire-scrollbar-thumb);
+    border-radius: var(--claire-radius-pill);
+}
+:where(.claire-app, .claire-app-base) ::-webkit-scrollbar-thumb:hover {
+    background: var(--claire-scrollbar-hover);
+}
+:where(.claire-app, .claire-app-base) ::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+@keyframes claire-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+@keyframes claire-typing {
+    0%,
+    80%,
+    100% {
+        transform: translateY(0);
+        opacity: 0.45;
+    }
+    40% {
+        transform: translateY(-4px);
+        opacity: 1;
+    }
+}
+@keyframes claire-recording-pulse {
+    50% {
+        box-shadow: 0 0 0 var(--claire-space-2) var(--claire-danger-background);
+    }
+}

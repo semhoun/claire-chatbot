@@ -1,0 +1,21 @@
+/* Variants change finish, never sizing, grouping, visibility or interaction. */
+:where(.claire-app[data-theme-controls="outline"]) .claire-btn--primary {
+    background: transparent;
+    color: var(--claire-accent-light);
+    border-color: var(--claire-accent);
+    box-shadow: none;
+}
+:where(.claire-app[data-theme-controls="soft"]) .claire-btn--primary {
+    background: var(--claire-surface-active);
+    color: var(--claire-accent-light);
+    border-color: var(--claire-accent-border);
+    box-shadow: none;
+}
+:where(.claire-app[data-theme-effects="glow"], .claire-app:not([data-theme-effects]), .claire-app-base)
+    :is(.claire-chat-header__avatar, .claire-embed-toolbar__avatar) {
+    box-shadow: var(--claire-avatar-shadow), var(--claire-effect-glow);
+}
+:where(.claire-app[data-theme-effects="satin"])
+    :is(.claire-chat-header, .claire-embed-toolbar, .claire-modal__header) {
+    background-image: var(--claire-effect-satin);
+}

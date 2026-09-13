@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type Ref } from 'vue'
 import hljs from 'highlight.js/lib/core'
 import bash from 'highlight.js/lib/languages/bash'
 import css from 'highlight.js/lib/languages/css'
@@ -15,7 +15,7 @@ import yaml from 'highlight.js/lib/languages/yaml'
 import { SessionClient } from '../services/session-client'
 import { protectAudio } from '../services/protected-audio'
 import { BrowserAudio } from '../services/browser-audio'
-import type { AudioDictationMode, ChatMessage, ClaireBootstrap, SseUpdate } from '../types'
+import type { AudioDictationMode, ChatMessage, ClaireBootstrap, SseUpdate, Theme } from '../types'
 import ChatMessages from './ChatMessages.vue'
 import ClaireIcon from './ClaireIcon.vue'
 import HistoryList from './HistoryList.vue'
@@ -72,10 +72,20 @@ const chatMessages = ref<ChatMessage[]>([])
 const activeMessageId = ref<string | null>(null)
 const message = ref('')
 const currentBrain = ref(props.config.currentBrain)
-const brainInfo = ref({ ...props.config.brainInfo })
-const dynamicCss = ref(props.config.dynamicCss ?? '')
-watch(() => props.config.dynamicCss, css => {
-  if (currentBrain.value === props.config.currentBrain) dynamicCss.value = css ?? ''
+const brainInfo = computed(() => currentBrain.value === props.config.currentBrain
+  ? props.config.brainInfo
+  : props.config.brains.find(brain => brain.slug === currentBrain.value) ?? props.config.brainInfo)
+const theme = computed<Theme>(() => {
+  const value = brainInfo.value.theme
+  // The backend validates semantics; malformed transport falls back to common CSS.
+  if (!value || typeof value.preset !== 'string' || !value.preset.trim()
+    || !value.tokens || typeof value.tokens !== 'object' || Array.isArray(value.tokens)
+    || !Object.entries(value.tokens).every(([key, token]) => key.startsWith('--') && typeof token === 'string')
+    || !value.variants || typeof value.variants !== 'object' || Array.isArray(value.variants)
+    || !Object.values(value.variants).every(variant => typeof variant === 'string')) {
+    return { preset: 'cyberpunk', tokens: {}, variants: {} }
+  }
+  return value
 })
 const currentWorkflow = ref(props.config.currentWorkflow)
 const longTermMemory = ref(props.config.longTermMemoryEnabled)
@@ -113,6 +123,46 @@ let modalGeneration = 0
 const modalBusy = ref(false)
 const pendingActions = new Set<symbol>()
 const lightboxUrl = ref<string | null>(null)
+const modalElement = ref<HTMLElement | null>(null)
+const lightboxElement = ref<HTMLElement | null>(null)
+
+function activeElement(): Element | null {
+  const root = rootElement.value?.getRootNode() as Document | ShadowRoot | undefined
+  return root?.activeElement ?? null
+}
+
+function focusableElements(dialog: HTMLElement): HTMLElement[] {
+  return Array.from(dialog.querySelectorAll<HTMLElement>(
+    'button, a[href], input, select, textarea, [tabindex]',
+  )).filter(element => element.tabIndex >= 0 && !element.matches(':disabled')
+    && !element.closest('[hidden], [inert]')
+    && getComputedStyle(element).display !== 'none' && getComputedStyle(element).visibility !== 'hidden')
+}
+
+function manageDialogFocus(open: () => boolean, dialog: Ref<HTMLElement | null>): void {
+  let opener: HTMLElement | null = null
+  watch(open, async (visible, _, onCleanup) => {
+    let obsolete = false
+    onCleanup(() => { obsolete = true })
+    const active = activeElement()
+    const ownedFocus = !!active && !!rootElement.value?.contains(active)
+    if (visible) opener = ownedFocus && active instanceof HTMLElement ? active : null
+    await nextTick()
+    if (obsolete || destroyed) return
+    if (visible && dialog.value) {
+      (focusableElements(dialog.value)[0] ?? dialog.value).focus()
+    } else if (ownedFocus || active === null || active === document.body) {
+      const fallback = rootElement.value?.querySelector<HTMLElement>('.claire-embed-toolbar__left')
+        ?? messageInput.value
+      const target = opener?.isConnected && !opener.matches(':disabled') ? opener : fallback
+      target?.focus()
+      opener = null
+    }
+  })
+}
+
+manageDialogFocus(() => modal.value !== null, modalElement)
+manageDialogFocus(() => lightboxUrl.value !== null, lightboxElement)
 
 let eventSource: EventSource | null = null
 let reconnectTimer: number | null = null
@@ -229,8 +279,11 @@ function notify(text: string, variant = 'success'): void {
 }
 
 function closeMenus(): void {
+  const restoreFocus = optionsOpen.value
+    && rootElement.value?.querySelector('.claire-options-panel')?.contains(activeElement())
   openMenu.value = null
   optionsOpen.value = false
+  if (restoreFocus) rootElement.value?.querySelector<HTMLElement>('.claire-options-toggle')?.focus()
 }
 
 function toggleMenu(name: string): void {
@@ -999,25 +1052,6 @@ async function postSetting(path: string, values: Record<string, string>): Promis
 
 async function changeBrain(): Promise<void> {
   await postSetting('/config/brain_avatar', { avatar: currentBrain.value })
-  const selectedBrain = props.config.brains.find(
-    (brain) => brain.slug === currentBrain.value,
-  )
-  if (selectedBrain !== undefined) {
-    brainInfo.value = {
-      name: selectedBrain.name,
-      description: selectedBrain.description,
-      avatar: selectedBrain.avatar,
-      css: selectedBrain.css,
-      cssInline: selectedBrain.cssInline,
-    }
-
-    const styles = [selectedBrain.cssInline ?? '']
-    if (selectedBrain.css) {
-      const response = await client.request(`/css/${selectedBrain.css}`)
-      if (response.ok) styles.unshift(await response.text())
-    }
-    dynamicCss.value = styles.filter(Boolean).join('\n')
-  }
   notify('Assistant sélectionné.')
 }
 
@@ -1066,7 +1100,6 @@ function rebuildMemory(): void {
 
 async function toggleLayout(): Promise<void> {
   layoutMode.value = layoutMode.value === 'full' ? 'compact' : 'full'
-  if (props.config.mode === 'normal') document.body.classList.toggle('claire-compact', layoutMode.value === 'compact')
   await postSetting('/config/layout_mode', { mode: layoutMode.value })
 }
 
@@ -1093,7 +1126,41 @@ function onRootClick(event: MouseEvent): void {
   const image = target.closest<HTMLImageElement>('.claire-generated-image')
   if (image !== null) {
     event.preventDefault()
-    lightboxUrl.value = image.src
+    openImage(image)
+  }
+}
+
+function openImage(image: HTMLImageElement): void {
+  // Only use a source already resolved by the protected-resource pipeline.
+  if (!image.getAttribute('src') || image.dataset.authorizedSrc !== image.dataset.protectedSrc) return
+  image.focus()
+  lightboxUrl.value = image.src
+}
+
+function onRootKeydown(event: KeyboardEvent): void {
+  const dialog = lightboxElement.value ?? modalElement.value
+  if (event.key === 'Tab' && dialog) {
+    const elements = focusableElements(dialog)
+    const first = elements[0] ?? dialog
+    const last = elements.at(-1) ?? dialog
+    const active = activeElement()
+    if (!active || !dialog.contains(active) || active === dialog
+      || (event.shiftKey ? active === first : active === last)) {
+      event.preventDefault()
+      const target = event.shiftKey ? last : first
+      target.focus()
+    }
+  }
+  if (event.key === 'Escape') {
+    event.stopPropagation()
+    handleEscape(event)
+    return
+  }
+  const target = event.target
+  if ((event.key === 'Enter' || event.key === ' ') && target instanceof HTMLImageElement
+    && target.matches('.claire-generated-image[role="button"]')) {
+    event.preventDefault()
+    openImage(target)
   }
 }
 
@@ -1105,7 +1172,6 @@ function handleEscape(event: KeyboardEvent): void {
 }
 
 onMounted(() => {
-  document.addEventListener('keydown', handleEscape)
   connectStream()
   void refreshCounters()
 })
@@ -1113,7 +1179,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   destroyed = true
   clearProtectedResources()
-  document.removeEventListener('keydown', handleEscape)
   eventSource?.close()
   eventSource = null
   if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
@@ -1133,14 +1198,18 @@ onBeforeUnmount(() => {
     ref="rootElement"
     class="claire-app"
     :data-mode="config.mode"
+    :data-layout="layoutMode"
+    :style="theme.tokens"
+    :data-theme="theme.preset"
+    :data-theme-controls="theme.variants.controls"
+    :data-theme-effects="theme.variants.effects"
     @click="onRootClick"
+    @keydown="onRootKeydown"
   >
-    <component :is="'style'" v-if="dynamicCss">{{ dynamicCss }}</component>
-
     <div v-if="config.mode === 'embed'" class="claire-embed-wrapper">
       <div class="claire-embed" :class="{ 'is-collapsed': collapsed }">
         <nav class="claire-embed-toolbar" aria-label="Menu embed" @click.self="collapsed = !collapsed">
-          <button class="claire-embed-toolbar__left" type="button" @click="collapsed = !collapsed">
+          <button class="claire-embed-toolbar__left" type="button" :aria-label="`${collapsed ? 'Ouvrir' : 'Réduire'} la conversation avec ${brainName}`" :aria-expanded="!collapsed" @click="collapsed = !collapsed">
             <img class="claire-embed-toolbar__avatar" :src="brainInfo.avatar" alt="" width="32" height="32">
             <span class="claire-embed-toolbar__title">{{ brainName }}</span>
           </button>
@@ -1197,7 +1266,7 @@ onBeforeUnmount(() => {
             <input id="claire-session-id-input" type="hidden" :value="sessionId">
             <input id="claire-chat-upload" ref="chatFileInput" class="claire-chat-input__file" type="file" multiple :accept="config.acceptedExt" :disabled="composerDisabled" @change="selectLocalFiles">
             <span id="claire-chat-attached-files-chat" class="claire-chat-attached"><span v-for="(file, index) in localFiles" :key="`${file.name}-${file.lastModified}`" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" :disabled="composerDisabled" @click="removeLocalFile(index)"><ClaireIcon name="close" /></button></span><span v-for="file in storedFiles" :key="file.id" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" :disabled="composerDisabled" @click="removeStoredFile(file.id)"><ClaireIcon name="close" /></button></span></span>
-            <textarea ref="messageInput" v-model="message" class="claire-chat-input__field claire-chat-input__field--multiline" :placeholder="responding ? '' : 'Écrivez votre message...'" rows="1" required :disabled="composerDisabled" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
+            <textarea ref="messageInput" v-model="message" class="claire-chat-input__field claire-chat-input__field--multiline" aria-label="Votre message" :placeholder="responding ? '' : 'Message...'" rows="1" required :disabled="composerDisabled" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
             <button v-if="config.audioAvailable && audioEnabled" class="claire-chat-icon-btn claire-chat-input__toggleable" :class="{ 'claire-is-recording': recording }" type="button" :aria-label="recording ? 'Arrêter l’enregistrement' : 'Dicter un message'" :disabled="composerDisabled || transcribing" @click="toggleRecording"><ClaireIcon name="microphone" /></button>
             <div class="claire-chat-input__actions"><button class="claire-chat-icon-btn claire-chat-input__toggleable" type="button" aria-label="Annuler le dernier échange" :disabled="composerDisabled" @click="deleteLastExchange"><ClaireIcon name="undo" /></button><button class="claire-chat-icon-btn" type="submit" aria-label="Envoyer" :disabled="composerDisabled || message.trim() === ''"><ClaireIcon name="send" /></button></div>
           </form></footer>
@@ -1205,15 +1274,14 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <template v-else>
-      <section class="claire-chat-panel">
+    <section v-else class="claire-chat-panel">
         <div class="claire-chat-shell">
           <header class="claire-chat-header">
             <div class="claire-chat-header__main">
               <img class="claire-chat-header__avatar" :src="brainInfo.avatar" alt="">
               <div class="claire-chat-header__info"><span class="claire-chat-header__title">{{ brainName }}</span><span class="claire-chat-header__subtitle">{{ brainInfo.description }}</span></div>
             </div>
-            <button class="claire-options-toggle" :class="{ 'claire-is-active': optionsOpen }" type="button" aria-label="Ouvrir le menu" :aria-expanded="optionsOpen" @click="optionsOpen = !optionsOpen">
+            <button class="claire-options-toggle" :class="{ 'claire-is-active': optionsOpen }" type="button" aria-label="Ouvrir le menu" :aria-expanded="optionsOpen" @click="optionsOpen ? closeMenus() : (optionsOpen = true)">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
               </svg>
@@ -1228,12 +1296,11 @@ onBeforeUnmount(() => {
             <input id="claire-session-id-input" type="hidden" :value="sessionId">
             <input id="claire-chat-upload" ref="chatFileInput" class="claire-chat-input__file" type="file" multiple :accept="config.acceptedExt" :disabled="composerDisabled" @change="selectLocalFiles">
             <span id="claire-chat-attached-files-chat" class="claire-chat-attached"><span v-for="(file, index) in localFiles" :key="`${file.name}-${file.lastModified}`" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" :disabled="composerDisabled" @click="removeLocalFile(index)"><ClaireIcon name="close" /></button></span><span v-for="file in storedFiles" :key="file.id" class="claire-chat-chip">{{ file.name }}<button type="button" aria-label="Retirer le fichier" :disabled="composerDisabled" @click="removeStoredFile(file.id)"><ClaireIcon name="close" /></button></span></span>
-            <textarea ref="messageInput" v-model="message" class="claire-chat-input__field claire-chat-input__field--multiline" :placeholder="responding ? '' : 'Écrivez votre message...'" rows="1" required :disabled="composerDisabled" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
+            <textarea ref="messageInput" v-model="message" class="claire-chat-input__field claire-chat-input__field--multiline" aria-label="Votre message" :placeholder="responding ? '' : 'Message...'" rows="1" required :disabled="composerDisabled" @input="resizeComposer" @keydown="handleComposerKeydown"></textarea>
             <button v-if="config.audioAvailable && audioEnabled" class="claire-chat-icon-btn claire-chat-input__toggleable" :class="{ 'claire-is-recording': recording }" type="button" :aria-label="recording ? 'Arrêter l’enregistrement' : 'Dicter un message'" :disabled="composerDisabled || transcribing" @click="toggleRecording"><ClaireIcon name="microphone" /></button>
             <div class="claire-chat-input__actions"><button class="claire-chat-icon-btn claire-chat-input__toggleable" type="button" aria-label="Annuler le dernier échange" :disabled="composerDisabled" @click="deleteLastExchange"><ClaireIcon name="undo" /></button><button class="claire-chat-icon-btn" type="submit" aria-label="Envoyer" :disabled="composerDisabled || message.trim() === ''"><ClaireIcon name="send" /></button></div>
           </form></footer>
         </div>
-      </section>
       <div class="claire-options-backdrop" :class="{ 'claire-is-visible': optionsOpen }" @click="closeMenus"></div>
       <aside class="claire-options-panel" :class="{ 'claire-is-open': optionsOpen }">
         <button class="claire-options-close" type="button" aria-label="Fermer" @click="closeMenus"><ClaireIcon name="close" /></button>
@@ -1265,10 +1332,10 @@ onBeforeUnmount(() => {
           <button class="claire-options-item" type="button" @click="logout"><span class="claire-options-item__label">Se déconnecter</span></button>
         </section>
       </aside>
-    </template>
+    </section>
 
     <div v-if="modal" class="claire-modal-backdrop claire-is-visible" @click="closeModal"></div>
-    <div v-if="modal" class="claire-modal claire-is-open" role="dialog" aria-modal="true" aria-labelledby="claire-modal-title" :aria-busy="modalBusy" :data-variant="modal.variant">
+    <div v-if="modal" ref="modalElement" class="claire-modal claire-is-open" role="dialog" aria-modal="true" aria-labelledby="claire-modal-title" tabindex="-1" :aria-busy="modalBusy" :data-variant="modal.variant">
       <div class="claire-modal__container">
         <div class="claire-modal__header"><h2 id="claire-modal-title" class="claire-modal__title">{{ modal.title }}</h2><button class="claire-modal__close" type="button" aria-label="Fermer" @click="closeModal"><ClaireIcon name="close" /></button></div>
         <div class="claire-modal__body">
@@ -1285,6 +1352,6 @@ onBeforeUnmount(() => {
     </div>
     <div v-if="busy || modalBusy || transcribing" class="claire-global-action-indicator claire-is-requesting" role="status"><div class="claire-global-action-indicator__pill"><span class="claire-global-action-indicator__spinner"></span><span>{{ transcribing ? 'Transcription en cours...' : 'Action en cours...' }}</span></div></div>
     <div v-if="notification" class="claire-is-visible" id="claire-history-tooltip-banner" :data-variant="notification.variant">{{ notification.text }}</div>
-    <div v-if="lightboxUrl" class="claire-image-lightbox claire-is-open" role="dialog" aria-modal="true" @click="lightboxUrl = null"><div class="claire-image-lightbox__backdrop"></div><div class="claire-image-lightbox__content"><img class="claire-image-lightbox__img" :src="lightboxUrl" alt="Image agrandie"></div></div>
+    <div v-if="lightboxUrl" ref="lightboxElement" class="claire-image-lightbox claire-is-open" role="dialog" aria-modal="true" aria-label="Image agrandie" tabindex="-1" @click="lightboxUrl = null"><div class="claire-image-lightbox__backdrop"></div><div class="claire-image-lightbox__content"><button class="claire-image-lightbox__close" type="button" aria-label="Fermer l’image agrandie" @click.stop="lightboxUrl = null"><ClaireIcon name="close" /></button><img class="claire-image-lightbox__img" :src="lightboxUrl" alt="Image agrandie"></div></div>
   </div>
 </template>

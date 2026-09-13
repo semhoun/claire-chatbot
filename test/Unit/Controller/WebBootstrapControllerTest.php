@@ -18,12 +18,15 @@ use App\Services\FrontendConfigFactory;
 use App\Services\Queue\QueueDispatcherInterface;
 use App\Services\Session\InMemorySession;
 use App\Services\Settings;
+use App\Services\ThemeRegistry;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Slim\Psr7\Factory\ServerRequestFactory;
 use Slim\Psr7\Response;
+use stdClass;
+use Symfony\Component\Yaml\Yaml;
 
 final class BootstrapTestBrain implements BrainAvatar
 {
@@ -32,6 +35,63 @@ final class BootstrapTestBrain implements BrainAvatar
 
 final class WebBootstrapControllerTest extends TestCase
 {
+    #[TestWith([['--claire-accent' => '#005c9f'], []])]
+    #[TestWith([[], ['controls' => 'solid']])]
+    #[TestWith([[], [], false])]
+    public function testThemeMapsSerializeAsJsonObjects(
+        array $tokens,
+        array $variants,
+        bool $catalogExists = true,
+    ): void {
+        $path = sys_get_temp_dir() . '/claire-bootstrap-themes-' . bin2hex(random_bytes(8));
+        mkdir($path);
+        try {
+            if ($catalogExists) {
+                file_put_contents($path . '/contract.json', json_encode([
+                    'tokens' => ['--claire-accent'],
+                    'variants' => ['controls' => ['solid']],
+                ], JSON_THROW_ON_ERROR));
+                file_put_contents($path . '/cyberpunk.yaml', Yaml::dump([
+                    'tokens' => $tokens, 'variants' => $variants,
+                ]));
+            }
+            $settings = new Settings([
+                'themes' => ['path' => $catalogExists ? $path : $path . '/missing'],
+                'llm' => [
+                    'brains' => ['test' => BootstrapTestBrain::class],
+                    'yamlBrains' => ['path' => $path . '/no-brains'],
+                ],
+                'tools' => ['comfyui' => ['enabled' => false]],
+                'files' => ['upload' => ['acceptedExt' => '.txt']],
+                'session' => ['refresh_before_expire' => 120, 'refresh_min_interval' => 30],
+            ]);
+            $registry = new BrainRegistry(
+                $settings, $this->createStub(ContainerInterface::class), new ThemeRegistry($settings),
+            );
+            $factory = new FrontendConfigFactory(
+                $registry, new ComfyUIWorkflowRegistry($settings),
+                $settings, $this->createStub(AudioServiceInterface::class),
+            );
+            $payload = $factory->create(new InMemorySession(['brain_avatar' => 'test']), 'normal', 'thread', 'tab');
+            $json = json_encode($payload, JSON_THROW_ON_ERROR);
+            $data = json_decode($json, flags: JSON_THROW_ON_ERROR);
+            foreach ([$data->brainInfo->theme, $data->brains[0]->theme] as $theme) {
+                self::assertSame('cyberpunk', $theme->preset);
+                self::assertInstanceOf(stdClass::class, $theme->tokens);
+                self::assertInstanceOf(stdClass::class, $theme->variants);
+                self::assertSame($tokens, (array) $theme->tokens);
+                self::assertSame($variants, (array) $theme->variants);
+            }
+            self::assertSame($tokens, $registry->getMeta('test')['theme']['tokens']);
+            self::assertSame($variants, $registry->getMeta('test')['theme']['variants']);
+        } finally {
+            foreach (glob($path . '/*') ?: [] as $file) {
+                unlink($file);
+            }
+            rmdir($path);
+        }
+    }
+
     #[TestWith(['normal'])]
     #[TestWith(['embed'])]
     public function testBootstrapReturnsJsonAndQueuesOnlyOnce(string $mode): void
@@ -44,7 +104,7 @@ final class WebBootstrapControllerTest extends TestCase
             'queue' => ['defaultQueue' => 'default'],
         ]);
         $factory = new FrontendConfigFactory(
-            new BrainRegistry($settings, $this->createStub(ContainerInterface::class)),
+            new BrainRegistry($settings, $this->createStub(ContainerInterface::class), new ThemeRegistry($settings)),
             new ComfyUIWorkflowRegistry($settings), $settings, $this->createStub(AudioServiceInterface::class),
         );
         $repository = $this->createMock(ChatHistoryRepository::class);
@@ -84,6 +144,14 @@ final class WebBootstrapControllerTest extends TestCase
         self::assertSame($queued['threadId'], $data['threadId']);
         self::assertSame($queued['sessionId'], $data['sessionId']);
         self::assertSame(BootstrapTestBrain::NAME, $data['brainInfo']['name']);
+        self::assertSame('cyberpunk', $data['brainInfo']['theme']['preset']);
+        self::assertSame($data['brainInfo']['theme'], $data['brains'][0]['theme']);
+        self::assertArrayHasKey('tokens', $data['brainInfo']['theme']);
+        self::assertArrayHasKey('variants', $data['brainInfo']['theme']);
+        foreach (['css', 'css_inline', 'cssInline'] as $legacyKey) {
+            self::assertArrayNotHasKey($legacyKey, $data['brainInfo']);
+            self::assertArrayNotHasKey($legacyKey, $data['brains'][0]);
+        }
         self::assertArrayNotHasKey('html', $data);
         self::assertArrayNotHasKey('sessionToken', $data);
     }

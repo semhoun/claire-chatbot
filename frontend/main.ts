@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import PublicApp from './components/PublicApp.vue'
 import type { PageData } from './types'
+import './styles/index.css'
 
 const root = document.querySelector<HTMLElement>('#claire-vue-app')
 const payload = document.getElementById('claire-page-data')

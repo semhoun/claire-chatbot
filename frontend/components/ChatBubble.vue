@@ -7,6 +7,7 @@ import ClaireIcon from './ClaireIcon.vue'
 
 const props = defineProps<{
   entry: ChatMessage
+  groupPosition: 'single' | 'first' | 'middle' | 'last'
   audioEnabled: boolean
   playing: string | null
   pending: Set<string>
@@ -23,15 +24,16 @@ const time = computed(() => {
 </script>
 
 <template>
-  <article :id="entry.id ? `claire-${entry.id}` : undefined" :role="entry.error ? 'alert' : undefined" class="claire-message" :class="entry.sent ? 'claire-message--sent' : 'claire-message--received'">
+  <article :id="entry.id ? `claire-${entry.id}` : undefined" :role="entry.error ? 'alert' : undefined" class="claire-message" :class="[entry.sent ? 'claire-message--sent' : 'claire-message--received', `claire-message--${groupPosition}`]">
     <div class="claire-message__bubble">
       <ChatTools :tools="entry.toolsCall" :message-id="entry.id" />
       <MarkdownContent :id="`claire-message-${entry.id}`" class="claire-message__text" :text="entry.message" :files="entry.files" />
+      <span class="claire-message__meta">
+        <time v-if="time" :datetime="entry.time">{{ time }}</time>
+        <button v-if="audioEnabled && !entry.sent && !entry.error && entry.id" type="button" class="claire-message__audio-action" :class="{ 'is-playing': playing === entry.id, 'is-loading': pending.has(entry.id) }" data-audio-listen="true" :data-audio-message-id="entry.id" :disabled="pending.has(entry.id)" :aria-label="audioLabel" :title="audioLabel">
+          <ClaireIcon :name="playing === entry.id ? 'stop' : pending.has(entry.id) ? 'refresh' : ready.has(entry.id) ? 'play' : 'volume'" />
+        </button>
+      </span>
     </div>
-    <span class="claire-message__meta">{{ time }}{{ entry.sent ? ' • Vous' : '' }}
-      <button v-if="audioEnabled && !entry.sent && !entry.error && entry.id" type="button" class="claire-message__audio-action" :class="{ 'is-playing': playing === entry.id, 'is-loading': pending.has(entry.id) }" data-audio-listen="true" :data-audio-message-id="entry.id" :disabled="pending.has(entry.id)" :aria-label="audioLabel" :title="audioLabel">
-        <ClaireIcon :name="playing === entry.id ? 'stop' : pending.has(entry.id) ? 'refresh' : ready.has(entry.id) ? 'play' : 'volume'" />
-      </button>
-    </span>
   </article>
 </template>

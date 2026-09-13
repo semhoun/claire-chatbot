@@ -7,6 +7,7 @@ namespace App\Test\Unit\Job\Web;
 use App\Brain\Agent;
 use App\Brain\BrainAvatar;
 use App\Brain\BrainRegistry;
+use App\Services\ThemeRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Job\Web\NewMessageJob;
 use App\Renderer\ChatDataRenderer;
@@ -37,7 +38,7 @@ final class StreamingJobTestAgent extends Agent implements BrainAvatar
     public const string NAME = 'Test';
     public const string DESCRIPTION = 'Test';
     public const string AVATAR = '';
-    public const string CSS = '';
+    public const string THEME = 'cyberpunk';
 
     private UserChatHistory $history;
 
@@ -386,7 +387,8 @@ final class NewMessageJobTest extends TestCase
             $class === \PDO::class ? $pdo : $handler);
         $renderer = new ChatDataRenderer(
             new GeneratedFileProcessor($settings, $this->createStub(EntityManagerInterface::class)));
-        return [new NewMessageJob($logger, $renderer, new BrainRegistry($settings, $container),
+        return [new NewMessageJob($logger, $renderer,
+            new BrainRegistry($settings, $container, new ThemeRegistry($settings)),
             $publisher, new ChatAudioPublisher($audio ?? $this->createStub(AudioServiceInterface::class),
                 $publisher, new NullLogger()), $connection, $settings), $publisher, $pdo];
     }

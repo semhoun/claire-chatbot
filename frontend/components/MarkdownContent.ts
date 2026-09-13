@@ -45,6 +45,9 @@ export default defineComponent({
               alt: token.content,
               title: token.attrGet('title'),
               class: 'claire-generated-image',
+              role: 'button',
+              tabindex: 0,
+              'aria-label': token.content ? `Agrandir l’image : ${token.content}` : 'Agrandir l’image',
             }))
           } else if (token.tag) {
             // Tags and attributes come only from markdown-it's core rules (raw HTML disabled).

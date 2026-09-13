@@ -13,7 +13,7 @@ class Einstein extends Agent implements BrainAvatar
 
     public const string DESCRIPTION = 'Votre assitant virtuel qui utilise sa base de connaissance pour vous aider';
 
-    public const string CSS = 'einstein.css';
+    public const string THEME = 'neon';
 
     #[\Override]
     public function getOpeningText(): string

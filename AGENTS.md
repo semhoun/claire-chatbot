@@ -10,11 +10,11 @@ The project runs in Docker containers (PHP 8.5, PostgreSQL, Redis, Nginx) via Do
 
 Claire has two distinct display modes sharing the same core components.
 
-### Normal Mode (Twig + Vue)
+### Normal Mode (HTML Shell + Vue)
 
 Full-page chat with a collapsible sidebar options panel.
 
-- **Layout/bootstrap**: `app.twig` emits the HTML shell and exposes server configuration through `data-bootstrap`.
+- **Layout/bootstrap**: `App\Renderer\VueShell` renders `frontend/shell.html` and resolves the normal CSS bundle through the Vite manifest.
 - **Application**: `frontend/main.ts` mounts `frontend/components/ClaireApp.vue`.
 - **Options panel**: Rendered and managed by Vue as a floating panel.
 
@@ -23,7 +23,7 @@ Full-page chat with a collapsible sidebar options panel.
 Floating widget injected into third-party pages via `window.claireEmbed(...)`.
 
 - **Entry point**: `GET /embed` (`App\Controller\EmbedController`).
-- **Bootstrap**: `embed.twig` emits a standalone HTML fragment.
+- **Bootstrap**: `/embed` returns standalone JSON configuration from `FrontendConfigFactory`.
 - **Integration script**: `public/js/embed.js` is an autonomous IIFE bundle built from `frontend/embed.ts`.
 - **Component**: `<claire-chat-widget>` is a Vue Custom Element rendered in Shadow DOM.
 - **Teardown**: `window.destroyClaireEmbed()` removes the custom element; Vue closes its SSE stream and timers during unmount.
@@ -38,20 +38,26 @@ The widget defaults to `.is-collapsed`:
 - Only the avatar is visible.
 - Clicking the toolbar (or avatar) toggles the expanded state (400×600px chat panel).
 
+These are internal layout tokens in the shared component styles, not overrides on the host page:
+
 ```css
-:root {
+.claire-app {
     --claire-embed-collapsed-size: 64px;   /* widget diameter */
     --claire-embed-collapsed-avatar: 56px; /* avatar size inside the circle */
 }
 ```
 
-### Server-rendered Fragments
+### Chat Rendering and Themes
 
-Twig renders layouts, lists and forms; `ChatHtmlRenderer` renders Markdown, messages, and tool calls sent over HTTP/SSE. Vue owns browser interactions.
+`ChatDataRenderer` prepares structured message/file/tool data for HTTP/SSE. Vue renders Markdown, messages, tools and browser interactions; there is no `ChatHtmlRenderer` in the current chat pipeline.
+
+Shared CSS lives in `frontend/styles/index.css` and its responsibility-based imports. Vite bundles it for normal mode and embeds it in the widget's Shadow DOM. `ThemeRegistry` resolves local presets and filtered overrides; Vue applies tokens and variant attributes on `.claire-app`, not on the host page. Agent themes contain trusted CSS values, never stylesheets or selectors.
+
+The official internal theme API is [`config/themes/contract.json`](config/themes/contract.json). The [existing agent-creation guide](README.md#cerveaux-personnalisés-brainregistry) documents the scalar/object schema, all 71 public tokens, variants, fallback rules, local-agent deployment and cache/worker reload requirements. Keep that single enumeration synchronized with the contract rather than copying it here. Legacy YAML `css` / `css_inline` are ignored; there is no dynamic agent stylesheet loading.
 
 ### Architectural Rules
 
-- **Standalone embed response**: `/embed` returns only its bootstrap fragment.
+- **Standalone embed response**: `/embed` returns only its bootstrap JSON, not a full page.
 - **No host-page globals**: embed code must not patch `window.fetch`, write configuration on `document.body`, or query outside its component root.
 - **Shadow DOM isolation**: embed styles belong to the custom element bundle.
 - **No htmx**: browser interactions live in TypeScript/Vue; server fragments expose `data-*` hooks only.
@@ -185,13 +191,13 @@ use App\Entity\ChatHistory;
 - **Services**: Business logic in `App\Services\`
 - **Entities**: Doctrine entities in `App\Entity\`
 - **Repositories**: Database access, extend `Doctrine\ORM\EntityRepository`
-- **Brain/Avatar Pattern**: AI agents implement `BrainAvatar` interface with constants NAME, DESCRIPTION, AVATAR, CSS
+- **Brain/Avatar Pattern**: AI agents implement `BrainAvatar` with constants `NAME`, `DESCRIPTION`, `AVATAR`, `THEME`; the inherited theme is `cyberpunk`, Einstein uses `neon`.
 - **Middleware**: PSR-15 middleware in `App\Middleware\`
 - **Session Management**: JWT-based stateless sessions via `SessionManager`
 - **Telegram Sessions**: Dedicated `TelegramSession` entity for bot user persistence
 - **Queue System**: Redis-backed job queue in `App\Queue\` with `QueueWorker`, `QueueMessage`, and job classes
 - **Observability**: OpenTelemetry integration in `App\Brain\Observability\` for metrics, traces, and structured events
-- **Embed Integration**: See "Display Modes" section above. The server-rendered bootstrap fragment is loaded by `public/js/embed.js` with token exchange and managed teardown.
+- **Embed Integration**: See "Display Modes" section above. Bootstrap JSON is loaded by `public/js/embed.js` with token exchange and managed teardown.
 
 ### Key Project Conventions
 - Use `Env::get()` from `App\Services\Env` for environment variables

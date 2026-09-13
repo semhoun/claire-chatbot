@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Test\Unit\Controller;
 
 use App\Brain\BrainRegistry;
+use App\Services\ThemeRegistry;
 use App\Controller\BrainController;
 use App\Entity\User;
 use App\Middleware\JwtSessionMiddleware;
@@ -393,7 +394,8 @@ final class BrainControllerTest extends TestCase
         $publisher = new ChatStreamPublisher($redis, $subscriber, $settings);
         $renderer = new ChatDataRenderer(new GeneratedFileProcessor($settings, $entityManager));
         return [new BrainController(new NullLogger(), $renderer,
-            new BrainRegistry($settings, $this->createStub(ContainerInterface::class)), $entityManager,
+            new BrainRegistry($settings, $this->createStub(ContainerInterface::class), new ThemeRegistry($settings)),
+            $entityManager,
             $this->createStub(Filesystem::class), $settings, $audio ?? $this->createStub(AudioServiceInterface::class),
             $queue, $publisher, $subscriber, new SseEventFormatter(), new CorsHeaders($settings)),
             $publisher, $session, $pdo, $redis];

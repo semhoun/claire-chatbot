@@ -30,7 +30,7 @@ Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript 
 - **Runtime** : FrankenPHP + Caddy (PHP 8.5)
 - **Framework** : Slim 4 avec PHP-DI
 - **Frontend** : Vue 3, TypeScript et Vite
-- **Rendu HTML** : Twig pour les pages et fragments ; messages SSE rendus côté PHP (`ChatHtmlRenderer`)
+- **Rendu web** : shell HTML via `VueShell`, données HTTP/SSE préparées par `ChatDataRenderer` ; Markdown, messages et outils rendus par Vue
 - **ORM** : Doctrine ORM/DBAL (SQLite, MySQL, PostgreSQL)
 - **LLM** : Neuron AI avec support OpenAI-compatible
 - **Queue** : Redis (BRPOP/LPUSH)
@@ -149,14 +149,13 @@ docker compose exec claire ./console queue:work
 
 ## Cerveaux personnalisés (BrainRegistry)
 
-Créez vos propres agents sans coder en ajoutant des fichiers YAML dans `/opt/addons/agents/` :
+Créez vos propres agents sans coder en ajoutant des fichiers `.yaml` dans le répertoire `llm.yamlBrains.path` : `/opt/addons/agents/` dans le conteneur, ou `<ADDONS_PATH>/agents/` (par défaut `var/addons/agents/`). Le nom du fichier sans `.yaml` devient le slug de sélection.
 
 ```yaml
 name: "Coach Personnel"
 description: "Un coach motivant pour vous aider à atteindre vos objectifs"
 avatar: "data:image/png;base64,..."
-css_inline: |
-  :root { --claire-accent: #FF6B35; }
+theme: energy
 welcomes:
   - "Prêt à relever de nouveaux défis ?"
   - "Bonjour champion !"
@@ -164,7 +163,88 @@ instruction: |
   Tu es un coach personnel motivant et bienveillant...
 ```
 
-Les cerveaux par défaut : `claire` (généraliste), `einstein` (scientifique), `calliope` (conteuse).
+### Thème d'un agent
+
+Le raccourci scalaire `theme: energy` sélectionne un preset du catalogue. La forme objet permet de surcharger certaines valeurs sans écrire de feuille CSS. Exemple à utiliser à la place du champ `theme` ci-dessus :
+
+```yaml
+theme:
+  preset: light
+  tokens:
+    --claire-accent: "#005c9f"
+    --claire-focus-ring: "#005c9f"
+    --claire-bubble-radius: "14px"
+  variants:
+    controls: solid
+    effects: none
+```
+
+`preset`, `tokens` et `variants` sont optionnels dans cette forme. `tokens: {}` et `variants: {}` signifient « aucune surcharge », pas « effacer le preset ». Les clés sont sensibles à la casse. Les valeurs des tokens doivent être des chaînes YAML : mettez notamment les couleurs hexadécimales et les nombres entre guillemets.
+
+Pour un agent PHP implémentant `BrainAvatar`, la constante héritée `THEME` vaut `cyberpunk`. Claire conserve ce défaut ; Einstein déclare :
+
+```php
+public const string THEME = 'neon';
+```
+
+Les six presets sont versionnés dans [`config/themes/`](config/themes/). Les deux agents PHP sont livrés par défaut ; les quatre agents YAML ci-dessous sont des affectations **locales**, disponibles seulement si leurs fichiers sont déployés :
+
+| Slug de sélection | Agent | Origine | Preset | Identité |
+|-------------------|-------|---------|--------|----------|
+| `claire` | Claire | PHP | `cyberpunk` | Futuriste violet/rose, fond dégradé |
+| `einstein` | Einstein | PHP | `neon` | Électrique cyan/bleu, bulles envoyées sans rose, fond dégradé |
+| `coach` | Coach Personnel | YAML local | `energy` | Orange dynamique sur anthracite/ardoise, fond dégradé sans marron |
+| `calliope` | Calliope | YAML local | `light` | Éditorial lumineux, fond uni |
+| `claire-gf` | Claire GF | YAML local | `romantic` | Érotique et feutré, rouge passion/bordeaux, finition satinée, fond dégradé |
+| `thanos` | Thanos | YAML local | `dark` | Presque noir, ardoise sombre et accents bleus, fond uni |
+
+Le slug local actuel est `thanos` (`thanos.yaml`), sans alias `dark-test`. Remplacez une ancienne sélection `dark-test` par `thanos`.
+
+### Résolution et déploiement
+
+`App\Services\ThemeRegistry` lit le chemin serveur `themes.path`, défini dans [`config/settings/themes.php`](config/settings/themes.php) et valant par défaut `<app>/config/themes`. Ce réglage désigne un **répertoire local de confiance**, contenant `contract.json` et les presets `*.yaml`, jamais une URL ni un chemin fourni par l'agent. Il n'existe pas de variable d'environnement `THEMES_PATH` intégrée.
+
+Un fichier de catalogue, par exemple `light.yaml`, contient directement les deux maps `tokens` et `variants`, sans enveloppe `theme` ni champ `preset`. Son nom sans extension est sa référence ; il doit respecter `[a-z][a-z0-9-]*`. Les deux maps sont requises dans un preset, mais peuvent être vides (`{}`). Un YAML illisible, une map manquante ou une liste non vide à la place d'une map fait ignorer ce fichier. En revanche, des entrées inconnues ou invalides dans ces maps sont simplement filtrées, sans rejeter le preset entier.
+
+- Sans `theme`, ou avec une référence absente, invalide ou inconnue, le preset sélectionné devient `cyberpunk`. Une référence est un slug exact, pas `light.yaml`, un chemin ou une URL.
+- Les surcharges valides remplacent les valeurs du preset sélectionné clé par clé, **même si une référence inconnue a déclenché le fallback**. Les tokens inconnus ou non textuels et les variantes non autorisées sont ignorés ; les autres valeurs du preset restent intactes.
+- Si le répertoire ou le contrat manque ou si la structure du contrat est invalide, la résolution produit `cyberpunk` avec des maps vides. Si seul le preset `cyberpunk` est indisponible, sa base est vide mais les surcharges autorisées par un contrat valide restent applicables. Les tokens communs du frontend fournissent les valeurs de secours ; les presets ne sont pas fusionnés implicitement avec le fichier `cyberpunk.yaml`.
+- Le contrat filtre les **noms** et les types, pas la syntaxe ni la sécurité des valeurs CSS. Utilisez uniquement des fichiers administrés de confiance et des valeurs CSS adaptées à chaque propriété, jamais des sélecteurs, blocs `:root`, règles `@import` ou feuilles de style. Par exemple, `--claire-body-background` accepte une couleur ou `linear-gradient(...)`, car il alimente `background`.
+
+`FrontendConfigFactory` expose toujours `theme` sous la forme `{ preset: string, tokens: Record<string, string>, variants: Record<string, string> }` dans `brainInfo` et `brains`. Les maps JSON sont des **objets**, même vides. Ainsi, en l'absence de catalogue utilisable :
+
+```json
+{"preset":"cyberpunk","tokens":{},"variants":{}}
+```
+
+Vue applique les propriétés et les attributs `data-theme-controls` / `data-theme-effects` sur `.claire-app`, en mode normal comme dans le Shadow DOM du widget. Un changement d'agent remplace immédiatement le thème et retire les anciennes surcharges ; aucune feuille CSS d'agent n'est téléchargée et le thème ne modifie pas la page hôte de l'embed.
+
+**Rupture volontaire :** `BrainAvatar::CSS` est remplacé par `THEME`. Les anciens champs YAML `css` et `css_inline` sont ignorés, sans compatibilité transitoire ; `cssInline` et `dynamicCss` ne font plus partie du contrat frontend. Migrez les agents externes vers `theme` au lieu de conserver leurs anciennes feuilles ou blocs CSS.
+
+Les agents sous `local_data/addons/agents/` sont ignorés par Git : déployez et sauvegardez leurs fichiers séparément, avec les permissions appropriées, sans publier leurs instructions privées. Le catalogue central, lui, est versionné. `ThemeRegistry` et `BrainRegistry` conservent respectivement le catalogue et les agents YAML en mémoire par instance. Après modification, redémarrez les processus de longue durée qui les utilisent (workers de queue et workers web le cas échéant). Lors de la mise à niveau du code/DI ou d'un changement de configuration, videz aussi le cache compilé avec `./console cache:clear` avant de relancer les processus. Hors mode debug, le bootstrap web reconstruit le conteneur DI compilé ; `./console cache:init` génère les proxies Doctrine, ce n'est pas une commande de rechargement des thèmes. Vider le cache disque ne recharge pas les instances déjà actives ; rechargez également les interfaces ouvertes pour récupérer le nouveau bootstrap.
+
+### API interne des thèmes
+
+La source officielle de la liste autorisée est [`config/themes/contract.json`](config/themes/contract.json), partagée par le registre et les contrôles frontend. Ce fichier de dépôt n'est pas un endpoint HTTP. Les autres variables CSS du socle, notamment celles de dimensionnement de l'embed, ne sont pas automatiquement des tokens publics d'agent.
+
+Les **71 tokens publics** sont regroupés ci-dessous par rôle. Les valeurs de référence sont dans les presets et `frontend/styles/`, plutôt que dupliquées ici :
+
+- **Typographie et schéma de couleurs (4)** : `--claire-font`, `--claire-font-heading`, `--claire-font-mono`, `--claire-color-scheme`.
+- **Fonds et surfaces (8)** : `--claire-body-background`, `--claire-surface-chat`, `--claire-header-bg`, `--claire-input-bar-bg`, `--claire-surface-muted`, `--claire-surface-hover`, `--claire-surface-active`, `--claire-surface-code`.
+- **Texte et accents (4)** : `--claire-text-primary`, `--claire-text-secondary`, `--claire-accent`, `--claire-accent-light`.
+- **Bordures et focus (4)** : `--claire-border`, `--claire-border-strong`, `--claire-focus-ring`, `--claire-placeholder`.
+- **Rayons (5)** : `--claire-radius`, `--claire-radius-sm`, `--claire-radius-md`, `--claire-radius-lg`, `--claire-bubble-radius`.
+- **Bulles et métadonnées (8)** : `--claire-bubble-sent-background`, `--claire-bubble-sent-text`, `--claire-bubble-sent-meta`, `--claire-bubble-received-background`, `--claire-bubble-received-text`, `--claire-bubble-received-meta`, `--claire-bubble-border`, `--claire-bubble-shadow`.
+- **Contrôles (8)** : `--claire-control-background`, `--claire-control-text`, `--claire-control-hover`, `--claire-control-primary-background`, `--claire-control-primary-text`, `--claire-control-send-background`, `--claire-control-send-text`, `--claire-control-shadow`.
+- **Champs (4)** : `--claire-field-background`, `--claire-field-focus-background`, `--claire-field-border`, `--claire-field-focus-shadow`.
+- **Panneaux, dialogues et infobulles (4)** : `--claire-panel-background`, `--claire-dialog-background`, `--claire-dialog-shadow`, `--claire-tooltip-bg`.
+- **Overlays et élévations (5)** : `--claire-overlay-dialog`, `--claire-overlay-drawer`, `--claire-shadow`, `--claire-elevation-low`, `--claire-elevation-raised`.
+- **Avatar et effets (4)** : `--claire-avatar-border`, `--claire-avatar-shadow`, `--claire-effect-glow`, `--claire-effect-satin`.
+- **Danger (5)** : `--claire-danger`, `--claire-danger-text`, `--claire-danger-background`, `--claire-danger-border`, `--claire-danger-on`.
+- **Succès (4)** : `--claire-success`, `--claire-success-text`, `--claire-success-background`, `--claire-success-border`.
+- **Scrollbars et lien Telegram (4)** : `--claire-scrollbar-track`, `--claire-scrollbar-thumb`, `--claire-scrollbar-hover`, `--claire-telegram-link`.
+
+Les **variantes publiques** sont `controls: solid | outline | soft` (contrôles pleins, contour ou adoucis) et `effects: none | glow | satin` (sans effet, lueur ou finition satinée). Toute autre clé ou valeur est ignorée. `solid` et `none` réutilisent les règles du socle ; les autres finitions sont définies dans `frontend/styles/variants.css`, sans sélecteurs propres à chaque preset. La coloration du code utilise également les tokens sémantiques du thème, sans feuille Highlight distincte imposant une palette claire.
 
 ## Mémoire long terme
 
@@ -258,7 +338,7 @@ docker compose exec claire ./console queue:work
 
 Claire expose un mode widget prêt à intégrer dans une page externe.
 
-- Endpoint HTML : `GET /embed`
+- Endpoint de bootstrap JSON : `GET /embed`
 - Bootstrap JS : `public/js/embed.js` (IIFE autonome, pas de dépendance externe)
 - Échange SSO -> session Claire : `POST /auth/embed/exchange`
 - Fonction globale d'initialisation : `window.claireEmbed({ baseUrl, target, token|ssoToken })`

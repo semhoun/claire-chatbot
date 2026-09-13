@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ClaireApp from './ClaireApp.vue'
 import OptionUpload from './OptionUpload.vue'
+import MarkdownContent from './MarkdownContent'
 import { SessionClient } from '../services/session-client'
 import type { ClaireBootstrap, DisplayMode } from '../types'
 
@@ -13,7 +14,7 @@ const document = { documentId: 'doc/1', name: '<b>Document</b>', sourceType: 'te
 function config(mode: DisplayMode): ClaireBootstrap {
   return {
     mode, baseUrl: 'https://claire.test/subpath', acceptedExt: '.txt', threadId: 'current', sessionId: 'session-1',
-    brainInfo: { name: 'Claire', description: 'Assistant', avatar: '/avatar.png' }, currentBrain: 'claire', brains: [],
+    brainInfo: { name: 'Claire', description: 'Assistant', avatar: '/avatar.png', theme: { preset: 'cyberpunk', tokens: {}, variants: {} } }, currentBrain: 'claire', brains: [],
     comfyuiEnabled: false, workflows: [], currentWorkflow: '', longTermMemoryEnabled: false, layoutMode: 'full',
     audioAvailable: false, audioEnabled: false, audioAutoGenerate: false, audioDictationMode: 'review',
     audioVoice: '', audioVoices: [], audioTranscriptionModel: '', audioSpeechModel: '', audioMaxRecordingSeconds: 60,
@@ -58,7 +59,7 @@ describe.each<DisplayMode>(['normal', 'embed'])('Vue option flows (%s)', mode =>
       }
       throw new Error(`Unexpected request: ${path}`)
     })
-    wrapper = mount(ClaireApp, { props: { config: config(mode) } })
+    wrapper = mount(ClaireApp, { attachTo: globalThis.document.body, props: { config: config(mode) } })
     await flushPromises()
   })
 
@@ -78,6 +79,195 @@ describe.each<DisplayMode>(['normal', 'embed'])('Vue option flows (%s)', mode =>
     await button.trigger('click')
     await flushPromises()
   }
+
+  if (mode === 'normal') {
+    it.each(['Escape', 'close', 'new conversation'])('returns focus to the menu toggle after %s', async exit => {
+      const toggle = wrapper.get<HTMLButtonElement>('.claire-options-toggle')
+      await toggle.trigger('click')
+      await menu('history')
+      const trigger = wrapper.get<HTMLButtonElement>('[aria-label="Supprimer cette conversation"]')
+      trigger.element.focus()
+      await trigger.trigger('click')
+      await flushPromises()
+      await wrapper.get('.claire-modal__close').trigger('keydown', { key: 'Escape' })
+      await flushPromises()
+      expect(globalThis.document.activeElement).toBe(trigger.element)
+
+      if (exit === 'Escape') await trigger.trigger('keydown', { key: 'Escape' })
+      else if (exit === 'close') await wrapper.get('.claire-options-close').trigger('click')
+      else {
+        const request = vi.spyOn(SessionClient.prototype, 'request')
+        const fallback = request.getMockImplementation()!
+        request.mockImplementation((path, init) => path === '/history/new'
+          ? Promise.resolve(json({ threadId: 'new-thread', sessionId: 'new-session' })) : fallback(path, init))
+        const create = wrapper.findAll('button').find(button => button.text() === 'Nouvelle conversation')!
+        ;(create.element as HTMLButtonElement).focus()
+        await create.trigger('click')
+      }
+      await flushPromises()
+      expect(wrapper.get('.claire-options-panel').classes()).not.toContain('claire-is-open')
+      expect(globalThis.document.activeElement).toBe(toggle.element)
+    })
+
+    it('does not move focus when closing a menu that does not own it', async () => {
+      await wrapper.get('.claire-options-toggle').trigger('click')
+      const input = wrapper.get<HTMLTextAreaElement>('[aria-label="Votre message"]')
+      input.element.focus()
+      await input.trigger('keydown', { key: 'Escape' })
+      await flushPromises()
+      expect(wrapper.get('.claire-options-panel').classes()).not.toContain('claire-is-open')
+      expect(globalThis.document.activeElement).toBe(input.element)
+    })
+  }
+
+  it.each(['cancel', 'action', 'Escape'])('contains confirmation focus and restores it after %s', async exit => {
+    await menu('history')
+    const trigger = wrapper.get<HTMLButtonElement>('[aria-label="Supprimer cette conversation"]')
+    trigger.element.focus()
+    await trigger.trigger('click')
+    await flushPromises()
+    const first = wrapper.get<HTMLButtonElement>('.claire-modal__close')
+    const last = wrapper.get<HTMLButtonElement>('.claire-modal__footer .claire-btn--primary')
+    expect(globalThis.document.activeElement).toBe(first.element)
+    await first.trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(globalThis.document.activeElement).toBe(last.element)
+    await last.trigger('keydown', { key: 'Tab' })
+    expect(globalThis.document.activeElement).toBe(first.element)
+    if (exit === 'Escape') await first.trigger('keydown', { key: 'Escape' })
+    else await wrapper.get(exit === 'action' ? '.claire-modal__footer .claire-btn--primary' : '.claire-modal__footer .claire-btn--secondary').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.claire-modal').exists()).toBe(false)
+    expect(globalThis.document.activeElement).toBe(trigger.element)
+    expect(requests.some(request => request.path.startsWith('/history/delete/'))).toBe(exit === 'action')
+  })
+
+  it.each(['text', 'url', 'segments', 'telegram'])('manages the generic %s modal lifecycle', async kind => {
+    let trigger
+    if (kind === 'telegram') {
+      if (mode === 'embed') await wrapper.get('[aria-label="Compte"]').trigger('click')
+      trigger = wrapper.findAll('button').find(button => button.text() === 'Configuration Telegram')!
+    } else {
+      await menu('rag')
+      trigger = kind === 'segments' ? wrapper.get('[aria-label="Voir les segments"]')
+        : wrapper.findAll('.claire-rag-action-btn')[kind === 'text' ? 0 : 1]!
+    }
+    ;(trigger.element as HTMLElement).focus()
+    await trigger.trigger('click')
+    await flushPromises()
+    const close = wrapper.get('.claire-modal__close')
+    expect(globalThis.document.activeElement).toBe(close.element)
+    await close.trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(globalThis.document.activeElement).toBe(wrapper.get('.claire-modal__footer .claire-btn--primary').element)
+    await wrapper.get('.claire-modal__footer .claire-btn--primary').trigger('keydown', { key: 'Tab' })
+    expect(globalThis.document.activeElement).toBe(close.element)
+    await close.trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(globalThis.document.activeElement).toBe(trigger.element)
+  })
+
+  it.each(['generated', 'markdown'])('opens %s images with Enter/Space and restores lightbox focus', async kind => {
+    const id = '@@GENERATED@@picture@@'
+    const content = mount(MarkdownContent, { attachTo: wrapper.element, props: {
+      text: `![Photo](${kind === 'generated' ? id : '/files/serve/picture'})`,
+      files: [{ id, name: 'picture.png', type: 'image', url: '/files/serve/picture' }],
+    } })
+    try {
+      const image = content.get<HTMLImageElement>('img')
+      expect(image.attributes()).toMatchObject({ role: 'button', tabindex: '0', 'aria-label': 'Agrandir l’image : Photo' })
+      await image.trigger('keydown', { key: 'Enter' })
+      expect(wrapper.find('.claire-image-lightbox').exists()).toBe(false)
+      // Simulate the already-authorized resource assigned by enhanceRenderedMessages.
+      image.element.dataset.authorizedSrc = image.element.dataset.protectedSrc
+      image.element.src = 'https://claire.test/files/serve/picture?token=validated'
+      for (const key of ['Enter', ' ']) {
+        image.element.focus()
+        await image.trigger('keydown', { key })
+        await flushPromises()
+        const dialog = wrapper.get('.claire-image-lightbox')
+        const close = dialog.get('.claire-image-lightbox__close')
+        expect(dialog.attributes('aria-label')).toBe('Image agrandie')
+        expect(close.attributes('aria-label')).toBe('Fermer l’image agrandie')
+        expect(globalThis.document.activeElement).toBe(close.element)
+        for (const shiftKey of [false, true]) {
+          await close.trigger('keydown', { key: 'Tab', shiftKey })
+          expect(globalThis.document.activeElement).toBe(close.element)
+        }
+        await close.trigger(key === 'Enter' ? 'keydown' : 'click', key === 'Enter' ? { key: 'Escape' } : {})
+        await flushPromises()
+        expect(wrapper.find('.claire-image-lightbox').exists()).toBe(false)
+        expect(globalThis.document.activeElement).toBe(image.element)
+      }
+    } finally { content.unmount() }
+  })
+
+  it('restores focus to a stable control when deletion removes the opener', async () => {
+    await menu('files')
+    const trigger = wrapper.get<HTMLButtonElement>('[aria-label="Supprimer ce fichier"]')
+    trigger.element.focus()
+    await trigger.trigger('click')
+    await flushPromises()
+    await wrapper.get('.claire-modal__footer .claire-btn--primary').trigger('click')
+    await flushPromises()
+    expect(globalThis.document.activeElement).toBe(wrapper.get(mode === 'embed'
+      ? '.claire-embed-toolbar__left' : '[aria-label="Votre message"]').element)
+  })
+
+  it('keeps dialog keyboard handling inside its own Shadow DOM instance', async () => {
+    const host = globalThis.document.createElement('div')
+    globalThis.document.body.append(host)
+    const shadow = host.attachShadow({ mode: 'open' })
+    shadow.append(wrapper.element)
+    try {
+      await menu('history')
+      const trigger = wrapper.get<HTMLButtonElement>('[aria-label="Supprimer cette conversation"]')
+      trigger.element.focus()
+      await trigger.trigger('click')
+      await flushPromises()
+      const close = wrapper.get('.claire-modal__close')
+      expect(shadow.activeElement).toBe(close.element)
+      globalThis.document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushPromises()
+      expect(wrapper.find('.claire-modal').exists()).toBe(true)
+      await close.trigger('keydown', { key: 'Tab', shiftKey: true })
+      const last = wrapper.get('.claire-modal__footer .claire-btn--primary')
+      expect(shadow.activeElement).toBe(last.element)
+      await last.trigger('keydown', { key: 'Tab' })
+      expect(shadow.activeElement).toBe(close.element)
+      await close.trigger('keydown', { key: 'Escape' })
+      await flushPromises()
+      expect(shadow.activeElement).toBe(trigger.element)
+    } finally {
+      globalThis.document.body.append(wrapper.element)
+      host.remove()
+    }
+  })
+
+  it('updates the current assistant and the embed launcher accessible state', async () => {
+    const data = config(mode)
+    data.brains = ['Claire', 'Einstein'].map(name => ({ ...data.brainInfo, name, slug: name.toLowerCase() }))
+    await wrapper.setProps({ config: data })
+    if (mode === 'embed') {
+      const launcher = wrapper.get('.claire-embed-toolbar__left')
+      expect(launcher.attributes()).toMatchObject({ 'aria-label': 'Ouvrir la conversation avec Claire', 'aria-expanded': 'false' })
+      await launcher.trigger('click')
+      expect(launcher.attributes()).toMatchObject({ 'aria-label': 'Réduire la conversation avec Claire', 'aria-expanded': 'true' })
+      await wrapper.get('[aria-label="Préférences"]').trigger('click')
+    }
+    const request = vi.spyOn(SessionClient.prototype, 'request')
+    const fallback = request.getMockImplementation()!
+    request.mockImplementation((path, init) => path === '/config/brain_avatar'
+      ? Promise.resolve(new Response('')) : fallback(path, init))
+    await wrapper.get('#claire-brain-selector').setValue('einstein')
+    await flushPromises()
+    if (mode === 'embed') {
+      const launcher = wrapper.get('.claire-embed-toolbar__left')
+      expect(launcher.attributes('aria-label')).toBe('Réduire la conversation avec Einstein')
+      await launcher.trigger('click')
+      expect(launcher.attributes()).toMatchObject({ 'aria-label': 'Ouvrir la conversation avec Einstein', 'aria-expanded': 'false' })
+    } else {
+      expect((wrapper.get('#claire-brain-selector').element as HTMLSelectElement).value).toBe('einstein')
+    }
+  })
 
   it('renders escaped history metadata and opens the selected thread with the tab session', async () => {
     await menu('history')
