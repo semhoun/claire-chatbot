@@ -10,7 +10,7 @@
 
 ![PHP](https://img.shields.io/badge/PHP-8.5%2B-777BB4?logo=php&logoColor=white) ![Vue](https://img.shields.io/badge/Vue-3-42B883?logo=vuedotjs&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-Claire réunit une interface de conversation, des agents personnalisables et des outils de recherche et de génération. Connectez votre fournisseur de modèles compatible OpenAI, configurez votre authentification OpenID Connect, puis utilisez la même application en plein écran, en widget embarqué ou avec un bot Telegram.
+Claire réunit une interface de conversation, des agents personnalisables et des outils de recherche et de génération. Connectez votre fournisseur de modèles compatible OpenAI, configurez votre authentification OpenID Connect, puis utilisez la même application en plein écran, en widget embarqué ou avec un bot Telegram. La version courante est la **2.1.1**.
 
 Le projet utilise PHP 8.5, Slim 4 et Neuron AI côté serveur, Vue 3 et TypeScript côté navigateur. L'image Docker regroupe FrankenPHP/Caddy, un daemon SSE et les workers de traitement. Une base SQL conserve les données applicatives ; Redis assure la queue et la coordination des traitements.
 
@@ -265,7 +265,7 @@ Le champ facultatif `avatar` accepte une chaîne représentant l'image de l'agen
 | --- | --- |
 | `cyberpunk` | Violet et rose, fond dégradé ; défaut de Claire. |
 | `neon` | Cyan et bleu ; thème d'Einstein. |
-| `energy` | Orange sur anthracite et ardoise. |
+| `energy` | Clair, orange sur fond crème. |
 | `light` | Clair, éditorial, fond uni. |
 | `romantic` | Rouge et bordeaux, finition satinée. |
 | `dark` | Presque noir, accents bleus, fond uni. |

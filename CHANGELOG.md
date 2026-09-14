@@ -7,6 +7,34 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-14
+
+### Added
+- **SSE** : daemon ReactPHP dédié dans `App\Sse\` servant `/brain/stream`, lancé par la nouvelle commande console `sse:serve` (alias `sse`) et supervisé dans l'image Docker, avec backend Slim interne authentifié par le secret `SSE_INTERNAL_SECRET`
+- **SSE** : limites de charge configurables `SSE_DURATION`, `SSE_CHECK_INTERVAL`, `SSE_KEEPALIVE`, `SSE_HTTP_TIMEOUT`, `SSE_MAX_CONNECTIONS`, `SSE_MAX_HTTP_REQUESTS`, `SSE_MAX_REDIS_COMMANDS`, `SSE_MAX_PENDING_EVENTS`, `SSE_MAX_CLIENT_BUFFER`, `SSE_MAX_GLOBAL_BUFFER`, `SSE_WRITE_TIMEOUT` et `SSE_SHUTDOWN_TIMEOUT`, validées au démarrage
+- **SSE** : services `SseAccess` et `SseAuthorization` pour le contrôle d'accès aux flux, et `ChatSnapshot` pour l'état initial des conversations
+- **SSE** : listeners `SSE_LISTEN` (`127.0.0.1:8081`) et `SSE_BACKEND` (`http://127.0.0.1:8082`) configurables
+- **Agents** : exemples `thanos` (thème `dark`) et `waifu` (thème `romantic`) distribués dans l'image Docker ; l'exemple `coach` utilise le preset `energy`
+- **Tests** : couverture du daemon SSE et de sa commande console, de l'autorisation interne et des régressions frontend sur les bulles d'outils et les URL d'images en streaming
+
+### Changed
+- **SSE (architecture)** : le flux `/brain/stream` est retiré de `BrainController` et servi par le daemon ReactPHP ; l'entrypoint Docker génère un `SSE_INTERNAL_SECRET` aléatoire à chaque démarrage, partagé entre processus sans être écrit sur disque ni journalisé ; transport Redis Pub/Sub sans persistance ni rejeu `Last-Event-ID`
+- **Thèmes** : le preset `energy` devient un thème clair orange sur fond crème ; contrastes et lisibilité renforcés de `cyberpunk`, ajout des métadonnées de bulles reçues dans `light`
+- **PWA** : couleurs du manifeste et du shell adaptées à la nouvelle identité visuelle
+- **Bootstrap** : la configuration frontend est préparée avant le dispatch du job de conversation, et un slug d'agent de session invalide retombe sur l'agent par défaut
+- **Agents** : nettoyage des exemples distribués (`calliope`, `coach`), sans CSS hérité
+
+### Fixed
+- **Chat** : suppression des bulles de réponse d'outil dupliquées, avec état de génération affiné (`generationMessageId`) et filtrage des événements SSE obsolètes
+- **Streaming** : les URL de fichiers générés incomplètes (`@@GENERATED@@...`) ne sont plus exposées en `src`/`href` pendant le streaming, avant leur résolution finale
+- **Écrans publics** : contraste des boutons SSO et d'erreur corrigé avec les variables d'accent dédiées
+
+### Migration
+- Le script `bin/sse` est supprimé : lancer le daemon avec `./console sse:serve`. Hors Docker, fournir un `SSE_INTERNAL_SECRET` aléatoire partagé entre le backend Slim et le daemon, et router `/brain/stream` vers le listener `SSE_LISTEN` sans le publier
+- Les anciennes variables `SSE_QUEUE_TTL`, `SSE_POP_TIMEOUT` et `SSE_STREAM_TOKEN_TTL` sont remplacées par les nouveaux réglages documentés dans [`config/settings/sse.php`](config/settings/sse.php)
+- Le preset `energy` étant devenu clair, vérifiez le rendu des agents qui l'utilisent, notamment l'exemple `coach`
+- Aucune migration de base de données ; redéployer ensemble web, daemon SSE et workers, puis recharger les clients
+
 ## [2.1.0] - 2026-09-13
 
 ### Added
@@ -631,7 +659,8 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
 
-[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/2.1.0...HEAD
+[Unreleased]: https://github.com/semhoun/claire-chatbot/compare/2.1.1...HEAD
+[2.1.1]: https://github.com/semhoun/claire-chatbot/compare/2.1.0...2.1.1
 [2.1.0]: https://github.com/semhoun/claire-chatbot/compare/2.0.0...2.1.0
 [2.0.0]: https://github.com/semhoun/claire-chatbot/compare/1.6.0...2.0.0
 [1.6.0]: https://github.com/semhoun/claire-chatbot/compare/1.5.3...1.6.0
