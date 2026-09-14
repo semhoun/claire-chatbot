@@ -314,7 +314,7 @@ Vue applique les tokens et les attributs `data-theme-controls` / `data-theme-eff
 
 **Migration des anciens agents :** `BrainAvatar::CSS` est remplacé par `THEME`. Les champs YAML `css` et `css_inline` sont ignorés ; `cssInline` et `dynamicCss` ne font plus partie du contrat frontend.
 
-### Référence des tokens
+### API interne des thèmes
 
 La source officielle est [`config/themes/contract.json`](config/themes/contract.json), un fichier interne au dépôt, pas un endpoint HTTP. Voici les **71 tokens publics**, regroupés par rôle. Les valeurs de référence restent dans les presets et [`frontend/styles/`](frontend/styles/).
 

@@ -1,6 +1,6 @@
 import { computed, defineComponent, h, type PropType, type VNodeChild } from 'vue'
 import type { Token } from 'markdown-it'
-import { generatedReference, renderMarkdown } from '../markdown'
+import { generatedReference, generatedReferencePrefix, renderMarkdown } from '../markdown'
 import type { GeneratedFile } from '../types'
 import GeneratedAttachment from './GeneratedAttachment.vue'
 import CodeBlock from './CodeBlock'
@@ -35,7 +35,10 @@ export default defineComponent({
           if (token.hidden || token.type === 'inline') { nodes.push(...content); continue }
           const reference = token.type === 'generated_file' ? token.content
             : token.type === 'image' ? token.attrGet('src') : token.type === 'link_open' ? token.attrGet('href') : null
-          if (typeof reference === 'string' && generatedReference.test(reference)) {
+          // Streaming can expose a generated URL before its final @@ arrives. Keep
+          // every such candidate away from src/href until the file is resolved.
+          if (typeof reference === 'string'
+            && (generatedReference.test(reference) || reference.startsWith(generatedReferencePrefix))) {
             nodes.push(h(GeneratedAttachment, {
               key: `${token.type}:${reference}:${index}`,
               reference,

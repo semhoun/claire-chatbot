@@ -32,6 +32,28 @@ describe('safe Vue chat rendering', () => {
     wrapper.unmount()
   })
 
+  it('does not request an incomplete generated image reference during streaming', async () => {
+    const partial = '@@GENERATED@@3c45dfea-803d-4f08-98bd-28b41546792a@'
+    const complete = `${partial}@`
+    const wrapper = mount(MarkdownContent, { props: {
+      text: `![Image en cours](${partial})`,
+      files: [],
+    } })
+    expect(wrapper.find('img, a').exists()).toBe(false)
+    expect(wrapper.text()).toContain(partial)
+
+    await wrapper.setProps({
+      text: `![Image générée](${complete})`,
+      files: [{ id: complete, name: 'image.png', type: 'image', url: '/files/serve/image' }],
+    })
+    expect(wrapper.get('img').attributes()).toMatchObject({
+      alt: 'Image générée',
+      'data-protected-src': '/files/serve/image',
+    })
+    expect(wrapper.find('img[src]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('only parses the changing bubble during streaming', async () => {
     const render = vi.spyOn(markdown, 'renderMarkdown')
     const messages = reactive(Array.from({ length: 100 }, (_, index): ChatMessage => ({

@@ -5,6 +5,7 @@ const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true })
 markdown.validateLink = url => !/^[\s\u0000-\u0020]*(?:javascript|vbscript|file|data):/i.test(url)
 
 export const generatedReference = /^@@GENERATED@@[a-zA-Z0-9_@.\-]*@@$/
+export const generatedReferencePrefix = '@@GENERATED@@'
 
 // The image tool also emits this syntax. Recognize only generated img references,
 // not arbitrary HTML; attributes are rebuilt from an explicit passive allowlist.
