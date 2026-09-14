@@ -223,6 +223,12 @@ const layoutLabel = computed(() => {
 })
 
 const composerDisabled = computed(() => busy.value || responding.value)
+const assistantLoading = computed(() => {
+  if (!responding.value) return false
+  const active = chatMessages.value.find(entry => entry.id === activeMessageId.value)
+  return active === undefined || (active.message.trim() === '' && active.files.length === 0
+    && active.toolsCall.length === 0)
+})
 
 function endpoint(path: string): string {
   return `${props.config.baseUrl}${path}`
@@ -413,7 +419,14 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     finishResponse()
     showGenerationError()
   } else if (type === 'chat.snapshot') {
-    chatMessages.value = update.messages ?? []
+    const messages = [...(update.messages ?? [])]
+    const activeId = update.responding ? update.activeMessageId : null
+    const last = messages.at(-1)
+    if (activeId && !messages.some(entry => entry.id === activeId) && last && !last.sent
+      && last.message.trim() === '' && last.files.length === 0 && last.toolsCall.length > 0) {
+      messages[messages.length - 1] = { ...last, id: activeId }
+    }
+    chatMessages.value = messages
     if (update.generationStatus === 'error') showGenerationError()
     const retainedAudioIds = audioThreadId === threadId.value
       ? new Set(chatMessages.value.filter(entry => !entry.sent).map(entry => entry.id))
@@ -1261,7 +1274,7 @@ onBeforeUnmount(() => {
           </div>
         </nav>
         <section class="claire-chat-panel"><div class="claire-chat-shell">
-          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :loading="responding && !chatMessages.some(entry => entry.id === activeMessageId && entry.message)" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
+          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :loading="assistantLoading" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
           <footer class="claire-chat-input"><form id="claire-brain-chat" class="claire-chat-input__form" :class="{ 'claire-chat-input__form--typing': message.trim() !== '' }" @submit.prevent="submitMessage">
             <label class="claire-chat-icon-btn claire-chat-icon-btn--upload claire-chat-input__toggleable" for="claire-chat-upload" aria-label="Joindre un fichier" :aria-disabled="composerDisabled">
               <ClaireIcon name="paperclip" />
@@ -1291,7 +1304,7 @@ onBeforeUnmount(() => {
               </svg>
             </button>
           </header>
-          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :loading="responding && !chatMessages.some(entry => entry.id === activeMessageId && entry.message)" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
+          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :loading="assistantLoading" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
           <footer class="claire-chat-input"><form id="claire-brain-chat" class="claire-chat-input__form" :class="{ 'claire-chat-input__form--typing': message.trim() !== '' }" @submit.prevent="submitMessage">
             <label class="claire-chat-icon-btn claire-chat-icon-btn--upload claire-chat-input__toggleable" for="claire-chat-upload" aria-label="Joindre un fichier" :aria-disabled="composerDisabled">
               <ClaireIcon name="paperclip" />

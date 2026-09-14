@@ -30,6 +30,16 @@
     background: var(--claire-bubble-sent-background);
     color: var(--claire-bubble-sent-text);
 }
+.claire-message--tools-only .claire-message__bubble {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+}
+.claire-message--tools-only .claire-message__subbubble--toolcall {
+    margin-bottom: 0;
+}
 
 /* Group position belongs to the article; only its author-facing corners join. */
 .claire-message--middle,

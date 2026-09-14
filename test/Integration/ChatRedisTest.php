@@ -100,7 +100,7 @@ final class ChatRedisTest extends TestCase
             'generationStatus' => 'done'], $snapshot);
         self::assertTrue($this->reader->reconnect());
         self::assertTrue($observer->acceptsEvent('alice', 'thread', 'chat.assistant.done', 'message'));
-        self::assertFalse($observer->acceptsEvent('alice', 'thread', 'chat.assistant.update', 'message'));
+        self::assertTrue($observer->acceptsEvent('alice', 'thread', 'chat.assistant.update', 'message'));
     }
 
     public function testQueuePrimitivesStillSupportFractionalBlockingTimeouts(): void

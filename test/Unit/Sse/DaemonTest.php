@@ -122,7 +122,7 @@ final class DaemonTest extends TestCase
         self::assertSame([], $this->loop->timers);
     }
 
-    public function testTerminalBeforeSnapshotReturnRecapturesAndDoesNotLeakOldUpdate(): void
+    public function testTerminalBeforeSnapshotReturnRecapturesAndPreservesOrderedUpdate(): void
     {
         $connection = $this->connection();
         $this->redis->ack->resolve(null);
@@ -137,9 +137,10 @@ final class DaemonTest extends TestCase
         $this->loop->tick();
         self::assertCount(3, $this->backend->requests);
         $this->backend->requests[2][2]->resolve($this->snapshot('m1', 'done'));
-        self::assertCount(3, $this->frames);
-        self::assertStringContainsString('chat.assistant.done', $this->frames[1]);
-        self::assertStringNotContainsString('chat.assistant.update', implode('', $this->frames));
+        self::assertCount(4, $this->frames);
+        self::assertStringContainsString('chat.assistant.update', $this->frames[1]);
+        self::assertStringContainsString('chat.assistant.done', $this->frames[2]);
+        self::assertStringStartsWith('event: chat.snapshot', $this->frames[3]);
         $connection->close('test');
     }
 

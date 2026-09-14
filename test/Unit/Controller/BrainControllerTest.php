@@ -208,6 +208,10 @@ final class BrainControllerTest extends TestCase
             $snapshot = $snapshots->read($session, 'thread');
             self::assertSame($status, $snapshot['generationStatus']);
             self::assertSame($status === 'running', $snapshot['responding']);
+            if ($status === 'running') {
+                self::assertSame('attempt', $snapshot['activeMessageId']);
+                self::assertSame('attempt', $snapshot['messages'][1]['id']);
+            }
             $renderedTool = $snapshot['messages'][1]['toolsCall'][0];
             self::assertSame($status === 'running', $renderedTool['running']);
             self::assertSame($status !== 'running', $renderedTool['interrupted'] ?? false);

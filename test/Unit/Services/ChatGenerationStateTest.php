@@ -89,6 +89,7 @@ final class ChatGenerationStateTest extends TestCase
                 'chat.tool.update', 'chat.assistant.done', 'chat.error'] as $event) {
                 $accepted = match ($event) {
                     'chat.assistant.done' => $status === 'done',
+                    'chat.assistant.update' => in_array($status, ['queued', 'running', 'done'], true),
                     'chat.error' => $status === 'error',
                     default => $responding,
                 };

@@ -162,4 +162,17 @@ describe('bubble metadata and audio', () => {
     expect(wrapper.find('[data-audio-listen]').exists()).toBe(false)
     expect(wrapper.find('.claire-message__bubble time').exists()).toBe(true)
   })
+
+  it('renders tool-only updates as compact status bubbles without empty metadata', () => {
+    const entry = {
+      ...message('tool'),
+      message: '',
+      toolsCall: [{ id: 'call', name: 'generate_image', inputs: [], running: true, result: null }],
+    }
+    const wrapper = mount(ChatBubble, { props: { entry, groupPosition: 'single', ...audioProps() } })
+    expect(wrapper.classes()).toContain('claire-message--tools-only')
+    expect(wrapper.find('.claire-message__text').exists()).toBe(false)
+    expect(wrapper.find('.claire-message__meta').exists()).toBe(false)
+    expect(wrapper.find('[data-audio-listen]').exists()).toBe(false)
+  })
 })

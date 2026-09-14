@@ -108,9 +108,10 @@ final readonly class ChatGenerationState
 
         return match ($event) {
             'chat.assistant.done' => ($state['status'] ?? '') === 'done',
+            'chat.assistant.update' => in_array($state['status'] ?? '', ['queued', 'running', 'done'], true),
             'chat.error' => ($state['status'] ?? '') === 'error',
             'chat.assistant.start', 'chat.assistant.placeholder',
-            'chat.assistant.update', 'chat.tool.update' => in_array($state['status'] ?? '', ['queued', 'running'], true),
+            'chat.tool.update' => in_array($state['status'] ?? '', ['queued', 'running'], true),
             default => false,
         };
     }

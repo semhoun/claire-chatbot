@@ -487,6 +487,9 @@ describe('embed public API', () => {
       source.emit('chat.tool.update', { messageId: 'a', toolsCall: [tool] })
       await flushPromises()
       expect(wrapper.find('.claire-tools-running-flag').exists()).toBe(true)
+      expect(wrapper.find('[data-role="claire-assistant-loader"]').exists()).toBe(false)
+      expect(wrapper.get('#claire-a').classes()).toContain('claire-message--tools-only')
+      expect(wrapper.find('#claire-a .claire-message__meta').exists()).toBe(false)
       source.emit('chat.assistant.placeholder', { messageId: 'a', entry: entry('a', '') })
       source.emit('chat.assistant.update', { messageId: 'a', message: '**Stream** <script>alert(1)</script>' })
       source.emit('chat.tool.update', { messageId: 'a', toolsCall: [{ ...tool, running: false, result: '<svg onload=alert(1)>' }] })
@@ -502,6 +505,32 @@ describe('embed public API', () => {
       expect(wrapper.find('.claire-tools-running-flag').exists()).toBe(false)
       expect(wrapper.find('#claire-obsolete').exists()).toBe(false)
       expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+  it.each(['normal', 'embed'] as const)('reconciles a running snapshot tool group with its active message in %s mode', async mode => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
+    )))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances[0]
+      const tool = { id: 'tool', name: 'generate_pdf', inputs: [], running: true, result: null }
+      source.emit('chat.snapshot', {
+        messages: [{ ...entry('history-message-1', ''), toolsCall: [tool] }],
+        responding: true,
+        activeMessageId: 'assistant-message-1',
+        generationStatus: 'running',
+      })
+      await flushPromises()
+      expect(wrapper.findAll('.claire-message')).toHaveLength(1)
+      expect(wrapper.get('#claire-assistant-message-1').classes()).toContain('claire-message--tools-only')
+      expect(wrapper.find('[data-role="claire-assistant-loader"]').exists()).toBe(false)
+      source.emit('chat.assistant.update', { messageId: 'assistant-message-1', message: 'Terminé' })
+      await flushPromises()
+      expect(wrapper.findAll('.claire-message')).toHaveLength(1)
+      expect(wrapper.get('#claire-message-assistant-message-1').text()).toBe('Terminé')
+      expect(wrapper.find('#claire-history-message-1').exists()).toBe(false)
     } finally { wrapper.unmount() }
   })
   it.each(['normal', 'embed'] as const)('keeps failed tools terminal and a safe error through snapshots and reconnect in %s', async mode => {

@@ -35,6 +35,16 @@ final readonly class ChatSnapshot
                     createIfMissing: false,
                 );
                 $messages = $history->getFormattedMessages();
+                $last = array_key_last($messages);
+                $messageId = $generation['messageId'] ?? '';
+                if (($generation['status'] ?? '') === 'running' && $messageId !== '' && $last !== null
+                    && ($messages[$last]['sent'] ?? true) === false
+                    && trim((string) ($messages[$last]['message'] ?? '')) === ''
+                    && ($messages[$last]['toolsCall'] ?? []) !== []) {
+                    // An unfinished tool group has no final assistant metadata yet.
+                    $messages[$last]['id'] = $messageId;
+                }
+
                 return [
                     'messages' => $this->renderer->messages(
                         $messages,
