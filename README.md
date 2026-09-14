@@ -708,9 +708,13 @@ npm run build            # Compiler les bundles Vue (normal + embed)
 composer start           # HTTP seul ; pour HTTP + SSE, utiliser Caddy/Supervisor
 ```
 
-Hors Supervisor, `php bin/sse` lance le daemon et `./console queue:work` lance un
+Hors Supervisor, `./console sse:serve` lance le daemon et `./console queue:work` lance un
 worker avec le même environnement. Le daemon nécessite aussi le listener Slim
 interne et le reverse proxy Caddy ; un serveur PHP seul ne sert plus le SSE.
+La commande SSE utilise la console Symfony du projet avec un bootstrap isolé :
+ReactPHP conserve la boucle réseau non bloquante, tandis que Slim exécute
+l'autorisation et les snapshots sur le listener HTTP interne. Le conteneur
+métier, Doctrine et le client Redis synchrone ne sont pas chargés par cette commande.
 Configurez le fournisseur OIDC pour autoriser `http://localhost:8080/auth/callback`
 et exportez aussi `OPENID_CLIENT_SECRET` si nécessaire.
 

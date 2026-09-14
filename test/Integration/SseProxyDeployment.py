@@ -160,7 +160,7 @@ def outside(base_path):
     supervisor = configparser.ConfigParser()
     supervisor.read(ROOT / "docker/rootfs/etc/supervisor/conf.d/sse.conf")
     config = supervisor["program:sse"]
-    assert config["command"] == "/usr/local/bin/php /opt/www/bin/sse"
+    assert config["command"] == "/usr/local/bin/php /opt/www/console sse:serve"
     assert config["user"] == "www-data"
     assert config["autorestart"] == "true" and config["stopsignal"] == "TERM"
     assert config["stopasgroup"] == "true" and config["killasgroup"] == "true"
@@ -255,5 +255,6 @@ if __name__ == "__main__":
     else:
         for base_path in ("", "/claire"):
             outside(base_path)
-        assert (ROOT / "bin/sse").is_file(), "Proxy checks passed, but Supervisor daemon entrypoint is missing"
+        assert (ROOT / "console").is_file(), "Proxy checks passed, but the application console is missing"
+        assert (ROOT / "src/Console/SseServeCommand.php").is_file(), "SSE console command is missing"
         print("PASS: Supervisor command and shutdown configuration")

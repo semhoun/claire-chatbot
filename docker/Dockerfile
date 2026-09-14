@@ -114,7 +114,6 @@ ARG VERSION=dev
 
 COPY docker/rootfs /
 COPY LICENSE composer.json composer.lock console /opt/www/
-COPY bin /opt/www/bin
 COPY config /opt/www/config
 COPY migrations /opt/www/migrations
 COPY public /opt/www/public

@@ -5,11 +5,13 @@ use App\Console\CacheClearConsoleCommand;
 use App\Console\CacheInitConsoleCommand;
 use App\Console\GenerateProxies;
 use App\Console\QueueWorkCommand;
+use App\Console\SseServeCommand;
 use App\Console\ChatMaintenanceCommand;
 use App\Console\TelegramSetCommandsCommand;
 use App\Console\TelegramMenuButtonCommand;
 use App\Console\TelegramWebhookCommand;
 use App\Services\Settings;
+use App\Sse\Daemon;
 use DI\ContainerBuilder;
 use Doctrine\Migrations\Configuration\EntityManager\ExistingEntityManager;
 use Doctrine\Migrations\Configuration\Migration\ConfigurationArray;
@@ -17,12 +19,51 @@ use Doctrine\Migrations\Tools\Console\Command;
 use Doctrine\Migrations\DependencyFactory;
 use Doctrine\ORM\EntityManager;
 use Symfony\Component\Console\Application;
+use Symfony\Component\Console\Input\ArgvInput;
 
 // Set the absolute path to the root directory.
 $rootPath = realpath(__DIR__);
 
+// Parse the command before Composer can activate blocking telemetry exporters.
+foreach ([
+    'InputInterface', 'RawInputInterface', 'StreamableInputInterface',
+    'InputDefinition', 'Input', 'ArgvInput',
+] as $inputClass) {
+    require_once $rootPath . '/vendor/symfony/console/Input/' . $inputClass . '.php';
+}
+$input = new ArgvInput();
+$commandName = $input->getFirstArgument();
+if ($commandName !== null && in_array(strtolower($commandName), ['h', 'he', 'hel', 'help'], true)) {
+    $commandName = (new ArgvInput(['console', ...$input->getRawTokens(true)]))->getFirstArgument();
+}
+// SSE is the only namespace starting with "s"; retain Symfony's segment abbreviations.
+$commandParts = explode(':', strtolower($commandName ?? ''));
+$sseCommand = $commandParts[0] !== '' && str_starts_with('sse', $commandParts[0])
+    && (count($commandParts) === 1
+        || (count($commandParts) === 2 && str_starts_with('serve', $commandParts[1])));
+// With an omitted namespace, "ser" is unique; "s" and "se" also match other commands.
+$sseCommand = $sseCommand || (count($commandParts) === 2 && $commandParts[0] === ''
+    && in_array($commandParts[1], ['ser', 'serv', 'serve'], true));
+if ($sseCommand) {
+    putenv('OTEL_PHP_AUTOLOAD_ENABLED=false');
+    $_ENV['OTEL_PHP_AUTOLOAD_ENABLED'] = 'false';
+    $_SERVER['OTEL_PHP_AUTOLOAD_ENABLED'] = 'false';
+}
+
 // Include the composer autoloader.
 include_once ($rootPath . '/vendor/autoload.php');
+
+if ($sseCommand) {
+    try {
+        $settings = Settings::load();
+        $cli = new Application('Claire Chat-Bot', $settings->get('version'));
+        $cli->addCommands([new SseServeCommand(new Daemon($settings), isolatedBootstrap: true)]);
+        exit($cli->run($input));
+    } catch (Throwable) {
+        fwrite(STDERR, "SSE daemon failed; check configuration and local dependencies.\n");
+        exit(1);
+    }
+}
 
 // At this point the container has not been built. We need to load the settings manually.
 $settings = Settings::load();
@@ -50,6 +91,7 @@ $dependencyFactory = DependencyFactory::fromEntityManager(
 // Build the app
 $cli = new Application('Claire Chat-Bot', $settings->get('version'));
     $cli->addCommands([
+    new SseServeCommand(new Daemon($settings)),
     $container->get(CacheClearConsoleCommand::class),
     $container->get(CacheInitConsoleCommand::class),
     $container->get(GenerateProxies::class),

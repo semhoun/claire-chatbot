@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Test\Fixtures\Sse;
 
 /**
- * Opt-in real-daemon load test: php scripts/sse-load.php --clients=64 --seconds=3
+ * Opt-in real-daemon load test: php test/Integration/sse-load.php --clients=64 --seconds=3
  * Requires PHP CLI, /proc, and redis-server or Docker with redis:7-alpine.
  * Owns all children/Redis data; never connects to production Redis or loads .env.
  * Exit 0: assertions passed; 1: assertion/runtime failure; 2: prerequisite blocker.
@@ -93,7 +93,7 @@ final class SseLoad
                 'settings' => array_filter($this->environment ?? [],
                     static fn ($key) => str_starts_with($key, 'SSE_') && $key !== 'SSE_INTERNAL_SECRET',
                     ARRAY_FILTER_USE_KEY),
-                'scope' => 'Real bin/sse, real Redis, in-memory Slim backend, direct loopback HTTP',
+                'scope' => 'Real console sse:serve, real Redis, in-memory Slim backend, direct loopback HTTP',
                 'limitations' => [
                     'No Caddy/Traefik, browser, desktop/mobile or normal/widget validation (plan item 7).',
                     'Fixture credentials are HMAC test tokens, not production JWT/security validation.',
@@ -126,8 +126,8 @@ final class SseLoad
     private function start(): void
     {
         $root = Settings::getAppRoot();
-        if (! is_file($root . '/bin/sse')) {
-            throw new RuntimeException('Prerequisite: real bin/sse does not exist yet', 2);
+        if (! is_file($root . '/console')) {
+            throw new RuntimeException('Prerequisite: application console does not exist', 2);
         }
         if (! is_dir('/proc/self')) {
             throw new RuntimeException('Prerequisite: Linux /proc required', 2);
@@ -184,7 +184,7 @@ final class SseLoad
         }, 10, 'Disposable Redis unavailable; inspect redis.log (Docker socket/image may be unavailable)', 2);
         $this->spawn('backend', [PHP_BINARY, $root . '/test/fixtures/sse/backend.php']);
         $this->wait(fn () => $this->listening(8082), 5, 'Slim fixture did not start; inspect backend.log');
-        $this->spawn('daemon', [PHP_BINARY, $root . '/bin/sse']);
+        $this->spawn('daemon', [PHP_BINARY, $root . '/console', 'sse:serve']);
         $this->daemonPid = proc_get_status($this->children['daemon'])['pid'];
         $this->wait(fn () => $this->listening($daemonPort), 5, 'Real daemon did not start; inspect daemon.log');
         $this->wait(fn () => $this->redisConnections() >= 3,
