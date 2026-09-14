@@ -1,16 +1,16 @@
 # Claire
 
+<img src="claire.png" style="zoom:50%;" />
+
 **Un assistant IA auto-hébergé, accessible sur le web, dans vos sites et sur Telegram.**
 
-![PHP](https://img.shields.io/badge/PHP-8.5%2B-777BB4?logo=php&logoColor=white)
-![Vue](https://img.shields.io/badge/Vue-3-42B883?logo=vuedotjs&logoColor=white)
-![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue)
+![PHP](https://img.shields.io/badge/PHP-8.5%2B-777BB4?logo=php&logoColor=white) ![Vue](https://img.shields.io/badge/Vue-3-42B883?logo=vuedotjs&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
 Claire réunit une interface de conversation, des agents personnalisables et des outils de recherche et de génération. Connectez votre fournisseur de modèles compatible OpenAI, configurez votre authentification OpenID Connect, puis utilisez la même application en plein écran, en widget embarqué ou avec un bot Telegram.
 
 Le projet utilise PHP 8.5, Slim 4 et Neuron AI côté serveur, Vue 3 et TypeScript côté navigateur. L'image Docker regroupe FrankenPHP/Caddy, un daemon SSE et les workers de traitement. Une base SQL conserve les données applicatives ; Redis assure la queue et la coordination des traitements.
 
-[Code source](https://github.com/semhoun/claire-chatbot) · [Image Docker](https://hub.docker.com/r/semhoun/claire-chatbot) · [Historique des versions](CHANGELOG.md) · [DeepWiki](https://deepwiki.com/semhoun/claire-chatbot)
+[Code source](https://github.com/semhoun/claire-chatbot) · [Image Docker](https://hub.docker.com/r/semhoun/claire-chatbot) · [Historique des versions](CHANGELOG.md)
 
 ## Sommaire
 
