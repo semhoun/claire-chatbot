@@ -26,7 +26,7 @@ final readonly class FrontendConfigFactory
         string $threadId,
         string $sessionId,
     ): array {
-        $brainSlug = (string) $session->get('brain_avatar');
+        $brainSlug = $this->normalizeBrainSlug($session);
         $brainInfo = $this->brainRegistry->getMeta($brainSlug);
         $userInfo = $session->get(Auth::USERINFO);
         $comfyuiEnabled = $this->settings->get('tools.comfyui.enabled') === true;
@@ -102,8 +102,22 @@ final readonly class FrontendConfigFactory
         ];
     }
 
+    private function normalizeBrainSlug(SessionInterface $session): string
+    {
+        $brainSlug = (string) $session->get('brain_avatar');
+        if ($brainSlug !== '' && $this->brainRegistry->has($brainSlug)) {
+            return $brainSlug;
+        }
+
+        $brainSlug = (string) $this->settings->get('session.defaultParams.brain_avatar');
+        $session->set('brain_avatar', $brainSlug);
+
+        return $brainSlug;
+    }
+
     /**
      * @param array{preset:string, tokens:array<string, string>, variants:array<string, string>} $theme
+     *
      * @return array{preset:string, tokens:object, variants:object}
      */
     private static function formatTheme(array $theme): array

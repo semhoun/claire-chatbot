@@ -5,22 +5,24 @@
     --claire-font: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --claire-font-heading: var(--claire-font);
     --claire-color-scheme: dark;
-    --claire-body-background: linear-gradient(135deg, #341348, #160b24 50%, #4a1238);
+    --claire-body-background: linear-gradient(135deg, #081225, #160d2d 52%, #32103f);
     --claire-accent: #ff3cac;
     --claire-accent-light: #ff7ce5;
     --claire-text-primary: #f8efff;
-    --claire-text-secondary: #c9b4d9;
-    --claire-border: #513460;
-    --claire-border-strong: #80608f;
+    --claire-text-secondary: #e2d6eb;
+    --claire-border: #735381;
+    --claire-border-strong: #a987b7;
     --claire-radius: 22px;
     --claire-shadow: 0 22px 50px rgba(18, 0, 35, 0.6);
     --claire-embed-collapsed-size: 64px;
     --claire-embed-collapsed-avatar: 56px;
     --claire-background: #000000;
-    --claire-header-bg: #28133d;
-    --claire-input-bar-bg: #20102f;
-    --claire-placeholder: var(--claire-text-secondary);
+    --claire-header-bg: #301949;
+    --claire-input-bar-bg: #29143c;
+    --claire-placeholder: #eadff2;
     --claire-focus-ring: #ffb5ef;
+    --claire-public-auth-accent-light: #65dcff;
+    --claire-public-auth-accent-text: #08202a;
     --claire-accent-border: color-mix(in srgb, var(--claire-accent) 45%, var(--claire-border));
     --claire-accent-border-strong: var(--claire-accent);
     --claire-tooltip-bg: var(--claire-panel-background);
@@ -57,8 +59,8 @@
     --claire-motion-pulse: 1.2s;
     --claire-disabled-opacity: 0.45;
     --claire-surface-chat: #1e1030;
-    --claire-surface-muted: color-mix(in srgb, var(--claire-text-primary) 5%, transparent);
-    --claire-surface-hover: color-mix(in srgb, var(--claire-text-primary) 8%, transparent);
+    --claire-surface-muted: color-mix(in srgb, var(--claire-text-primary) 10%, transparent);
+    --claire-surface-hover: color-mix(in srgb, var(--claire-text-primary) 15%, transparent);
     --claire-surface-active: color-mix(in srgb, var(--claire-accent) 16%, transparent);
     --claire-surface-code: #10091a;
     --claire-panel-background: #21122f;
@@ -91,25 +93,25 @@
     --claire-bubble-padding: var(--claire-space-2) var(--claire-space-3);
     --claire-bubble-sent-background: linear-gradient(135deg, var(--claire-accent), var(--claire-accent-light));
     --claire-bubble-sent-text: #2b0052;
-    --claire-bubble-sent-meta: #401050;
-    --claire-bubble-received-background: #3c2058;
+    --claire-bubble-sent-meta: #35003f;
+    --claire-bubble-received-background: #482766;
     --claire-bubble-received-text: var(--claire-text-primary);
-    --claire-bubble-received-meta: var(--claire-text-secondary);
+    --claire-bubble-received-meta: #eadff2;
     --claire-bubble-border: var(--claire-border);
     --claire-bubble-shadow: var(--claire-elevation-low);
     --claire-control-size: 44px;
     --claire-control-small: 36px;
     --claire-icon-size: 20px;
     --claire-icon-small: 16px;
-    --claire-control-background: var(--claire-surface-muted);
-    --claire-control-text: var(--claire-text-secondary);
-    --claire-control-hover: var(--claire-surface-hover);
+    --claire-control-background: #3b234f;
+    --claire-control-text: #e2d6eb;
+    --claire-control-hover: #4a2d61;
     --claire-control-primary-background: linear-gradient(135deg, var(--claire-accent), var(--claire-accent-light));
     --claire-control-primary-text: #2b0052;
     --claire-control-send-background: var(--claire-accent-light);
     --claire-control-send-text: #2b0052;
     --claire-control-shadow: var(--claire-elevation-low);
-    --claire-field-background: #321a48;
+    --claire-field-background: #3b2055;
     --claire-field-focus-background: color-mix(in srgb, var(--claire-field-background), var(--claire-accent) 8%);
     --claire-field-border: var(--claire-border);
     --claire-field-radius: var(--claire-radius-md);
@@ -132,7 +134,7 @@
     --claire-indicator-track: var(--claire-border-strong);
     --claire-typing-dot-size: 7px;
     --claire-telegram-brand: #229ed9;
-    --claire-telegram-brand-text: #ffffff;
+    --claire-telegram-brand-text: #08202a;
     --claire-telegram-link: #90caf9;
     --claire-telegram-surface: color-mix(in srgb, var(--claire-telegram-brand) 12%, transparent);
     --claire-telegram-border: color-mix(in srgb, var(--claire-telegram-brand) 30%, transparent);
@@ -180,7 +182,8 @@
     text-underline-offset: 2px;
 }
 :where(.claire-app, .claire-app-base) :where(a:hover) {
-    color: var(--claire-accent);
+    color: var(--claire-accent-light);
+    filter: brightness(1.08);
 }
 
 .claire-visually-hidden,

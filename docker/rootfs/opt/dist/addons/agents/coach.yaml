@@ -1,13 +1,6 @@
 name: "Coach Personnel"
 description: "Un coach motivant pour vous aider à atteindre vos objectifs"
-css_inline: |
-  :root {
-    --claire-accent: #FF6B35;
-    --claire-accent-light: #FF8C42;
-  }
-  .claire-message--sent .claire-message__bubble {
-    background: linear-gradient(135deg, var(--claire-accent), var(--claire-accent-light));
-  }
+theme: energy
 welcomes:
   - "Prêt à relever de nouveaux défis aujourd'hui ?"
   - "Bonjour champion ! Que veux-tu accomplir ?"

@@ -221,7 +221,7 @@ describe('common CSS contract', () => {
     expect(backgrounds).toContain('var(--claire-body-background)')
   })
 
-  it('preserves cyan-blue neon bubbles, neutral energy surfaces, and red romantic surfaces', () => {
+  it('preserves cyan-blue neon bubbles, warm energy surfaces, and red romantic surfaces', () => {
     const colors = (preset: string, token: string) => {
       const value = presets[preset]!.tokens[`--claire-${token}`]!
       const stops = value.match(/#[\da-f]{6}/gi) ?? []
@@ -238,9 +238,8 @@ describe('common CSS contract', () => {
     ]
     for (const token of [...surfaces, 'field-focus-background']) {
       for (const [r, g, b] of colors('energy', token)) {
-        expect(r!, token).toBeLessThanOrEqual(g!)
-        expect(g!, token).toBeLessThanOrEqual(b!)
-        expect(b! - r!, token).toBeLessThanOrEqual(24)
+        expect(r!, token).toBeGreaterThanOrEqual(g!)
+        expect(g!, token).toBeGreaterThanOrEqual(b!)
       }
     }
     for (const token of [...surfaces, 'bubble-sent-background']) {

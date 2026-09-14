@@ -432,6 +432,7 @@
     width: var(--claire-control-size);
     height: var(--claire-control-size);
     margin: 0 auto var(--claire-space-5);
+    border-top-color: var(--claire-public-auth-accent-light);
 }
 .claire-sso-btn,
 .claire-error-btn {
@@ -439,13 +440,13 @@
     justify-content: center;
     padding: var(--claire-space-3) var(--claire-space-6);
     border-radius: var(--claire-radius-md);
-    background: var(--claire-control-send-background);
-    color: var(--claire-control-send-text);
+    background: var(--claire-public-auth-accent-light);
+    color: var(--claire-public-auth-accent-text);
     text-decoration: none;
 }
 .claire-sso-btn:hover,
 .claire-error-btn:hover {
-    color: var(--claire-control-send-text);
+    color: var(--claire-public-auth-accent-text);
     filter: brightness(1.08);
 }
 .claire-error-title {

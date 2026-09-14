@@ -63,7 +63,11 @@ final class WebBootstrapControllerTest extends TestCase
                 ],
                 'tools' => ['comfyui' => ['enabled' => false]],
                 'files' => ['upload' => ['acceptedExt' => '.txt']],
-                'session' => ['refresh_before_expire' => 120, 'refresh_min_interval' => 30],
+                'session' => [
+                    'defaultParams' => ['brain_avatar' => 'test'],
+                    'refresh_before_expire' => 120,
+                    'refresh_min_interval' => 30,
+                ],
             ]);
             $registry = new BrainRegistry(
                 $settings, $this->createStub(ContainerInterface::class), new ThemeRegistry($settings),
@@ -92,6 +96,33 @@ final class WebBootstrapControllerTest extends TestCase
         }
     }
 
+    public function testFactoryRepairsStaleBrainSelection(): void
+    {
+        $settings = new Settings([
+            'llm' => [
+                'brains' => ['test' => BootstrapTestBrain::class],
+                'yamlBrains' => ['path' => '/tmp/kilo/no-brains'],
+            ],
+            'tools' => ['comfyui' => ['enabled' => false]],
+            'files' => ['upload' => ['acceptedExt' => '.txt']],
+            'session' => [
+                'defaultParams' => ['brain_avatar' => 'test'],
+                'refresh_before_expire' => 120,
+                'refresh_min_interval' => 30,
+            ],
+        ]);
+        $factory = new FrontendConfigFactory(
+            new BrainRegistry($settings, $this->createStub(ContainerInterface::class), new ThemeRegistry($settings)),
+            new ComfyUIWorkflowRegistry($settings), $settings, $this->createStub(AudioServiceInterface::class),
+        );
+        $session = new InMemorySession(['brain_avatar' => 'claire-gf']);
+
+        $payload = $factory->create($session, 'normal', 'thread', 'tab');
+
+        self::assertSame('test', $payload['currentBrain']);
+        self::assertSame('test', $session->get('brain_avatar'));
+    }
+
     #[TestWith(['normal'])]
     #[TestWith(['embed'])]
     public function testBootstrapReturnsJsonAndQueuesOnlyOnce(string $mode): void
@@ -101,7 +132,11 @@ final class WebBootstrapControllerTest extends TestCase
             'llm' => ['brains' => ['test' => BootstrapTestBrain::class], 'yamlBrains' => ['path' => '/tmp/kilo/no-brains']],
             'tools' => ['comfyui' => ['enabled' => false]],
             'files' => ['upload' => ['acceptedExt' => '.txt']],
-            'session' => ['refresh_before_expire' => 120, 'refresh_min_interval' => 30],
+            'session' => [
+                'defaultParams' => ['brain_avatar' => 'test'],
+                'refresh_before_expire' => 120,
+                'refresh_min_interval' => 30,
+            ],
             'queue' => ['defaultQueue' => 'default'],
         ]);
         $factory = new FrontendConfigFactory(
@@ -118,6 +153,7 @@ final class WebBootstrapControllerTest extends TestCase
             static function (string $job, array $payload) use (&$queued): string {
                 self::assertSame(StartThreadJob::class, $job);
                 self::assertSame('owner', $payload['session'][Auth::USERID]);
+                self::assertSame('test', $payload['session']['brain_avatar']);
                 $queued = $payload;
                 return 'job';
             },

@@ -42,6 +42,12 @@ final readonly class EmbedController
             ->getRepository(ChatHistoryEntity::class)
             ->deleteEmptyConversations((string) $session->get(Auth::USERID));
 
+        $config = $this->frontendConfigFactory->create(
+            $session,
+            'embed',
+            $threadId,
+            $sessionId
+        );
         $this->queueDispatcher->dispatch(
             StartThreadJob::class,
             [
@@ -52,12 +58,6 @@ final readonly class EmbedController
             $this->settings->get('queue.defaultQueue')
         );
 
-        $config = $this->frontendConfigFactory->create(
-            $session,
-            'embed',
-            $threadId,
-            $sessionId
-        );
         $config['baseUrl'] = (string) $request->getAttribute('base_url');
         $response->getBody()->write(json_encode($config, JSON_THROW_ON_ERROR));
         return $response->withHeader('Content-Type', 'application/json')->withHeader('Cache-Control', 'no-store');

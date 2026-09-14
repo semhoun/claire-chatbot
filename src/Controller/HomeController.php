@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Renderer\VueShell;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Entity\ChatHistory as ChatHistoryEntity;
 use App\Job\Web\StartThreadJob;
+use App\Renderer\VueShell;
 use App\Services\Auth;
 use App\Services\FrontendConfigFactory;
 use App\Services\Queue\QueueDispatcherInterface;
@@ -55,6 +55,12 @@ final readonly class HomeController
             ?? uniqid(UserChatHistory::CHAT_WEB, true);
 
         $session->set('threadId', $threadId);
+        $config = $this->frontendConfigFactory->create(
+            $session,
+            'normal',
+            $threadId,
+            $sessionId
+        );
         if ($history === null) {
             $this->queueDispatcher->dispatch(
                 StartThreadJob::class,
@@ -67,12 +73,6 @@ final readonly class HomeController
             );
         }
 
-        $config = $this->frontendConfigFactory->create(
-            $session,
-            'normal',
-            $threadId,
-            $sessionId
-        );
         $config['baseUrl'] = (string) $request->getAttribute('base_url');
         $response->getBody()->write(json_encode($config, JSON_THROW_ON_ERROR));
         return $response->withHeader('Content-Type', 'application/json')->withHeader('Cache-Control', 'no-store');

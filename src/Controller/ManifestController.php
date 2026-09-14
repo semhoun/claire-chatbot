@@ -25,8 +25,8 @@ final readonly class ManifestController
             'scope' => './',
             'display' => 'standalone',
             'lang' => 'fr',
-            'theme_color' => '#ff3cac',
-            'background_color' => '#1e1030',
+            'theme_color' => '#28f5df',
+            'background_color' => '#030507',
             'icons' => [
                 [
                     'src' => 'image/icon-192.png',
