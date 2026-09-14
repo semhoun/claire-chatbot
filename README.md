@@ -1,8 +1,12 @@
-# Claire
+<h1 align="center"><code>&lt; CLAIRE /&gt;</code></h1>
 
-<img src="claire.png" style="zoom:50%;" />
+<p align="center">
+  <strong>Un assistant IA auto-hébergé, accessible sur le web, dans vos sites et sur Telegram.</strong>
+</p>
 
-**Un assistant IA auto-hébergé, accessible sur le web, dans vos sites et sur Telegram.**
+<p align="center">
+  <img src="claire-readme.png" alt="Portrait de Claire" />
+</p>
 
 ![PHP](https://img.shields.io/badge/PHP-8.5%2B-777BB4?logo=php&logoColor=white) ![Vue](https://img.shields.io/badge/Vue-3-42B883?logo=vuedotjs&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
