@@ -1,283 +1,274 @@
-# Claire — Agent de Chat IA (PHP, Slim 4)
+# Claire
 
-![PHP Version](https://img.shields.io/badge/PHP-8.5%2B-777bb4?logo=php&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
+**Un assistant IA auto-hébergé, accessible sur le web, dans vos sites et sur Telegram.**
 
-> **Claire** — Chatbot IA Vue/TypeScript multi-brain avec Telegram, ComfyUI, PDF et OpenTelemetry
+![PHP](https://img.shields.io/badge/PHP-8.5%2B-777BB4?logo=php&logoColor=white)
+![Vue](https://img.shields.io/badge/Vue-3-42B883?logo=vuedotjs&logoColor=white)
+![Licence MIT](https://img.shields.io/badge/Licence-MIT-blue)
 
-Claire est une application de chat IA construite avec Slim 4, Vue 3, TypeScript et Neuron AI. Elle s'exécute dans un conteneur Docker basé sur FrankenPHP/Caddy et fournit une interface web, une API REST, une intégration Telegram et une observabilité complète via OpenTelemetry.
+Claire réunit une interface de conversation, des agents personnalisables et des outils de recherche et de génération. Connectez votre fournisseur de modèles compatible OpenAI, configurez votre authentification OpenID Connect, puis utilisez la même application en plein écran, en widget embarqué ou avec un bot Telegram.
 
-La version **2.1.0** rassemble l'audio Mistral, les thèmes d'agents, l'installation PWA et les améliorations de fiabilité du chat. Consultez le [CHANGELOG](CHANGELOG.md#210---2026-09-13) et les [consignes de mise à niveau](#mise-à-niveau-vers-210) avant déploiement.
+Le projet utilise PHP 8.5, Slim 4 et Neuron AI côté serveur, Vue 3 et TypeScript côté navigateur. L'image Docker regroupe FrankenPHP/Caddy, un daemon SSE et les workers de traitement. Une base SQL conserve les données applicatives ; Redis assure la queue et la coordination des traitements.
+
+[Code source](https://github.com/semhoun/claire-chatbot) · [Image Docker](https://hub.docker.com/r/semhoun/claire-chatbot) · [Historique des versions](CHANGELOG.md) · [DeepWiki](https://deepwiki.com/semhoun/claire-chatbot)
+
+## Sommaire
+
+- [Fonctionnalités](#fonctionnalités)
+- [Installation Docker](#installation-docker)
+- [Configuration](#configuration)
+- [Utilisation](#utilisation)
+- [Cerveaux personnalisés (BrainRegistry)](#cerveaux-personnalisés-brainregistry)
+- [Widget embarqué](#widget-embarqué)
+- [Telegram](#telegram)
+- [API et authentification](#api-et-authentification)
+- [Architecture](#architecture)
+- [Exploitation et mises à jour](#exploitation-et-mises-à-jour)
+- [Développement](#développement)
+- [Dépannage](#dépannage)
 
 ## Fonctionnalités
 
-- Interface web de chat avec streaming SSE, horodatage, suppression du dernier message
-- Application web installable (PWA) sur ordinateur et mobile, avec nom configurable et connexion Internet requise
-- Mode widget embarqué (`/embed`) injecté via `window.claireEmbed(...)` pour intégration sur site tiers
-- API REST `POST /brain/messages` et healthcheck `GET /health`
-- Multi-brain : sélection dynamique d'agents IA (Claire, Einstein, Calliope...)
-- Création d'agents personnalisés via fichiers YAML dans `/opt/addons/agents/`
-- Six thèmes intégrés, personnalisables par agent et partagés entre le chat web et le widget
-- Restauration de la dernière conversation après rechargement, avec isolation des générations par utilisateur et conversation
-- Mémoire courte avec résumé automatique de l'historique
-- Mémoire long terme optionnelle, évolutive entre les conversations et reconstructible depuis les résumés
-- Recherche web via SearXNG et RAG par documents (fichiers, texte, URL) avec embeddings
-- Transcription audio (dictée vocale) et synthèse vocale (TTS) avec l'API audio Mistral
-- Génération d'images avec ComfyUI (workflows multiples)
-- Génération de documents PDF depuis HTML ou Markdown
-- Intégration Telegram complète (messages, photos, documents, audio, Mini-App)
-- Queue de fond Redis pour traitements asynchrones
-- Observabilité OpenTelemetry (traces, métriques, logs)
-- Authentification SSO OpenID Connect obligatoire
+| Domaine | Ce que propose Claire |
+| --- | --- |
+| Conversations | Réponses en streaming SSE, rendu Markdown et code, historique, reprise de conversation et suppression du dernier échange. |
+| Agents | Claire et Einstein intégrés ; ajout d'agents YAML sans modifier le code. |
+| Apparence | Six thèmes, personnalisation par agent et composants partagés entre interface normale et widget. |
+| Documents | Pièces jointes et recherche augmentée par documents personnels : fichiers, texte collé et URL. |
+| Mémoire | Résumé automatique du contexte court et mémoire durable facultative entre les conversations. |
+| Recherche web | Outil de recherche via une instance SearXNG. |
+| Audio | Dictée, synthèse vocale, choix de voix et production de fichiers audio via Mistral. |
+| Création | Génération d'images avec ComfyUI et de PDF depuis HTML ou Markdown. |
+| Intégrations | Widget isolé en Shadow DOM, bot Telegram et Mini-App de configuration. |
+| Installation mobile | Application web installable sur ordinateur et mobile, avec connexion Internet requise. |
+| Exploitation | Traitements asynchrones Redis, journal de livraison Telegram, traces, métriques et logs OpenTelemetry. |
 
-## Pile technique
+**À prévoir avant de démarrer :** un fournisseur LLM, un fournisseur OIDC, une base SQL et Redis. Les fonctions audio, recherche web, RAG, images et Telegram dépendent de services ou de réglages supplémentaires. L'auto-hébergement de Claire ne signifie pas que le modèle s'exécute localement : les échanges sont transmis au fournisseur configuré.
 
-- **Runtime** : FrankenPHP + Caddy (PHP 8.5)
-- **Framework** : Slim 4 avec PHP-DI
-- **Frontend** : Vue 3, TypeScript et Vite
-- **Rendu web** : shell HTML via `VueShell`, données HTTP/SSE préparées par `ChatDataRenderer` ; Markdown, messages et outils rendus par Vue
-- **ORM** : Doctrine ORM/DBAL (SQLite, MySQL, PostgreSQL)
-- **LLM** : Neuron AI avec support OpenAI-compatible
-- **Queue** : Redis avec réservation, renouvellement des baux, retries et conservation des jobs en échec
-- **Observabilité** : OpenTelemetry SDK + auto-instrumentation
-- **PDF** : mPDF (génération de documents)
-- **Bot** : phptg/bot-api (Telegram)
+## Installation Docker
+
+### 1. Préparer les services
+
+Le chemin recommandé est le modèle de distribution [`docker/compose.yml`](docker/compose.yml). Il fournit Claire, Redis persistant et une interface OpenTelemetry, avec SQLite pour le stockage SQL.
+
+Prérequis :
+
+- Docker Engine et le plugin Docker Compose.
+- Un domaine pointant vers le serveur ; les ports 80 et 443 doivent être accessibles pour le HTTPS automatique de l'exemple.
+- Un endpoint LLM compatible OpenAI, un modèle et, si le fournisseur l'exige, une clé API.
+- Un client OpenID Connect autorisant l'URI de retour `https://claire.example.com/auth/callback`, adaptée à votre domaine.
+- Un secret JWT aléatoire d'au moins 32 caractères, conservé durablement.
+
+```bash
+git clone https://github.com/semhoun/claire-chatbot.git
+cd claire-chatbot
+openssl rand -hex 32
+```
+
+Enregistrez le secret généré dans votre gestionnaire de secrets ou dans l'environnement de déploiement sous `SESSION_JWT_SECRET`. Ne le régénérez pas à chaque lancement de Compose.
+
+### 2. Adapter le modèle Compose
+
+Modifiez [`docker/compose.yml`](docker/compose.yml) avant de démarrer :
+
+| Réglage | Action |
+| --- | --- |
+| `BASE_URL`, `SERVER_NAME`, `ACME_EMAIL` | Remplacer le domaine et l'adresse de contact des certificats. |
+| `OPENAPI_URL`, `OPENAPI_MODEL`, `OPENAPI_KEY` | Configurer votre fournisseur de modèles. Adapter aussi les modèles de résumé et d'embeddings. |
+| `OPENID_WELLKNOWN_URL`, `OPENID_CLIENT_ID` | Configurer votre fournisseur OIDC et ajouter `OPENID_CLIENT_SECRET` si nécessaire. |
+| `SESSION_JWT_SECRET` | Fournir la variable attendue par Compose. |
+| `MISTRAL_AUDIO_ENABLED` | Mettre à `"false"` si vous ne configurez pas l'audio ; le modèle Compose l'active explicitement. |
+| `ALLOWED_CORS_ORIGINS` | Ajouter les origines autorisées, notamment celles des sites utilisant le widget. |
+| Port `4318` du service `otel-gui` | Restreindre son exposition au réseau d'administration, ou supprimer sa publication publique. |
+
+Le fichier `compose.yml` **à la racine** est propre à un environnement de développement avec réseaux externes et reverse proxy. Ce n'est pas le modèle d'installation générique. Les commandes Docker de ce guide sélectionnent donc explicitement `docker/compose.yml`.
+
+L'application lit les variables de ses processus, **pas un fichier `.env` PHP**. Compose peut utiliser un `.env` pour ses substitutions, mais seules les variables déclarées dans `environment` ou transmises explicitement arrivent dans le conteneur. Pour un emplacement sans ambiguïté, utilisez l'option Compose `--env-file /chemin/vers/claire.env` avec vos commandes.
+
+### 3. Démarrer et initialiser
+
+Depuis la racine du dépôt, avec la configuration et le secret disponibles :
+
+```bash
+docker compose -f docker/compose.yml config --quiet
+docker compose -f docker/compose.yml pull
+docker compose -f docker/compose.yml up -d
+
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console migrations:migrate --no-interaction
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console migrations:status
+
+docker compose -f docker/compose.yml logs -f claire
+```
+
+**Le démarrage de l'image n'applique pas les migrations.** Cette séquence concerne une première installation : gardez le service hors trafic jusqu'à l'initialisation de la base. Pour un environnement existant, suivez la [procédure de mise à jour](#exploitation-et-mises-à-jour).
+
+Ouvrez ensuite votre URL publique et connectez-vous avec le SSO. `GET /health` renvoie la version et la date ; ce contrôle ne remplace pas un essai de conversation pour vérifier le modèle, Redis et les workers.
+
+### Données persistantes
+
+| Volume du modèle | Chemin dans le service | Contenu |
+| --- | --- | --- |
+| `claire-data` | `/opt/data` dans Claire | Base SQLite, fichiers et données RAG. |
+| `claire-addons` | `/opt/addons` dans Claire | Agents YAML et workflows ComfyUI. |
+| `claire-redis` | `/data` dans Redis | Queue, états de génération et autres données Redis persistantes. |
+
+Redis n'est pas un simple cache jetable. Conservez sa persistance AOF et la politique `maxmemory-policy noeviction` du modèle. Ne lancez pas `docker compose down -v` pour une mise à jour ordinaire : cette option supprime les volumes.
 
 ## Configuration
 
-### Variables obligatoires
+Les fichiers [`config/settings/`](config/settings/) constituent la référence détaillée. Les valeurs ci-dessous sont les défauts du code lorsqu'ils existent ; le modèle Compose peut les remplacer.
 
-| Variable | Description |
-|----------|-------------|
-| `BASE_URL` | URL publique de l'application (ex: `https://claire.example.com`) |
-| `OPENAPI_KEY` | Clé API du fournisseur LLM |
-| `OPENAPI_URL` | URL de l'API LLM |
-| `OPENAPI_MODEL` | Modèle par défaut |
-| `OPENID_WELLKNOWN_URL` | URL de découverte OpenID Connect |
-| `OPENID_CLIENT_ID` | Identifiant client OIDC |
-| `SESSION_JWT_SECRET` | Clé secrète JWT (min 32 caractères) |
-| `REDIS_HOST` | Hôte Redis accessible depuis l'application et les workers |
+### Socle applicatif
 
-### Variables optionnelles
+| Variable | Usage / défaut |
+| --- | --- |
+| `BASE_URL` | URL publique obligatoire, en HTTPS pour la production. |
+| `APP_NAME` | Nom de l'interface normale et de la PWA ; `Claire`. Ne renomme ni les agents ni le widget. |
+| `OPENAPI_URL` | URL de base de l'API LLM, obligatoire. |
+| `OPENAPI_MODEL` | Modèle de conversation, obligatoire. |
+| `OPENAPI_KEY` | Clé du fournisseur, selon ses exigences. Le préfixe est bien `OPENAPI_`. |
+| `OPENAPI_MODEL_SUMMARY` | Modèle de résumé ; reprend `OPENAPI_MODEL`. |
+| `OPENAPI_MODEL_EMBED` | Modèle d'embeddings nécessaire au RAG. |
+| `OPENAPI_CONTEXT_WINDOW` | Fenêtre de contexte ; `50000`. |
+| `OPENAPI_REQUEST_TIMEOUT` | Timeout HTTP du fournisseur en secondes ; `180`. |
+| `OPENID_WELLKNOWN_URL` | URL de découverte OIDC, obligatoire. |
+| `OPENID_CLIENT_ID` | Identifiant du client OIDC, obligatoire. |
+| `OPENID_CLIENT_SECRET` | Secret du client, selon le fournisseur. |
+| `OPENID_ACCESS_TOKEN_CLIENT_IDS` | Clients émetteurs autorisés pour l'échange de jetons d'accès SSO. Voir la [configuration OIDC](config/settings/oidc.php). |
+| `SESSION_JWT_SECRET` | Secret de signature stable, au moins 32 caractères. |
+| `SESSION_LIFETIME` | Durée d'un JWT de session en secondes ; `900`. |
+| `SESSION_REFRESH_BEFORE_EXPIRE` | Marge de renouvellement en secondes ; `120`. |
+| `SESSION_REFRESH_MIN_INTERVAL` | Intervalle minimal entre tentatives de renouvellement ; `30`. |
+| `ALLOWED_CORS_ORIGINS` | Origines séparées par des virgules sans espaces ; `*` par défaut. Préférer une liste explicite. |
+| `DEBUG_MODE` | Mode debug ; `false`. Ne pas activer en production. |
 
-| Variable | Description | Défaut                    |
-|----------|-------------|---------------------------|
-| `APP_NAME` | Nom de l'application normale et de la PWA (sans modifier les agents ni le widget) | `Claire` |
-| `OPENAPI_MODEL_SUMMARY` | Modèle pour les résumés | valeur de `OPENAPI_MODEL` |
-| `OPENAPI_MODEL_EMBED` | Modèle pour embeddings (RAG) | désactivé                 |
-| `RAG_CHUNK_SIZE` | Taille maximale des segments RAG | `1000`                    |
-| `RAG_TOP_K` | Nombre de résultats retournés par recherche RAG | `4`                       |
-| `LONG_TERM_MEMORY_MAX_CHARACTERS` | Taille maximale de la mémoire long terme | `4000`                    |
-| `LONG_TERM_MEMORY_UPDATE_EVERY_USER_MESSAGES` | Fréquence de mise à jour, en messages utilisateur | `5`                       |
-| `LONG_TERM_MEMORY_REBUILD_BATCH_SIZE` | Nombre de résumés traités par lot lors d'une reconstruction | `20`                      |
-| `OPENAPI_REQUEST_TIMEOUT` | Timeout des requêtes API (secondes) | `180`                     |
-| `MISTRAL_AUDIO_ENABLED` | Active transcription et synthèse vocale | `false` |
-| `MISTRAL_AUDIO_API_URL` | URL de l'API audio Mistral | `https://api.mistral.ai/v1` |
-| `MISTRAL_AUDIO_API_KEY` | Clé dédiée à l'API audio Mistral | - |
-| `MISTRAL_AUDIO_TRANSCRIPTION_MODEL` | Modèle de transcription imposé côté serveur | `voxtral-mini-latest` |
-| `MISTRAL_AUDIO_SPEECH_MODEL` | Modèle de synthèse imposé côté serveur | `voxtral-mini-tts-2603` |
-| `MISTRAL_AUDIO_VOICES` | Liste JSON des voix, ex. `[{"id":"voice-id","label":"Claire"}]` | `[]` |
-| `MISTRAL_AUDIO_DEFAULT_VOICE` | Identifiant de la voix par défaut | première voix configurée |
-| `MISTRAL_AUDIO_MAX_RECORDING_SECONDS` | Durée maximale d'une dictée web | `300` |
-| `SESSION_LIFETIME` | Durée de vie des JWT de session (secondes) | `900`                     |
-| `SESSION_REFRESH_BEFORE_EXPIRE` | Marge avant expiration pour déclencher le refresh (secondes) | `120`                     |
-| `SESSION_REFRESH_MIN_INTERVAL` | Intervalle minimal entre deux tentatives de refresh (secondes) | `30`                      |
-| `OPENID_CLIENT_SECRET` | Secret client OIDC, selon le fournisseur | - |
-| `REDIS_PORT` | Port Redis | `6379` |
-| `REDIS_DATABASE` | Numéro de base Redis | `0` |
-| `REDIS_PASSWORD` | Mot de passe Redis | - |
-| `REDIS_TIMEOUT` | Timeout de connexion Redis (secondes) | `2.0` |
-| `REDIS_READ_TIMEOUT` | Timeout de lecture Redis (secondes) | `20.0` |
-| `REDIS_PREFIX` | Préfixe des clés Redis | `claire:` |
-| `SEARXNG_URL` | URL SearXNG pour recherche web | -                         |
-| `TELEGRAM_BOT_TOKEN` | Token du bot Telegram | -                         |
-| `TELEGRAM_WEBHOOK_SECRET` | Secret webhook Telegram | -                         |
-| `COMFYUI_ENABLED` | Active la génération d'images | `false`                   |
-| `COMFYUI_URL` | URL de l'instance ComfyUI | `http://localhost:8188`   |
-| `PDF_ENABLED` | Active la génération de PDF | `true`                    |
-| `PDF_DEFAULT_FORMAT` | Format d'entrée par défaut (`html`, `markdown`) | `html`                    |
-| `PDF_DEFAULT_PAGE_SIZE` | Format de page par défaut (`A4`, `Letter`, `A3`, `A5`) | `A4`                      |
-| `PDF_TEMP_DIR` | Répertoire temporaire pour la génération PDF | `<app>/var/tmp`           |
-| `DATABASE_KIND` | Type de base (`sqlite`, `mysql`, `postgres`) | `sqlite`                  |
-| `DEBUG_MODE` | Mode debug | `false`                   |
-| `QUEUE_WORKERS` | Nombre de workers de queue | `8`                       |
-| `QUEUE_WORKER_TIMEOUT` | Durée d'attente maximale d'un job par le worker (secondes) | `5` |
-| `QUEUE_WORKER_MAX_JOBS` | Nombre max de jobs par worker (`0` : illimité) | `256` |
-| `QUEUE_WORKER_MAX_TIME` | Durée de vie max d'un worker en secondes (`0` : illimitée) | `3600` |
-| `SSE_DURATION` | Durée autorisée d'une connexion SSE, indépendante du JWT d'ouverture (secondes, max 86400) | `1800` |
-| `SSE_CHECK_INTERVAL` | Intervalle des contrôles génération et révocation remember (secondes) | `15` |
-| `SSE_KEEPALIVE` | Intervalle des commentaires SSE (secondes) | `15` |
-| `SSE_HTTP_TIMEOUT` | Timeout des appels HTTP internes (secondes) | `10` |
-| `SSE_MAX_CONNECTIONS` | Nombre maximal de connexions par daemon | `1000` |
-| `SSE_MAX_HTTP_REQUESTS` | Concurrence maximale des appels internes | `16` |
-| `SSE_MAX_REDIS_COMMANDS` | Commandes Redis simultanées maximales | `64` |
-| `SSE_MAX_PENDING_EVENTS` | Événements en attente maximaux par connexion | `256` |
-| `SSE_MAX_CLIENT_BUFFER` | Budget de tampon par connexion (octets) | `16777216` |
-| `SSE_MAX_GLOBAL_BUFFER` | Budget global des tampons (octets) | `134217728` |
-| `SSE_WRITE_TIMEOUT` | Durée maximale de blocage d'un client lent (secondes) | `15` |
-| `SSE_SHUTDOWN_TIMEOUT` | Délai maximal d'arrêt du daemon (secondes) | `5` |
+### SQL et Redis
 
-Le transport SSE utilise Redis Pub/Sub sans persistance ni rejeu `Last-Event-ID`.
-Chaque reconnexion obtient un nouveau jeton et un snapshot SQL ; les demandes audio
-perdues sont abandonnées et peuvent être relancées manuellement. Caddy route
-exclusivement `/brain/stream` vers le daemon ReactPHP supervisé. Ses listeners et
-le backend Slim interne restent sur loopback, sans ports Docker publiés.
-Le routage livré utilise `127.0.0.1:8081` pour le daemon et
-`http://127.0.0.1:8082` pour le backend interne ; conserver ces adresses avec
-le Caddyfile fourni.
+Définissez explicitement `DATABASE_KIND` : `sqlite`, `mysql` ou **`pgsql`** pour PostgreSQL. Le modèle Docker choisit SQLite ; le code ne fournit pas de pilote par défaut.
 
-Dans Docker, l'entrypoint génère un nouveau `SSE_INTERNAL_SECRET` aléatoire à
-chaque démarrage du conteneur et l'exporte aux processus FrankenPHP et SSE.
-Il remplace toute valeur préexistante, n'est ni journalisé ni écrit sur disque,
-et reste identique lors du redémarrage individuel d'un processus par Supervisor.
-Aucune configuration de ce secret dans Compose n'est nécessaire.
+Pour MySQL/MariaDB ou PostgreSQL, ajoutez `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER` et `DATABASE_PASSWORD`. Avec SQLite, le fichier est `<DATA_PATH>/database.sqlite`.
 
-Pour cette migration, déployer producteurs, daemon, proxy et frontend ensemble,
-redémarrer les workers persistants et invalider les caches de conteneur/routes.
-Prévoir une courte coupure avec reconnexion, sans vider Redis : les anciennes
-listes SSE expirent seules. Un rollback doit restaurer la version complète.
-Les réglages SSE sont chargés une fois ; leur modification exige un redémarrage.
+| Variable | Usage / défaut |
+| --- | --- |
+| `DATA_PATH` | Répertoire des données ; `<dépôt>/var/data` hors image Docker. |
+| `ADDONS_PATH` | Répertoire des extensions ; `<dépôt>/var/addons` hors image Docker. |
+| `REDIS_HOST` | Hôte Redis, obligatoire et accessible aux processus web, SSE et workers. |
+| `REDIS_PORT` | `6379`. |
+| `REDIS_DATABASE` | `0`. |
+| `REDIS_PASSWORD` | Mot de passe Redis, si configuré. |
+| `REDIS_PREFIX` | Préfixe des clés ; `claire:`. |
+| `REDIS_TIMEOUT` | Timeout de connexion en secondes ; `2.0`. |
+| `REDIS_READ_TIMEOUT` | Timeout de lecture en secondes ; `20.0`. |
+| `QUEUE_WORKERS` | Nombre de workers supervisés dans l'image ; `8`. |
+| `QUEUE_WORKER_TIMEOUT` | Attente d'un job en secondes ; `5`. |
+| `QUEUE_WORKER_MAX_JOBS` | Recyclage après `256` jobs ; `0` pour illimité. |
+| `QUEUE_WORKER_MAX_TIME` | Recyclage après `3600` secondes ; `0` pour illimité. |
 
-### API audio
+### Services optionnels
 
-Lorsque l'audio est configuré, Claire expose deux routes authentifiées par la
-session Claire et compatibles avec les requêtes OpenAI usuelles :
+| Fonction | Variables principales |
+| --- | --- |
+| Recherche web | `SEARXNG_URL`. |
+| RAG | `OPENAPI_MODEL_EMBED`, `RAG_CHUNK_SIZE=1000`, `RAG_TOP_K=4`. |
+| Mémoire durable | `LONG_TERM_MEMORY_MAX_CHARACTERS=4000`, `LONG_TERM_MEMORY_UPDATE_EVERY_USER_MESSAGES=5`, `LONG_TERM_MEMORY_REBUILD_BATCH_SIZE=20`. |
+| Images | `COMFYUI_ENABLED=false`, `COMFYUI_URL`, `COMFYUI_DEFAULT_WORKFLOW`. |
+| PDF | `PDF_ENABLED=true`, `PDF_DEFAULT_FORMAT=html`, `PDF_DEFAULT_PAGE_SIZE=A4`, `PDF_TEMP_DIR`. |
+| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`. |
+| Observabilité | `OTEL_SERVICE_NAME`, exporteurs `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` et endpoint `OTEL_EXPORTER_OTLP_ENDPOINT`. |
 
-- `POST /v1/audio/transcriptions` accepte un formulaire multipart avec `file`
-  et `model`, et renvoie `json`, `verbose_json` ou `text` ;
-- `POST /v1/audio/speech` accepte `input`, `model`, `voice` et
-  `response_format`, puis renvoie directement le flux audio.
+### Audio Mistral
 
-Les modèles réellement appelés restent ceux configurés côté serveur. La valeur
-`voice` doit correspondre à un identifiant présent dans `MISTRAL_AUDIO_VOICES`.
-Le streaming natif du fournisseur audio n'est pas activé.
+L'audio est indépendant du fournisseur utilisé pour le chat. Configurez une clé Mistral dédiée et des voix acceptées par le fournisseur.
 
-Dans l'interface web et l'embed, la synthèse peut être générée automatiquement
-pour chaque nouvelle réponse, ou à la demande avec le bouton du message. Dans
-les deux modes, le worker livre le résultat en Base64 par l'événement SSE
-`chat.audio.ready`. Pendant une génération, le bouton reste désactivé jusqu'à
-la réception de cet événement, puis la lecture démarre automatiquement lorsque
-la politique d'autoplay du navigateur l'autorise.
+| Variable | Défaut du code / rôle |
+| --- | --- |
+| `MISTRAL_AUDIO_ENABLED` | `false`. |
+| `MISTRAL_AUDIO_API_URL` | `https://api.mistral.ai/v1`. |
+| `MISTRAL_AUDIO_API_KEY` | Clé de l'API audio. |
+| `MISTRAL_AUDIO_TRANSCRIPTION_MODEL` | `voxtral-mini-latest`. |
+| `MISTRAL_AUDIO_SPEECH_MODEL` | `voxtral-mini-tts-2603`. |
+| `MISTRAL_AUDIO_VOICES` | Tableau JSON de voix `{ "id": "...", "label": "..." }` ; `[]`. |
+| `MISTRAL_AUDIO_DEFAULT_VOICE` | Identifiant par défaut ; première voix configurée si absent. |
+| `MISTRAL_AUDIO_MAX_RECORDING_SECONDS` | Durée maximale de dictée web ; `300`. |
 
-Lorsque l'audio Mistral est disponible, les agents disposent également de
-l'outil `generate_speech`. Il transforme jusqu'à 4096 caractères en fichier
-MP3, avec une voix et un nom de fichier optionnels. Le fichier est conservé
-avec la conversation et affiché directement dans un lecteur audio protégé.
+Les modèles réellement utilisés sont imposés côté serveur, même pour les routes audio acceptant un champ `model`. Le streaming natif du fournisseur audio n'est pas activé.
 
-Voir [`docker/compose.yml`](docker/compose.yml) pour un exemple étendu de configuration, avec `REDIS_DATABASE`, un volume Redis persistant, la journalisation AOF et la politique `noeviction`.
+## Utilisation
 
-L'application lit les variables d'environnement système, sans charger de fichier `.env`. Docker Compose peut toutefois utiliser son propre `.env` pour substituer les variables de son fichier YAML.
+### Conversations et mémoire
 
-### Volumes
+Après connexion, choisissez un agent, démarrez une conversation et envoyez votre message avec ou sans pièces jointes. L'historique permet de retrouver les échanges ; la dernière conversation est restaurée après rechargement. Les générations sont isolées par utilisateur et conversation.
 
-| Chemin        | Usage |
-|---------------|-------|
-| `/opt/data`   | Base SQLite, fichiers uploadés, données persistantes |
-| `/opt/addons` | Agents YAML personnalisés, workflows ComfyUI |
+Claire résume automatiquement le contexte court. La **mémoire long terme**, désactivée par défaut, s'active dans les préférences web, du widget ou de la Mini-App. Elle conserve une synthèse par utilisateur entre ses conversations, évolue périodiquement et peut être reconstruite depuis les résumés existants. Elle est supprimée avec le compte.
 
-### Commandes Docker utiles
+### Documents et recherche
 
-```bash
-# Démarrer la stack
-docker compose up -d
+Le panneau RAG permet d'ajouter un fichier, du texte ou une URL, de consulter les segments et d'activer, désactiver ou supprimer un document. Avec un modèle d'embeddings configuré et au moins un document actif, l'agent dispose de l'outil `rag_search`.
 
-# Voir les logs
-docker compose logs -f claire
+Les documents sont rattachés à l'utilisateur et stockés sous `<DATA_PATH>/rag`. Leur indexation fait appel au fournisseur d'embeddings configuré : tenez-en compte avant d'importer des données confidentielles.
 
-# Exécuter des commandes
-docker compose exec claire ./console migrations:migrate
-docker compose exec claire ./console cache:clear
-docker compose exec claire ./console telegram:set-commands
-docker compose exec claire ./console telegram:webhook --set
+La recherche web utilise séparément `SEARXNG_URL`. Elle ne remplace pas l'index documentaire personnel.
 
-# Lancer un worker supplémentaire au premier plan (déjà supervisés dans l'image)
-docker compose exec claire ./console queue:work
-```
+### Voix, images et PDF
 
-## Mise à niveau vers 2.1.0
+- **Voix** : dictez un message, choisissez une voix et activez la lecture automatique ou demandez la synthèse d'une réponse. La lecture dépend aussi des règles d'autoplay du navigateur.
+- **Fichiers audio** : l'outil `generate_speech` produit un MP3 conservé dans la conversation avec un lecteur protégé.
+- **Images** : activez ComfyUI et déployez des workflows YAML dans `<ADDONS_PATH>/comfyui`. Chaque fichier contient un `label` et un champ `workflow` avec le graphe JSON ComfyUI ; les modèles de workflow peuvent utiliser `{{PROMPT}}` et `{{SEED}}`. Utilisez un graphe complet adapté à votre instance, pas un simple fragment de nœuds.
+- **PDF** : l'outil `generate_pdf` accepte HTML ou Markdown, plusieurs formats de page, orientations et marges. Les documents sont liés à la conversation ; `PDF_TEMP_DIR` doit être accessible en écriture aux workers.
 
-1. Sauvegardez la base, les volumes persistants et les agents locaux. Suspendez les nouvelles requêtes et arrêtez les anciens workers avant de migrer.
-2. Déployez la nouvelle image ou le nouveau code et appliquez `./console migrations:migrate` dans cet environnement, avant de remettre les workers en service. La migration `Version20260912130000` crée le journal SQL `telegram_generation` ; le démarrage Docker n'applique pas les migrations automatiquement.
-3. Migrez les agents personnalisés de `CSS` / `css` / `css_inline` vers `THEME` / `theme`, selon le guide ci-dessous. Les anciens styles d'agents ne sont plus chargés.
-4. Videz le cache compilé avec `./console cache:clear`, puis redémarrez les processus web et tous les workers. Pour une installation depuis les sources, reconstruisez également les bundles avec `npm run build`.
-5. Rechargez les interfaces ouvertes. Les clients API externes doivent utiliser `/files/serve/{id}` et les jetons de ressources dédiés pour leurs liens et flux SSE, plutôt que les anciens mini-tokens ou un JWT de session dans l'URL.
+### Installer l'application web
 
-Les queues restent exclusivement dans Redis : le journal SQL Telegram ne constitue pas une queue ni un outbox SQL. Conservez les données Redis pendant la mise à niveau ; ne purgez pas les jobs pour débloquer une conversation.
+Ouvrez directement Claire en HTTPS, hors navigation privée, puis utilisez l'installation proposée par votre navigateur :
 
-## Application installable (PWA)
+| Plateforme | Parcours habituel |
+| --- | --- |
+| Chrome / Edge sur ordinateur | Icône d'installation dans la barre d'adresse ou menu du navigateur. |
+| Chrome sur Android | Menu, puis « Installer l'application » ou « Ajouter à l'écran d'accueil ». |
+| Safari sur iPhone / iPad | Partager, puis « Sur l'écran d'accueil » ; activer « Ouvrir comme app web » si proposé. |
 
-L'interface normale peut être installée comme une application et ouverte dans une
-fenêtre dédiée (`standalone`). Ouvrez directement l'URL publique de Claire en
-**HTTPS**, hors navigation privée : l'installation ne concerne pas le widget
-embarqué sur un site tiers. L'authentification SSO reste nécessaire pour utiliser
-le chat.
+La PWA concerne l'interface normale, pas le widget. Elle reste soumise au SSO et nécessite Internet : **aucun service worker ni mode hors ligne n'est fourni**. `APP_NAME` définit son nom et le titre de la page. Les navigateurs peuvent conserver temporairement l'ancien nom après un changement.
 
-### Installation
-
-- **Chrome / Edge sur ordinateur** : utilisez l'icône d'installation dans la barre
-  d'adresse, ou l'entrée d'installation du site dans le menu du navigateur.
-- **Chrome sur Android** : ouvrez le menu du navigateur, puis choisissez
-  **Installer l'application** ou **Ajouter à l'écran d'accueil**.
-- **Safari sur iPhone / iPad** : ouvrez **Partager**, puis **Sur l'écran d'accueil**.
-  Activez **Ouvrir comme app web** si cette option est proposée, puis confirmez.
-
-Les libellés et la disponibilité des commandes dépendent du navigateur et de sa
-version. Aucun service worker, cache applicatif ou mode hors ligne n'est fourni :
-**une connexion Internet reste requise**, même après installation.
-
-### Nom de l'application
-
-La variable facultative `APP_NAME` vaut `Claire` par défaut. Avec l'exemple Docker
-Compose, vous pouvez la définir dans le fichier `.env` utilisé par Compose :
-
-```dotenv
-APP_NAME="Mon assistant"
-```
-
-Elle définit le titre de la page avant et après connexion, le nom proposé à
-l'installation et les métadonnées iOS. Elle ne renomme ni les agents, ni le widget,
-ni le service OpenTelemetry. Le nom est échappé dans le HTML.
-
-Après modification, recréez le service pour appliquer l'environnement
-(`docker compose up -d --force-recreate claire`), videz le cache compilé
-(`docker compose exec claire ./console cache:clear`), puis rechargez les processus
-web persistants (`docker compose restart claire`) et la page. Un simple redémarrage
-ne met pas à jour les variables d'environnement d'un conteneur existant.
-Le navigateur peut conserver temporairement l'ancien nom d'une application déjà
-installée.
-
-### Manifeste et diagnostic
-
-Le manifeste dynamique `GET /manifest.webmanifest` est public avant authentification
-et renvoyé avec le type `application/manifest+json`. Il déclare les icônes PNG
-192x192 et 512x512, la langue française et le mode `standalone`. Les chemins
-`start_url` et `scope` valent `./` ; `id` est omis pour que l'identité dérive de
-`start_url` et reste propre au chemin de montage, à la racine ou sous un sous-chemin.
-
-Si l'installation n'est pas proposée, vérifiez que la page se charge sans erreur
-en HTTPS et que le manifeste ainsi que ses icônes sont accessibles. Sous un chemin
-de montage tel que `/chat`, vérifiez `/chat/manifest.webmanifest`. Le manifeste doit
-renvoyer du JSON, pas une page SSO ni une erreur. Rechargez la page après toute
-mise à jour du déploiement.
+Le manifeste public est disponible à `/manifest.webmanifest`, ou sous le chemin de montage de Claire. Il doit renvoyer du JSON avec ses icônes accessibles, sans redirection SSO.
 
 ## Cerveaux personnalisés (BrainRegistry)
 
-Créez vos propres agents sans coder en ajoutant des fichiers `.yaml` dans le répertoire `llm.yamlBrains.path` : `/opt/addons/agents/` dans le conteneur, ou `<ADDONS_PATH>/agents/` (par défaut `var/addons/agents/`). Le nom du fichier sans `.yaml` devient le slug de sélection.
+Un « cerveau » définit l'identité et les instructions d'un agent. Les agents PHP `claire` et `einstein` sont livrés avec le projet. Vos agents YAML sont déployés séparément, sans modification du registre PHP.
+
+### Créer un agent YAML
+
+Ajoutez `coach.yaml` dans `/opt/addons/agents/` pour l'image Docker, ou dans `<ADDONS_PATH>/agents/` hors Docker. Le nom du fichier sans `.yaml` devient le slug `coach`.
 
 ```yaml
 name: "Coach Personnel"
-description: "Un coach motivant pour vous aider à atteindre vos objectifs"
-avatar: "data:image/png;base64,..."
+description: "Un accompagnement concret pour avancer dans vos projets"
 theme: energy
 welcomes:
-  - "Prêt à relever de nouveaux défis ?"
-  - "Bonjour champion !"
+  - "Quel objectif souhaitez-vous travailler aujourd'hui ?"
+  - "Commençons par une prochaine étape réalisable."
 instruction: |
-  Tu es un coach personnel motivant et bienveillant...
+  Tu es un coach personnel bienveillant et pragmatique.
+  Aide la personne à clarifier son objectif, puis propose des actions concrètes.
+  Distingue les faits des hypothèses et adapte tes conseils à ses contraintes.
 ```
 
-### Thème d'un agent
+Le champ facultatif `avatar` accepte une chaîne représentant l'image de l'agent, par exemple une URL d'image ou une URL de données. Utilisez un slug distinct de ceux des agents intégrés. Sauvegardez vos fichiers privés séparément du dépôt : `local_data/addons/agents/` est ignoré par Git.
 
-Le raccourci scalaire `theme: energy` sélectionne un preset du catalogue. La forme objet permet de surcharger certaines valeurs sans écrire de feuille CSS. Exemple à utiliser à la place du champ `theme` ci-dessus :
+### Choisir un thème
+
+| Preset | Ambiance |
+| --- | --- |
+| `cyberpunk` | Violet et rose, fond dégradé ; défaut de Claire. |
+| `neon` | Cyan et bleu ; thème d'Einstein. |
+| `energy` | Orange sur anthracite et ardoise. |
+| `light` | Clair, éditorial, fond uni. |
+| `romantic` | Rouge et bordeaux, finition satinée. |
+| `dark` | Presque noir, accents bleus, fond uni. |
+
+Les six presets sont versionnés dans [`config/themes/`](config/themes/). Leur disponibilité n'implique pas la présence d'agents YAML supplémentaires.
+
+Le raccourci `theme: energy` sélectionne un preset. Pour personnaliser un agent, remplacez ce champ par un objet :
 
 ```yaml
 theme:
@@ -291,55 +282,41 @@ theme:
     effects: none
 ```
 
-`preset`, `tokens` et `variants` sont optionnels dans cette forme. `tokens: {}` et `variants: {}` signifient « aucune surcharge », pas « effacer le preset ». Les clés sont sensibles à la casse. Les valeurs des tokens doivent être des chaînes YAML : mettez notamment les couleurs hexadécimales et les nombres entre guillemets.
+Les champs `preset`, `tokens` et `variants` sont optionnels. Des maps vides (`{}`) signifient « aucune surcharge ». Les clés sont sensibles à la casse et les valeurs des tokens doivent être des **chaînes YAML**, notamment les couleurs hexadécimales et les nombres.
 
-Pour un agent PHP implémentant `BrainAvatar`, la constante héritée `THEME` vaut `cyberpunk`. Claire conserve ce défaut ; Einstein déclare :
+Un agent PHP implémentant `BrainAvatar` hérite de `THEME = 'cyberpunk'`. Il peut choisir un autre preset, comme Einstein :
 
 ```php
 public const string THEME = 'neon';
 ```
 
-Les six presets sont versionnés dans [`config/themes/`](config/themes/). Les deux agents PHP sont livrés par défaut ; les quatre agents YAML ci-dessous sont des affectations **locales**, disponibles seulement si leurs fichiers sont déployés :
+### Résolution et sécurité des thèmes
 
-| Slug de sélection | Agent | Origine | Preset | Identité |
-|-------------------|-------|---------|--------|----------|
-| `claire` | Claire | PHP | `cyberpunk` | Futuriste violet/rose, fond dégradé |
-| `einstein` | Einstein | PHP | `neon` | Électrique cyan/bleu, bulles envoyées sans rose, fond dégradé |
-| `coach` | Coach Personnel | YAML local | `energy` | Orange dynamique sur anthracite/ardoise, fond dégradé sans marron |
-| `calliope` | Calliope | YAML local | `light` | Éditorial lumineux, fond uni |
-| `claire-gf` | Claire GF | YAML local | `romantic` | Érotique et feutré, rouge passion/bordeaux, finition satinée, fond dégradé |
-| `thanos` | Thanos | YAML local | `dark` | Presque noir, ardoise sombre et accents bleus, fond uni |
+`ThemeRegistry` charge le répertoire local de confiance `themes.path`, défini dans [`config/settings/themes.php`](config/settings/themes.php), par défaut `<dépôt>/config/themes`. Il n'existe pas de variable intégrée `THEMES_PATH`.
 
-Le slug local actuel est `thanos` (`thanos.yaml`), sans alias `dark-test`. Remplacez une ancienne sélection `dark-test` par `thanos`.
+Un preset tel que `light.yaml` contient directement les maps `tokens` et `variants`, sans enveloppe `theme` ni clé `preset`. Son nom respecte `[a-z][a-z0-9-]*`. Les deux maps sont requises mais peuvent être vides. Un fichier illisible ou de structure incorrecte est ignoré ; les entrées individuelles inconnues ou invalides sont filtrées.
 
-### Résolution et déploiement
+Les règles de résolution sont les suivantes :
 
-`App\Services\ThemeRegistry` lit le chemin serveur `themes.path`, défini dans [`config/settings/themes.php`](config/settings/themes.php) et valant par défaut `<app>/config/themes`. Ce réglage désigne un **répertoire local de confiance**, contenant `contract.json` et les presets `*.yaml`, jamais une URL ni un chemin fourni par l'agent. Il n'existe pas de variable d'environnement `THEMES_PATH` intégrée.
+- Sans thème, ou avec une référence invalide ou inconnue, le preset sélectionné est `cyberpunk`. Une référence est un slug exact, jamais un chemin, une URL ou `light.yaml`.
+- Les surcharges autorisées remplacent les valeurs du preset clé par clé, même lorsqu'une référence inconnue a déclenché le repli sur `cyberpunk`.
+- Si le répertoire ou le contrat est indisponible ou invalide, la résolution renvoie `cyberpunk` avec des maps vides. Si seul le preset de repli manque, les surcharges autorisées par un contrat valide restent applicables.
+- Les presets ne sont pas implicitement fusionnés avec `cyberpunk.yaml`. Les styles communs du frontend fournissent les valeurs de secours.
+- Le contrat valide les noms et les types, **pas la sécurité ni la syntaxe des valeurs CSS**. Réservez ces fichiers à des administrateurs de confiance. Fournissez des valeurs de propriétés, pas des sélecteurs, des blocs `:root`, des `@import` ou des feuilles de style.
 
-Un fichier de catalogue, par exemple `light.yaml`, contient directement les deux maps `tokens` et `variants`, sans enveloppe `theme` ni champ `preset`. Son nom sans extension est sa référence ; il doit respecter `[a-z][a-z0-9-]*`. Les deux maps sont requises dans un preset, mais peuvent être vides (`{}`). Un YAML illisible, une map manquante ou une liste non vide à la place d'une map fait ignorer ce fichier. En revanche, des entrées inconnues ou invalides dans ces maps sont simplement filtrées, sans rejeter le preset entier.
-
-- Sans `theme`, ou avec une référence absente, invalide ou inconnue, le preset sélectionné devient `cyberpunk`. Une référence est un slug exact, pas `light.yaml`, un chemin ou une URL.
-- Les surcharges valides remplacent les valeurs du preset sélectionné clé par clé, **même si une référence inconnue a déclenché le fallback**. Les tokens inconnus ou non textuels et les variantes non autorisées sont ignorés ; les autres valeurs du preset restent intactes.
-- Si le répertoire ou le contrat manque ou si la structure du contrat est invalide, la résolution produit `cyberpunk` avec des maps vides. Si seul le preset `cyberpunk` est indisponible, sa base est vide mais les surcharges autorisées par un contrat valide restent applicables. Les tokens communs du frontend fournissent les valeurs de secours ; les presets ne sont pas fusionnés implicitement avec le fichier `cyberpunk.yaml`.
-- Le contrat filtre les **noms** et les types, pas la syntaxe ni la sécurité des valeurs CSS. Utilisez uniquement des fichiers administrés de confiance et des valeurs CSS adaptées à chaque propriété, jamais des sélecteurs, blocs `:root`, règles `@import` ou feuilles de style. Par exemple, `--claire-body-background` accepte une couleur ou `linear-gradient(...)`, car il alimente `background`.
-
-`FrontendConfigFactory` expose toujours `theme` sous la forme `{ preset: string, tokens: Record<string, string>, variants: Record<string, string> }` dans `brainInfo` et `brains`. Les maps JSON sont des **objets**, même vides. Ainsi, en l'absence de catalogue utilisable :
+Le bootstrap expose toujours un objet de la forme suivante dans `brainInfo` et `brains`, y compris lorsque les maps sont vides :
 
 ```json
 {"preset":"cyberpunk","tokens":{},"variants":{}}
 ```
 
-Vue applique les propriétés et les attributs `data-theme-controls` / `data-theme-effects` sur `.claire-app`, en mode normal comme dans le Shadow DOM du widget. Un changement d'agent remplace immédiatement le thème et retire les anciennes surcharges ; aucune feuille CSS d'agent n'est téléchargée et le thème ne modifie pas la page hôte de l'embed.
+Vue applique les tokens et les attributs `data-theme-controls` / `data-theme-effects` à `.claire-app`. Le changement d'agent retire les anciennes surcharges. Le widget applique le même thème dans son Shadow DOM, sans modifier la page hôte ni télécharger de feuille CSS d'agent.
 
-**Rupture volontaire :** `BrainAvatar::CSS` est remplacé par `THEME`. Les anciens champs YAML `css` et `css_inline` sont ignorés, sans compatibilité transitoire ; `cssInline` et `dynamicCss` ne font plus partie du contrat frontend. Migrez les agents externes vers `theme` au lieu de conserver leurs anciennes feuilles ou blocs CSS.
+**Migration des anciens agents :** `BrainAvatar::CSS` est remplacé par `THEME`. Les champs YAML `css` et `css_inline` sont ignorés ; `cssInline` et `dynamicCss` ne font plus partie du contrat frontend.
 
-Les agents sous `local_data/addons/agents/` sont ignorés par Git : déployez et sauvegardez leurs fichiers séparément, avec les permissions appropriées, sans publier leurs instructions privées. Le catalogue central, lui, est versionné. `ThemeRegistry` et `BrainRegistry` conservent respectivement le catalogue et les agents YAML en mémoire par instance. Après modification, redémarrez les processus de longue durée qui les utilisent (workers de queue et workers web le cas échéant). Lors de la mise à niveau du code/DI ou d'un changement de configuration, videz aussi le cache compilé avec `./console cache:clear` avant de relancer les processus. Hors mode debug, le bootstrap web reconstruit le conteneur DI compilé ; `./console cache:init` génère les proxies Doctrine, ce n'est pas une commande de rechargement des thèmes. Vider le cache disque ne recharge pas les instances déjà actives ; rechargez également les interfaces ouvertes pour récupérer le nouveau bootstrap.
+### Référence des tokens
 
-### API interne des thèmes
-
-La source officielle de la liste autorisée est [`config/themes/contract.json`](config/themes/contract.json), partagée par le registre et les contrôles frontend. Ce fichier de dépôt n'est pas un endpoint HTTP. Les autres variables CSS du socle, notamment celles de dimensionnement de l'embed, ne sont pas automatiquement des tokens publics d'agent.
-
-Les **71 tokens publics** sont regroupés ci-dessous par rôle. Les valeurs de référence sont dans les presets et `frontend/styles/`, plutôt que dupliquées ici :
+La source officielle est [`config/themes/contract.json`](config/themes/contract.json), un fichier interne au dépôt, pas un endpoint HTTP. Voici les **71 tokens publics**, regroupés par rôle. Les valeurs de référence restent dans les presets et [`frontend/styles/`](frontend/styles/).
 
 - **Typographie et schéma de couleurs (4)** : `--claire-font`, `--claire-font-heading`, `--claire-font-mono`, `--claire-color-scheme`.
 - **Fonds et surfaces (8)** : `--claire-body-background`, `--claire-surface-chat`, `--claire-header-bg`, `--claire-input-bar-bg`, `--claire-surface-muted`, `--claire-surface-hover`, `--claire-surface-active`, `--claire-surface-code`.
@@ -356,407 +333,336 @@ Les **71 tokens publics** sont regroupés ci-dessous par rôle. Les valeurs de r
 - **Succès (4)** : `--claire-success`, `--claire-success-text`, `--claire-success-background`, `--claire-success-border`.
 - **Scrollbars et lien Telegram (4)** : `--claire-scrollbar-track`, `--claire-scrollbar-thumb`, `--claire-scrollbar-hover`, `--claire-telegram-link`.
 
-Les **variantes publiques** sont `controls: solid | outline | soft` (contrôles pleins, contour ou adoucis) et `effects: none | glow | satin` (sans effet, lueur ou finition satinée). Toute autre clé ou valeur est ignorée. `solid` et `none` réutilisent les règles du socle ; les autres finitions sont définies dans `frontend/styles/variants.css`, sans sélecteurs propres à chaque preset. La coloration du code utilise également les tokens sémantiques du thème, sans feuille Highlight distincte imposant une palette claire.
+Deux variantes sont publiques : `controls: solid | outline | soft` et `effects: none | glow | satin`. Toute autre clé ou valeur est ignorée. Les variantes réutilisent les styles communs et [`frontend/styles/variants.css`](frontend/styles/variants.css), sans sélecteur propre à chaque preset. La coloration du code suit également les tokens sémantiques du thème.
 
-## Mémoire long terme
+Les autres variables CSS internes, notamment celles des dimensions du widget, ne sont pas automatiquement des tokens publics d'agent.
 
-Depuis la version 1.6.0, Claire peut conserver une synthèse durable des informations utiles d'un utilisateur entre ses conversations. Cette fonctionnalité est désactivée par défaut et s'active dans les préférences de l'interface web, du widget ou de la Mini-App Telegram.
+### Recharger les agents
 
-Lorsque la mémoire est active, elle évolue périodiquement à partir des échanges et est ajoutée au contexte des nouvelles requêtes. L'utilisateur peut également la reconstruire à partir des résumés de ses conversations existantes. Les données sont isolées par utilisateur dans la table `long_term_memory` et supprimées en cascade avec le compte.
+Les registres conservent agents et thèmes en mémoire par instance. Après modification, redémarrez les processus persistants concernés, notamment les workers de queue et les workers web, puis rechargez les interfaces ouvertes.
 
-Après une mise à niveau vers la version 1.6.0, appliquez la migration correspondante :
+Lors d'un changement de configuration ou de code/DI, videz aussi le cache compilé **avant** le redémarrage. `cache:init` génère les proxies Doctrine : ce n'est pas une commande de rechargement des thèmes. Vider le cache disque ne recharge pas les instances déjà actives ; hors debug, le bootstrap web reconstruit le conteneur DI compilé.
 
-```bash
-docker compose exec claire ./console migrations:migrate
-```
+## Widget embarqué
 
-## ComfyUI (Génération d'images)
+Le widget utilise les mêmes composants et fonctions de chat que l'application normale. Il apparaît replié sous forme d'avatar, puis s'ouvre en panneau de conversation au clic.
 
-Activez avec `COMFYUI_ENABLED=true` et ajoutez des workflows dans `/opt/addons/comfyui/` :
-
-```yaml
-label: Portrait Flux
-workflow: |
-  {
-    "3": { "inputs": { "seed": {{SEED}} }, "class_type": "KSampler" },
-    "6": { "inputs": { "text": "{{PROMPT}}" }, "class_type": "CLIPTextEncode" }
-  }
-```
-
-## Génération de PDF
-
-Activée par défaut (`PDF_ENABLED=true`), la génération de PDF permet aux agents de produire des documents depuis du HTML ou du Markdown via l'outil `generate_pdf` :
-
-- Formats supportés : HTML, Markdown
-- Formats de page : A4, Letter, A3, A5
-- Orientations : portrait, paysage
-- Marges configurables
-- Styles de document intégrés pour la typographie, les tableaux et la pagination
-
-Les fichiers générés sont liés à la conversation et accessibles dans l'historique de chat via des liens protégés. Le répertoire `PDF_TEMP_DIR` doit être accessible en écriture aux workers.
-
-## RAG (Recherche augmentée)
-
-Claire indexe des documents par utilisateur pour enrichir les réponses de l'agent (retrieval-augmented generation). Depuis l'interface web, l'utilisateur peut ajouter un document (fichier, texte collé ou URL), l'activer/désactiver, le supprimer ou consulter ses segments.
-
-Lorsqu'au moins un document actif existe, l'outil `rag_search` est automatiquement mis à la disposition de l'agent pour interroger ces documents. Les embeddings sont calculés via le modèle `OPENAPI_MODEL_EMBED` (requis), et le découpage en segments ainsi que le nombre de résultats sont réglables via `RAG_CHUNK_SIZE` et `RAG_TOP_K`.
-
-Les documents sont stockés par utilisateur dans le volume `/opt/data` (répertoire `rag/`) et référencés dans la table `rag_document`. Après une mise à niveau vers la version 2.0.0, appliquez la migration correspondante :
-
-```bash
-docker compose exec claire ./console migrations:migrate
-```
-
-## Telegram Bot
-
-### Configuration
-
-| Variable | Description |
-|----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Token de @BotFather |
-| `TELEGRAM_WEBHOOK_SECRET` | Secret pour sécuriser le webhook |
-
-### Commandes de configuration
-
-```bash
-# Configurer le webhook
-docker compose exec claire ./console telegram:webhook --set
-
-# Vérifier le statut
-docker compose exec claire ./console telegram:webhook --info
-
-# Configurer le bouton Mini-App
-docker compose exec claire ./console telegram:menu-button --set
-```
-
-Le bot supporte les commandes `/start`, `/help`, `/brain`, `/comfyui`.
-
-Depuis l'interface web, chaque utilisateur peut associer son identifiant Telegram (User ID) à son compte pour recevoir les notifications. L'identifiant est validé (numérique uniquement) et doit être unique ; il peut être dissocié à tout moment en effaçant le champ.
-
-Les messages vocaux et fichiers audio entrants sont transcrits lorsque l'audio Mistral est configuré. Le bot peut répondre en audio et envoyer les fichiers produits par `generate_speech` ; la voix se choisit dans les préférences de la Mini-App.
-
-### Journaux et maintenance
-
-Les générations Telegram et leurs étapes de livraison sont journalisées dans la table SQL `telegram_generation` pour éviter de rejouer des outils ou des envois déjà tentés. La commande `chat:maintenance` permet le diagnostic et la compaction, **en simulation par défaut** :
-
-```bash
-# Examiner une conversation bloquée, sans rejouer la génération
-docker compose exec claire ./console chat:maintenance --user USER --thread THREAD
-
-# Simuler la compaction des corps des journaux livrés depuis plus de 7 jours
-docker compose exec claire ./console chat:maintenance --compact --retention-days 7
-
-# Appliquer la compaction, depuis le début du parcours
-docker compose exec claire ./console chat:maintenance --compact --retention-days 7 --apply --cursor 0
-```
-
-Poursuivez chaque parcours avec le curseur `sql:v1:` renvoyé, via `--cursor`, jusqu'à `0`. Après une simulation, recommencez le parcours d'application à `0`. La rétention de sept jours est une valeur par défaut de la commande, pas une tâche planifiée automatiquement.
-
-Seuls les corps des journaux entièrement confirmés et livrés sont effacés ; les identifiants et marqueurs anti-rejeu restent en SQL sans expiration. Les journaux actifs, en échec ou ambigus sont conservés. Pour une génération orpheline, `--user USER --thread THREAD --reconcile --apply` ne marque une erreur que si l'absence de travail restant est démontrée, sans relancer le LLM ni les outils. Cette preuve suppose que les données de queue n'ont pas été supprimées ou évincées de Redis.
-
-## Queue Redis
-
-Redis et au moins un worker sont nécessaires au chat web, au widget, à l'audio asynchrone et à Telegram, y compris sur une seule instance. L'image Docker démarre déjà les workers sous Supervisor (`QUEUE_WORKERS=8` par défaut). Hors Docker, lancez et supervisez-les séparément ; les extensions PHP `pcntl` et `posix` sont requises pour le renouvellement des baux.
-
-```bash
-# Lancer le worker
-docker compose exec claire ./console queue:work
-
-# Options
---max-jobs=1  # S'arrêter après un job traité
---timeout=5   # Attente maximale d'un job (secondes)
---max-jobs=100
---max-time=3600
-```
-
-Les jobs sont réservés avec un bail renouvelable et peuvent être retentés avec un délai progressif. Les échecs non récupérables sont conservés en dead-letter ; une génération ayant déjà tenté des appels d'outils n'est pas rejouée aveuglément. Utilisez le diagnostic `chat:maintenance` avant toute intervention sur une conversation bloquée.
-
-En production, configurez un volume Redis persistant, une politique de persistance adaptée et `maxmemory-policy noeviction`. Redis contient les jobs et des états de génération, pas seulement un cache jetable ; une perte de ces données compromet la reprise sûre des traitements.
-
-## Mode embarqué (Widget)
-
-Claire expose un mode widget prêt à intégrer dans une page externe.
-
-- Endpoint de bootstrap JSON : `GET /embed`
-- Bootstrap JS : `public/js/embed.js` (IIFE autonome, pas de dépendance externe)
-- Échange SSO -> session Claire : `POST /auth/embed/exchange`
-- Fonction globale d'initialisation : `window.claireEmbed({ baseUrl, target, token|ssoToken })`
-- Fonction de teardown : `window.destroyClaireEmbed()`
-
-Exemple minimal :
+Chargez le bundle depuis votre instance et transmettez un jeton obtenu par le parcours d'authentification du site hôte :
 
 ```html
 <div id="claire-root"></div>
 <script src="https://claire.example.com/js/embed.js"></script>
 <script>
-  window.claireEmbed({
-    baseUrl: 'https://claire.example.com',
-    target: '#claire-root',
-    ssoToken: '<TOKEN_SSO>'
-  });
+  async function mountClaire(ssoAccessToken) {
+    await window.claireEmbed({
+      baseUrl: 'https://claire.example.com',
+      target: '#claire-root',
+      ssoToken: ssoAccessToken,
+      ssoTokenType: 'access_token'
+    });
+  }
+  // Appeler mountClaire avec le jeton de l'utilisateur connecté.
 </script>
 ```
 
-Une page de validation locale est fournie dans `public/embed.html`.
+Ne placez pas de jeton permanent dans une page publique. Le fournisseur OIDC doit autoriser l'échange : un access token exige notamment une audience Claire et un client émetteur accepté par `OPENID_ACCESS_TOKEN_CLIENT_IDS`. Les ID tokens utilisent `ssoTokenType: 'id_token'` et sont également validés côté serveur. Configurez les origines CORS de Claire pour les sites hôtes.
 
-Le widget est distribué comme un **Custom Element Vue** (`<claire-chat-widget>`) avec **Shadow DOM**. Il reste isolé de la page hôte : il ne modifie pas `window.fetch`, n'écrit pas de configuration sur `document.body` et ne sort jamais de son conteneur racine. La commande `npm run build` génère l’application normale dans `public/build/` et reconstruit le script compatible `<script>` dans `public/js/embed.js`.
+Vous pouvez aussi fournir `sessionToken` avec un JWT Claire déjà obtenu. L'option `token` accepte un jeton de session Claire, pas implicitement un jeton SSO.
 
-## API
+| Élément | Rôle |
+| --- | --- |
+| `POST /auth/embed/exchange` | Échange le jeton SSO contre une session Claire. |
+| `GET /embed` | Renvoie le bootstrap JSON authentifié, pas une page HTML. |
+| `window.claireEmbed(...)` | Initialise le widget ; remplace l'instance précédente si nécessaire. |
+| `window.destroyClaireEmbed()` | Démonte le widget et ferme ses flux et timers. |
+| [`public/embed.html`](public/embed.html) | Page de test d'intégration. |
 
-### Authentification session (JWT)
+Le Custom Element `<claire-chat-widget>` utilise un Shadow DOM. Le bundle ne remplace pas `window.fetch` et n'écrit pas la configuration sur `document.body`. Fournissez un `target` existant pour monter le widget à l'emplacement prévu.
 
-- Le frontend envoie le JWT de session via l'en-tête `X-Claire-Auth`.
-- Le backend peut renvoyer un JWT rafraîchi via `X-Claire-Token`.
-- Endpoint de refresh silencieux: `GET /auth/refresh` (retour `204` avec en-têtes de session si renouvellement).
-- Endpoint d'échange SSO pour le widget: `POST /auth/embed/exchange`.
-- `POST /auth/resource-token`, authentifié par le JWT de session, délivre un jeton limité aux fichiers ou au flux SSE demandés.
-- Les URL de ressources acceptent ce jeton dédié dans `token`. Les JWT de session dans l'URL et les anciens mini-tokens ne sont plus acceptés pour les authentifier.
+## Telegram
 
-Exemple de corps JSON pour obtenir un jeton partagé entre un fichier et un flux :
+### Configurer le bot
+
+Créez un bot avec BotFather, puis configurez `TELEGRAM_BOT_TOKEN` et un `TELEGRAM_WEBHOOK_SECRET` robuste. **Sans secret webhook, son contrôle est désactivé.** L'URL publique de Claire doit être accessible à Telegram.
+
+Après application de l'environnement et des migrations :
+
+```bash
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console telegram:webhook --set
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console telegram:webhook --info
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console telegram:set-commands
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console telegram:menu-button --set
+```
+
+Les commandes `telegram:webhook` et `telegram:menu-button` acceptent aussi `--delete` et `--info`. Le webhook est construit à partir de `BASE_URL`.
+
+### Associer un utilisateur
+
+Dans l'interface web, ouvrez la configuration Telegram et renseignez votre **identifiant utilisateur numérique**, pas votre `@username`. Il doit être unique. Effacez le champ et enregistrez pour dissocier le compte.
+
+Le bot accepte les commandes `/start`, `/help`, `/brain` et `/comfyui`, ainsi que les messages, photos et documents. Les voix et fichiers audio entrants sont transcrits lorsque l'audio Mistral est configuré ; le bot peut aussi répondre en audio.
+
+La Mini-App permet de gérer les préférences, choisir une voix, ouvrir une nouvelle conversation et reconstruire la mémoire durable. C'est une interface de configuration liée au compte, pas une copie complète du chat web.
+
+## API et authentification
+
+Claire expose une **API applicative**. La compatibilité OpenAI concerne le fournisseur LLM et la forme des routes audio, pas une implémentation générale de `/v1/chat/completions`.
+
+### Sessions et ressources
+
+| Mécanisme | Utilisation |
+| --- | --- |
+| Connexion web | `GET /auth/sso`, puis retour sur `GET /auth/callback`. |
+| JWT de session | Envoyé dans `X-Claire-Auth`, jamais dans l'URL. |
+| Renouvellement | Récupérer `X-Claire-Token` dans les réponses ; `GET /auth/refresh` permet un refresh silencieux. |
+| Connexion persistante | Cookie web/PWA `Secure`, `HttpOnly`, `SameSite=Lax`, associé à Redis ; limite absolue de sept jours. |
+| Restauration / déconnexion | `POST /auth/remember` et `POST /logout`, gérés par le frontend. HTTPS, même origine et `X-Claire-Remember: 1` requis ; `Sec-Fetch-Site` doit être absent ou `same-origin`. |
+| Fichiers et SSE | Jetons dédiés obtenus via `POST /auth/resource-token`. Seuls ces jetons limités sont prévus dans le paramètre d'URL `token`. |
+
+Une session courte ne doit pas être confondue avec le `sessionId` d'un flux SSE, qui identifie le canal du client. Les anciens mini-tokens et les JWT de session placés dans les URL de ressources ne sont pas acceptés.
+
+### Envoyer un message
+
+1. Créez une conversation avec `POST /history/new` et récupérez `threadId` et `sessionId`. Pour reprendre une conversation, fournissez votre identifiant de canal client `sessionId` à `GET /history/open/{threadId}?sessionId=SESSION_ID` : cette route ne renvoie que `threadId`, elle ne crée pas de `sessionId` pour vous.
+2. Demandez un jeton de ressource pour ce couple `threadId` / `sessionId` et conservez le même canal pour le flux et les messages.
+3. Ouvrez le flux SSE et, pour une nouvelle conversation, attendez la fin de l'initialisation : `chat.snapshot` avec `responding: false`.
+4. Envoyez le message ; la réponse finale arrivera sur le flux, pas dans la réponse HTTP du POST.
+
+Exemple avec les identifiants et le JWT obtenus lors de ces étapes :
+
+```bash
+curl 'https://claire.example.com/brain/messages' \
+  -H "X-Claire-Auth: $CLAIRE_SESSION_TOKEN" \
+  --data-urlencode 'message=Bonjour Claire !' \
+  --data-urlencode "threadId=$THREAD_ID" \
+  --data-urlencode "sessionId=$SESSION_ID"
+```
+
+Réponse d'acceptation, statut **202** :
 
 ```json
-{"resources":[{"type":"file","fileId":"FILE_ID"},{"type":"stream","threadId":"THREAD_ID","sessionId":"SESSION_ID"}]}
+{"threadId":"...","messageId":"assistant-message-...","accepted":true}
 ```
 
-Une portée unique peut aussi être envoyée directement, par exemple `{"type":"file","fileId":"FILE_ID"}`. La réponse contient `{token, expiresAt}`. Le jeton expire au plus tard après 300 secondes ; un lot accepte au maximum 32 portées et 4000 octets sérialisés. Le client doit renouveler les jetons expirés et reconnecter les flux avec la portée exacte, sans transmettre ces jetons à des URL tierces.
+La création de conversation est elle-même asynchrone et renvoie `{threadId, sessionId}`. Une conversation occupée ou supprimée peut produire un conflit `409` lors de l'envoi. Des pièces jointes peuvent être transmises avec `file_ids[]` ou `upload_files[]`.
 
-### Healthcheck
+Pour obtenir un jeton de ressource, envoyez à `POST /auth/resource-token`, avec `X-Claire-Auth`, un corps JSON tel que :
 
-`GET /health` — Retourne la version et la date.
-
-### Envoi de message
-
-```http
-POST /brain/messages HTTP/1.1
-X-Claire-Auth: <JWT_SESSION>
-Content-Type: multipart/form-data; boundary=----BOUND
-
-------BOUND
-Content-Disposition: form-data; name="message"
-
-Bonjour Claire !
-------BOUND
-Content-Disposition: form-data; name="sessionId"
-
-sess-abc123
-------BOUND
-Content-Disposition: form-data; name="threadId"
-
-<THREAD_ID>
-------BOUND--
+```json
+{
+  "resources": [
+    {"type": "file", "fileId": "FILE_ID"},
+    {"type": "stream", "threadId": "THREAD_ID", "sessionId": "SESSION_ID"}
+  ]
+}
 ```
 
-Utilisez le `threadId` d'une conversation créée par `POST /history/new` ou ouverte depuis l'historique. La réponse `202` contient `{threadId, messageId, accepted: true}` : le traitement est asynchrone. Une conversation occupée ou supprimée peut produire un conflit `409`.
+Une portée unique peut aussi être fournie directement. La réponse contient `{token, expiresAt}`. Le jeton dure au plus 300 secondes ; un lot accepte au plus 32 portées et 4000 octets sérialisés. Renouvelez les jetons expirés et ne les transmettez pas à des URL tierces.
 
-La création via `POST /history/new` est elle aussi asynchrone et renvoie `{threadId, sessionId}`. Réutilisez ce `sessionId`, obtenez le jeton du flux et attendez la fin de l'initialisation (`chat.snapshot` avec `responding: false`) avant d'envoyer un premier message.
+Le flux s'ouvre sur :
 
-Le résultat arrive sur `GET /brain/stream?threadId=THREAD_ID&sessionId=SESSION_ID&token=RESOURCE_TOKEN`, avec un jeton autorisant ce couple conversation/session. Le `sessionId` identifie le canal SSE du client, pas son JWT d'authentification.
+```text
+GET /brain/stream?threadId=THREAD_ID&sessionId=SESSION_ID&token=RESOURCE_TOKEN
+```
 
-### Gestion des fichiers
+### Routes principales
 
-- `GET /files/count`, `GET /files/list`
-- `POST /files/upload`, `POST /files/upload_rag`
-- `DELETE /files/delete/{id}`
-- `GET /files/serve/{id}` (images, audio, PDF et autres fichiers ; l'ancienne route `/files/img_serve/{id}` est supprimée)
+Les routes applicatives exigent une session ou, pour les ressources concernées, un jeton dédié. Le healthcheck et le manifeste sont publics. Les déclarations HTTP sont regroupées dans [`config/routes/`](config/routes/) ; le flux SSE est servi séparément par le daemon.
 
-### RAG
+| Domaine | Routes |
+| --- | --- |
+| Santé | `GET /health` |
+| Historique | `GET /history/count`, `GET /history/list`, `GET /history/open/{threadId}` |
+| Conversations | `POST /history/new`, `DELETE /history/exchange/last`, `DELETE /history/delete/{threadId}` |
+| Messages | `POST /brain/messages`, `POST /brain/audio` |
+| Fichiers | `GET /files/count`, `GET /files/list`, `GET /files/serve/{id}` |
+| Gestion des fichiers | `POST /files/upload`, `POST /files/upload_rag`, `DELETE /files/delete/{id}` |
+| Consultation RAG | `GET /rag/list`, `GET /rag/count`, `GET /rag/segments/{id}` |
+| Gestion RAG | `POST /rag/upload`, `POST /rag/text`, `POST /rag/url`, `POST /rag/toggle/{id}`, `DELETE /rag/delete/{id}` |
+| Préférences | `POST /config/audio`, `POST /config/brain_avatar`, `POST /config/long_term_memory`, `POST /config/long_term_memory/rebuild` |
+| Audio | `POST /v1/audio/transcriptions`, `POST /v1/audio/speech` |
 
-- `GET /rag/list`, `GET /rag/count`
-- `GET /rag/segments/{id}`
-- `POST /rag/upload` (fichier), `POST /rag/text`, `POST /rag/url`
-- `POST /rag/toggle/{id}` (activer/désactiver), `DELETE /rag/delete/{id}`
+`/files/serve/{id}` sert images, audio, PDF et autres fichiers. L'ancienne route `/files/img_serve/{id}` est supprimée.
 
-### Audio
+### Routes audio
 
-- `POST /v1/audio/transcriptions` (transcription audio compatible OpenAI)
-- `POST /v1/audio/speech` (synthèse vocale compatible OpenAI)
-- `POST /brain/audio` (génération de synthèse vocale pour un message)
-- `POST /config/audio` (mise à jour des préférences audio utilisateur)
+`POST /v1/audio/transcriptions` accepte un multipart avec `file` et `model`, et les formats de réponse `json`, `verbose_json` ou `text`. Les extensions acceptées incluent WAV, MP3, FLAC, OGG et WebM.
 
-### Historique
+`POST /v1/audio/speech` accepte `input`, `model`, `voice` et éventuellement `response_format`. La voix doit appartenir à la liste serveur. L'entrée est limitée à 4096 octets ; ni streaming audio, ni instructions de synthèse, ni vitesse différente de `1.0` ne sont pris en charge. Un service audio non configuré renvoie `503`.
 
-- `GET /history/count`, `GET /history/list`
-- `GET /history/open/{threadId}`, `POST /history/new`
-- `DELETE /history/exchange/last`, `DELETE /history/delete/{threadId}`
+Dans le chat, la synthèse asynchrone est livrée en Base64 par l'événement `chat.audio.ready`. Le bouton reste désactivé pendant sa génération, puis la lecture démarre si le navigateur l'autorise.
 
-## Démarrage rapide (Docker)
+## Architecture
+
+```text
+Navigateur / widget / Telegram
+              |
+       FrankenPHP + Caddy
+         |             |
+    API Slim 4     /brain/stream
+         |             |
+         |       Daemon SSE ReactPHP
+         |        |             |
+         |   Redis Pub/Sub   Backend Slim interne
+         |
+     Queue Redis --> Workers --> LLM et outils externes
+                         |
+                    SQL + fichiers
+```
+
+Le shell HTML est préparé par `VueShell`. `ChatDataRenderer` fournit les données HTTP/SSE ; Vue rend les messages, le Markdown et les outils. Les styles partagés sont compilés pour le web et inclus dans le Shadow DOM du widget. Il n'y a ni htmx ni chargement dynamique de feuilles CSS d'agents.
+
+Le routage Caddy livré réserve `127.0.0.1:8081` au daemon SSE et `127.0.0.1:8082` au backend Slim interne. Ces listeners ne doivent pas être publiés. Dans Docker, l'entrypoint génère un `SSE_INTERNAL_SECRET` aléatoire à chaque démarrage et le partage entre processus ; il remplace une éventuelle valeur existante, sans l'écrire sur disque ni la journaliser.
+
+Le transport SSE utilise Redis Pub/Sub **sans persistance ni rejeu `Last-Event-ID`**. Une reconnexion obtient un nouveau jeton et un snapshot SQL. Une demande audio perdue doit être relancée manuellement.
+
+### Réglages SSE
+
+Les limites détaillées sont définies dans [`config/settings/sse.php`](config/settings/sse.php). Elles sont chargées au démarrage ; toute modification exige un redémarrage.
+
+| Variables | Défauts / rôle |
+| --- | --- |
+| `SSE_DURATION` | Connexion autorisée pendant `1800` s, maximum `86400`, indépendamment de l'expiration du JWT d'ouverture. |
+| `SSE_CHECK_INTERVAL`, `SSE_KEEPALIVE` | Contrôles de génération/révocation et maintien de connexion ; `15` s chacun. |
+| `SSE_HTTP_TIMEOUT` | Appels internes ; `10` s. |
+| `SSE_MAX_CONNECTIONS` | `1000` connexions par daemon. |
+| `SSE_MAX_HTTP_REQUESTS`, `SSE_MAX_REDIS_COMMANDS` | Concurrence des appels internes ; `16` et `64`. |
+| `SSE_MAX_PENDING_EVENTS` | `256` événements en attente par connexion. |
+| `SSE_MAX_CLIENT_BUFFER`, `SSE_MAX_GLOBAL_BUFFER` | Budgets de tampon ; `16777216` et `134217728` octets. |
+| `SSE_WRITE_TIMEOUT`, `SSE_SHUTDOWN_TIMEOUT` | Client lent et arrêt du daemon ; `15` et `5` s. |
+
+## Exploitation et mises à jour
+
+### Déployer une nouvelle version
+
+Consultez le [CHANGELOG](CHANGELOG.md) et privilégiez une version d'image identifiée pour vos déploiements reproductibles.
+
+1. Sauvegardez la base SQL, les fichiers, les agents locaux et Redis selon une procédure cohérente avec les traitements en cours.
+2. Retirez le service du trafic et arrêtez les anciens workers avant de modifier le schéma ou le code.
+3. Déployez la nouvelle version. Dans un environnement de maintenance utilisant le nouveau code et les mêmes volumes, exécutez `./console cache:clear`, `./console migrations:migrate --no-interaction`, puis `./console app:generate-proxies`.
+4. Redémarrez ensemble le web, le daemon SSE et les workers avec la nouvelle configuration. Après modification de l'environnement Compose, recréez les conteneurs : un simple `restart` n'applique pas de nouvelles variables.
+5. Vérifiez le statut des migrations, le SSO, une conversation avec streaming et les intégrations utilisées, puis rouvrez le trafic et rechargez les clients.
+
+Déployez producteurs, daemon, proxy et frontend ensemble. Un rollback doit restaurer un ensemble cohérent, en tenant compte des migrations SQL. Prévoir une courte interruption avec reconnexion ; ne videz pas Redis pour effectuer la migration SSE, les anciennes listes expirent seules.
+
+Pour une migration depuis les versions antérieures à 2.1, appliquez notamment les migrations créant le journal `telegram_generation`, remplacez les styles d'agents `css` / `CSS` par `theme` / `THEME` et adaptez les clients aux jetons de ressources ainsi qu'à `/files/serve/{id}`.
+
+### Queue et diagnostic
+
+Redis et au moins un worker sont requis pour le chat web, le widget, l'audio asynchrone et Telegram. L'image supervise déjà les workers et les recycle selon leurs limites de durée et de jobs. Hors Docker, fournissez votre propre supervision ; les extensions PHP `pcntl` et `posix` sont nécessaires au renouvellement des baux.
+
+Pour un worker ponctuel au premier plan :
 
 ```bash
-# Réseau et Redis persistants pour cet exemple local
-docker network create claire-net
-docker run -d --name claire-redis --network claire-net \
-  -v claire_redis:/data redis:7-alpine \
-  redis-server --appendonly yes --maxmemory-policy noeviction
-
-# Lancer Claire avec Docker
-docker run -d \
-  --name claire \
-  --network claire-net \
-  -p 8080:80 \
-  -v claire_data:/opt/data \
-  -e BASE_URL=http://localhost:8080 \
-  -e REDIS_HOST=claire-redis \
-  -e OPENID_WELLKNOWN_URL=https://votre-sso.example.com/.well-known/openid-configuration \
-  -e OPENID_CLIENT_ID=votre-client-id \
-  -e OPENAPI_KEY=votre-clé-api \
-  -e OPENAPI_URL=https://api.openai.com/v1 \
-  -e OPENAPI_MODEL=gpt-4o-mini \
-  -e SESSION_JWT_SECRET=$(openssl rand -hex 32) \
-  -e OTEL_PHP_AUTOLOAD_ENABLED=true \
-  -e OTEL_SERVICE_NAME=claire \
-  -e OTEL_LOGS_EXPORTER=console \
-  -e OTEL_LOGS_PROCESSOR=simple \
-  semhoun/claire-chatbot:latest
-
-# Initialiser la base de données
-docker exec claire ./console migrations:migrate
-
-# Accéder à l'application
-# Ouvrir http://localhost:8080
+./console queue:work --max-jobs=100 --max-time=3600 --timeout=5
 ```
 
-**Avec Docker Compose:**
+Les jobs sont réservés avec un bail renouvelable, retentés lorsque cela est sûr et conservés en dead-letter en cas d'échec non récupérable. Une génération ayant déjà tenté des outils n'est pas rejouée aveuglément.
 
-Adaptez le domaine et le fournisseur OIDC (URI de retour : `BASE_URL/auth/callback`). Ajoutez `OPENID_CLIENT_SECRET` si votre fournisseur l'exige. L'exemple HTTP local nécessite un fournisseur acceptant une URI de retour localhost ; utilisez HTTPS pour la production et l'installation PWA.
-
-```yaml
-services:
-  claire:
-    image: semhoun/claire-chatbot:latest
-    container_name: claire
-    restart: unless-stopped
-    depends_on:
-      - redis
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - claire-data:/opt/data
-      - claire-addons:/opt/addons
-    environment:
-      # === Configuration serveur ===
-      BASE_URL: https://claire.example.com
-      APP_NAME: ${APP_NAME:-Claire}
-      SERVER_NAME: claire.example.com
-      ENABLE_LETSENCRYPT: "true"
-      ACME_EMAIL: admin@example.com
-
-      # === LLM Configuration ===
-      OPENAPI_KEY: ${OPENAPI_KEY:?set_me}
-      OPENAPI_URL: https://api.mistral.ai/v1
-      OPENAPI_MODEL: mistral-large-latest
-
-      # === Authentification OpenID (obligatoire) ===
-      OPENID_WELLKNOWN_URL: https://lastlogin.net/.well-known/openid-configuration
-      OPENID_CLIENT_ID: https://claire.example.com
-
-      # === Sécurité ===
-      SESSION_JWT_SECRET: ${SESSION_JWT_SECRET:?set_me}
-
-      # === Queue et états de génération ===
-      REDIS_HOST: redis
-      REDIS_DATABASE: 0
-
-      # === Observabilité ===
-      OTEL_PHP_AUTOLOAD_ENABLED: "true"
-      OTEL_SERVICE_NAME: claire
-      OTEL_LOGS_EXPORTER: console
-      OTEL_LOGS_PROCESSOR: simple
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
-    volumes:
-      - claire-redis:/data
-
-volumes:
-  claire-data:
-  claire-addons:
-  claire-redis:
-```
-
-Image Docker : [semhoun/claire-chatbot](https://hub.docker.com/r/semhoun/claire-chatbot)
-
-
-## Développement local (optionnel)
-
-Prérequis : PHP 8.5+, Composer, Node.js/npm, Redis et une base de données configurée (SQLite par défaut). Les extensions `pcntl` et `posix` sont nécessaires aux workers. Pour contribuer ou modifier le code :
+La commande `chat:maintenance` permet de diagnostiquer une conversation sans relancer le LLM ni les outils. Elle fonctionne **en simulation par défaut** :
 
 ```bash
-# Cloner et installer
-git clone https://github.com/semhoun/claire-chatbot.git
-cd claire-chatbot
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console chat:maintenance --user USER --thread THREAD
+
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console chat:maintenance --compact --retention-days 7
+
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console chat:maintenance --compact --retention-days 7 --apply --cursor 0
+```
+
+Poursuivez chaque parcours avec le curseur `sql:v1:` renvoyé, via `--cursor`, jusqu'à `0`. Après simulation, recommencez l'application à `0`. La rétention de sept jours n'est pas une tâche planifiée automatiquement.
+
+La compaction efface uniquement les corps des journaux Telegram entièrement confirmés et livrés. Les identifiants anti-rejeu restent en SQL sans expiration ; les journaux actifs, ambigus ou en échec sont conservés. `--user USER --thread THREAD --reconcile --apply` ne marque une génération orpheline en erreur que si l'absence de travail restant est démontrée. Cette garantie suppose que les données de queue Redis n'ont pas été supprimées ou évincées.
+
+### Journaux et sécurité
+
+Le modèle Compose configure les logs console ; la présence d'un collecteur OpenTelemetry n'active pas automatiquement les traces et métriques, dont les exporteurs y valent `none`. Adaptez les exporteurs et l'endpoint à votre infrastructure.
+
+Protégez les secrets, sauvegardes et données d'observabilité. N'exposez pas Redis, les listeners SSE internes ou l'interface de collecte sur Internet. Une restriction CORS contrôle l'accès des navigateurs, pas l'authentification de tous les clients HTTP.
+
+## Développement
+
+### Préparer l'environnement
+
+Prévoyez PHP 8.5+, Composer 2, Node.js/npm, Redis et une base SQL. Le Dockerfile utilise Node 24 pour les builds frontend. Les extensions PHP requises comprennent notamment `curl`, `fileinfo`, `dom`, `libxml`, `pdo`, `redis`, `pcntl` et `posix`, plus le pilote PDO choisi ; Composer vérifie aussi les exigences transitives.
+
+```bash
 composer install
-npm install
+composer check-platform-reqs
+npm ci
+npm run build
+```
 
-# Exporter les variables
-export BASE_URL=http://localhost:8080
-export REDIS_HOST=127.0.0.1
-export OPENID_WELLKNOWN_URL=https://votre-sso.example.com/.well-known/openid-configuration
-export OPENID_CLIENT_ID=votre-client-id
-export OPENAPI_KEY=votre-clé-api
-export OPENAPI_URL=https://api.openai.com/v1
-export OPENAPI_MODEL=gpt-4o-mini
-export SESSION_JWT_SECRET=$(openssl rand -hex 32)
-# Hors Docker uniquement : partager ce secret entre le daemon et le backend Slim.
-export SSE_INTERNAL_SECRET=$(openssl rand -hex 32)
+Exportez les variables décrites dans la [configuration](#configuration), dont `DATABASE_KIND`, et préparez les répertoires de données et `var/` avec les droits d'écriture appropriés. Pour une exécution hors Docker, partagez un `SSE_INTERNAL_SECRET` aléatoire entre le backend et le daemon.
 
-# Initialiser et lancer
+```bash
 ./console migrations:migrate
-npm run build            # Compiler les bundles Vue (normal + embed)
-composer start           # HTTP seul ; pour HTTP + SSE, utiliser Caddy/Supervisor
+./console app:generate-proxies
 ```
 
-Hors Supervisor, `./console sse:serve` lance le daemon et `./console queue:work` lance un
-worker avec le même environnement. Le daemon nécessite aussi le listener Slim
-interne et le reverse proxy Caddy ; un serveur PHP seul ne sert plus le SSE.
-La commande SSE utilise la console Symfony du projet avec un bootstrap isolé :
-ReactPHP conserve la boucle réseau non bloquante, tandis que Slim exécute
-l'autorisation et les snapshots sur le listener HTTP interne. Le conteneur
-métier, Doctrine et le client Redis synchrone ne sont pas chargés par cette commande.
-Configurez le fournisseur OIDC pour autoriser `http://localhost:8080/auth/callback`
-et exportez aussi `OPENID_CLIENT_SECRET` si nécessaire.
-
-### Développement frontend
+Pour vérifier uniquement les routes HTTP :
 
 ```bash
-npm run dev              # Serveur Vite avec rechargement à chaud
-npm run build            # Type-check + build normal + build embed
-npm test                 # Tests Vitest
+php -S localhost:8080 -t public public/index.php
 ```
 
-Les sources du frontend se trouvent dans `frontend/` :
+**Ce serveur seul ne fournit pas le chat complet en streaming.** Une installation complète doit aussi lancer `./console queue:work` et `./console sse:serve` dans des processus séparés, servir le backend Slim interne et router `/brain/stream` via Caddy. Prenez l'image Docker et les configurations de [`docker/rootfs/`](docker/rootfs/) comme référence d'assemblage. Le serveur local exige également un fournisseur OIDC acceptant l'URI de retour locale choisie.
 
-- `main.ts` : point d'entrée de l'application web complète
-- `embed.ts` : point d'entrée du widget embarqué (Custom Element)
-- `components/` : composants Vue partagés (`ClaireApp.vue`, `ClaireIcon.vue`)
-- `services/session-client.ts` : gestion du JWT côté navigateur
+### Frontend et tests
 
-### Qualité du code
+| Commande | Effet |
+| --- | --- |
+| `npm run build` | Vérification TypeScript, build normal dans `public/build/` et bundle autonome `public/js/embed.js`. |
+| `npm run dev` | Lance Vite. Le shell PHP charge les bundles construits ; le HMR n'y est pas câblé automatiquement. |
+| `npm test` | Tests frontend Vitest. |
+| `composer test` ou `vendor/bin/phpunit` | Tests PHP. |
+| `composer frontend:check` | Build et tests frontend. |
+| `composer rector:check` | Vérification Rector sans application des corrections. |
+| `composer insights:check` | Analyse de qualité PHP. |
 
-```bash
-composer rector:check      # Vérifier
-composer rector:fix        # Appliquer
-composer insights:check    # Analyser
-composer insights:fix      # Corriger
-vendor/bin/phpunit         # Tests PHP
-npm test                   # Tests frontend
-composer pre-commit        # Tous les checks
-```
+`composer rector:fix` et `composer insights:fix` appliquent des corrections. **`composer pre-commit` modifie aussi les fichiers** : reconstruction des assets, normalisation des fins de ligne, permissions et corrections automatiques. Ce n'est pas une simple suite de tests ; il nécessite notamment `dos2unix`.
+
+### Repères dans le dépôt
+
+| Chemin | Responsabilité |
+| --- | --- |
+| [`src/Brain/`](src/Brain/) | Agents, outils et orchestration LLM. |
+| [`src/Controller/`](src/Controller/) | Contrôleurs HTTP. |
+| [`src/Services/`](src/Services/) | Services applicatifs. |
+| [`src/Entity/`](src/Entity/), [`migrations/`](migrations/) | Modèle SQL et migrations Doctrine. |
+| [`src/Services/Queue/`](src/Services/Queue/), [`src/Job/`](src/Job/) | Queue et traitements asynchrones. |
+| [`frontend/`](frontend/) | Entrées `main.ts` et `embed.ts`, composants Vue et services TypeScript. |
+| [`config/`](config/) | Injection de dépendances, routes, réglages et thèmes. |
+| [`test/Unit/`](test/Unit/) | Tests PHPUnit. |
+| [`docker/`](docker/) | Construction de l'image, entrypoint et supervision. |
+
+Les conventions de contribution sont décrites dans [`AGENTS.md`](AGENTS.md). Pour les migrations, `./console migrations:generate` crée un squelette et `./console migrations:status` affiche l'état. La commande de génération des proxies est `./console app:generate-proxies` ; `./console cache:init` assure également leur génération.
 
 ## Dépannage
 
-| Problème | Solution |
-|----------|----------|
-| 500 au `GET /` | Vérifiez les permissions du dossier `var/` |
-| Pas de logs | Définissez `OTEL_LOGS_EXPORTER=console` |
-| RAG inactif | Vérifiez `OPENAPI_MODEL_EMBED` |
-| ComfyUI non dispo | Vérifiez `COMFYUI_ENABLED=true` et les workflows |
-| Worker bloqué | Vérifiez Redis, les workers supervisés et `REDIS_READ_TIMEOUT` ; diagnostiquez la conversation avec `chat:maintenance` sans purger Redis |
-| Fichier ou flux SSE refusé | Renouvelez le jeton via `POST /auth/resource-token` et vérifiez sa portée ; utilisez `/files/serve/{id}` |
-| Erreur SQL Telegram après mise à niveau | Appliquez les migrations, puis redémarrez les workers |
+| Symptôme | Vérifications |
+| --- | --- |
+| Échec au lancement de Compose | Utiliser `-f docker/compose.yml`, fournir `SESSION_JWT_SECRET` et remplacer les valeurs d'exemple. |
+| Connexion SSO impossible | Vérifier découverte OIDC, client, secret éventuel et correspondance exacte de `BASE_URL/auth/callback`. |
+| Erreur SQL après installation ou mise à jour | Appliquer les migrations avec le nouveau code avant de remettre les traitements en service. |
+| Erreur 500 ou cache impossible à générer | Vérifier les logs, les permissions de `var/` et du répertoire de données, ainsi que le pilote SQL. |
+| Message accepté mais aucune réponse | Vérifier Redis, les workers, l'accès LLM et le routage du daemon SSE. Un serveur PHP seul ne suffit pas. |
+| Conversation bloquée | Utiliser `chat:maintenance` en simulation ; ne pas purger Redis ni rejouer aveuglément les outils. |
+| Flux SSE ou fichier refusé | Renouveler le jeton de ressource et vérifier sa portée exacte ; ne pas envoyer le JWT de session dans l'URL. |
+| Widget non authentifié | Vérifier le type de jeton SSO, l'audience, les clients autorisés et les origines CORS. `/embed` requiert une session. |
+| RAG indisponible | Configurer un modèle d'embeddings accessible et activer au moins un document. |
+| Audio indisponible ou silencieux | Vérifier activation, clé Mistral, modèles, voix et autorisations de lecture du navigateur. |
+| ComfyUI absent | Vérifier activation, URL et présence de workflows complets dans le répertoire des extensions. |
+| Thème ou agent inchangé | Redémarrer les processus persistants et recharger le client ; vider le cache compilé si la configuration a changé. |
+| Nouvelle variable non prise en compte | Recréer le conteneur, puis recharger les processus et caches concernés. Un `restart` seul conserve l'ancien environnement. |
+| PWA non proposée | Vérifier HTTPS, manifeste JSON public et icônes ; les possibilités d'installation dépendent du navigateur. |
 
 ## Licence
 
-MIT — Voir le fichier `LICENSE`.
+Claire est distribué sous [licence MIT](LICENSE).

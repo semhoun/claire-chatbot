@@ -4,18 +4,18 @@
 
 Claire is a PHP 8.5+ AI agent chatbot built with Slim 4, Doctrine ORM, Neuron AI, Vue 3, TypeScript, and Vite. It provides a web interface and API for interacting with LLMs via an OpenAI-compatible interface.
 
-The project runs in Docker containers (PHP 8.5, PostgreSQL, Redis, Nginx) via Docker Compose.
+The project runs with PHP 8.5, Nginx, and Redis via Docker Compose. The deployment template in `docker/compose.yml` defaults to SQLite, with optional MariaDB; the root `compose.yml` is environment-specific development configuration using MySQL/MariaDB and external networks.
 
 ## Display Modes
 
-Claire has two distinct display modes sharing the same core components.
+The Vue chat has two distinct display modes sharing the same core components. The Telegram Mini-App (`/telegram/webapp`) is a separate Twig/JavaScript interface in `tmpl/telegram/webapp.twig`.
 
 ### Normal Mode (HTML Shell + Vue)
 
 Full-page chat with a collapsible sidebar options panel.
 
 - **Layout/bootstrap**: `App\Renderer\VueShell` renders `frontend/shell.html` and resolves the normal CSS bundle through the Vite manifest.
-- **Application**: `frontend/main.ts` mounts `frontend/components/ClaireApp.vue`.
+- **Application**: `frontend/main.ts` mounts `frontend/components/PublicApp.vue`, which handles the authentication callback, loads the JSON bootstrap, and renders `ClaireApp.vue`. `HomeController` returns the HTML shell or JSON bootstrap according to the request's `Accept` header.
 - **Options panel**: Rendered and managed by Vue as a floating panel.
 
 ### Embed / Widget Mode
@@ -29,14 +29,14 @@ Floating widget injected into third-party pages via `window.claireEmbed(...)`.
 - **Teardown**: `window.destroyClaireEmbed()` removes the custom element; Vue closes its SSE stream and timers during unmount.
 - **Test page**: `public/embed.html`.
 
-The embed toolbar and the normal sidebar are variants of the same Vue component. The widget remains collapsed by default and expands to a 400×600px panel.
+The embed toolbar and the normal sidebar are variants of the same Vue component. The widget remains collapsed by default and expands to a nominal 400 x 600px panel, constrained by the viewport and safe areas.
 
 #### Collapsed State
 
 The widget defaults to `.is-collapsed`:
-- Reduced to a circle (`border-radius: 50%`) whose size is controlled by CSS variables.
+- Reduced to a circle using the internal `--claire-radius-pill` token, with its size controlled by CSS variables.
 - Only the avatar is visible.
-- Clicking the toolbar (or avatar) toggles the expanded state (400×600px chat panel).
+- Clicking the toolbar (or avatar) toggles the expanded chat panel.
 
 These are internal layout tokens in the shared component styles, not overrides on the host page:
 
@@ -58,16 +58,13 @@ The official internal theme API is [`config/themes/contract.json`](config/themes
 ### Architectural Rules
 
 - **Standalone embed response**: `/embed` returns only its bootstrap JSON, not a full page.
-- **No host-page globals**: embed code must not patch `window.fetch`, write configuration on `document.body`, or query outside its component root.
+- **No host-page globals**: embed code must not patch `window.fetch` or write configuration on `document.body`. The bootstrap may resolve the host-page `target` and insert its container; internal interactions must stay within the component root.
 - **Shadow DOM isolation**: embed styles belong to the custom element bundle.
-- **No htmx**: browser interactions live in TypeScript/Vue; server fragments expose `data-*` hooks only.
+- **No htmx**: normal/embed chat interactions live in TypeScript/Vue, and the server provides structured data rather than chat HTML fragments. The separate Telegram Mini-App uses Twig and JavaScript.
 
 ## Build / Lint / Test Commands
 
 ```bash
-# Development server
-composer start                    # php -S localhost:8080 -t public public/index.php
-
 # Frontend
 npm install                       # Install Vue/TypeScript/Vite dependencies
 npm run dev                       # Start Vite development server
@@ -82,8 +79,8 @@ composer rector:fix               # Apply Rector fixes
 composer insights:check           # Run quality analysis
 composer insights:fix             # Auto-fix style issues
 
-# Pre-commit (runs all checks)
-composer pre-commit               # Line endings + insights-fix + rector-fix
+# Pre-commit (mutates files and permissions; does not run PHPUnit)
+composer pre-commit               # Frontend build/tests, line endings, permissions, Rector/Insights fixes
 
 # Testing
 vendor/bin/phpunit                # Run all tests
@@ -92,7 +89,6 @@ vendor/bin/phpunit --filter testGetReturnsValueForValidKey  # Run single test me
 
 # Database migrations
 ./console migrations:migrate      # Apply Doctrine migrations
-./console migrations:diff         # Generate migration from entities
 ./console migrations:generate     # Create empty migration
 ./console migrations:status       # Show migration status
 
@@ -113,12 +109,17 @@ vendor/bin/phpunit --filter testGetReturnsValueForValidKey  # Run single test me
 # Queue worker
 ./console queue:work                          # Process queue jobs
 
-# Docker Compose (production)
+# SSE daemon (separate from the Slim HTTP application)
+./console sse:serve                           # Run the ReactPHP streaming server
+
+# Docker Compose (root development configuration)
 docker compose up -d                          # Start the stack
 docker compose logs -f claire                 # View logs
 docker compose exec claire ./console migrations:migrate  # Run migrations
 docker compose exec claire ./console cache:clear         # Clear cache
 ```
+
+For deployment, configure `docker/compose.yml` and use `docker compose -f docker/compose.yml ...` instead of the root configuration. The HTTP application, queue worker, and SSE daemon have separate responsibilities; Vite alone does not run the backend. There is no `composer start` script or registered `migrations:diff` command.
 
 ## Code Style Guidelines
 
@@ -131,9 +132,9 @@ docker compose exec claire ./console cache:clear         # Clear cache
 
 ### PHP Standards
 - **PHP Version**: 8.5+ with strict typing (`declare(strict_types=1);`)
-- **Line Length**: 80 chars soft limit, 120 chars absolute limit (comments excluded)
-- **File Ending**: Unix line endings (LF) - enforced by pre-commit
-- **Quality Gates**: min-quality 90%, min-architecture 85%, min-style 96%
+- **Line Length**: 80 chars soft limit, 120 chars absolute limit (comments excluded); project convention, not enforced by the currently disabled Insights line-length sniff
+- **File Ending**: Unix line endings (LF); pre-commit normalizes PHP/CSS/JS/HTML/Twig files, but does not currently include TS/Vue files
+- **Quality Gates**: min-quality 90%, min-architecture 80%, min-style 96%
 
 ### Naming Conventions
 - **Classes**: PascalCase, `final readonly` where possible (e.g., `final readonly class HomeController`)
@@ -143,6 +144,8 @@ docker compose exec claire ./console cache:clear         # Clear cache
 - **Namespaces**: `App\` prefix, PSR-4 autoloading from `src/`
 
 ### Imports & Formatting
+The grouping below is a convention; the Insights alphabetical-import sniff is currently disabled. Keep imported names unique.
+
 ```php
 <?php
 
@@ -157,7 +160,6 @@ use RuntimeException;
 // 2. Vendor imports (alphabetical)
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Http\Message\ResponseInterface as Response;
-use Slim\Psr7\Response;
 
 // 3. App imports (alphabetical)
 use App\Brain\BrainRegistry;
@@ -167,8 +169,8 @@ use App\Entity\ChatHistory;
 ### Type Declarations
 - Always use explicit return types
 - Use union types where appropriate (`string|null`)
-- Leverage PHP 8.4 features: constructor property promotion, match expressions, named arguments
-- Use `readonly` properties in readonly classes
+- Use modern PHP features, including constructor property promotion, match expressions, and named arguments; Rector currently targets PHP 8.4 modernization while the runtime requires PHP 8.5+
+- Prefer readonly classes where appropriate; their instance properties are implicitly readonly
 - Document complex array shapes with PHPDoc:
   ```php
   /** @return array<int, array{slug:string, name:string}> */
@@ -193,16 +195,17 @@ use App\Entity\ChatHistory;
 - **Repositories**: Database access, extend `Doctrine\ORM\EntityRepository`
 - **Brain/Avatar Pattern**: AI agents implement `BrainAvatar` with constants `NAME`, `DESCRIPTION`, `AVATAR`, `THEME`; the inherited theme is `cyberpunk`, Einstein uses `neon`.
 - **Middleware**: PSR-15 middleware in `App\Middleware\`
-- **Session Management**: JWT-based stateless sessions via `SessionManager`
+- **Session Management**: `JwtSessionMiddleware` and `JwtTokenService` handle JWT sessions, with per-request state in `App\Services\Session\ArraySession` implementing `SessionManagerInterface`. `RememberSession` uses Redis for persistent remember sessions and revocation; the overall system is not fully stateless.
 - **Telegram Sessions**: Dedicated `TelegramSession` entity for bot user persistence
-- **Queue System**: Redis-backed job queue in `App\Queue\` with `QueueWorker`, `QueueMessage`, and job classes
+- **Queue System**: Redis-backed infrastructure in `App\Services\Queue\`, with `QueueWorker` and `QueueMessage`; jobs live in `App\Job\` and are dispatched via `QueueDispatcherInterface`
+- **SSE Transport**: `App\Sse\` runs a separate ReactPHP daemon serving `/brain/stream`, with an authenticated internal HTTP backend for stream lifecycle operations. Slim handles the HTTP API, queue workers execute jobs, and Vue consumes structured SSE events. Resource capabilities for streams/files are distinct from session JWTs.
 - **Observability**: OpenTelemetry integration in `App\Brain\Observability\` for metrics, traces, and structured events
 - **Embed Integration**: See "Display Modes" section above. Bootstrap JSON is loaded by `public/js/embed.js` with token exchange and managed teardown.
 
 ### Key Project Conventions
 - Use `Env::get()` from `App\Services\Env` for environment variables
 - Use `Settings::get('key.subkey')` for configuration access
-- Session handling via JWT-based stateless session (`App\Session\SessionManager`)
+- Use the request-scoped session abstraction in `App\Services\Session\`; preserve the distinction between session authentication, remember-session restoration, and resource capabilities
 - Container injection via PHP-DI (autowiring enabled)
 - Twig templates in `tmpl/`
 - Public assets served from `public/`
@@ -216,6 +219,6 @@ use App\Entity\ChatHistory;
 - Use `assertSame()` for exact equality
 
 ### Prohibited Patterns
-- No `empty()` function (removed by PHP Insights config)
+- Avoid `empty()` as a project convention; Insights does not enforce this because `DisallowEmptySniff` is disabled
 - Unused parameters should be handled (config allows them but avoid)
 - No trailing whitespace, use LF line endings only
