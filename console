@@ -3,6 +3,7 @@
 
 use App\Console\CacheClearConsoleCommand;
 use App\Console\CacheInitConsoleCommand;
+use App\Console\FilesPurgeOrphansCommand;
 use App\Console\GenerateProxies;
 use App\Console\QueueWorkCommand;
 use App\Console\SseServeCommand;
@@ -97,6 +98,7 @@ $cli = new Application('Claire Chat-Bot', $settings->get('version'));
     $container->get(GenerateProxies::class),
     $container->get(QueueWorkCommand::class),
     $container->get(ChatMaintenanceCommand::class),
+    $container->get(FilesPurgeOrphansCommand::class),
     $container->get(TelegramSetCommandsCommand::class),
     $container->get(TelegramMenuButtonCommand::class),
     $container->get(TelegramWebhookCommand::class),
