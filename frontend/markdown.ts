@@ -39,11 +39,11 @@ markdown.core.ruler.after('linkify', 'generated_file', state => {
       if (token.type !== 'text' || linkLevel > 0) return [token]
       const result = []
       let offset = 0
-      for (const match of token.content.matchAll(/@@GENERATED@@[a-zA-Z0-9_@.\-]*@@/g)) {
+      for (const match of token.content.matchAll(/@@GENERATED@@[a-zA-Z0-9_@.\-]*@@|(@@GENERATED@@[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}@)(?![a-zA-Z0-9_@\-])/g)) {
         const text = new state.Token('text', '', 0)
         text.content = token.content.slice(offset, match.index)
-        const reference = new state.Token('generated_file', '', 0)
-        reference.content = match[0]
+        const reference = new state.Token(match[1] ? 'generated_download' : 'generated_file', '', 0)
+        reference.content = match[1] ? `${match[0]}@` : match[0]
         result.push(text, reference)
         offset = match.index + match[0].length
       }

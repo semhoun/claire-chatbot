@@ -33,7 +33,7 @@ export default defineComponent({
           const start = index
           const content = token.nesting === 1 ? children() : token.children ? render(token.children) : []
           if (token.hidden || token.type === 'inline') { nodes.push(...content); continue }
-          const reference = token.type === 'generated_file' ? token.content
+          const reference = token.type === 'generated_file' || token.type === 'generated_download' ? token.content
             : token.type === 'image' ? token.attrGet('src') : token.type === 'link_open' ? token.attrGet('href') : null
           // Streaming can expose a generated URL before its final @@ arrives. Keep
           // every such candidate away from src/href until the file is resolved.
@@ -45,7 +45,8 @@ export default defineComponent({
               file: props.files.find(file => file.id === reference),
               label: token.type === 'image' ? token.content : token.type === 'link_open'
                 ? tokens.slice(start, index - 1).map(child => child.content).join('') || reference : undefined,
-              presentation: token.type === 'image' ? 'image' : token.type === 'link_open' ? 'link' : 'resource',
+              presentation: token.type === 'generated_download' ? 'download'
+                : token.type === 'image' ? 'image' : token.type === 'link_open' ? 'link' : 'resource',
             }, token.type === 'link_open' ? { default: () => content } : undefined))
           } else if (token.type === 'text' || token.type === 'code_inline') {
             nodes.push(token.type === 'text' ? token.content : h('code', token.content))

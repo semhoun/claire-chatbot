@@ -19,6 +19,56 @@ use PHPUnit\Framework\TestCase;
 
 final class ChatDataRendererTest extends TestCase
 {
+    public function testSingleClosingAtUuidIsCanonicalizedBeforeOwnerLookup(): void
+    {
+        $malformed = '@@GENERATED@@5829b4de-0ffe-45be-9883-c80d5f8d0a69@';
+        $id = $malformed . '@';
+        $file = $this->createStub(File::class);
+        $file->method('getFileId')->willReturn($id);
+        $file->method('getFilename')->willReturn('couloir.pdf');
+        $file->method('fileType')->willReturn('pdf');
+        $repository = $this->createMock(EntityRepository::class);
+        $repository->expects(self::exactly(3))->method('findOneBy')
+            ->with(['fileId' => $id, 'user' => 'owner'])->willReturn($file);
+        $manager = $this->createStub(EntityManagerInterface::class);
+        $manager->method('getRepository')->willReturn($repository);
+        $renderer = new ChatDataRenderer(new GeneratedFileProcessor(
+            new Settings(['base_url' => 'https://claire.test']), $manager,
+        ));
+        $text = 'Le Couloir des Ombres (' . $malformed . ')';
+        $expected = [[
+            'id' => $id, 'name' => 'couloir.pdf', 'type' => 'pdf',
+            'url' => 'https://claire.test/files/serve/' . rawurlencode($id),
+        ]];
+        foreach ([false, true] as $pending) {
+            $data = $renderer->content($text, 'owner', $pending);
+            self::assertSame($text, $data['message']);
+            self::assertSame($expected, $data['files']);
+        }
+        self::assertSame($expected, $renderer->content($text . ' ' . $id, 'owner')['files']);
+    }
+
+    public function testSingleClosingAtDoesNotBypassOwnershipOrAcceptPartialUuids(): void
+    {
+        $malformed = '@@GENERATED@@5829b4de-0ffe-45be-9883-c80d5f8d0a69@';
+        $repository = $this->createMock(EntityRepository::class);
+        $repository->expects(self::exactly(2))->method('findOneBy')
+            ->with(['fileId' => $malformed . '@', 'user' => 'other'])->willReturn(null);
+        $manager = $this->createStub(EntityManagerInterface::class);
+        $manager->method('getRepository')->willReturn($repository);
+        $processor = new GeneratedFileProcessor(new Settings([]), $manager);
+        self::assertSame([], $processor->resolve($malformed, 'other'));
+        self::assertSame([[
+            'id' => $malformed . '@', 'name' => 'Fichier en cours de génération',
+            'type' => 'pending', 'url' => null,
+        ]], $processor->resolve($malformed, 'other', true));
+        self::assertSame([], $processor->resolve($malformed, ''));
+        foreach (['@@GENERATED@@5829b4de-0ffe-45be-9883-c80d5f8d0a6@',
+            '@@GENERATED@@file@', $malformed . 'suffix'] as $invalid) {
+            self::assertSame([], $processor->resolve($invalid, 'owner', true));
+        }
+    }
+
     public function testHistoricalUnmatchedToolsAreInterruptedWhileOnlyCurrentTailCanRun(): void
     {
         $manager = $this->createStub(EntityManagerInterface::class);

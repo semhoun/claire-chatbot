@@ -8,6 +8,45 @@ import * as markdown from '../markdown'
 import type { ChatMessage } from '../types'
 
 describe('safe Vue chat rendering', () => {
+  const malformed = '@@GENERATED@@5829b4de-0ffe-45be-9883-c80d5f8d0a69@'
+  const canonical = `${malformed}@`
+
+  it.each(['pdf', 'image', 'audio'])('downloads a repaired UUID reference for %s without changing canonical rendering', async type => {
+    const url = `/files/serve/${encodeURIComponent(canonical)}`
+    const wrapper = mount(MarkdownContent, { props: {
+      text: `Le Couloir des Ombres (${malformed})`, files: [],
+    } })
+    expect(wrapper.find('a, img, audio').exists()).toBe(false)
+    await wrapper.setProps({ files: [{ id: canonical, name: 'couloir', type: 'pending', url: null }] })
+    expect(wrapper.find('[role="status"]').exists()).toBe(true)
+    expect(wrapper.find('a, img, audio').exists()).toBe(false)
+    await wrapper.setProps({ files: [{ id: canonical, name: 'couloir', type, url }] })
+    expect(wrapper.get('a[download]').attributes()).toMatchObject({ href: url, download: 'couloir' })
+    expect(wrapper.text()).toBe('Le Couloir des Ombres (couloir Télécharger)')
+    expect(wrapper.find('img, audio').exists()).toBe(false)
+    await wrapper.setProps({ text: canonical })
+    if (type === 'image' || type === 'audio') {
+      expect(wrapper.get(type === 'image' ? 'img' : 'audio').attributes('data-protected-src')).toBe(url)
+      expect(wrapper.find('a[download]').exists()).toBe(false)
+    } else {
+      expect(wrapper.get('a[download]').attributes('href')).toBe(url)
+    }
+    wrapper.unmount()
+  })
+
+  it('leaves partial UUIDs, non-UUID tags and code literals untouched', () => {
+    const partial = '@@GENERATED@@5829b4de-0ffe-45be-9883-c80d5f8d0a6@'
+    const text = `${partial} @@GENERATED@@file@ ${malformed}suffix`
+    const wrapper = mount(MarkdownContent, { props: {
+      text: `${text}\n\n\`${malformed}\`\n\n\`\`\`text\n${malformed}\n\`\`\`\n\n    ${malformed}`,
+      files: [{ id: canonical, name: 'couloir', type: 'pdf', url: '/files/serve/authorized' }],
+    } })
+    expect(wrapper.get('p').text()).toBe(text)
+    expect(wrapper.findAll('code').map(code => code.text())).toEqual([malformed, malformed, malformed])
+    expect(wrapper.find('a, img, audio, .claire-generated-unresolved').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('defers Markdown image URLs to resource authorization without losing labels or titles', () => {
     const wrapper = mount(MarkdownContent, { props: {
       text: '![Photo](/files/serve/upload "Original")\n\n![Public](https://images.test/photo.png)', files: [],
