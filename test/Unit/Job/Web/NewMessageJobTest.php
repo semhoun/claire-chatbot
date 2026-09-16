@@ -27,7 +27,10 @@ use NeuronAI\Agent\AgentHandler;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Chat\Messages\Stream\Chunks\TextChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\ToolCallChunk;
+use NeuronAI\Chat\Messages\Stream\Chunks\ToolResultChunk;
 use NeuronAI\Chat\History\ChatHistoryInterface;
+use NeuronAI\Tools\Tool;
 use NeuronAI\Workflow\Interrupt\InterruptRequest;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -238,6 +241,35 @@ final class NewMessageJobTest extends TestCase
             if ($withChunks) {
                 self::assertSame('chat.assistant.placeholder', $names[1]);
             }
+        }
+    }
+
+    public function testCompletionPreservesTextAcrossMultipleToolRounds(): void
+    {
+        foreach (['Answer', ''] as $finalText) {
+            $handler = $this->createStub(AgentHandler::class);
+            $handler->method('events')->willReturnCallback(static function () use ($finalText): \Generator {
+                foreach (['First. ', 'Second. '] as $index => $text) {
+                    yield new TextChunk('provider-id', $text);
+                    $tool = new Tool('search')->setCallId('call-' . $index);
+                    yield new ToolCallChunk($tool);
+                    $tool->setResult('Result');
+                    yield new ToolResultChunk($tool);
+                }
+                yield new TextChunk('provider-id', $finalText);
+            });
+            $handler->method('getMessage')->willReturn(new AssistantMessage($finalText));
+            $events = [];
+            [$job] = $this->job($handler, static function (array $event) use (&$events): void {
+                $events[] = $event;
+            });
+            $job->handle($this->payload('multi-tool'));
+            $updates = array_values(array_filter($events,
+                static fn (array $event): bool => $event['event'] === 'chat.assistant.update'));
+            self::assertSame('First. Second. ' . $finalText, $updates[array_key_last($updates)]['payload']['message']);
+            $tools = array_values(array_filter($events,
+                static fn (array $event): bool => $event['event'] === 'chat.tool.update'));
+            self::assertCount(2, $tools[array_key_last($tools)]['payload']['toolsCall']);
         }
     }
 

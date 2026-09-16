@@ -238,9 +238,8 @@ final class NewMessageJob implements QueueDoer
         }
 
         $finalText = $agentHandler->getMessage()->getContent();
-        $responseText = $finalText !== '' && $finalText !== null
-            ? $finalText
-            : $this->streamedText;
+        // The final provider message excludes narration from earlier tool rounds.
+        $responseText = $this->streamedText !== '' ? $this->streamedText : ($finalText ?? '');
         $chatHistory = $this->agent->getChatHistory();
         if (! $chatHistory instanceof UserChatHistory) {
             throw new \RuntimeException('Persistent chat history is required for Web messages');

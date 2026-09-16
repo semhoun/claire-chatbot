@@ -11,31 +11,64 @@ use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Tools\Tool;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class MessageFormatterTest extends TestCase
 {
-    public function testToolGroupUsesFinalAssistantIdentityNotToolMetadata(): void
+    public static function finalContents(): array
+    {
+        return ['nonempty' => ['Answer'], 'empty' => ['']];
+    }
+
+    #[DataProvider('finalContents')]
+    public function testToolGroupUsesFinalAssistantIdentityNotToolMetadata(string $finalContent): void
     {
         $firstTool = new Tool('first')->setCallId('call-1')->setResult('first result');
         $secondTool = new Tool('second')->setCallId('call-2')->setResult('second result');
         $messages = new MessageFormatter([
             new UserMessage('Question'),
-            new ToolCallMessage(null, [$firstTool])->addMetadata(UserChatHistory::MESSAGE_ID_METADATA, 'wrong-tool-id')
+            new ToolCallMessage('First', [$firstTool])->addMetadata(UserChatHistory::MESSAGE_ID_METADATA, 'wrong-tool-id')
                 ->addMetadata(UserChatHistory::AUDIO_REQUEST_ID_METADATA, 'wrong-tool-audio'),
-            new ToolResultMessage([$firstTool]),
-            new ToolCallMessage(null, [$secondTool]),
+            new ToolResultMessage([$firstTool])->setContents('Never show this result'),
+            new ToolCallMessage(" second\n", [$secondTool]),
             new ToolResultMessage([$secondTool]),
-            new AssistantMessage('Answer')->addMetadata(UserChatHistory::MESSAGE_ID_METADATA, 'assistant-message-123')
+            new AssistantMessage($finalContent)->addMetadata(UserChatHistory::MESSAGE_ID_METADATA, 'assistant-message-123')
                 ->addMetadata(UserChatHistory::AUDIO_REQUEST_ID_METADATA, 'auto-assistant-message-123'),
         ])->format();
         self::assertCount(2, $messages);
         self::assertSame('history-message-0', $messages[0]['id']);
         self::assertSame('assistant-message-123', $messages[1]['id']);
         self::assertSame('auto-assistant-message-123', $messages[1]['audioRequestId']);
-        self::assertSame('Answer', $messages[1]['message']);
+        self::assertSame("First second\n" . $finalContent, $messages[1]['message']);
         self::assertSame(['call-1', 'call-2'], array_column($messages[1]['toolsCall'], 'id'));
         self::assertSame(['first result', 'second result'], array_column($messages[1]['toolsCall'], 'result'));
+    }
+
+    public function testUnfinishedTextBearingToolsStopAtNextUserBoundary(): void
+    {
+        foreach ([false, true] as $nextTurn) {
+            $history = [
+                new UserMessage('Question'),
+                new ToolCallMessage('First', [new Tool('first')->setCallId('call-1')]),
+                new ToolCallMessage('second', [new Tool('second')->setCallId('call-2')]),
+            ];
+            if ($nextTurn) {
+                $history[] = new UserMessage('Next question');
+                $history[] = new AssistantMessage('Next answer');
+            }
+            $messages = new MessageFormatter($history)->format();
+            self::assertCount($nextTurn ? 4 : 2, $messages);
+            self::assertSame('Firstsecond', $messages[1]['message']);
+            self::assertSame('history-message-1', $messages[1]['id']);
+            self::assertFalse($messages[1]['sent']);
+            self::assertSame([true, true], array_column($messages[1]['toolsCall'], 'running'));
+            if ($nextTurn) {
+                self::assertSame('Next question', $messages[2]['message']);
+                self::assertTrue($messages[2]['sent']);
+                self::assertSame('Next answer', $messages[3]['message']);
+            }
+        }
     }
 
     public function testInvalidAudioMetadataAndUserAudioMetadataAreNotExposed(): void

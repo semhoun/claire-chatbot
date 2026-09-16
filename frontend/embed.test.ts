@@ -126,6 +126,7 @@ describe('embed public API', () => {
       expect(input.element.style.height).toBe('160px')
       source.emit('chat.snapshot', { messages: [], restoredMessage: 'Short' })
       await flushPromises()
+      expect(wrapper.findAll('.claire-message')).toHaveLength(0)
       expect(input.element.style.height).toBe('24px')
       source.emit('chat.snapshot', { messages: [], restoredMessage: longMessage })
       await flushPromises()
@@ -507,6 +508,70 @@ describe('embed public API', () => {
       expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
     } finally { wrapper.unmount() }
   })
+  it.each(['normal', 'embed'] as const)('preserves pending user bubbles through stale snapshots and tool updates in %s mode', async mode => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
+    )))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances[0]
+      const previous = { ...entry('old-user', 'Repeat this'), sent: true }
+      source.emit('chat.snapshot', { messages: [previous], responding: false })
+      await flushPromises()
+      await wrapper.get('textarea').setValue('Repeat this')
+      await wrapper.get('form#claire-brain-chat').trigger('submit')
+      await flushPromises()
+      const bubble = wrapper.get('#claire-pending-user-1').element
+      source.emit('chat.snapshot', { messages: [previous], responding: false })
+      source.emit('chat.assistant.start', { messageId: 'a' })
+      const tool = { id: 'tool', name: 'generate_pdf', inputs: [], running: true, result: null }
+      source.emit('chat.tool.update', { messageId: 'a', toolsCall: [tool] })
+      await flushPromises()
+      expect(wrapper.get('#claire-pending-user-1').element).toBe(bubble)
+      expect(wrapper.get('#claire-pending-user-1').text()).toContain('Repeat this')
+      expect(wrapper.findAll('.claire-message')).toHaveLength(3)
+
+      const toolGroup = { ...entry('history-message-1', ''), toolsCall: [tool] }
+      source.emit('chat.snapshot', { messages: [previous, toolGroup], responding: true, activeMessageId: 'a' })
+      await flushPromises()
+      expect(wrapper.findAll('.claire-message').map(node => node.attributes('id')))
+        .toEqual(['claire-old-user', 'claire-pending-user-1', 'claire-a'])
+
+      const persisted = { ...entry('new-user', 'Repeat this'), sent: true }
+      source.emit('chat.snapshot', { messages: [previous, persisted, toolGroup], responding: true, activeMessageId: 'a' })
+      await flushPromises()
+      expect(wrapper.find('#claire-pending-user-1').exists()).toBe(false)
+      expect(wrapper.get('#claire-new-user').text()).toContain('Repeat this')
+      expect(wrapper.findAll('.claire-message')).toHaveLength(3)
+      source.emit('chat.assistant.done', { messageId: 'a' })
+      source.emit('chat.snapshot', { messages: [], responding: false })
+      await flushPromises()
+      expect(wrapper.findAll('.claire-message')).toHaveLength(0)
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['normal', 'embed'] as const)('discards a rejected optimistic message before subsequent snapshots in %s mode', async mode => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      const path = new URL(input).pathname
+      if (path === '/auth/resource-token') return new Response(capability())
+      return new Response('0', { status: path === '/brain/messages' ? 500 : 200 })
+    }))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+    try {
+      await flushPromises()
+      await wrapper.get('textarea').setValue('Try again')
+      await wrapper.get('form#claire-brain-chat').trigger('submit')
+      await flushPromises()
+      expect(wrapper.findAll('.claire-message')).toHaveLength(0)
+      FakeEventSource.instances[0].emit('chat.snapshot', { messages: [], responding: false })
+      await flushPromises()
+      expect(wrapper.findAll('.claire-message')).toHaveLength(0)
+      expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('Try again')
+    } finally { wrapper.unmount() }
+  })
+
   it.each(['normal', 'embed'] as const)('reconciles a running snapshot tool group with its active message in %s mode', async mode => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
       new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
@@ -533,6 +598,57 @@ describe('embed public API', () => {
       expect(wrapper.find('#claire-history-message-1').exists()).toBe(false)
     } finally { wrapper.unmount() }
   })
+  it.each(['normal', 'embed'] as const)('keeps assistant narration through multiple tool rounds and running snapshots in %s', async mode => {
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
+    )))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances[0]
+      const user = { ...entry('user', 'Find two sources'), sent: true }
+      source.emit('chat.snapshot', { messages: [user], responding: false })
+      source.emit('chat.assistant.start', { messageId: 'a' })
+      source.emit('chat.assistant.update', { messageId: 'a', message: 'First. ' })
+      await flushPromises()
+      const bubble = wrapper.get('#claire-a').element
+      const first = { id: 'first', name: 'search', inputs: [], running: false, result: 'Source one' }
+      const second = { id: 'second', name: 'search', inputs: [], running: true, result: null }
+      source.emit('chat.tool.update', { messageId: 'a', toolsCall: [first] })
+      source.emit('chat.assistant.update', { messageId: 'a', message: 'First. Second. ' })
+      source.emit('chat.tool.update', { messageId: 'a', toolsCall: [first, second] })
+      await flushPromises()
+      expect(wrapper.get('#claire-message-a').text()).toBe('First. Second.')
+
+      for (const text of ['', 'First. ', 'First. Second. ']) {
+        source.emit('chat.snapshot', {
+          messages: [user, { ...entry('history-message-1', text), toolsCall: [first, second] }],
+          responding: true, activeMessageId: 'a', generationStatus: 'running',
+        })
+        await flushPromises()
+        expect(wrapper.get('#claire-a').element).toBe(bubble)
+        expect(wrapper.get('#claire-message-a').text()).toBe('First. Second.')
+        expect(wrapper.get('#claire-a').classes()).not.toContain('claire-message--tools-only')
+        expect(wrapper.findAll('.claire-message')).toHaveLength(2)
+      }
+
+      const text = 'First. Second. Answer'
+      source.emit('chat.assistant.update', { messageId: 'a', message: text })
+      source.emit('chat.assistant.done', { messageId: 'a' })
+      source.emit('chat.snapshot', {
+        messages: [user, { ...entry('a', text), toolsCall: [first, { ...second, running: false, result: 'Source two' }] }],
+        responding: false,
+      })
+      await flushPromises()
+      expect(wrapper.get('#claire-a').element).toBe(bubble)
+      expect(wrapper.get('#claire-message-a').text()).toBe(text)
+      expect(wrapper.findAll('.claire-toolcall__result')).toHaveLength(2)
+      source.emit('chat.snapshot', { messages: [user, entry('a', 'Authoritative correction')], responding: false })
+      await flushPromises()
+      expect(wrapper.get('#claire-message-a').text()).toBe('Authoritative correction')
+    } finally { wrapper.unmount() }
+  })
+
   it.each(['normal', 'embed'] as const)('keeps failed tools terminal and a safe error through snapshots and reconnect in %s', async mode => {
     vi.useFakeTimers()
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(

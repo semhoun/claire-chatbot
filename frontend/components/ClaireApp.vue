@@ -46,6 +46,8 @@ const ragCount = ref(0)
 const busy = ref(false)
 const responding = ref(false)
 const chatMessages = ref<ChatMessage[]>([])
+const pendingMessages = new Map<string, { entry: ChatMessage; occurrence: number }>()
+let optimisticMessageSequence = 0
 const activeMessageId = ref<string | null>(null)
 const message = ref('')
 const currentBrain = ref(props.config.currentBrain)
@@ -192,6 +194,7 @@ function resetAudio(): void {
 }
 
 function beginNavigation(): void {
+  pendingMessages.clear()
   streamReady = false
   contextGeneration++
   connectionGeneration++
@@ -423,8 +426,26 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     const activeId = update.responding ? update.activeMessageId : null
     const last = messages.at(-1)
     if (activeId && !messages.some(entry => entry.id === activeId) && last && !last.sent
-      && last.message.trim() === '' && last.files.length === 0 && last.toolsCall.length > 0) {
+      && /^history-message-\d+$/.test(last.id) && last.toolsCall.length > 0) {
       messages[messages.length - 1] = { ...last, id: activeId }
+    }
+    const live = chatMessages.value.find(entry => !entry.sent && entry.id === activeId)
+    const snapshotIndex = messages.findIndex(entry => !entry.sent && entry.id === activeId)
+    const snapshotEntry = messages[snapshotIndex]
+    // History persists completed tool rounds; text from the current round can be newer.
+    if (live && snapshotEntry && live.message.length > snapshotEntry.message.length
+      && live.message.startsWith(snapshotEntry.message)) {
+      messages[snapshotIndex] = { ...snapshotEntry, message: live.message, files: live.files }
+    }
+    // Queued/running snapshots can precede persistence of the submitted user turn.
+    for (const [id, pending] of pendingMessages) {
+      const persisted = messages.filter(entry => entry.sent && entry.message === pending.entry.message)
+      if (persisted.length >= pending.occurrence) {
+        pendingMessages.delete(id)
+        continue
+      }
+      const activeIndex = messages.findIndex(entry => !entry.sent && entry.id === activeId)
+      messages.splice(activeIndex < 0 ? messages.length : activeIndex, 0, pending.entry)
     }
     chatMessages.value = messages
     if (update.generationStatus === 'error') showGenerationError()
@@ -629,10 +650,15 @@ function scrollToBottom(): void {
   })
 }
 
-function optimisticMessage(text: string): void {
-  chatMessages.value.push({ id: '', message: text, sent: true, time: new Date().toISOString(), toolsCall: [], files: [] })
+function optimisticMessage(text: string): string {
+  const id = `pending-user-${++optimisticMessageSequence}`
+  const entry = { id, message: text, sent: true, time: new Date().toISOString(), toolsCall: [], files: [] }
+  const occurrence = chatMessages.value.filter(entry => entry.sent && entry.message === text).length + 1
+  pendingMessages.set(id, { entry, occurrence })
+  chatMessages.value.push(entry)
   void nextTick(() => enhanceRenderedMessages())
   scrollToBottom()
+  return id
 }
 
 async function submitMessage(): Promise<void> {
@@ -641,7 +667,7 @@ async function submitMessage(): Promise<void> {
   if (text === '' || composerDisabled.value) return
   responding.value = true
   activeMessageId.value = null
-  optimisticMessage(text)
+  const optimisticId = optimisticMessage(text)
   const data = new FormData()
   data.set('message', text)
   data.set('threadId', threadId.value)
@@ -658,6 +684,8 @@ async function submitMessage(): Promise<void> {
   } catch (error) {
     if (!current()) return
     console.error(error)
+    pendingMessages.delete(optimisticId)
+    chatMessages.value = chatMessages.value.filter(entry => entry.id !== optimisticId)
     finishResponse()
     notify('Le message n’a pas pu être envoyé.', 'error')
   }
@@ -859,6 +887,7 @@ async function deleteLastExchange(): Promise<void> {
     const payload = await response.json() as { messages?: ChatMessage[]; removedMessage?: string }
     if (!current()) return
     resetAudio()
+    pendingMessages.clear()
     chatMessages.value = payload.messages ?? []
     if (typeof payload.removedMessage === 'string') message.value = payload.removedMessage
     await nextTick()

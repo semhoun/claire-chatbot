@@ -193,6 +193,34 @@ final class BrainControllerTest extends TestCase
         self::assertArrayNotHasKey('html', $snapshot);
     }
 
+    public function testSnapshotPreservesPersistedToolGroupIdentityDespiteStaleRunningState(): void
+    {
+        foreach (['Answer', ''] as $finalContent) {
+            [, $publisher, $session, $pdo, , $snapshots] = $this->controller(
+                $this->createStub(QueueDispatcherInterface::class),
+            );
+            $history = new \App\Brain\ChatHistory\UserChatHistory($session, $pdo, threadId: 'thread');
+            $history->addMessage(new \NeuronAI\Chat\Messages\UserMessage('Question'));
+            $firstTool = new \NeuronAI\Tools\Tool('first')->setCallId('call-1')->setResult('Hidden result');
+            $secondTool = new \NeuronAI\Tools\Tool('second')->setCallId('call-2')->setResult('Also hidden');
+            $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage('First', [$firstTool]));
+            $history->addMessage(new \NeuronAI\Chat\Messages\ToolResultMessage([$firstTool]));
+            $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage('second', [$secondTool]));
+            $history->addMessage(new \NeuronAI\Chat\Messages\ToolResultMessage([$secondTool]));
+            $history->addMessage(new \NeuronAI\Chat\Messages\AssistantMessage($finalContent));
+            $history->identifyLastAssistantMessage('assistant-persisted', 'auto-assistant-persisted');
+
+            foreach (['done', 'running'] as $status) {
+                $publisher->generationState()->set('user-1', 'thread', 'stale-attempt', $status, true);
+                $snapshot = $snapshots->read($session, 'thread');
+                self::assertSame('assistant-persisted', $snapshot['messages'][1]['id']);
+                self::assertSame('Firstsecond' . $finalContent, $snapshot['messages'][1]['message']);
+                self::assertSame(['assistant-persisted' => 'auto-assistant-persisted'], $snapshot['audioRequestIds']);
+                self::assertSame(['call-1', 'call-2'], array_column($snapshot['messages'][1]['toolsCall'], 'id'));
+            }
+        }
+    }
+
     public function testSnapshotRestoresInterruptedToolsAndSafeErrorAfterReconnect(): void
     {
         [, $publisher, $session, $pdo, , $snapshots] = $this->controller(
@@ -202,12 +230,16 @@ final class BrainControllerTest extends TestCase
         $history->addMessage(new \NeuronAI\Chat\Messages\UserMessage('Generate PDF'));
         $tool = new \NeuronAI\Tools\Tool('generate_pdf', 'Test');
         $tool->setCallId('pdf');
-        $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage(null, [$tool]));
+        $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage('Generating', [$tool]));
+        $secondTool = new \NeuronAI\Tools\Tool('check_pdf', 'Test')->setCallId('check');
+        $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage(' PDF', [$secondTool]));
         foreach (['running', 'error', 'error'] as $status) {
             $publisher->generationState()->set('user-1', 'thread', 'attempt', $status, true);
             $snapshot = $snapshots->read($session, 'thread');
             self::assertSame($status, $snapshot['generationStatus']);
             self::assertSame($status === 'running', $snapshot['responding']);
+            self::assertSame('Generating PDF', $snapshot['messages'][1]['message']);
+            self::assertCount(2, $snapshot['messages'][1]['toolsCall']);
             if ($status === 'running') {
                 self::assertSame('attempt', $snapshot['activeMessageId']);
                 self::assertSame('attempt', $snapshot['messages'][1]['id']);

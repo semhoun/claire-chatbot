@@ -56,6 +56,9 @@ final class MessageFormatter
         ];
 
         if ($message instanceof ToolCallMessage || $message instanceof ToolResultMessage) {
+            if ($message instanceof ToolCallMessage) {
+                $formattedMessage['message'] .= $message->getContent();
+            }
             $tools = $this->formatTools($message);
             if ($tools !== []) {
                 $formattedMessage['toolsCall'] = array_merge($formattedMessage['toolsCall'], $tools);
@@ -72,7 +75,7 @@ final class MessageFormatter
             return $this->formatMessage($message, $formattedMessage);
         }
 
-        $formattedMessage['message'] = $message->getContent();
+        $formattedMessage['message'] .= $message->getContent();
         $messageId = $message->getMetadata(UserChatHistory::MESSAGE_ID_METADATA);
         if ($message instanceof AssistantMessage && is_string($messageId)
             && preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $messageId) === 1) {

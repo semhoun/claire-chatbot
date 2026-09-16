@@ -39,7 +39,7 @@ final readonly class ChatSnapshot
                 $messageId = $generation['messageId'] ?? '';
                 if (($generation['status'] ?? '') === 'running' && $messageId !== '' && $last !== null
                     && ($messages[$last]['sent'] ?? true) === false
-                    && trim((string) ($messages[$last]['message'] ?? '')) === ''
+                    && str_starts_with((string) ($messages[$last]['id'] ?? ''), 'history-message-')
                     && ($messages[$last]['toolsCall'] ?? []) !== []) {
                     // An unfinished tool group has no final assistant metadata yet.
                     $messages[$last]['id'] = $messageId;
