@@ -142,10 +142,29 @@ describe('safe Vue chat rendering', () => {
     expect(wrapper.findAll('td img').every(image => !image.attributes('src'))).toBe(true)
     const steps = wrapper.findAll('li')
     expect(steps[0].get('a strong').text()).toBe('Lire le rapport')
-    expect(steps[0].text()).toMatch(/^Avant Lire le rapport Télécharger après\.$/)
+    expect(steps[0].text()).toBe('Avant Lire le rapport après.')
     expect(steps[1].get('a').text()).toBe('le même rapport')
+    expect(wrapper.findAll('a')).toHaveLength(2)
     expect(wrapper.findAll('a[download]')).toHaveLength(2)
+    expect(steps[0].get('a').attributes()).toMatchObject({ href: '/files/serve/document', download: 'document.pdf' })
     expect(Array.from(wrapper.element.children as HTMLCollectionOf<Element>).map(element => element.tagName)).toEqual(['P', 'TABLE', 'OL', 'P'])
+    wrapper.unmount()
+  })
+
+  it('resolves a pending labeled PDF to a single download button', async () => {
+    const id = '@@GENERATED@@document@@'
+    const wrapper = mount(MarkdownContent, { props: {
+      text: `[Télécharger **mon histoire**](${id})`,
+      files: [{ id, name: 'histoire.pdf', type: 'pending', url: null }],
+    } })
+    expect(wrapper.get('[role="status"]').text()).toBe('Télécharger mon histoire')
+    expect(wrapper.find('a').exists()).toBe(false)
+    await wrapper.setProps({ files: [{ id, name: 'histoire.pdf', type: 'pdf', url: '/files/serve/document' }] })
+    expect(wrapper.findAll('a')).toHaveLength(1)
+    expect(wrapper.get('a').text()).toBe('Télécharger mon histoire')
+    expect(wrapper.get('a strong').text()).toBe('mon histoire')
+    expect(wrapper.get('a').attributes()).toMatchObject({ href: '/files/serve/document', download: 'histoire.pdf' })
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
