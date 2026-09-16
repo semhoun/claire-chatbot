@@ -40,6 +40,7 @@ RUN apt-get update \
         bash \
         ca-certificates \
         curl \
+        fonts-symbola \
         locales \
         supervisor \
         vim \

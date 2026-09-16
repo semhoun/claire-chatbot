@@ -7,12 +7,18 @@ namespace App\Services;
 use App\Entity\ChatHistory;
 use App\Entity\File;
 use App\Entity\User;
+use App\Services\Pdf\BoundedMpdf;
+use App\Services\Pdf\DocumentResourceValidator;
+use App\Services\Pdf\PageSizeNormalizer;
+use App\Services\Pdf\ResourceContainer;
+use App\Services\Pdf\RestrictedAssetFetcher;
 use App\Services\Session\SessionInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use League\Flysystem\FilesystemException;
+use Mpdf\Config\ConfigVariables;
+use Mpdf\Config\FontVariables;
 use Mpdf\HTMLParserMode;
-use Mpdf\Mpdf;
 use Mpdf\MpdfException;
 use Mpdf\Output\Destination;
 use RuntimeException;
@@ -72,6 +78,7 @@ final readonly class PdfGeneratorService
         $format = $params['format'] ?? $this->settings->get('tools.pdf.defaultFormat');
         $displayName = trim($params['filename'] ?? '');
         $displayName = $displayName !== '' ? $displayName : 'document';
+
         $pageSize = $params['pageSize'] ?? $this->settings->get('tools.pdf.defaultPageSize');
         $orientation = $params['orientation'] ?? 'portrait';
         $margins = $params['margins'] ?? [];
@@ -94,10 +101,11 @@ final readonly class PdfGeneratorService
             ? $this->markdown->convert($content)
             : $content;
 
+        new DocumentResourceValidator()->validate($html);
         [$html, $tempFiles] = $this->resolveGeneratedImages($html, $user);
 
         try {
-            $pdfContent = $this->renderPdf($html, $pageSize, $orientation, $margins);
+            $pdfContent = $this->renderPdf($html, $pageSize, $orientation, $margins, $tempFiles);
         } finally {
             $this->cleanupTempFiles($tempFiles);
         }
@@ -135,15 +143,40 @@ final readonly class PdfGeneratorService
 
     /**
      * @param array{top?: int, bottom?: int, left?: int, right?: int} $margins
+     * @param list<string> $tempFiles
      *
      * @throws MpdfException
      */
-    private function renderPdf(string $html, string $pageSize, string $orientation, array $margins): string
+    private function renderPdf(
+        string $html,
+        string $pageSize,
+        string $orientation,
+        array $margins,
+        array $tempFiles = [],
+    ): string
     {
+        new DocumentResourceValidator()->validate($html);
+        $html = new PageSizeNormalizer()->normalize($html);
         $mpdfOrientation = $orientation === 'landscape' ? 'L' : 'P';
+        $fontDefaults = new FontVariables()->getDefaults();
+        $maxPages = $this->settings->get('tools.pdf')['maxPages'] ?? 100;
+        if (! is_int($maxPages) || $maxPages < 1) {
+            throw new RuntimeException('PDF maxPages must be a positive integer.');
+        }
 
-        $mpdf = new Mpdf([
+        $mpdf = new BoundedMpdf([
             'mode' => 'utf-8',
+            // Keep document fonts, but render missing symbols with a local monochrome font.
+            'fontDir' => [
+                ...new ConfigVariables()->getDefaults()['fontDir'],
+                '/usr/share/fonts/truetype/ancient-scripts',
+            ],
+            'fontdata' => [...$fontDefaults['fontdata'], 'symbola' => ['R' => 'Symbola_hint.ttf']],
+            'useSubstitutions' => true,
+            'backupSubsFont' => ['symbola', ...$fontDefaults['backupSubsFont']],
+            // DejaVu also has useful glyphs outside the Basic Multilingual Plane.
+            'BMPonly' => [],
+            'allow_charset_conversion' => false,
             'format' => $pageSize,
             'orientation' => $mpdfOrientation,
             'tempDir' => $this->settings->get('tools.pdf.tempDir'),
@@ -151,10 +184,8 @@ final readonly class PdfGeneratorService
             'margin_bottom' => $margins['bottom'] ?? 15,
             'margin_left' => $margins['left'] ?? 15,
             'margin_right' => $margins['right'] ?? 15,
-            'setExternalImageTimeout' => 2,
-            'setExternalResourceTimeout' => 2,
-            'curlAllowUnsafeSsl' => false,
-        ]);
+            'allowAnnotationFiles' => false,
+        ], new ResourceContainer(new RestrictedAssetFetcher($tempFiles)), $maxPages);
 
         // Load defaults first so document styles and explicit page settings remain authoritative.
         $mpdf->WriteHTML(self::DEFAULT_CSS, HTMLParserMode::HEADER_CSS);
@@ -173,32 +204,44 @@ final readonly class PdfGeneratorService
     {
         $tempFiles = [];
 
-        $resolvedHtml = preg_replace_callback(
-            File::GENERATED_FILE_PATTERN,
-            function (array $matches) use ($user, &$tempFiles): string {
-                $fileId = str_replace(['"', "'"], ['', ''], $matches[2]);
+        try {
+            $resolvedHtml = preg_replace_callback(
+                File::GENERATED_FILE_PATTERN,
+                function (array $matches) use ($user, &$tempFiles): string {
+                    $fileId = str_replace(['"', "'"], ['', ''], $matches[2]);
 
-                $file = $this->entityManager->getRepository(File::class)->findOneBy(['fileId' => $fileId, 'user' => $user]);
-                if ($file === null) {
-                    throw new RuntimeException(sprintf('Image ID %s not found. Use only IDs from previous generate_image calls.', $fileId));
-                }
+                    $file = $this->entityManager->getRepository(File::class)->findOneBy([
+                        'fileId' => $fileId, 'user' => $user,
+                    ]);
+                    if ($file === null) {
+                        throw new RuntimeException(sprintf(
+                            'Image ID %s not found. Use only IDs from previous generate_image calls.',
+                            $fileId,
+                        ));
+                    }
 
-                if ($file->fileType() !== File::FILE_TYPE_IMAGE) {
-                    return $matches[0];
-                }
+                    if ($file->fileType() !== File::FILE_TYPE_IMAGE) {
+                        return $matches[0];
+                    }
 
-                // Write to temp file instead of base64 to avoid pcre.backtrack_limit
-                $tempFile = $this->writeImageToTempFile($file);
-                if ($tempFile === null) {
-                    return $matches[0];
-                }
+                    // Write to temp file instead of base64 to avoid pcre.backtrack_limit
+                    $tempFile = $this->writeImageToTempFile($file, $tempFiles);
+                    if ($tempFile === null) {
+                        return $matches[0];
+                    }
 
-                $tempFiles[] = $tempFile;
-
-                return '<img src="' . $tempFile . '" style="max-width:100%;height:auto;">';
-            },
-            $html
-        ) ?? $html;
+                    return '<img src="' . htmlspecialchars($tempFile, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+                        . '" style="max-width:100%;height:auto;">';
+                },
+                $html
+            );
+            if ($resolvedHtml === null) {
+                throw new RuntimeException('Cannot resolve PDF image markers.');
+            }
+        } catch (\Throwable $throwable) {
+            $this->cleanupTempFiles($tempFiles);
+            throw $throwable;
+        }
 
         return [$resolvedHtml, $tempFiles];
     }
@@ -206,8 +249,10 @@ final readonly class PdfGeneratorService
     /**
      * Write image data to a temporary file and return the path.
      * Uses the configured PDF temp directory.
+     *
+     * @param list<string> $tempFiles
      */
-    private function writeImageToTempFile(File $file): ?string
+    private function writeImageToTempFile(File $file, array &$tempFiles): ?string
     {
         $filePath = $file?->getFilePath();
         if ($filePath === null) {
@@ -222,10 +267,31 @@ final readonly class PdfGeneratorService
         }
 
         $tempDir = $this->settings->get('tools.pdf.tempDir');
-        $tempFile = $tempDir . '/' . $file->getFilename();
+        $imageInfo = @getimagesizefromstring($imageData);
+        if ($imageInfo === false
+            || ! in_array($imageInfo[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_GIF, IMAGETYPE_WEBP, IMAGETYPE_BMP], true)
+            || ! in_array(
+                new \Mpdf\Image\ImageTypeGuesser()->guess($imageData),
+                ['jpeg', 'png', 'gif', 'webp', 'bmp'],
+                true,
+            )) {
+            throw new RuntimeException('PDF generated images must be supported raster images, not SVG.');
+        }
 
-        if (file_put_contents($tempFile, $imageData) === false) {
-            return null;
+        $tempDir = realpath($tempDir);
+        if ($tempDir === false || ! is_writable($tempDir)) {
+            throw new RuntimeException('PDF temporary image directory is unavailable.');
+        }
+
+        $tempFile = tempnam($tempDir, 'claire-pdf-');
+        if ($tempFile === false) {
+            throw new RuntimeException('Cannot prepare PDF image.');
+        }
+
+        $tempFiles[] = $tempFile;
+
+        if (file_put_contents($tempFile, $imageData) !== strlen($imageData)) {
+            throw new RuntimeException('Cannot write prepared PDF image.');
         }
 
         return $tempFile;

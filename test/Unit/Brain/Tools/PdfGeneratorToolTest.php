@@ -8,8 +8,6 @@ use App\Brain\Tools\PdfGeneratorTool;
 use App\Entity\File;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
-use NeuronAI\Chat\Enums\MessageRole;
-use NeuronAI\Chat\Messages\Message;
 use PHPUnit\Framework\TestCase;
 
 final class PdfGeneratorToolTest extends TestCase
@@ -74,6 +72,70 @@ final class PdfGeneratorToolTest extends TestCase
         $this->assertContains('format', $names);
         $this->assertContains('page_size', $names);
         $this->assertContains('orientation', $names);
+    }
+
+    public function testDescriptionEncouragesDesignWithinTheRendererAndResourceContract(): void
+    {
+        $settings = new Settings([]);
+        $pdfGeneratorTool = new PdfGeneratorTool(
+            $this->createPdfGeneratorService($settings),
+            $settings,
+            $this->createStub(SessionInterface::class),
+            'thread-123',
+        );
+
+        $description = $pdfGeneratorTool->getDescription();
+
+        $this->assertStringContainsString('color palette', $description);
+        $this->assertStringContainsString('embedded <style> blocks', $description);
+        $this->assertStringContainsString('override the default styles', $description);
+        $this->assertStringContainsString('mPDF, not a web browser', $description);
+        $this->assertStringContainsString('Unauthorized resource access fails generation', $description);
+        $this->assertStringContainsString('ordinary hyperlinks remain usable', $description);
+        $this->assertStringContainsString('generate_image FIRST', $description);
+        $this->assertStringContainsString('NEVER call both tools in parallel', $description);
+    }
+
+    public function testForbiddenResourceReturnsAnErrorWithoutExposingItsPath(): void
+    {
+        $settings = new Settings(['tools' => ['pdf' => ['enabled' => true]]]);
+        $user = new \App\Entity\User();
+        $userRepository = $this->createStub(\App\Repository\UserRepository::class);
+        $userRepository->method('getCurrentUser')->willReturn($user);
+        $chatHistoryRepository = $this->createStub(\App\Repository\ChatHistoryRepository::class);
+        $chatHistoryRepository->method('getCurrentUserChatHistory')->willReturn(new \App\Entity\ChatHistory());
+        $entityManager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $entityManager->method('getRepository')->willReturnMap([
+            [\App\Entity\User::class, $userRepository],
+            [\App\Entity\ChatHistory::class, $chatHistoryRepository],
+        ]);
+        $entityManager->expects($this->never())->method('persist');
+        $filesystem = $this->createMock(\League\Flysystem\Filesystem::class);
+        $filesystem->expects($this->never())->method('write');
+        $pdfGeneratorService = new \App\Services\PdfGeneratorService(
+            $settings,
+            $filesystem,
+            $entityManager,
+            $this->createStub(\App\Services\Markdown::class),
+        );
+        $pdfGeneratorTool = new PdfGeneratorTool(
+            $pdfGeneratorService,
+            $settings,
+            $this->createStub(SessionInterface::class),
+            'thread-123',
+        );
+
+        $result = json_decode(
+            $pdfGeneratorTool('<link rel="stylesheet" href="/private/sensitive.css"><p>Report</p>'),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
+
+        $this->assertSame('error', $result['status']);
+        $this->assertStringContainsString('Error generating PDF:', $result['message']);
+        $this->assertStringNotContainsString('/private/sensitive.css', $result['message']);
+        $this->assertArrayNotHasKey('id', $result);
     }
 
     private function createPdfGeneratorService(Settings $settings): \App\Services\PdfGeneratorService

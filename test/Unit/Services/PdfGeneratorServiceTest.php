@@ -190,7 +190,7 @@ final class PdfGeneratorServiceTest extends TestCase
         // Result should contain img tag with temp file path
         $this->assertStringContainsString('<img src="' . $tempFiles[0] . '"', $result);
         $this->assertStringContainsString('style="max-width:100%;height:auto;">', $result);
-        $document = $this->renderDocument($result);
+        $document = $this->renderDocument($result, tempFiles: $tempFiles);
         $images = $document->getObjectsByType('XObject', 'Image');
         self::assertNotEmpty($images);
         self::assertSame(2, (int) array_values($images)[0]->get('Width')->getContent());
@@ -233,6 +233,46 @@ final class PdfGeneratorServiceTest extends TestCase
         $links = $document->getObjectsByType('Annot');
         self::assertCount(1, $links);
         self::assertSame('https://example.org/report', array_values($links)[0]->get('A')->get('URI')->getContent());
+    }
+
+    public function testMissingSymbolsUseEmbeddedFallbackWithoutLosingUnicodeOrCustomStyles(): void
+    {
+        $symbols = "\u{1F431}\u{2B50}\u{2728}\u{1F43E}\u{1F4D6}";
+        $document = $this->renderDocument(
+            '<style>body { font-family: dejavuserif; font-size: 18pt; color: #990000; }</style>'
+            . "<p>R\u{00E9}sum\u{00E9}</p><p>$symbols</p>"
+            . '<pagebreak /><p style="font-family:dejavusans">&#x1F431;</p><h2>&#x1F4D6; &#x2728;</h2>',
+        );
+        self::assertCount(2, $document->getPages());
+        $page = $document->getPages()[0];
+        self::assertStringContainsString("R\u{00E9}sum\u{00E9}", $page->getText());
+        $runs = $page->getDataTm();
+        self::assertStringContainsString('DejaVuSerif', $page->getFont($runs[0][2])->getDetails()['BaseFont']);
+        self::assertEqualsWithDelta(18, (float) $runs[0][3], 0.1);
+        foreach ($document->getPages() as $page) {
+            $fallbackRuns = array_filter($page->getDataTm(), static fn (array $run): bool =>
+                str_contains($page->getFont($run[2])->getDetails()['BaseFont'], 'Symbola'));
+            self::assertNotEmpty($fallbackRuns);
+        }
+        // Smalot decodes surrogate pairs separately; check the PDF's UTF-16 mapping directly.
+        $unicodeMaps = '';
+        $dejavuMap = '';
+        foreach ($document->getObjectsByType('Font') as $font) {
+            if ($font->has('ToUnicode')) {
+                $unicodeMaps .= $font->get('ToUnicode')->getContent();
+                if (str_contains($font->getDetails()['BaseFont'], 'DejaVuSans')) {
+                    $dejavuMap .= $font->get('ToUnicode')->getContent();
+                }
+                if (str_contains($font->getDetails()['BaseFont'], 'Symbola')) {
+                    self::assertNotEmpty($font->get('FontDescriptor')->get('FontFile2')->getContent());
+                }
+            }
+        }
+        self::assertStringContainsString('<D83DDC31>', $dejavuMap);
+        foreach (mb_str_split($symbols) as $symbol) {
+            $utf16 = strtoupper(bin2hex(mb_convert_encoding($symbol, 'UTF-16BE', 'UTF-8')));
+            self::assertStringContainsString('<' . $utf16 . '>', $unicodeMaps);
+        }
     }
 
     public function testLongTableWrapsWithoutTinyTextAndRepeatsHeadings(): void
@@ -311,11 +351,129 @@ final class PdfGeneratorServiceTest extends TestCase
         );
     }
 
+    public static function cssPageSizes(): array
+    {
+        return [
+            'named A4 regression' => ['A4', 'A4', 'portrait', 210, 297],
+            'CSS box preserves paper parameter' => ['a5', 'A4', 'portrait', 210, 297],
+            'Letter' => ['Letter', 'Letter', 'portrait', 215.9, 279.4],
+            'A3' => ['A3', 'A3', 'portrait', 297, 420],
+            'A5 landscape' => ['A5 landscape', 'A5', 'landscape', 210, 148],
+            'explicit dimensions' => ['210mm 297mm', 'A4', 'portrait', 210, 297],
+            'auto follows parameter' => ['auto', 'A5', 'landscape', 210, 148],
+        ];
+    }
+
+    #[DataProvider('cssPageSizes')]
+    public function testCssPageSizeProducesOneSanePage(
+        string $size, string $pageSize, string $orientation, float $width, float $height,
+    ): void {
+        $document = $this->renderDocument(
+            '<style>@page { size: ' . $size . '; margin:20mm 18mm 22mm 18mm; }</style><p>ABC DEF</p>',
+            $pageSize, $orientation,
+        );
+        self::assertCount(1, $document->getPages());
+        $page = $document->getPages()[0];
+        self::assertStringContainsString('ABC DEF', $page->getText());
+        $box = $page->getDetails()['MediaBox'];
+        self::assertEqualsWithDelta($width * 72 / 25.4, $box[2], 0.1);
+        self::assertEqualsWithDelta($height * 72 / 25.4, $box[3], 0.1);
+    }
+
+    public static function invalidPageGeometry(): array
+    {
+        return [
+            'parameter margins' => ['<p>ABC DEF</p>', ['left' => 111, 'right' => 100]],
+            'CSS margins' => ['<style>@page { size:A4; margin:150mm 10mm; }</style><p>ABC DEF</p>', []],
+            'zero size' => ['<style>@page { size:0mm 0mm; margin:0; }</style><p>ABC DEF</p>', []],
+            'named page' => ['<style>@page broken { margin:150mm 10mm; }</style>'
+                . '<p>First</p><pagebreak page-selector="broken" /><p>ABC DEF</p>', []],
+            'named first page' => ['<style>@page broken {size:auto;}'
+                . '@page broken :first { margin-top:300mm; }</style>'
+                . '<p>First</p><pagebreak page-selector="broken" /><p>ABC DEF</p>', []],
+            'first page' => ['<style>@page :first { margin:150mm 10mm; }</style><p>ABC DEF</p>', []],
+            'left page' => ['<style>@page {size:auto;} @page :left { margin:150mm 10mm; }</style>'
+                . '<p>First</p><pagebreak /><p>ABC DEF</p>', []],
+            'pagebreak margins' => ['<p>First</p><pagebreak margin-top="300mm" /><p>ABC DEF</p>', []],
+        ];
+    }
+
+    #[DataProvider('invalidPageGeometry')]
+    public function testInvalidEffectivePageGeometryFails(string $html, array $margins): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Invalid PDF printable geometry');
+        $this->renderDocument($html, margins: $margins);
+    }
+
+    public function testNamedPageSizeAndPseudoPageStylesRemainSupported(): void
+    {
+        $document = $this->renderDocument('<style>@page {size:A4;} @page chapter {size:Letter;sheet-size:Letter;}'
+            . '@page chapter:left {margin:20mm;} @page :first {margin:0;}</style>'
+            . '<p>First</p><pagebreak page-selector="chapter" /><p>Second</p>');
+        self::assertCount(2, $document->getPages());
+        self::assertEqualsWithDelta(612, $document->getPages()[1]->getDetails()['MediaBox'][2], 0.1);
+    }
+
+    public static function renderingFailures(): array
+    {
+        return [
+            'cap' => ['<p>First</p><pagebreak /><p>Second</p><pagebreak /><p>Third</p>',
+                'PDF page limit of 2 exceeded during rendering'],
+            'geometry' => ['<style>@page {size:A4;margin:150mm;}</style><p>ABC DEF</p>',
+                'Invalid PDF printable geometry'],
+        ];
+    }
+
+    #[DataProvider('renderingFailures')]
+    public function testRenderingFailureCleansImagesWithoutSaving(string $html, string $error): void
+    {
+        $user = new User();
+        $history = new ChatHistory();
+        $users = $this->createStub(\App\Repository\UserRepository::class);
+        $users->method('getCurrentUser')->willReturn($user);
+        $histories = $this->createStub(\App\Repository\ChatHistoryRepository::class);
+        $histories->method('getCurrentUserChatHistory')->willReturn($history);
+        $image = $this->createStub(File::class);
+        $image->method('fileType')->willReturn(File::FILE_TYPE_IMAGE);
+        $image->method('getFilePath')->willReturn('image.png');
+        $files = $this->createStub(\App\Repository\FileRepository::class);
+        $files->method('findOneBy')->willReturn($image);
+        $manager = $this->createMock(\Doctrine\ORM\EntityManagerInterface::class);
+        $manager->method('getRepository')->willReturnMap([
+            [User::class, $users], [ChatHistory::class, $histories], [File::class, $files],
+        ]);
+        $manager->expects(self::never())->method('persist');
+        $manager->expects(self::never())->method('flush');
+        $filesystem = $this->createMock(Filesystem::class);
+        $filesystem->expects(self::never())->method('write');
+        $filesystem->expects(self::once())->method('read')->willReturn(base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAACXBIWXMAAA7EAAAOxAGVKw4b'
+            . 'AAAAD0lEQVQImWNgYGBgYGAAAAAHAAHV3tbYAAAAAElFTkSuQmCC', true,
+        ));
+        $service = new PdfGeneratorService(
+            new Settings(['tools' => ['pdf' => [
+                'tempDir' => $this->imagesTempDir, 'maxPages' => 2,
+                'defaultFormat' => 'html', 'defaultPageSize' => 'A4',
+            ]]]), $filesystem, $manager, new \App\Services\Markdown(),
+        );
+        try {
+            $service->generatePdf($this->createStub(SessionInterface::class), 'thread', [
+                'content' => '@@GENERATED@@image@@' . $html,
+            ]);
+            self::fail('Rendering should fail without saving.');
+        } catch (\RuntimeException $exception) {
+            self::assertStringContainsString($error, $exception->getMessage());
+        }
+        self::assertSame([], glob($this->imagesTempDir . '/claire-pdf-*'));
+    }
+
     private function renderDocument(
         string $html,
         string $pageSize = 'A4',
         string $orientation = 'portrait',
         array $margins = [],
+        array $tempFiles = [],
     ): Document {
         $service = new PdfGeneratorService(
             new Settings(['tools' => ['pdf' => ['tempDir' => $this->imagesTempDir]]]),
@@ -323,7 +481,7 @@ final class PdfGeneratorServiceTest extends TestCase
             $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
             new \App\Services\Markdown(),
         );
-        $pdf = new \ReflectionMethod($service, 'renderPdf')->invoke($service, $html, $pageSize, $orientation, $margins);
+        $pdf = new \ReflectionMethod($service, 'renderPdf')->invoke($service, $html, $pageSize, $orientation, $margins, $tempFiles);
         $config = new Config();
         $config->setDataTmFontInfoHasToBeIncluded(true);
 
@@ -505,8 +663,9 @@ final class PdfGeneratorServiceTest extends TestCase
             ->method('read')
             ->willReturnCallback(function (string $path) {
                 return match ($path) {
-                    'generated/user-123/image1-uuid.png' => 'image1-data',
-                    'generated/user-123/image2-uuid.jpg' => 'image2-data',
+                    'generated/user-123/image1-uuid.png', 'generated/user-123/image2-uuid.jpg' => base64_decode(
+                        'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAACXBIWXMAAA7EAAAOxAGVKw4b'
+                        . 'AAAAD0lEQVQImWNgYGBgYGAAAAAHAAHV3tbYAAAAAElFTkSuQmCC', true),
                     default => throw new \RuntimeException('Unexpected path: ' . $path),
                 };
             });
@@ -521,11 +680,10 @@ final class PdfGeneratorServiceTest extends TestCase
         // Should have two temp files
         $this->assertCount(2, $tempFiles);
 
-        // Both should exist and have correct extensions
+        // Display names and extensions do not determine temporary paths.
         $this->assertFileExists($tempFiles[0]);
         $this->assertFileExists($tempFiles[1]);
-        $this->assertStringEndsWith('.png', $tempFiles[0]);
-        $this->assertStringEndsWith('.jpg', $tempFiles[1]);
+        $this->assertNotSame($tempFiles[0], $tempFiles[1]);
 
         // Clean up
         foreach ($tempFiles as $file) {

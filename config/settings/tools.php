@@ -21,6 +21,8 @@ return [
         'enabled' => (bool) Env::get('PDF_ENABLED', true),
         'defaultFormat' => Env::get('PDF_DEFAULT_FORMAT', 'html'),
         'defaultPageSize' => Env::get('PDF_DEFAULT_PAGE_SIZE', 'A4'),
+        // Trusted server limit, enforced during rendering; positive integer, default 100 pages.
+        'maxPages' => (int) Env::get('PDF_MAX_PAGES', 100),
         'tempDir' => Env::get('PDF_TEMP_DIR', Settings::getAppRoot() . '/var/tmp'),
     ],
 ];
