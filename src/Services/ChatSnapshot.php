@@ -57,6 +57,17 @@ final readonly class ChatSnapshot
                     ), 'audioRequestId', 'id'),
                 ];
             },
+            function (array $generation) use ($userId, $threadId): ?array {
+                $messageId = $generation['messageId'] ?? '';
+                if ($messageId === '') {
+                    return null;
+                }
+                $turn = new ChatTurnJournal($this->entityManager->getConnection())->get($messageId);
+                if ($turn === null || $turn['userId'] !== $userId || $turn['threadId'] !== $threadId) {
+                    return null;
+                }
+                return ['status' => $turn['status'], 'submissionId' => $turn['submissionId']];
+            },
         );
     }
 }

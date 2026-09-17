@@ -16,14 +16,14 @@ final class UserChatHistoryMysqlTest extends TestCase
 {
     public function testUnchangedMysqlSnapshotIsNotReportedAsConflict(): void
     {
-        $history = $this->history(true, 3);
+        $history = $this->history(true, 2);
         $history->replaceMessages([]);
         self::assertSame([], $history->getMessages());
     }
 
     public function testMysqlNoOpStillRejectsDeletedOrChangedRow(): void
     {
-        $history = $this->history(false, 3);
+        $history = $this->history(false, 2);
         $this->expectExceptionMessage('refusing stale snapshot');
         $history->replaceMessages([]);
     }
@@ -42,13 +42,12 @@ final class UserChatHistoryMysqlTest extends TestCase
         $load = $this->createStub(PDOStatement::class);
         $load->method('fetchAll')->willReturn([[
             'messages' => '[]', 'display_messages' => '[]', 'title' => null, 'summary' => null,
+            'revision' => 0, 'current_turn_id' => null,
         ]]);
         $update = $this->createStub(PDOStatement::class);
-        $update->method('rowCount')->willReturn(0);
-        $check = $this->createStub(PDOStatement::class);
-        $check->method('fetchColumn')->willReturn($exists ? 1 : false);
+        $update->method('rowCount')->willReturn($exists ? 1 : 0);
         $pdo->expects(self::exactly($queryCount))->method('prepare')->willReturnCallback(
-            static function (string $sql) use ($load, $update, $check): PDOStatement {
+            static function (string $sql) use ($load, $update): PDOStatement {
                 self::assertStringNotContainsString('xmin', $sql);
                 self::assertStringNotContainsString('RETURNING', $sql);
                 if (str_starts_with($sql, 'SELECT messages')) {
@@ -58,12 +57,10 @@ final class UserChatHistoryMysqlTest extends TestCase
                 self::assertStringContainsString(
                     'CAST(display_messages AS BINARY) = CAST(:loaded_display_messages AS BINARY)', $sql
                 );
-                if (str_starts_with($sql, 'UPDATE')) {
-                    return $update;
-                }
-                self::assertStringEndsWith(' FOR UPDATE', $sql);
-                self::assertStringContainsString('display_messages_count = :display_messages_count', $sql);
-                return $check;
+                self::assertStringContainsString('revision = revision + 1', $sql);
+                self::assertStringContainsString('AND revision = :loaded_revision', $sql);
+                self::assertStringContainsString('AND current_turn_id IS NULL', $sql);
+                return $update;
             },
         );
         return new UserChatHistory(new InMemorySession([Auth::USERID => 'user']), $pdo, threadId: 'thread');

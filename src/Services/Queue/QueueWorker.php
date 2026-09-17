@@ -23,6 +23,10 @@ final class QueueWorker
 
     private int $loopCount = 0;
 
+    private int $lastRecoveryAt = 0;
+
+    private string $failedCursor = '0';
+
     public function __construct(
         private readonly QueueBackendInterface $queueBackend,
         private readonly ContainerInterface $container,
@@ -98,6 +102,29 @@ final class QueueWorker
         QueueWorkerOptions $queueWorkerOptions,
         string $workerId,
     ): void {
+        if (time() - $this->lastRecoveryAt >= 30) {
+            $this->lastRecoveryAt = time();
+            try {
+                if ($this->container->has(\App\Services\ChatTurnRecovery::class)) {
+                    $recovery = $this->container->get(\App\Services\ChatTurnRecovery::class);
+                    $recovery->recover();
+                    if ($this->queueBackend instanceof RedisQueueBackend) {
+                        foreach ($this->queueBackend->failedMessages($this->failedCursor) as $failed) {
+                            try {
+                                $recovery->failed($failed);
+                            } catch (\App\Services\ChatGenerationBusyException) {
+                                // Active holders, not elapsed time, determine abandonment.
+                                continue;
+                            } catch (Throwable $error) {
+                                $this->logger->error('Terminal chat recovery failed', ['exception' => $error]);
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable $error) {
+                $this->logger->error('Periodic chat recovery failed', ['exception' => $error]);
+            }
+        }
         $job = $this->reserveJob($queueWorkerOptions, $workerId);
 
         if (! $job instanceof QueueMessage) {
@@ -153,6 +180,10 @@ final class QueueWorker
                     $this->queueBackend->defer($job);
                 } else {
                     $this->queueBackend->release($job);
+                }
+                if ($this->queueBackend instanceof RedisQueueBackend && $this->queueBackend->isFailed($job)
+                    && $this->container->has(\App\Services\ChatTurnRecovery::class)) {
+                    $this->container->get(\App\Services\ChatTurnRecovery::class)->failed($job);
                 }
             } catch (Throwable $releaseError) {
                 $this->logger->error('Failed to release job; lease recovery required', [

@@ -11,6 +11,49 @@ use PHPUnit\Framework\TestCase;
 
 final class ChatGenerationStateTest extends TestCase
 {
+    public function testSubmissionLinkSurvivesTransitionsButNotReplacement(): void
+    {
+        $storage = [];
+        $redis = $this->createStub(RedisClient::class);
+        $redis->method('hset')->willReturnCallback(static function (string $key, array $values) use (&$storage): int {
+            $storage = array_replace($storage, $values);
+            return 1;
+        });
+        $redis->method('hgetall')->willReturnCallback(static function () use (&$storage): array {
+            return $storage;
+        });
+        $state = new ChatGenerationState($redis, new Settings(['redis' => ['prefix' => 'test:']]));
+        $state->set('alice', 'thread', 'message-1', 'running', true, 'submission-1');
+        $state->set('alice', 'thread', 'message-1', 'error', true);
+        $snapshot = $state->capture('alice', 'thread', static fn (): array => []);
+        self::assertSame('submission-1', $snapshot['submissionId']);
+        self::assertFalse($snapshot['rollbackConfirmed']);
+        self::assertNull($snapshot['turnStatus']);
+        $state->set('alice', 'thread', 'message-2', 'running', true);
+        self::assertArrayNotHasKey('submissionId', $state->get('alice', 'thread'));
+        $state->set('alice', 'thread', 'message-2', 'running', true, 'submission-2');
+        self::assertSame('submission-2', $state->get('alice', 'thread')['submissionId']);
+    }
+
+    public function testSqlRollbackDuringHistoryReadForcesRecaptureWithoutRedisChange(): void
+    {
+        $redis = $this->createStub(RedisClient::class);
+        $redis->method('hgetall')->willReturn(['messageId' => 'm', 'status' => 'error']);
+        $reads = 0;
+        $turnReads = 0;
+        $snapshot = new ChatGenerationState($redis, new Settings(['redis' => ['prefix' => 'test:']]))
+            ->capture('alice', 'thread', static function () use (&$reads): array {
+                return ['messages' => ++$reads === 1 ? ['partial tools'] : ['previous exchange']];
+            }, static function () use (&$turnReads): array {
+                return ['status' => ++$turnReads === 1 ? 'running' : 'rolled_back', 'submissionId' => 'submission-1'];
+            });
+        self::assertSame(2, $reads);
+        self::assertSame(['previous exchange'], $snapshot['messages']);
+        self::assertTrue($snapshot['rollbackConfirmed']);
+        self::assertSame('rolled_back', $snapshot['turnStatus']);
+        self::assertSame('submission-1', $snapshot['submissionId']);
+    }
+
     public function testStaticKeyAndFilteringRules(): void
     {
         $redis = $this->createMock(RedisClient::class);
@@ -116,7 +159,8 @@ final class ChatGenerationStateTest extends TestCase
             });
         self::assertSame(['html' => 'complete', 'responding' => false, 'activeMessageId' => null,
             'generationMessageId' => 'message', 'generation' => ['messageId' => 'message', 'status' => 'done'],
-            'generationStatus' => 'done'], $snapshot);
+            'generationStatus' => 'done', 'submissionId' => null, 'turnStatus' => null,
+            'rollbackConfirmed' => false], $snapshot);
     }
 
     public function testCaptureProjectsOnlySafeTerminalStatusOnReconnect(): void
@@ -128,7 +172,8 @@ final class ChatGenerationStateTest extends TestCase
         for ($i = 0; $i < 2; $i++) {
             self::assertSame(['messages' => [], 'responding' => false, 'activeMessageId' => null,
                 'generationMessageId' => 'message', 'generation' => ['messageId' => 'message', 'status' => 'error'],
-                'generationStatus' => 'error'], $state->capture('alice', 'thread', static function (array $generation): array {
+                'generationStatus' => 'error', 'submissionId' => null, 'turnStatus' => null,
+                'rollbackConfirmed' => false], $state->capture('alice', 'thread', static function (array $generation): array {
                     self::assertSame('error', $generation['status']);
                     return ['messages' => []];
                 }));

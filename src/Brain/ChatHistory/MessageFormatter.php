@@ -76,6 +76,12 @@ final class MessageFormatter
         }
 
         $formattedMessage['message'] .= $message->getContent();
+        $submissionId = $message->getMetadata('claire_submission_id');
+        if ($message instanceof UserMessage && is_string($submissionId)
+            && preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $submissionId) === 1) {
+            $formattedMessage['id'] = $submissionId;
+            $formattedMessage['submissionId'] = $submissionId;
+        }
         $messageId = $message->getMetadata(UserChatHistory::MESSAGE_ID_METADATA);
         if ($message instanceof AssistantMessage && is_string($messageId)
             && preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $messageId) === 1) {

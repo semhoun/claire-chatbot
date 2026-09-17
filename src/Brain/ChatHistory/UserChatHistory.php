@@ -54,6 +54,10 @@ class UserChatHistory extends AbstractChatHistory
 
     private ?string $loadedVersion = null;
 
+    private ?int $loadedRevision = null;
+
+    private ?string $loadedTurnId = null;
+
     public function __construct(
         protected SessionInterface $session,
         protected PDO $pdo,
@@ -75,6 +79,8 @@ class UserChatHistory extends AbstractChatHistory
         }
 
         $this->threadId = $threadId;
+        $this->loadedRevision = null;
+        $this->loadedTurnId = null;
         $this->load();
     }
 
@@ -185,7 +191,7 @@ class UserChatHistory extends AbstractChatHistory
             ? ', xmin::text AS version' : '';
         $stmt = $this->pdo->prepare(
             sprintf(
-                'SELECT %s, %s, title, summary' . $versionColumn
+                'SELECT %s, %s, title, summary, revision, current_turn_id' . $versionColumn
                     . ' FROM %s WHERE user_id = :user_id AND thread_id = :thread_id',
                 self::LLM_MESSAGES_COLUMN,
                 self::DISPLAY_MESSAGES_COLUMN,
@@ -199,6 +205,9 @@ class UserChatHistory extends AbstractChatHistory
 
         $history = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if ($history === []) {
+            if ($this->loadedRevision !== null) {
+                throw new \RuntimeException('Chat history changed or was deleted; refusing stale snapshot');
+            }
             $this->history = [];
             $this->displayHistory = [];
             $this->title = null;
@@ -234,6 +243,13 @@ class UserChatHistory extends AbstractChatHistory
         }
 
         $history = $history[0];
+        if ($this->loadedRevision !== null
+            && ($this->loadedRevision !== (int) $history['revision']
+                || $this->loadedTurnId !== $history['current_turn_id'])) {
+            throw new \RuntimeException('Chat history changed or was deleted; refusing stale snapshot');
+        }
+        $this->loadedRevision = (int) $history['revision'];
+        $this->loadedTurnId = $history['current_turn_id'];
         $this->loadedMessages = (string) $history[self::LLM_MESSAGES_COLUMN];
         $this->loadedDisplayMessages = (string) $history[self::DISPLAY_MESSAGES_COLUMN];
         $this->loadedVersion = $history['version'] ?? null;
@@ -359,12 +375,16 @@ class UserChatHistory extends AbstractChatHistory
             ? ' AND CAST(messages AS BINARY) = CAST(:loaded_messages AS BINARY)'
                 . ' AND CAST(display_messages AS BINARY) = CAST(:loaded_display_messages AS BINARY)'
             : ' AND messages = :loaded_messages AND display_messages = :loaded_display_messages';
+        $turnGuard = $this->loadedTurnId === null
+            ? ' AND current_turn_id IS NULL' : ' AND current_turn_id = :loaded_turn_id';
         $stmt = $this->pdo->prepare(
             sprintf(
                 'UPDATE %s SET %s = :llm_messages, %s = :display_messages, %s = :display_messages_count'
+                    . ', revision = revision + 1'
                     . ($clearMetadata ? ', title = NULL, summary = NULL' : '')
                     . ' WHERE thread_id = :thread_id AND user_id = :user_id'
                     . $snapshotGuard
+                    . ' AND revision = :loaded_revision' . $turnGuard
                     . $versionGuard . ($this->loadedVersion !== null ? ' RETURNING xmin::text' : ''),
                 self::TABLE,
                 self::LLM_MESSAGES_COLUMN,
@@ -386,32 +406,17 @@ class UserChatHistory extends AbstractChatHistory
             'display_messages_count' => count($this->displayHistory),
             'loaded_messages' => $this->loadedMessages,
             'loaded_display_messages' => $this->loadedDisplayMessages,
+            'loaded_revision' => $this->loadedRevision,
         ];
+        if ($this->loadedTurnId !== null) {
+            $parameters['loaded_turn_id'] = $this->loadedTurnId;
+        }
         if ($this->loadedVersion !== null) {
             $parameters['version'] = $this->loadedVersion;
         }
 
         $stmt->execute($parameters);
         $matched = $stmt->rowCount() === 1;
-        if (! $matched && $mysql
-            && $parameters['llm_messages'] === $this->loadedMessages
-            && $parameters['display_messages'] === $this->loadedDisplayMessages) {
-            // MySQL counts changed rows by default. Verify a no-op using a current,
-            // locking read, not an older REPEATABLE READ transaction snapshot.
-            $check = $this->pdo->prepare(
-                'SELECT 1 FROM ' . self::TABLE . ' WHERE thread_id = :thread_id AND user_id = :user_id'
-                    . $snapshotGuard . ' AND display_messages_count = :display_messages_count'
-                    . ($clearMetadata ? ' AND title IS NULL AND summary IS NULL' : '') . ' FOR UPDATE'
-            );
-            $check->execute([
-                'thread_id' => $this->threadId,
-                'user_id' => $parameters['user_id'],
-                'loaded_messages' => $this->loadedMessages,
-                'loaded_display_messages' => $this->loadedDisplayMessages,
-                'display_messages_count' => $parameters['display_messages_count'],
-            ]);
-            $matched = $check->fetchColumn() !== false;
-        }
 
         if (! $matched) {
             throw new \RuntimeException('Chat history changed or was deleted; refusing stale snapshot');
@@ -423,6 +428,7 @@ class UserChatHistory extends AbstractChatHistory
 
         $this->loadedMessages = $parameters['llm_messages'];
         $this->loadedDisplayMessages = $parameters['display_messages'];
+        ++$this->loadedRevision;
     }
 
     private function openingContextMessage(): UserMessage

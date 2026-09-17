@@ -39,6 +39,15 @@ const presets = Object.fromEntries(readdirSync(themeDirectory).filter(file => fi
 }))
 
 describe('common CSS contract', () => {
+  it('keeps turn recovery notices interactive and in the composer flow', () => {
+    const declarations: Record<string, string> = {}
+    const feedback = roots.find(root => root.source?.input.file?.endsWith('/feedback.css'))!
+    feedback.walkRules('#claire-history-tooltip-banner.claire-turn-notice', rule => {
+      rule.walkDecls(declaration => { declarations[declaration.prop] = declaration.value })
+    })
+    expect(declarations).toMatchObject({ position: 'static', transform: 'none', width: 'auto', 'pointer-events': 'auto' })
+  })
+
   it('keeps themed gutters viewport-wide and limits compact framing to the normal chat panel on desktop', () => {
     const declarations = (file: string, selector: string) => {
       const values: Record<string, string> = {}

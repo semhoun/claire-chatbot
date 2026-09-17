@@ -93,6 +93,53 @@ class TelegramService implements QueueDoer
     }
 
     /**
+     * Terminal queue hook; ordinary retry/defer paths never send this notice.
+     *
+     * @param array<string, mixed> $payload
+     */
+    public function failed(array $payload): void
+    {
+        if (isset($payload['update_json'])) {
+            $update = Update::fromJson((string) $payload['update_json']);
+            $message = $update->message;
+            if (! $message instanceof Message || $message->from === null
+                || (str_starts_with($message->text ?? '', '/') && $message->text !== '/start')) {
+                return;
+            }
+            if ($message->text === null && ! $this->hasAudio($message)
+                && ! $this->hasPhoto($message) && ! $this->hasDocument($message)) {
+                return;
+            }
+            $sessionId = (string) $message->from->id;
+            $chatId = $message->chat->id;
+            $generationId = 'update:' . $update->updateId;
+        } else {
+            if (($payload['generationId'] ?? '') === '') {
+                return;
+            }
+            $sessionId = (string) ($payload['telegramUserId'] ?? '');
+            $chatId = (int) $sessionId;
+            $generationId = 'job:' . ($payload['generationId'] ?? '');
+        }
+        if ($sessionId === '' || $chatId === 0) {
+            return;
+        }
+        $lock = new ChatThreadLock($this->entityManager->getConnection()->getNativeConnection(),
+            'telegram-session', $sessionId);
+        try {
+            if (! $this->manageSession($sessionId)) {
+                return;
+            }
+            $this->telegramGeneration->fail((string) $this->telegramSession->get(Auth::USERID),
+                (string) ($this->telegramSession->get('threadId') ?: uniqid(UserChatHistory::CHAT_TELEGRAM, true)),
+                $generationId, ['sessionId' => $sessionId, 'chatId' => $chatId],
+                fn () => $this->sendFailureNotice($chatId));
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
      * Update a user setting.
      */
     public function updateUserSetting(string $key, mixed $value): bool
@@ -209,6 +256,8 @@ class TelegramService implements QueueDoer
                 return $text;
             },
             fn (string $text, callable $checkpoint) => $this->deliverChatResponse($telegramChatId, $text, $checkpoint),
+            notification: ['chatId' => $telegramChatId, 'sessionId' => (string) $this->telegramSession->get('telegram_id')],
+            notifyFailure: fn () => $this->sendFailureNotice($telegramChatId),
         );
     }
 
@@ -263,6 +312,7 @@ class TelegramService implements QueueDoer
     public function manageSession(string $telegramUserId): bool
     {
         $this->telegramSession->load($telegramUserId);
+        $this->telegramSession->set('telegram_id', $telegramUserId);
         if ($this->telegramSession->get(Auth::AUTHENTICATED, false) === true) {
             return true;
         }
@@ -274,7 +324,6 @@ class TelegramService implements QueueDoer
 
         // Set user session data
         $this->telegramSession->set(Auth::USERID, $user->getId());
-        $this->telegramSession->set('telegram_id', $telegramUserId);
         $this->telegramSession->set(Auth::AUTHENTICATED, true);
         $this->telegramSession->set(Auth::USERINFO, [
             'firstName' => $user->getFirstName(),
@@ -352,6 +401,15 @@ class TelegramService implements QueueDoer
      * @param int $telegramChatId The ID of the Telegram chat where the message will be sent.
      * @param string $text The text content of the message to be sent.
      */
+    public function sendFailureNotice(int $telegramChatId): void
+    {
+        $result = $this->telegramBotApi->sendMessage(chatId: $telegramChatId,
+            text: 'Désolé, une erreur est survenue lors du traitement de votre message. Veuillez le renvoyer.');
+        if ($result instanceof FailResult) {
+            throw new \RuntimeException('Telegram rejected failure notification');
+        }
+    }
+
     public function sendMessage(int $telegramChatId, string $text): void
     {
         // Filtrer les balises [OC] et [/OC]
@@ -415,13 +473,10 @@ class TelegramService implements QueueDoer
 
         $this->processChatMessage($telegramChatId, function () use ($fileId, $message): string {
             $file = $this->telegramBotApi->getFile(fileId: $fileId);
-            $filePath = $file->filePath;
-            $fileUrl = sprintf('https://api.telegram.org/file/bot%s/%s', $this->settings->get('telegram.bot_token'), $filePath);
-
-            $imageContent = file_get_contents($fileUrl);
-            if ($imageContent === false) {
-                throw new \RuntimeException('Failed to download image');
+            if ($file instanceof FailResult) {
+                throw new \RuntimeException('Telegram could not resolve the image file');
             }
+            $imageContent = $this->telegramBotApi->downloadFile($file)->getBody();
 
             $localPath = sprintf('telegram/%s/', $this->telegramSession->get(Auth::USERID)) . uniqid('photo_', true) . '.jpg';
             $this->filesystem->write($localPath, $imageContent);
@@ -446,13 +501,10 @@ class TelegramService implements QueueDoer
 
         $this->processChatMessage($telegramChatId, function () use ($fileId, $fileName, $mimeType, $message): string {
             $file = $this->telegramBotApi->getFile(fileId: $fileId);
-            $filePath = $file->filePath;
-            $fileUrl = sprintf('https://api.telegram.org/file/bot%s/%s', $this->settings->get('telegram.bot_token'), $filePath);
-
-            $fileContent = file_get_contents($fileUrl);
-            if ($fileContent === false) {
-                throw new \RuntimeException('Failed to download document');
+            if ($file instanceof FailResult) {
+                throw new \RuntimeException('Telegram could not resolve the document file');
             }
+            $fileContent = $this->telegramBotApi->downloadFile($file)->getBody();
 
             $extension = pathinfo($fileName, PATHINFO_EXTENSION);
             $localPath = sprintf('telegram/%s/', $this->telegramSession->get(Auth::USERID)) . uniqid('doc_', true) . '.' . $extension;
@@ -618,21 +670,24 @@ class TelegramService implements QueueDoer
             (string) $this->telegramSession->get(Auth::USERID),
             $threadId !== '' ? $threadId : uniqid(UserChatHistory::CHAT_TELEGRAM, true),
             $this->generationId,
-            function (string $threadId) use ($telegramChatId, $text): string {
+            function (string $threadId, callable $guard, string $preparedText) use ($telegramChatId): string {
                 if (! $this->telegramSession->get('threadId')) {
                     $this->telegramSession->set('threadId', $threadId);
                     $this->telegramSession->save();
                 }
 
-                return $this->generateChatResponse($telegramChatId, is_string($text) ? $text : $text(), $threadId);
+                return $this->generateChatResponse($telegramChatId, $preparedText, $threadId, $guard);
             },
             function (string $responseText, callable $checkpoint) use ($telegramChatId, $voiceResponse): void {
                 $this->deliverChatResponse($telegramChatId, $responseText, $checkpoint, $voiceResponse);
             },
+            notification: ['chatId' => $telegramChatId, 'sessionId' => (string) $this->telegramSession->get('telegram_id')],
+            notifyFailure: fn () => $this->sendFailureNotice($telegramChatId),
+            prepare: static fn (): string => is_string($text) ? $text : $text(),
         );
     }
 
-    private function generateChatResponse(int $telegramChatId, string $text, string $threadId): string
+    private function generateChatResponse(int $telegramChatId, string $text, string $threadId, callable $guard): string
     {
         $this->logger->info('Generating chat response for chat ID: ' . $telegramChatId, ['text' => $text, 'threadId' => $threadId]);
         $this->sendChatAction($telegramChatId, TelegramAction::TEXT, force: true);
@@ -646,13 +701,17 @@ class TelegramService implements QueueDoer
         return $this->telegramChatActionHeartbeat->run(
             $telegramChatId,
             TelegramAction::TEXT,
-            function () use ($agent, $userMessage, $telegramChatId): string {
+            function () use ($agent, $userMessage, $telegramChatId, $guard): string {
+                $guard();
                 $agentHandler = $agent->stream($userMessage);
                 foreach ($agentHandler->events() as $chunk) {
+                    $guard();
                     $action = $this->resolveChunkAction($chunk);
                     if ($action instanceof \App\Enums\TelegramAction) {
                         $this->sendChatAction($telegramChatId, $action);
                     }
+                    // Sending the activity update may outlive the SQL connection.
+                    $guard();
                 }
 
                 $agentMessage = $agentHandler->getMessage();

@@ -7,6 +7,7 @@ import ClaireIcon from './ClaireIcon.vue'
 
 const props = defineProps<{
   entry: ChatMessage
+  loading?: boolean
   groupPosition: 'single' | 'first' | 'middle' | 'last'
   audioEnabled: boolean
   playing: string | null
@@ -33,6 +34,7 @@ const showMeta = computed(() => hasContent.value || audioAvailable.value)
     <div class="claire-message__bubble">
       <ChatTools :tools="entry.toolsCall" :message-id="entry.id" />
       <MarkdownContent v-if="hasContent || entry.files.length" :id="`claire-message-${entry.id}`" class="claire-message__text" :text="entry.message" :files="entry.files" />
+      <div v-if="loading" data-role="claire-assistant-loader"><span class="claire-typing-indicator" role="status" aria-label="Réponse en cours"><span v-for="dot in 3" :key="dot" class="claire-typing-indicator__dot" /></span></div>
       <span v-if="showMeta" class="claire-message__meta">
         <time v-if="time" :datetime="entry.time">{{ time }}</time>
         <button v-if="audioAvailable" type="button" class="claire-message__audio-action" :class="{ 'is-playing': playing === entry.id, 'is-loading': pending.has(entry.id) }" data-audio-listen="true" :data-audio-message-id="entry.id" :disabled="pending.has(entry.id)" :aria-label="audioLabel" :title="audioLabel">

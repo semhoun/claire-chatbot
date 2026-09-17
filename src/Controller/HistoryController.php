@@ -236,7 +236,10 @@ final readonly class HistoryController
             return $response->withStatus(409);
         }
 
-        if ($this->chatStreamPublisher->generationState()->snapshot($userId, $threadId)['responding']) {
+        if ($this->entityManager->getConnection()->fetchOne(
+            "SELECT id FROM chat_turn WHERE user_id = ? AND thread_id = ? AND status = 'running'",
+            [$userId, $threadId],
+        ) !== false || $this->chatStreamPublisher->generationState()->snapshot($userId, $threadId)['responding']) {
             return $response->withStatus(409);
         }
 

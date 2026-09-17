@@ -122,6 +122,35 @@ final class DaemonTest extends TestCase
         self::assertSame([], $this->loop->timers);
     }
 
+    public function testSnapshotForwardsSqlCorrelationWithRawRedisSignature(): void
+    {
+        $connection = $this->connection();
+        $this->redis->ack->resolve(null);
+        $this->backend->requests[0][2]->resolve([...$this->snapshot(),
+            'responding' => false, 'activeMessageId' => null, 'generationStatus' => 'error',
+            'submissionId' => 'submission-1', 'turnStatus' => 'rolled_back', 'rollbackConfirmed' => true]);
+        $connection->output()->resume();
+        $this->loop->tick();
+        self::assertSame([], $this->closed);
+        self::assertStringContainsString('"submissionId":"submission-1"', $this->frames[0]);
+        self::assertStringContainsString('"turnStatus":"rolled_back"', $this->frames[0]);
+        self::assertStringContainsString('"rollbackConfirmed":true', $this->frames[0]);
+        $connection->close('test');
+    }
+
+    public function testTerminalEventKeepsCorrelationWithoutInventingRollbackConfirmation(): void
+    {
+        $connection = $this->connection();
+        $this->live($connection);
+        $this->redis->state['status'] = 'error';
+        $connection->receive($this->event('chat.error', ['submissionId' => 'submission-1',
+            'turnStatus' => 'running', 'rollbackConfirmed' => false]));
+        $this->loop->tick();
+        self::assertStringContainsString('"submissionId":"submission-1"', $this->frames[1]);
+        self::assertStringContainsString('"rollbackConfirmed":false', $this->frames[1]);
+        $connection->close('test');
+    }
+
     public function testTerminalBeforeSnapshotReturnRecapturesAndPreservesOrderedUpdate(): void
     {
         $connection = $this->connection();

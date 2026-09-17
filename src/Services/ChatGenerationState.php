@@ -23,6 +23,9 @@ final readonly class ChatGenerationState
         if (($state['messageId'] ?? '') === '' || ($state['jobMessageId'] ?? '') !== $state['messageId']) {
             unset($state['jobId'], $state['queue'], $state['jobMessageId']);
         }
+        if (($state['submissionMessageId'] ?? '') !== ($state['messageId'] ?? '')) {
+            unset($state['submissionId'], $state['submissionMessageId']);
+        }
 
         return $state;
     }
@@ -52,19 +55,29 @@ final readonly class ChatGenerationState
         ];
     }
 
-    /** @param callable(array<string, string>): array<string, mixed> $readHistory
+    /**
+     * @param callable(array<string, string>): array<string, mixed> $readHistory
+     * @param (callable(array<string, string>): array<string, mixed>|null)|null $readTurn SQL result, read around history.
      *
      * @return array<string, mixed>
      */
-    public function capture(string $userId, string $threadId, callable $readHistory): array
+    public function capture(string $userId, string $threadId, callable $readHistory, ?callable $readTurn = null): array
     {
         // Do not pair pre-completion messages with a post-completion idle state.
         for ($attempt = 0; $attempt < 3; $attempt++) {
             $before = $this->get($userId, $threadId);
-            $history = $readHistory($before);
+            $turnBefore = $readTurn === null ? null : $readTurn($before);
+            $status = match ($turnBefore['status'] ?? null) {
+                'running' => 'running',
+                'succeeded' => 'done',
+                'rolled_back' => 'error',
+                default => $before['status'] ?? '',
+            };
+            $history = $readHistory(array_replace($before, ['status' => $status]));
             $after = $this->get($userId, $threadId);
-            if ($before === $after) {
-                $responding = in_array($after['status'] ?? '', ['queued', 'running'], true);
+            $turnAfter = $readTurn === null ? null : $readTurn($after);
+            if ($before === $after && $turnBefore === $turnAfter) {
+                $responding = in_array($status, ['queued', 'running'], true);
                 return [
                     ...$history,
                     'responding' => $responding,
@@ -74,8 +87,11 @@ final readonly class ChatGenerationState
                         'messageId' => $after['messageId'] ?? '',
                         'status' => $after['status'] ?? '',
                     ],
-                    'generationStatus' => in_array($after['status'] ?? '', ['queued', 'running', 'done', 'error'], true)
-                        ? $after['status'] : null,
+                    'generationStatus' => in_array($status, ['queued', 'running', 'done', 'error'], true)
+                        ? $status : null,
+                    'submissionId' => $turnAfter['submissionId'] ?? $after['submissionId'] ?? null,
+                    'turnStatus' => $turnAfter['status'] ?? null,
+                    'rollbackConfirmed' => ($turnAfter['status'] ?? null) === 'rolled_back',
                 ];
             }
         }
@@ -83,13 +99,24 @@ final readonly class ChatGenerationState
         throw new \RuntimeException('Chat changed while reading its snapshot');
     }
 
-    public function set(string $userId, string $threadId, string $messageId, string $status, bool $attempted): void
-    {
-        if ($this->redisClient->hset($this->key($userId, $threadId), [
+    public function set(
+        string $userId,
+        string $threadId,
+        string $messageId,
+        string $status,
+        bool $attempted,
+        ?string $submissionId = null,
+    ): void {
+        $values = [
             'messageId' => $messageId,
             'status' => $status,
             'attempted' => $attempted ? '1' : '0',
-        ]) === false) {
+        ];
+        if ($submissionId !== null) {
+            $values['submissionId'] = $submissionId;
+            $values['submissionMessageId'] = $messageId;
+        }
+        if ($this->redisClient->hset($this->key($userId, $threadId), $values) === false) {
             throw new \RuntimeException('Cannot persist chat generation state');
         }
     }

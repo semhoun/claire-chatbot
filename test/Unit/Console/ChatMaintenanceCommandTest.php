@@ -21,6 +21,8 @@ final class ChatMaintenanceCommandTest extends TestCase
         $tester = new CommandTester(new ChatMaintenanceCommand($container));
         foreach ([[], ['--user' => 'user'], ['--thread' => 'thread'],
             ['--compact' => true, '--reconcile' => true],
+            ['--recover' => true, '--compact' => true],
+            ['--recover' => true, '--user' => 'user'],
             ['--compact' => true, '--user' => 'user'],
             ['--compact' => true, '--limit' => '-1'],
             ['--compact' => true, '--limit' => '0'],

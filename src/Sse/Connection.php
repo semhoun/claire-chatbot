@@ -343,6 +343,7 @@ final class Connection
                     $this->generation = self::signature($state);
                     $payload = array_intersect_key($snapshot, array_flip(['messages', 'responding', 'activeMessageId',
                         'generationStatus', 'generationMessageId', 'audioRequestIds',
+                        'submissionId', 'turnStatus', 'rollbackConfirmed',
                     ]));
                     if (is_string($effects['restoredMessage'] ?? null)
                         && array_key_exists('generationMessageId', $effects)

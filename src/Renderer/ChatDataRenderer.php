@@ -49,6 +49,7 @@ final readonly class ChatDataRenderer
     {
         return [
             'id' => (string) ($message['id'] ?? ''),
+            ...isset($message['submissionId']) ? ['submissionId' => $message['submissionId']] : [],
             'time' => (string) ($message['time'] ?? ''),
             'sent' => ($message['sent'] ?? false) === true,
             'toolsCall' => array_values($message['toolsCall'] ?? []),

@@ -36,7 +36,7 @@ final class ChatMaintenanceSqlTest extends TestCase
         $driver = getenv('CLAIRE_MAINTENANCE_SQL_DRIVER') ?: 'pdo_pgsql';
         $params = $port === false ? ['driver' => 'pdo_sqlite', 'memory' => true] : [
             'driver' => $driver, 'host' => '127.0.0.1', 'port' => (int) $port,
-            'user' => $driver === 'pdo_mysql' ? 'root' : 'postgres',
+            'user' => getenv('CLAIRE_MAINTENANCE_SQL_USER') ?: ($driver === 'pdo_mysql' ? 'root' : 'postgres'),
             'password' => getenv('CLAIRE_MAINTENANCE_SQL_PASSWORD') ?: 'claire-test-only',
             'dbname' => 'claire_test',
         ];
@@ -44,6 +44,8 @@ final class ChatMaintenanceSqlTest extends TestCase
         require_once Settings::getAppRoot() . '/test/Support/TelegramSqlSchema.php';
         if ($port === false) {
             TelegramSqlSchema::create($this->sql);
+            require_once Settings::getAppRoot() . '/test/Support/ChatTurnSqlSchema.php';
+            \App\Test\Support\ChatTurnSqlSchema::create($this->sql);
         } else {
             // Server fixtures shadow shared table names for this connection only.
             $migration = new Version20260912130000($this->sql, new NullLogger());
@@ -52,6 +54,8 @@ final class ChatMaintenanceSqlTest extends TestCase
                 $this->sql->executeStatement(str_replace('CREATE TABLE ', 'CREATE TEMPORARY TABLE ',
                     $query->getStatement()), $query->getParameters(), $query->getTypes());
             }
+            require_once Settings::getAppRoot() . '/test/Support/ChatTurnSqlSchema.php';
+            \App\Test\Support\ChatTurnSqlSchema::create($this->sql, true);
         }
         $this->journal = new TelegramJournal($this->sql);
         $prefix = 'maintenance-sql:' . bin2hex(random_bytes(8)) . ':';
@@ -138,6 +142,16 @@ final class ChatMaintenanceSqlTest extends TestCase
         $id = $this->record('active', ['delivered' => false]);
         self::assertSame('sql-journal-retained',
             $this->service($id)->diagnose($this->user, 'thread', true, true, 100)['result']);
+    }
+
+    public function testRunningSqlTurnBlocksRedisOnlyRepairEvenWithStaleProjection(): void
+    {
+        $journal = new \App\Services\ChatTurnJournal($this->sql);
+        $journal->begin('message-running', $this->user, 'thread', 'web', 'message-running');
+        $result = $this->service('message-stale')->diagnose($this->user, 'thread', true, true, 100);
+        self::assertSame('chat-turn-retained', $result['result']);
+        self::assertSame('running', $result['turnStatus']);
+        self::assertSame('running', $journal->get('message-running')['status']);
     }
 
     public function testCommandCursorsDryRunAndRedaction(): void

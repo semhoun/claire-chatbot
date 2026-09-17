@@ -20,7 +20,7 @@ use App\Services\RedisClient;
 use App\Services\Rendering\GeneratedFileProcessor;
 use App\Services\Session\InMemorySession;
 use App\Services\Settings;
-use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -87,6 +87,7 @@ final class BrainControllerTest extends TestCase
         [$controller, $publisher, $session, $pdo] = $this->controller($queue);
         $queue->expects(self::once())->method('dispatch')->willReturnCallback(
             static function (string $job, array $payload) use ($publisher, $pdo): string {
+                self::assertSame('submission-1', $payload['submissionId']);
                 $lock = new \App\Services\ChatThreadLock($pdo, 'user-1', 'thread');
                 self::assertSame([], $publisher->generationState()->get('user-1', 'thread'));
                 $publisher->generationState()->set('user-1', 'thread', $payload['messageId'], 'queued', false);
@@ -98,8 +99,13 @@ final class BrainControllerTest extends TestCase
         );
         $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/messages')
             ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
-            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question']);
-        self::assertSame(202, $controller->submitMessage($request, new Response())->getStatusCode());
+            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question',
+                'submissionId' => 'submission-1']);
+        $response = $controller->submitMessage($request, new Response());
+        self::assertSame(202, $response->getStatusCode());
+        $accepted = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('submission-1', $accepted['submissionId']);
+        self::assertSame($publisher->generationState()->get('user-1', 'thread')['messageId'], $accepted['messageId']);
         self::assertSame(409, $controller->submitMessage($request, new Response())->getStatusCode());
     }
 
@@ -111,7 +117,8 @@ final class BrainControllerTest extends TestCase
         [$controller, $publisher, $session] = $this->controller($queue);
         $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/messages')
             ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
-            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question']);
+            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question',
+                'submissionId' => 'submission-1']);
         try {
             $controller->submitMessage($request, new Response());
             self::fail('Dispatch failure swallowed');
@@ -135,7 +142,8 @@ final class BrainControllerTest extends TestCase
         );
         $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/messages')
             ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
-            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question']);
+            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question',
+                'submissionId' => 'submission-1']);
         try {
             $controller->submitMessage($request, new Response());
             self::fail('Dispatch failure swallowed');
@@ -154,7 +162,8 @@ final class BrainControllerTest extends TestCase
         [$controller, $publisher, $session] = $this->controller($queue);
         $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/messages')
             ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
-            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question']);
+            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question',
+                'submissionId' => 'submission-1']);
         self::assertSame(409, $controller->submitMessage($request, new Response())->getStatusCode());
         self::assertSame([], $publisher->generationState()->get('user-1', 'thread'));
     }
@@ -251,22 +260,234 @@ final class BrainControllerTest extends TestCase
         }
     }
 
-    /** @return array{BrainController, ChatStreamPublisher, InMemorySession, \PDO, RedisClient, ChatSnapshot} */
-    private function controller(QueueDispatcherInterface $queue, ?AudioServiceInterface $audio = null): array
+    public function testInvalidSubmissionIdsAreRejectedBeforeDispatch(): void
+    {
+        $queue = $this->createMock(QueueDispatcherInterface::class);
+        $queue->expects(self::never())->method('dispatch');
+        [$controller, , $session] = $this->controller($queue);
+        foreach ([null, '', [], 123, '123', ' invalid', "valid\n", 'bad/id', str_repeat('a', 129)] as $id) {
+            $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/messages')
+                ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+                ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question',
+                    'submissionId' => $id]);
+            self::assertSame(400, $controller->submitMessage($request, new Response())->getStatusCode());
+        }
+    }
+
+    public function testSqlRunningTurnBlocksAdmissionDespiteRedisError(): void
+    {
+        $queue = $this->createMock(QueueDispatcherInterface::class);
+        $queue->expects(self::never())->method('dispatch');
+        [$controller, $publisher, $session, , , , $connection] = $this->controller($queue);
+        new \App\Services\ChatTurnJournal($connection)->begin('old', 'user-1', 'thread', 'web', 'old', 'submission-old');
+        $publisher->generationState()->set('user-1', 'thread', 'old', 'error', true);
+        $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/messages')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question',
+                'submissionId' => 'submission-new']);
+        self::assertSame(409, $controller->submitMessage($request, new Response())->getStatusCode());
+    }
+
+    public function testTurnLookupIsOwnerScopedAndIndependentOfCurrentGeneration(): void
+    {
+        [$controller, $publisher, $session, , , , $connection] = $this->controller(
+            $this->createStub(QueueDispatcherInterface::class),
+        );
+        $journal = new \App\Services\ChatTurnJournal($connection);
+        $journal->begin('old', 'user-1', 'thread', 'web', 'old', 'submission-old');
+        $journal->begin('private', 'other-user', 'private-thread', 'web', 'private', 'submission-private');
+        $publisher->generationState()->set('user-1', 'thread', 'new', 'running', true);
+        $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/turn/submission-old')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session);
+        foreach (['running', 'rolled_back'] as $status) {
+            if ($status === 'rolled_back') {
+                $journal->rollback('old', 'user-1');
+            }
+            $response = $controller->turn($request, new Response(), ['submissionId' => 'submission-old']);
+            self::assertSame(200, $response->getStatusCode());
+            self::assertSame('no-store', $response->getHeaderLine('Cache-Control'));
+            self::assertSame(['submissionId' => 'submission-old', 'messageId' => 'old', 'threadId' => 'thread',
+                'turnStatus' => $status, 'rollbackConfirmed' => $status === 'rolled_back'],
+                json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR));
+        }
+        foreach (['submission-private', 'unknown'] as $id) {
+            self::assertSame(404, $controller->turn($request, new Response(), ['submissionId' => $id])->getStatusCode());
+        }
+        self::assertSame(400, $controller->turn($request, new Response(), ['submissionId' => 'bad/id'])->getStatusCode());
+    }
+
+    public function testSubmissionCannotBeReusedAfterEitherTerminalResultAcrossThreads(): void
+    {
+        foreach (['succeeded', 'rolled_back'] as $status) {
+            $queue = $this->createMock(QueueDispatcherInterface::class);
+            $queue->expects(self::never())->method('dispatch');
+            [$controller, , $session, , , , $sql] = $this->controller($queue);
+            $journal = new \App\Services\ChatTurnJournal($sql);
+            $journal->begin('original', 'user-1', 'thread', 'web', 'original', 'submission-1');
+            if ($status === 'succeeded') {
+                $journal->succeed('original', 'user-1');
+            } else {
+                $journal->rollback('original', 'user-1');
+            }
+            foreach (['thread', 'other-thread'] as $thread) {
+                $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/messages')
+                    ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+                    ->withParsedBody(['threadId' => $thread, 'sessionId' => 'tab', 'message' => 'Question',
+                        'submissionId' => 'submission-1']);
+                $response = $controller->submitMessage($request, new Response());
+                self::assertSame(409, $response->getStatusCode());
+                self::assertSame('', (string) $response->getBody());
+            }
+            $result = $controller->turn($request, new Response(), ['submissionId' => 'submission-1']);
+            $turn = json_decode((string) $result->getBody(), true, flags: JSON_THROW_ON_ERROR);
+            self::assertSame('original', $turn['messageId']);
+            self::assertSame($status, $turn['turnStatus']);
+            self::assertSame(1, (int) $sql->fetchOne('SELECT COUNT(*) FROM chat_turn'));
+        }
+    }
+
+    public function testSubmissionOfAnotherOwnerDoesNotBlockAdmission(): void
+    {
+        $queue = $this->createMock(QueueDispatcherInterface::class);
+        $queue->expects(self::once())->method('dispatch')->willReturn('job');
+        [$controller, , $session, , , , $sql] = $this->controller($queue);
+        new \App\Services\ChatTurnJournal($sql)->begin(
+            'private', 'other-user', 'private-thread', 'web', 'private', 'submission-1',
+        );
+        $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/messages')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+            ->withParsedBody(['threadId' => 'thread', 'sessionId' => 'tab', 'message' => 'Question',
+                'submissionId' => 'submission-1']);
+        self::assertSame(202, $controller->submitMessage($request, new Response())->getStatusCode());
+    }
+
+    public function testQueuedSubmissionRedisDuplicateReturns409WithoutNewAcceptedIdentity(): void
+    {
+        $port = getenv('QUEUE_TEST_REDIS_PORT');
+        if ($port === false || ! extension_loaded('redis')) {
+            self::markTestSkipped('Requires ext-redis and isolated QUEUE_TEST_REDIS_PORT');
+        }
+        $prefix = 'submission-http-test:' . bin2hex(random_bytes(8)) . ':';
+        $settings = new Settings(['redis' => ['host' => '127.0.0.1', 'port' => (int) $port,
+            'timeout' => 2.0, 'database' => 0, 'password' => null, 'prefix' => $prefix]]);
+        $redis = new \Redis();
+        $redis->connect('127.0.0.1', (int) $port);
+        $queue = $this->createMock(QueueDispatcherInterface::class);
+        [$controller, , $session, , , , $sql] = $this->controller($queue);
+        $backend = new \App\Services\Queue\RedisQueueBackend(
+            new \App\Services\Queue\QueueRedisConnection($settings), $settings, $sql,
+        );
+        $queue->expects(self::exactly(3))->method('dispatch')->willReturnCallback($backend->dispatch(...));
+        try {
+            foreach (['thread', 'thread', 'other-thread'] as $index => $thread) {
+                $request = new ServerRequestFactory()->createServerRequest('POST', '/brain/messages')
+                    ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session)
+                    ->withParsedBody(['threadId' => $thread, 'sessionId' => 'tab', 'message' => 'Question',
+                        'submissionId' => 'submission-1']);
+                $response = $controller->submitMessage($request, new Response());
+                self::assertSame($index === 0 ? 202 : 409, $response->getStatusCode());
+                if ($index !== 0) {
+                    self::assertSame('', (string) $response->getBody());
+                }
+            }
+            self::assertSame(1, $redis->lLen($prefix . 'queue:default'));
+            self::assertSame(0, (int) $sql->fetchOne('SELECT COUNT(*) FROM chat_turn'));
+        } finally {
+            $keys = $redis->keys($prefix . '*');
+            if ($keys !== []) {
+                $redis->del($keys);
+            }
+            $redis->close();
+        }
+    }
+
+    public function testTurnLookupRequiresAuthenticatedUser(): void
+    {
+        [$controller, , $session] = $this->controller(
+            $this->createStub(QueueDispatcherInterface::class), authenticated: false,
+        );
+        $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/turn/submission-1')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session);
+        self::assertSame(401, $controller->turn($request, new Response(), ['submissionId' => 'submission-1'])
+            ->getStatusCode());
+    }
+
+    public function testRolledBackSnapshotContainsPreviousExchangeWithoutFailedTools(): void
+    {
+        [, $publisher, $session, $pdo, , $snapshots, $connection] = $this->controller(
+            $this->createStub(QueueDispatcherInterface::class),
+        );
+        $history = new \App\Brain\ChatHistory\UserChatHistory($session, $pdo, threadId: 'thread');
+        $history->addMessage(new \NeuronAI\Chat\Messages\UserMessage('Previous question')
+            ->addMetadata('claire_submission_id', 'submission-previous'));
+        $history->addMessage(new \NeuronAI\Chat\Messages\AssistantMessage('Previous answer'));
+        $before = $snapshots->read($session, 'thread')['messages'];
+        self::assertSame('submission-previous', $before[0]['submissionId']);
+        $journal = new \App\Services\ChatTurnJournal($connection);
+        $journal->begin('attempt', 'user-1', 'thread', 'web', 'attempt', 'submission-failed');
+        $history = new \App\Brain\ChatHistory\UserChatHistory($session, $pdo, threadId: 'thread');
+        $history->addMessage(new \NeuronAI\Chat\Messages\UserMessage('Failed question'));
+        $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage('Partial', [
+            new \NeuronAI\Tools\Tool('incomplete')->setCallId('call'),
+        ]));
+        $journal->rollback('attempt', 'user-1');
+        $publisher->generationState()->set('user-1', 'thread', 'attempt', 'running', true);
+        $snapshot = $snapshots->read($session, 'thread');
+        self::assertTrue($snapshot['rollbackConfirmed']);
+        self::assertSame($before, $snapshot['messages']);
+        self::assertSame('submission-failed', $snapshot['submissionId']);
+    }
+
+    public function testSnapshotUsesSqlResultEvenWhenRedisProjectionIsStale(): void
+    {
+        foreach (['running', 'succeeded', 'rolled_back'] as $status) {
+            [, $publisher, $session, , , $snapshots, $connection] = $this->controller(
+                $this->createStub(QueueDispatcherInterface::class),
+            );
+            $journal = new \App\Services\ChatTurnJournal($connection);
+            $journal->begin('attempt', 'user-1', 'thread', 'web', 'attempt', 'submission-1');
+            if ($status === 'succeeded') {
+                $journal->succeed('attempt', 'user-1');
+            } elseif ($status === 'rolled_back') {
+                $journal->rollback('attempt', 'user-1');
+            }
+            $redisStatus = $status === 'running' ? 'error' : 'running';
+            $publisher->generationState()->set('user-1', 'thread', 'attempt', $redisStatus, true);
+            $snapshot = $snapshots->read($session, 'thread');
+            self::assertSame(['messageId' => 'attempt', 'status' => $redisStatus], $snapshot['generation']);
+            self::assertSame('submission-1', $snapshot['submissionId']);
+            self::assertSame($status, $snapshot['turnStatus']);
+            self::assertSame($status === 'rolled_back', $snapshot['rollbackConfirmed']);
+            self::assertSame($status === 'running', $snapshot['responding']);
+            self::assertSame([], $snapshot['messages']);
+        }
+    }
+
+    /** @return array{BrainController, ChatStreamPublisher, InMemorySession, \PDO, RedisClient, ChatSnapshot,
+     *     \Doctrine\DBAL\Connection} */
+    private function controller(
+        QueueDispatcherInterface $queue,
+        ?AudioServiceInterface $audio = null,
+        bool $authenticated = true,
+    ): array
     {
         $settings = new Settings(['redis' => ['prefix' => 'test:'], 'llm' => ['openai' => ['contextWindow' => 50000]],
             'queue' => ['defaultQueue' => 'default'],
             'security' => ['cors' => ['allowed_origins' => []]]]);
         $session = new InMemorySession([Auth::USERID => 'user-1']);
-        $pdo = new \PDO('sqlite::memory:');
+        $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $pdo = $connection->getNativeConnection();
         $pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT, '
-            . 'display_messages TEXT, display_messages_count INTEGER DEFAULT 0, title TEXT, summary TEXT)');
-        $connection = $this->createStub(Connection::class);
-        $connection->method('getNativeConnection')->willReturn($pdo);
+            . 'display_messages TEXT, display_messages_count INTEGER DEFAULT 0, title TEXT, summary TEXT, '
+            . 'created_at TEXT, updated_at TEXT, revision INTEGER NOT NULL DEFAULT 0, current_turn_id TEXT)');
+        $pdo->exec('CREATE TABLE chat_turn (id TEXT PRIMARY KEY, user_id TEXT, thread_id TEXT, channel TEXT, '
+            . 'generation_id TEXT, submission_id TEXT, status TEXT, checkpoint TEXT, notification TEXT, '
+            . 'history_revision INTEGER, revision INTEGER, created_at INTEGER, updated_at INTEGER, '
+            . 'completed_at INTEGER, deleted_at INTEGER, UNIQUE(user_id, submission_id))');
         $user = new User();
         $user->setId('user-1');
         $users = $this->createStub(UserRepository::class);
-        $users->method('getCurrentUser')->willReturn($user);
+        $users->method('getCurrentUser')->willReturn($authenticated ? $user : null);
         $histories = $this->createStub(ChatHistoryRepository::class);
         $histories->method('findOneBy')->willReturn(null);
         $entityManager = $this->createStub(EntityManagerInterface::class);
@@ -290,6 +511,6 @@ final class BrainControllerTest extends TestCase
             $this->createStub(Filesystem::class), $settings, $audio ?? $this->createStub(AudioServiceInterface::class),
             $queue, $publisher),
             $publisher, $session, $pdo, $redis,
-            new ChatSnapshot($publisher->generationState(), $entityManager, $renderer, $settings)];
+            new ChatSnapshot($publisher->generationState(), $entityManager, $renderer, $settings), $connection];
     }
 }

@@ -60,7 +60,7 @@ final class ChatMaintenanceTest extends TestCase
         $driver = getenv('CLAIRE_MAINTENANCE_SQL_DRIVER') ?: 'pdo_pgsql';
         $this->sql = DriverManager::getConnection([
             'driver' => $driver, 'host' => '127.0.0.1', 'port' => (int) $sqlPort,
-            'user' => $driver === 'pdo_mysql' ? 'root' : 'postgres',
+            'user' => getenv('CLAIRE_MAINTENANCE_SQL_USER') ?: ($driver === 'pdo_mysql' ? 'root' : 'postgres'),
             'password' => getenv('CLAIRE_MAINTENANCE_SQL_PASSWORD') ?: 'claire-test-only',
             'dbname' => 'claire_test',
         ]);
@@ -70,6 +70,8 @@ final class ChatMaintenanceTest extends TestCase
             $this->sql->executeStatement(str_replace('CREATE TABLE ', 'CREATE TEMPORARY TABLE ',
                 $query->getStatement()), $query->getParameters(), $query->getTypes());
         }
+        require_once Settings::getAppRoot() . '/test/Support/ChatTurnSqlSchema.php';
+        \App\Test\Support\ChatTurnSqlSchema::create($this->sql, true);
         $this->journal = new TelegramJournal($this->sql);
         $client = new RedisClient();
         self::assertTrue($client->connect('127.0.0.1', (int) $port, 2));
@@ -203,7 +205,7 @@ final class ChatMaintenanceTest extends TestCase
         self::assertSame('1', $this->states->get($this->user, 'thread')['attempted']);
         $backend = new RedisQueueBackend($this->queue, $this->settings, $this->sql);
         $payload = ['threadId' => 'thread', 'sessionId' => 'tab', 'session' => [Auth::USERID => $this->user],
-            'messageId' => 'old-message', 'message' => 'PRIVATE'];
+            'messageId' => 'old-message', 'submissionId' => 'submission', 'message' => 'PRIVATE'];
         try {
             $backend->dispatch(NewMessageJob::class, $payload, 'test');
             self::fail('Old message must remain fenced');
@@ -212,6 +214,8 @@ final class ChatMaintenanceTest extends TestCase
         }
         $payload['messageId'] = 'new-message';
         $id = $backend->dispatch(NewMessageJob::class, $payload, 'test');
+        $this->keys[] = $this->prefix . 'chat:submission:'
+            . hash('sha256', json_encode([$this->user, 'submission'], JSON_THROW_ON_ERROR));
         $this->keys[] = $this->prefix . 'queue:job:' . $id;
         $this->keys[] = $this->prefix . 'queue:test';
         self::assertSame($id, $this->states->get($this->user, 'thread')['jobId']);
@@ -272,8 +276,10 @@ final class ChatMaintenanceTest extends TestCase
         $backend = new RedisQueueBackend($this->queue, $this->settings, $this->sql);
         $id = $backend->dispatch(NewMessageJob::class, [
             'threadId' => 'thread', 'sessionId' => 'tab', 'session' => [Auth::USERID => $this->user],
-            'messageId' => 'web-message', 'message' => 'PRIVATE',
+            'messageId' => 'web-message', 'submissionId' => 'submission', 'message' => 'PRIVATE',
         ], 'test');
+        $this->keys[] = $this->prefix . 'chat:submission:'
+            . hash('sha256', json_encode([$this->user, 'submission'], JSON_THROW_ON_ERROR));
         $this->keys[] = $this->prefix . 'queue:job:' . $id;
         $this->keys[] = $this->prefix . 'queue:test';
         $this->states->set($this->user, 'thread', 'web-message', 'done', true);

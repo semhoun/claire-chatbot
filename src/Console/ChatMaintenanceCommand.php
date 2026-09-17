@@ -26,10 +26,11 @@ final class ChatMaintenanceCommand extends Command
             ->addOption('thread', null, InputOption::VALUE_REQUIRED, 'Exact thread ID')
             ->addOption('reconcile', null, InputOption::VALUE_NONE, 'Mark proven orphan error, never replay')
             ->addOption('compact', null, InputOption::VALUE_NONE, 'Compact delivered Telegram journals')
+            ->addOption('recover', null, InputOption::VALUE_NONE, 'Recover abandoned SQL turns without replay')
             ->addOption('apply', null, InputOption::VALUE_NONE, 'Explicitly enable mutations')
             ->addOption('retention-days', null, InputOption::VALUE_REQUIRED, 'Completed body retention (1-36500 days)', '7')
             ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'SQL page size / queue proof budget (1-10000)', '1000')
-            ->addOption('cursor', null, InputOption::VALUE_REQUIRED, '0 or opaque sql:v1: keyset cursor', '0');
+            ->addOption('cursor', null, InputOption::VALUE_REQUIRED, '0 or the cursor returned by the selected action', '0');
         $help = <<<'HELP'
 Examples (no LLM, no response text or session secrets printed):
   ./console chat:maintenance --user USER --thread THREAD
@@ -37,12 +38,18 @@ Examples (no LLM, no response text or session secrets printed):
   ./console chat:maintenance --user USER --thread THREAD --reconcile --apply --limit 10000
   ./console chat:maintenance --compact --retention-days 7 --limit 1000
   ./console chat:maintenance --compact --retention-days 7 --limit 1000 --apply --cursor 0
+  ./console chat:maintenance --recover --limit 100
+  ./console chat:maintenance --recover --apply --limit 100 --cursor 0
 
 All actions are dry-run unless --apply is supplied. SQL compaction defaults to 7 days,
 uses the (delivered, compacted, completed_at, id) index and keyset order completed_at, id.
 Resume the returned sql:v1: cursor until 0. Numeric Redis SCAN cursors other than 0 are rejected.
 Start a separate apply traversal at 0 after a dry-run. Busy/changed rows are skipped until
 the next traversal. SQL retention never scans Redis and still works when Redis is unavailable.
+
+Recovery scans SQL turns under the generation locks, restores abandoned running turns,
+and retries terminal projections and bounded failure notifications without invoking the LLM.
+Resume its returned turn-ID cursor until 0; recovery and compaction cursors are distinct.
 
 Only delivered=true, attempted=true, fully confirmed journals with a known old completion
 date and identity are compacted. DB time, not the operator clock, determines retention.
@@ -73,6 +80,7 @@ HELP;
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $compact = (bool) $input->getOption('compact');
+        $recover = (bool) $input->getOption('recover');
         $cursor = (string) $input->getOption('cursor');
         $user = (string) $input->getOption('user');
         $thread = (string) $input->getOption('thread');
@@ -92,16 +100,17 @@ HELP;
             return Command::INVALID;
         }
 
-        if (($compact && ($user !== '' || $thread !== '' || $reconcile))
-            || (! $compact && ($user === '' || $thread === '' || ($apply && ! $reconcile)))) {
-            $output->writeln('Choose --compact OR --user USER --thread THREAD [--reconcile].');
+        if (($recover && ($compact || $user !== '' || $thread !== '' || $reconcile))
+            || ($compact && ($user !== '' || $thread !== '' || $reconcile))
+            || (! $compact && ! $recover && ($user === '' || $thread === '' || ($apply && ! $reconcile)))) {
+            $output->writeln('Choose --recover OR --compact OR --user USER --thread THREAD [--reconcile].');
             return Command::INVALID;
         }
 
         try {
             if ($compact) {
                 ChatMaintenance::sqlCursor($cursor);
-            } elseif ($cursor !== '0') {
+            } elseif (! $recover && $cursor !== '0') {
                 throw new \InvalidArgumentException('Invalid cursor');
             }
         } catch (\InvalidArgumentException) {
@@ -110,6 +119,11 @@ HELP;
         }
 
         try {
+            if ($recover) {
+                $result = $this->container->get(\App\Services\ChatTurnRecovery::class)->recover($limit, $apply, $cursor);
+                $output->writeln(json_encode(['apply' => $apply, ...$result], JSON_THROW_ON_ERROR));
+                return isset($result['counts']['failed']) ? Command::FAILURE : Command::SUCCESS;
+            }
             $service = $this->container->get(ChatMaintenance::class);
             $result = $compact
                 ? $service->compact($days, $limit, $cursor, $apply)

@@ -97,7 +97,8 @@ final class ChatRedisTest extends TestCase
         self::assertSame(2, $reads);
         self::assertSame(['html' => 'complete', 'responding' => false, 'activeMessageId' => null,
             'generationMessageId' => 'message', 'generation' => ['messageId' => 'message', 'status' => 'done'],
-            'generationStatus' => 'done'], $snapshot);
+            'generationStatus' => 'done', 'submissionId' => null, 'turnStatus' => null,
+            'rollbackConfirmed' => false], $snapshot);
         self::assertTrue($this->reader->reconnect());
         self::assertTrue($observer->acceptsEvent('alice', 'thread', 'chat.assistant.done', 'message'));
         self::assertTrue($observer->acceptsEvent('alice', 'thread', 'chat.assistant.update', 'message'));

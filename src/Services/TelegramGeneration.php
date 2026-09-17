@@ -17,10 +17,16 @@ final readonly class TelegramGeneration
     ) {
     }
 
-    /** @param callable(string): string $generate
+    /**
+     * @param callable(string, callable(): void, mixed): string $generate
      * @param callable(string, callable(string, callable(): void): void): void $deliver
+     * @param array<string, string|int|null> $notification
+     * @param (callable(): mixed)|null $prepare Retryable media preparation, never agent/history entry.
      */
-    public function run(string $userId, string $threadId, string $generationId, callable $generate, callable $deliver): void
+    public function run(
+        string $userId, string $threadId, string $generationId, callable $generate, callable $deliver,
+        array $notification = [], ?callable $notifyFailure = null, ?callable $prepare = null,
+    ): void
     {
         if ($generationId === '') {
             throw new NonRetryableJobException('Stable Telegram generation ID is required');
@@ -29,6 +35,7 @@ final readonly class TelegramGeneration
         $botId = explode(':', (string) $this->settings->get('telegram.bot_token'), 2)[0];
         $id = TelegramJournal::id($botId, $generationId);
         $telegramJournal = new TelegramJournal($this->connection);
+        $turns = new ChatTurnJournal($this->connection);
         $updateLock = new ChatThreadLock($this->connection->getNativeConnection(), 'telegram-journal', $id);
         try {
             $record = $telegramJournal->load($id) ?? [
@@ -52,6 +59,16 @@ final readonly class TelegramGeneration
             $threadId = $record['threadId'];
             $lock = new ChatThreadLock($this->connection->getNativeConnection(), $userId, $threadId);
             try {
+                $turn = $turns->get($id);
+                if (($turn['deletedAt'] ?? null) !== null) {
+                    return;
+                }
+                if ($turn !== null && $turn['status'] !== 'succeeded') {
+                    $turns->rollback($id, $userId);
+                    $this->project($userId, $threadId, $id, 'error');
+                    $this->notifyFailure($id, $notifyFailure);
+                    return;
+                }
                 try {
                     $previous = $this->chatGenerationState->get($userId, $threadId);
                 } catch (\Throwable $error) {
@@ -91,22 +108,33 @@ final readonly class TelegramGeneration
                         throw new ChatGenerationBusyException('Cannot project Telegram generation', 0, $error);
                     }
 
+                    $prepared = $prepare === null ? null : $prepare();
+                    $lock->assertHeld();
                     $record['attempted'] = true;
-                    $telegramJournal->save($id, $record);
+                    $turns->begin($id, $userId, $threadId, 'telegram', $generationId,
+                        notification: $notification,
+                        atomic: function () use ($telegramJournal, $id, &$record): void {
+                            $telegramJournal->saveInTransaction($id, $record);
+                        });
                     $this->project($userId, $threadId, $id, 'running');
                     try {
-                        $record['response'] = $generate($threadId);
+                        $record['response'] = $generate($threadId, $lock->assertHeld(...), $prepared);
+                        $lock->assertHeld();
+                        $completed = $turns->succeed($id, $userId,
+                            function () use ($telegramJournal, $id, &$record): void {
+                                $telegramJournal->saveInTransaction($id, $record);
+                            });
+                        if ($completed['status'] !== 'succeeded') {
+                            throw new \RuntimeException('Telegram turn was invalidated before completion');
+                        }
                     } catch (\Throwable $error) {
-                        $this->project($userId, $threadId, $id, 'error');
-                        throw new NonRetryableJobException('Telegram attempt failed after agent entry', 0, $error);
-                    }
-
-                    // A lost commit acknowledgement must be resolved from SQL on retry.
-                    try {
-                        $telegramJournal->save($id, $record);
-                    } catch (\Throwable $error) {
-                        $this->project($userId, $threadId, $id, 'error');
-                        throw $error;
+                        if (($turns->get($id)['status'] ?? '') !== 'succeeded') {
+                            $turns->rollback($id, $userId);
+                            $this->project($userId, $threadId, $id, 'error');
+                            $this->notifyFailure($id, $notifyFailure);
+                            throw new NonRetryableJobException('Telegram attempt failed after agent entry', 0, $error);
+                        }
+                        $record = $telegramJournal->load($id);
                     }
                 }
 
@@ -142,6 +170,88 @@ final readonly class TelegramGeneration
         } finally {
             $updateLock->release();
         }
+    }
+
+    /**
+     * Caller holds the session lock; no agent is entered when retries are exhausted.
+     *
+     * @param array<string, string|int|null> $notification
+     */
+    public function fail(
+        string $userId, string $threadId, string $generationId, array $notification, callable $notify,
+    ): void {
+        $botId = explode(':', (string) $this->settings->get('telegram.bot_token'), 2)[0];
+        $id = TelegramJournal::id($botId, $generationId);
+        $journal = new TelegramJournal($this->connection);
+        $turns = new ChatTurnJournal($this->connection);
+        $updateLock = new ChatThreadLock($this->connection->getNativeConnection(), 'telegram-journal', $id);
+        try {
+            $record = $journal->load($id) ?? compact('botId', 'userId', 'threadId') + ['updateId' => $generationId];
+            if ($record['userId'] !== $userId || isset($record['response']) || ($record['delivered'] ?? false)) {
+                return;
+            }
+            $lock = new ChatThreadLock($this->connection->getNativeConnection(), $userId, $record['threadId']);
+            try {
+                $turn = $turns->get($id);
+                if ($turn === null) {
+                    // Legacy ambiguous attempts have no trustworthy checkpoint.
+                    if ($record['attempted'] ?? false) {
+                        return;
+                    }
+                    $state = $this->chatGenerationState->get($userId, $record['threadId']);
+                    if (in_array($state['status'] ?? '', ['deleted', 'running', 'queued'], true)
+                        && ($state['messageId'] ?? '') !== $id) {
+                        return;
+                    }
+                    $record['attempted'] = true;
+                    $turns->begin($id, $userId, $record['threadId'], 'telegram', $generationId,
+                        notification: $notification,
+                        atomic: function () use ($journal, $id, &$record): void {
+                            $journal->saveInTransaction($id, $record);
+                        });
+                }
+                $turn = $turns->rollback($id, $userId);
+                if ($turn['status'] === 'rolled_back' && ($turn['deletedAt'] ?? null) === null) {
+                    $this->project($userId, $record['threadId'], $id, 'error');
+                    $this->notifyFailure($id, $notify);
+                }
+            } finally {
+                $lock->release();
+            }
+        } finally {
+            $updateLock->release();
+        }
+    }
+
+    /** Caller holds the session and journal locks. Delivery may be duplicated after a crash. */
+    public function notifyFailure(string $id, ?callable $notify): void
+    {
+        if ($notify === null) {
+            return;
+        }
+        $journal = new TelegramJournal($this->connection);
+        $record = $journal->load($id);
+        if ($record === null || isset($record['response']) || $record['delivered']) {
+            return;
+        }
+        $step = $record['deliveries']['failure-notice'] ?? [];
+        if (($step['status'] ?? '') === 'confirmed' || ($step['attempts'] ?? 0) >= 3) {
+            return;
+        }
+        $record['deliveries']['failure-notice'] = [
+            'attempts' => ($step['attempts'] ?? 0) + 1, 'status' => 'sending',
+        ];
+        $journal->save($id, $record);
+        try {
+            $notify();
+        } catch (\Throwable) {
+            $record['deliveries']['failure-notice']['status'] = 'uncertain';
+            $journal->save($id, $record);
+            return;
+        }
+        $record['deliveries']['failure-notice']['status'] = 'confirmed';
+        $record['delivered'] = true;
+        $journal->save($id, $record);
     }
 
     private function project(string $userId, string $threadId, string $id, string $status): void

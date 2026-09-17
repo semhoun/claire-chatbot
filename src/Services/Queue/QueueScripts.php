@@ -18,7 +18,10 @@ final class QueueScripts
         end
         if ARGV[5] ~= '' then
             local previous = redis.call('GET', ARGV[5])
-            if previous then return previous end
+            if previous then
+                if ARGV[6] ~= '' then return 'CHAT_BUSY' end
+                return previous
+            end
         end
         if ARGV[6] ~= '' then
             local status = redis.call('HGET', ARGV[6], 'status')

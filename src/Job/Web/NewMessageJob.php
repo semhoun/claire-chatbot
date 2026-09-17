@@ -15,6 +15,8 @@ use App\Services\ChatAudioPublisher;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\ChatThreadLock;
+use App\Services\ChatTurnJournal;
+use App\Services\ChatTurnRecovery;
 use App\Services\Queue\QueueDoer;
 use App\Services\Session\InMemorySession;
 use App\Services\Settings;
@@ -57,6 +59,10 @@ final class NewMessageJob implements QueueDoer
     private string $sessionId = '';
 
     private string $messageId = '';
+
+    private ?string $submissionId = null;
+
+    private string $turnStatus = 'running';
 
     private ?string $autoAudioRequestId = null;
 
@@ -104,7 +110,33 @@ final class NewMessageJob implements QueueDoer
         $this->userId = '';
         unset($this->inMemorySession);
         $this->initContext($payload);
+        $this->turnStatus = 'running';
         $chatThreadLock = new ChatThreadLock($this->connection->getNativeConnection(), $this->userId, $this->threadId);
+        $journal = new ChatTurnJournal($this->connection);
+        $turn = $journal->get($this->messageId);
+        if ($turn !== null) {
+            if ($turn['userId'] !== $this->userId || $turn['threadId'] !== $this->threadId) {
+                throw new \App\Services\Queue\NonRetryableJobException('Chat turn identity mismatch');
+            }
+            if (($turn['deletedAt'] ?? null) !== null) {
+                return;
+            }
+            $turn = $journal->rollback($this->messageId, $this->userId);
+            $this->turnStatus = $turn['status'];
+            $state = $this->chatStreamPublisher->generationState();
+            $previous = $state->get($this->userId, $this->threadId);
+            if (! ChatTurnRecovery::canProjectTerminal($this->connection, $turn, $previous)) {
+                return;
+            }
+            $state->set(
+                $this->userId, $this->threadId, $this->messageId,
+                $this->turnStatus === 'succeeded' ? 'done' : 'error', true,
+            );
+            if ($this->turnStatus === 'rolled_back') {
+                $this->handleChatError(new \RuntimeException('Interrupted chat attempt'));
+            }
+            return;
+        }
         $chatGenerationState = $this->chatStreamPublisher->generationState();
         $previous = $chatGenerationState->get($this->userId, $this->threadId);
         if (($previous['status'] ?? '') === 'deleted'
@@ -126,8 +158,13 @@ final class NewMessageJob implements QueueDoer
             }
         }
 
-        $attempted = false;
         try {
+            $brain = (string) $this->inMemorySession->get('brain_avatar');
+            if (! $this->brainRegistry->has($brain)) {
+                throw new \InvalidArgumentException('Assistant inconnu: ' . $brain);
+            }
+            $journal->begin($this->messageId, $this->userId, $this->threadId, 'web',
+                $this->messageId, $this->submissionId, ['sessionId' => $this->sessionId]);
             $this->agent = $this->brainRegistry->get(
                 $this->inMemorySession->get('brain_avatar'),
                 $this->inMemorySession,
@@ -137,8 +174,12 @@ final class NewMessageJob implements QueueDoer
             $this->publishStartMessages();
             // Persist the fence BEFORE entering agent code, including middleware and tool execution.
             $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'running', true);
-            $attempted = true;
-            $responseText = $this->processChatStream();
+            $responseText = $this->processChatStream($chatThreadLock);
+            $chatThreadLock->assertHeld();
+            if ($journal->succeed($this->messageId, $this->userId)['status'] !== 'succeeded') {
+                throw new \RuntimeException('Chat turn was invalidated before completion');
+            }
+            $this->turnStatus = 'succeeded';
             try {
                 $this->manageSummary();
             } catch (\Throwable $throwable) {
@@ -147,16 +188,30 @@ final class NewMessageJob implements QueueDoer
 
             $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'done', true);
         } catch (\Throwable $throwable) {
-            try {
-                $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'error', $attempted);
-                $this->handleChatError($throwable);
-            } catch (\Throwable $reportError) {
-                $this->logger->error('Cannot report chat failure', ['exception' => $reportError]);
+            // Resolve lost commit acknowledgements from SQL, never from Redis.
+            $turn = $journal->get($this->messageId);
+            if (($turn['status'] ?? '') === 'succeeded') {
+                $this->turnStatus = 'succeeded';
+                try {
+                    $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'done', true);
+                } catch (\Throwable $projectionError) {
+                    // Periodic recovery repairs the disposable projection.
+                    $this->logger->warning('Chat success projection failed', ['exception' => $projectionError]);
+                }
+            } else {
+                if ($turn === null) {
+                    throw $throwable;
+                }
+                $turn = $journal->rollback($this->messageId, $this->userId);
+                $this->turnStatus = $turn['status'];
+                try {
+                    $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'error', true);
+                    $this->handleChatError($throwable);
+                } catch (\Throwable $reportError) {
+                    $this->logger->error('Cannot report chat failure', ['exception' => $reportError]);
+                }
+                throw new \App\Services\Queue\NonRetryableJobException('Chat attempt failed after agent entry', 0, $throwable);
             }
-
-            throw $attempted
-                ? new \App\Services\Queue\NonRetryableJobException('Chat attempt failed after agent entry', 0, $throwable)
-                : $throwable;
         } finally {
             $this->agent = null;
             $chatThreadLock->release();
@@ -190,6 +245,7 @@ final class NewMessageJob implements QueueDoer
      */
     private function initContext(array $payload): void
     {
+        $this->submissionId = isset($payload['submissionId']) ? (string) $payload['submissionId'] : null;
         $this->messageId = (string) ($payload['messageId'] ?? '');
         if ($this->messageId === '') {
             throw new \InvalidArgumentException('Stable message ID is required');
@@ -223,18 +279,24 @@ final class NewMessageJob implements QueueDoer
         }
     }
 
-    private function processChatStream(): string
+    private function processChatStream(ChatThreadLock $lock): string
     {
         $userMessage = new UserMessage($this->userMessage);
         $userMessage->addMetadata('timestamp', new DateTimeImmutable()->format(DateTimeInterface::ATOM));
+        if ($this->submissionId !== null) {
+            $userMessage->addMetadata('claire_submission_id', $this->submissionId);
+        }
         $this->addAttachments($userMessage);
 
         $agentHandler = $this->agent->stream($userMessage);
 
         foreach ($agentHandler->events() as $chunk) {
+            $lock->assertHeld();
             $this->publishPlaceHolder();
             $this->processChunk($chunk);
             $this->nbPublishedChunks++;
+            // Resuming a ToolCallChunk can execute its tool before the next yield.
+            $lock->assertHeld();
         }
 
         $finalText = $agentHandler->getMessage()->getContent();
@@ -311,7 +373,7 @@ final class NewMessageJob implements QueueDoer
 
         $this->toolsCall[$id] = $toolData;
 
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.tool.update', [
+        $this->publish('chat.tool.update', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
@@ -329,7 +391,7 @@ final class NewMessageJob implements QueueDoer
 
         $content = $this->chatDataRenderer->content($this->streamedText, $this->userId, true);
 
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
+        $this->publish('chat.assistant.update', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
@@ -339,7 +401,7 @@ final class NewMessageJob implements QueueDoer
 
     private function publishStartMessages(): void
     {
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.start', [
+        $this->publish('chat.assistant.start', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
@@ -348,7 +410,7 @@ final class NewMessageJob implements QueueDoer
 
     private function publishDoneMessages(): void
     {
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.done', [
+        $this->publish('chat.assistant.done', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
@@ -368,7 +430,7 @@ final class NewMessageJob implements QueueDoer
             'time' => new DateTimeImmutable()->format(DateTimeInterface::ATOM),
             'sent' => false,
         ], $this->userId);
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.placeholder', [
+        $this->publish('chat.assistant.placeholder', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
@@ -380,7 +442,7 @@ final class NewMessageJob implements QueueDoer
     {
         $data = $this->chatDataRenderer->content($content, $this->userId);
 
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.assistant.update', [
+        $this->publish('chat.assistant.update', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
@@ -395,11 +457,21 @@ final class NewMessageJob implements QueueDoer
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
         ]);
-        $this->chatStreamPublisher->publish($this->sessionId, 'chat.error', [
+        $this->publish('chat.error', [
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => $this->messageId,
             'message' => 'Désolé, une erreur est survenue lors du traitement de votre message.',
+        ]);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function publish(string $event, array $payload): void
+    {
+        $this->chatStreamPublisher->publish($this->sessionId, $event, $payload + [
+            'submissionId' => $this->submissionId,
+            'turnStatus' => $this->turnStatus,
+            'rollbackConfirmed' => $this->turnStatus === 'rolled_back',
         ]);
     }
 

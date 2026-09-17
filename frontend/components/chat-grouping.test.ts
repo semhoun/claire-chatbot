@@ -56,7 +56,7 @@ describe('adjacent message groups', () => {
     expect(wrapper.find('img, [class*="avatar"]').exists()).toBe(false)
   })
 
-  it.each([false, true])('keeps the loader separate from sent=%s groups', async sent => {
+  it.each([false, true])('keeps the loader separate without an active response in sent=%s groups', async sent => {
     const wrapper = mountMessages([message('a', sent), message('b', sent)], true)
     expect(positions(wrapper)).toEqual(['first', 'last'])
     const loader = wrapper.get('[data-role="claire-assistant-loader"]')
@@ -70,6 +70,28 @@ describe('adjacent message groups', () => {
     await wrapper.setProps({ messages: [], loading: true })
     expect(positions(wrapper)).toEqual([])
     expect(wrapper.findAll('article')).toHaveLength(1)
+  })
+
+  it('moves waiting dots into the active response bubble without adding a message', async () => {
+    const wrapper = mountMessages([message('old')], true)
+    await wrapper.setProps({ activeMessageId: 'active' })
+    expect(wrapper.findAll('article')).toHaveLength(2)
+    expect(wrapper.find('#claire-old [data-role="claire-assistant-loader"]').exists()).toBe(false)
+    const active = { ...message('active'), message: '', toolsCall: [
+      { id: 'tool', name: 'search', inputs: [], running: true, result: null },
+    ] }
+    await wrapper.setProps({ messages: [message('old'), active] })
+    const bubble = wrapper.get('#claire-active .claire-message__bubble').element
+    expect(wrapper.findAll('article')).toHaveLength(2)
+    expect(wrapper.findAll('[data-role="claire-assistant-loader"]')).toHaveLength(1)
+    expect(wrapper.get('[data-role="claire-assistant-loader"]').element.parentElement).toBe(bubble)
+    await wrapper.setProps({ messages: [message('old'), { ...active, message: 'Searching now.' }] })
+    expect(wrapper.get('#claire-active .claire-message__bubble').element).toBe(bubble)
+    expect(wrapper.get('#claire-active .claire-message__text').text()).toBe('Searching now.')
+    expect(wrapper.get('[data-role="claire-assistant-loader"]').element.parentElement).toBe(bubble)
+    await wrapper.setProps({ loading: false })
+    expect(wrapper.find('[data-role="claire-assistant-loader"]').exists()).toBe(false)
+    expect(wrapper.get('#claire-active .claire-message__bubble').element).toBe(bubble)
   })
 
   it('reacts to appends, author changes, errors, removals and array replacement', async () => {

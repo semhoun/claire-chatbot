@@ -10,7 +10,7 @@
 
 ![PHP](https://img.shields.io/badge/PHP-8.5%2B-777BB4?logo=php&logoColor=white) ![Vue](https://img.shields.io/badge/Vue-3-42B883?logo=vuedotjs&logoColor=white) ![Slim](https://img.shields.io/badge/Slim-4.x-4B4B4B) ![FrankenPHP](https://img.shields.io/badge/FrankenPHP-Caddy-ffb300) ![License](https://img.shields.io/badge/License-MIT-blue) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/semhoun/claire-chatbot)
 
-Claire réunit une interface de conversation, des agents personnalisables et des outils de recherche et de génération. Connectez votre fournisseur de modèles compatible OpenAI, configurez votre authentification OpenID Connect, puis utilisez la même application en plein écran, en widget embarqué ou avec un bot Telegram. La version courante est la **2.1.1**.
+Claire réunit une interface de conversation, des agents personnalisables et des outils de recherche et de génération. Connectez votre fournisseur de modèles compatible OpenAI, configurez votre authentification OpenID Connect, puis utilisez la même application en plein écran, en widget embarqué ou avec un bot Telegram.
 
 Le projet utilise PHP 8.5, Slim 4 et Neuron AI côté serveur, Vue 3 et TypeScript côté navigateur. L'image Docker regroupe FrankenPHP/Caddy, un daemon SSE et les workers de traitement. Une base SQL conserve les données applicatives ; Redis assure la queue et la coordination des traitements.
 
@@ -178,7 +178,7 @@ Pour MySQL/MariaDB ou PostgreSQL, ajoutez `DATABASE_HOST`, `DATABASE_PORT`, `DAT
 | RAG | `OPENAPI_MODEL_EMBED`, `RAG_CHUNK_SIZE=1000`, `RAG_TOP_K=4`. |
 | Mémoire durable | `LONG_TERM_MEMORY_MAX_CHARACTERS=4000`, `LONG_TERM_MEMORY_UPDATE_EVERY_USER_MESSAGES=5`, `LONG_TERM_MEMORY_REBUILD_BATCH_SIZE=20`. |
 | Images | `COMFYUI_ENABLED=false`, `COMFYUI_URL`, `COMFYUI_DEFAULT_WORKFLOW`. |
-| PDF | `PDF_ENABLED=true`, `PDF_DEFAULT_FORMAT=html`, `PDF_DEFAULT_PAGE_SIZE=A4`, `PDF_TEMP_DIR`. |
+| PDF | `PDF_ENABLED=true`, `PDF_DEFAULT_FORMAT=html`, `PDF_DEFAULT_PAGE_SIZE=A4`, `PDF_MAX_PAGES=100`, `PDF_TEMP_DIR`. |
 | Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`. |
 | Observabilité | `OTEL_SERVICE_NAME`, exporteurs `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` et endpoint `OTEL_EXPORTER_OTLP_ENDPOINT`. |
 
@@ -205,6 +205,8 @@ Les modèles réellement utilisés sont imposés côté serveur, même pour les 
 
 Après connexion, choisissez un agent, démarrez une conversation et envoyez votre message avec ou sans pièces jointes. L'historique permet de retrouver les échanges ; la dernière conversation est restaurée après rechargement. Les générations sont isolées par utilisateur et conversation.
 
+Les tours de conversation sont journalisés en SQL. En cas d'échec, un checkpoint permet de restaurer l'historique antérieur sans relancer automatiquement le modèle ni les outils. Après confirmation de cette restauration, le web et le widget retirent le tour échoué et récupèrent son texte et ses pièces jointes sans écraser une nouvelle saisie. Ce brouillon reste en mémoire dans l'interface, pas après un rechargement. **Les effets externes des outils et les fichiers déjà produits ne sont pas annulés** : une nouvelle soumission manuelle peut répéter ces actions.
+
 Claire résume automatiquement le contexte court. La **mémoire long terme**, désactivée par défaut, s'active dans les préférences web, du widget ou de la Mini-App. Elle conserve une synthèse par utilisateur entre ses conversations, évolue périodiquement et peut être reconstruite depuis les résumés existants. Elle est supprimée avec le compte.
 
 ### Documents et recherche
@@ -221,6 +223,10 @@ La recherche web utilise séparément `SEARXNG_URL`. Elle ne remplace pas l'inde
 - **Fichiers audio** : l'outil `generate_speech` produit un MP3 conservé dans la conversation avec un lecteur protégé.
 - **Images** : activez ComfyUI et déployez des workflows YAML dans `<ADDONS_PATH>/comfyui`. Chaque fichier contient un `label` et un champ `workflow` avec le graphe JSON ComfyUI ; les modèles de workflow peuvent utiliser `{{PROMPT}}` et `{{SEED}}`. Utilisez un graphe complet adapté à votre instance, pas un simple fragment de nœuds.
 - **PDF** : l'outil `generate_pdf` accepte HTML ou Markdown, plusieurs formats de page, orientations et marges. Les documents sont liés à la conversation ; `PDF_TEMP_DIR` doit être accessible en écriture aux workers.
+
+Pour les PDF personnalisés, privilégiez le HTML avec styles intégrés ou inline : couleurs, couvertures, encadrés, tableaux et typographie. Le moteur est **mPDF, pas un navigateur** : utilisez des blocs simples et du CSS d'impression plutôt que flexbox, grid ou JavaScript. Les marges nulles sont acceptées, mais chaque page doit conserver une surface imprimable positive.
+
+Le rendu accepte uniquement les images raster résolues par les marqueurs Claire `@@GENERATED@@…@@`. Les ressources distantes, chemins locaux arbitraires, SVG, images `data:`, feuilles CSS externes, `@import` et CSS `url(...)` sont refusés ; les hyperliens ordinaires restent autorisés. Le contenu doit être en UTF-8 et ne pas dépasser 10 Mio. `PDF_MAX_PAGES` impose une limite positive de pages pendant le rendu, sans conserver de PDF partiel en cas de dépassement. Ces garde-fous ne constituent pas un plafond général de mémoire ou de temps CPU.
 
 ### Installer l'application web
 
@@ -449,10 +455,12 @@ curl 'https://claire.example.com/brain/messages' \
 Réponse d'acceptation, statut **202** :
 
 ```json
-{"threadId":"...","messageId":"assistant-message-...","accepted":true}
+{"threadId":"...","messageId":"assistant-message-...","submissionId":"...","accepted":true}
 ```
 
 La création de conversation est elle-même asynchrone et renvoie `{threadId, sessionId}`. Une conversation occupée ou supprimée peut produire un conflit `409` lors de l'envoi. Des pièces jointes peuvent être transmises avec `file_ids[]` ou `upload_files[]`.
+
+Le client peut transmettre un `submissionId` pour corréler l'envoi et son résultat durable. La route authentifiée `GET /brain/turn/{submissionId}`, limitée au propriétaire, expose notamment `turnStatus` et `rollbackConfirmed`. En cas de réponse réseau incertaine, vérifiez ce résultat plutôt que de renvoyer automatiquement le message : un `404` peut simplement indiquer que le tour n'est pas encore journalisé.
 
 Pour obtenir un jeton de ressource, envoyez à `POST /auth/resource-token`, avec `X-Claire-Auth`, un corps JSON tel que :
 
@@ -483,6 +491,7 @@ Les routes applicatives exigent une session ou, pour les ressources concernées,
 | Historique | `GET /history/count`, `GET /history/list`, `GET /history/open/{threadId}` |
 | Conversations | `POST /history/new`, `DELETE /history/exchange/last`, `DELETE /history/delete/{threadId}` |
 | Messages | `POST /brain/messages`, `POST /brain/audio` |
+| Résultat d'un envoi | `GET /brain/turn/{submissionId}` |
 | Fichiers | `GET /files/count`, `GET /files/list`, `GET /files/serve/{id}` |
 | Gestion des fichiers | `POST /files/upload`, `POST /files/upload_rag`, `DELETE /files/delete/{id}` |
 | Consultation RAG | `GET /rag/list`, `GET /rag/count`, `GET /rag/segments/{id}` |
@@ -553,6 +562,8 @@ Consultez le [CHANGELOG](CHANGELOG.md) et privilégiez une version d'image ident
 
 Déployez producteurs, daemon, proxy et frontend ensemble. Un rollback doit restaurer un ensemble cohérent, en tenant compte des migrations SQL. Prévoir une courte interruption avec reconnexion ; ne videz pas Redis pour effectuer la migration SSE, les anciennes listes expirent seules.
 
+La migration `Version20260917000000` crée le journal durable `chat_turn` et ajoute les champs de révision et de tour courant à `chat_history`. Elle doit être appliquée avant la reprise des traitements avec le nouveau code. Sa migration inverse supprime le journal et ses informations de récupération.
+
 Pour une migration depuis les versions antérieures à 2.1, appliquez notamment les migrations créant le journal `telegram_generation`, remplacez les styles d'agents `css` / `CSS` par `theme` / `THEME` et adaptez les clients aux jetons de ressources ainsi qu'à `/files/serve/{id}`.
 
 ### Queue et diagnostic
@@ -583,6 +594,36 @@ docker compose -f docker/compose.yml exec --user www-data claire \
 Poursuivez chaque parcours avec le curseur `sql:v1:` renvoyé, via `--cursor`, jusqu'à `0`. Après simulation, recommencez l'application à `0`. La rétention de sept jours n'est pas une tâche planifiée automatiquement.
 
 La compaction efface uniquement les corps des journaux Telegram entièrement confirmés et livrés. Les identifiants anti-rejeu restent en SQL sans expiration ; les journaux actifs, ambigus ou en échec sont conservés. `--user USER --thread THREAD --reconcile --apply` ne marque une génération orpheline en erreur que si l'absence de travail restant est démontrée. Cette garantie suppose que les données de queue Redis n'ont pas été supprimées ou évincées.
+
+### Récupérer les tours interrompus
+
+Les workers tentent périodiquement de récupérer les tours interrompus à partir du journal SQL, sous verrou, sans relancer le LLM ni les outils. Une récupération manuelle est également disponible, **en simulation par défaut** :
+
+```bash
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console chat:maintenance --recover --limit 100
+
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console chat:maintenance --recover --apply --limit 100 --cursor 0
+```
+
+Reprenez le curseur de tour renvoyé jusqu'à `0` ; il est distinct du curseur de compaction. Après simulation, recommencez l'application à `0`. `--recover` ne se combine pas avec `--compact`, `--user`, `--thread` ou `--reconcile`. La simulation compte les lignes parcourues, sans garantir leur récupération effective. Les tentatives anciennes sans checkpoint fiable ne sont pas rétroactivement restaurables.
+
+### Purger les fichiers orphelins
+
+La commande `files:purge-orphans` repère les lignes de fichiers dont le propriétaire ou la conversation associée n'existe plus, ainsi que les fichiers physiques non référencés dans les répertoires de génération et d'upload. Un upload sans conversation reste valide tant que son propriétaire existe. Les données RAG et le stockage Telegram ne sont pas parcourus.
+
+```bash
+# Simulation ; ancienneté minimale de 24 heures par défaut
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console files:purge-orphans --min-age-hours 24
+
+# Suppression réelle, uniquement après arrêt effectif de toutes les écritures
+docker compose -f docker/compose.yml exec --user www-data claire \
+  ./console files:purge-orphans --apply --writers-stopped --min-age-hours 24
+```
+
+**Arrêtez les uploads HTTP, les générations et les workers pendant toute la purge.** `--writers-stopped` est une confirmation opérateur : cette option n'arrête aucun processus et ne pose aucun verrou. Sauvegardez les données avant application. Les lignes SQL sont supprimées avant les fichiers physiques ; après un échec partiel, un nouveau passage peut terminer le nettoyage.
 
 ### Journaux et sécurité
 

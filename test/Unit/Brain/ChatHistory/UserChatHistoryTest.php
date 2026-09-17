@@ -190,6 +190,8 @@ SQL
         $pdo->exec(
             <<<'SQL'
 CREATE TABLE chat_history (
+    revision INTEGER NOT NULL DEFAULT 0,
+    current_turn_id TEXT DEFAULT NULL,
     user_id TEXT NOT NULL,
     thread_id TEXT PRIMARY KEY,
     messages TEXT NOT NULL,
@@ -244,6 +246,8 @@ SQL
         $pdo->exec(
             <<<'SQL'
 CREATE TABLE chat_history (
+    revision INTEGER NOT NULL DEFAULT 0,
+    current_turn_id TEXT DEFAULT NULL,
     user_id TEXT NOT NULL,
     thread_id TEXT PRIMARY KEY,
     messages TEXT NOT NULL,
@@ -287,6 +291,8 @@ SQL
         $pdo->exec(
             <<<'SQL'
 CREATE TABLE chat_history (
+    revision INTEGER NOT NULL DEFAULT 0,
+    current_turn_id TEXT DEFAULT NULL,
     user_id TEXT NOT NULL,
     thread_id TEXT PRIMARY KEY,
     messages TEXT NOT NULL,

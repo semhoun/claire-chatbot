@@ -8,7 +8,6 @@ use App\Brain\ChatHistory\UserChatHistory;
 use App\Job\Web\GenerateAudioJob;
 use App\Job\Web\NewMessageJob;
 use App\Services\Audio\AudioServiceInterface;
-use App\Services\Auth;
 use App\Services\ChatGenerationBusyException;
 use App\Services\ChatStreamPublisher;
 use App\Services\Queue\QueueDispatcherInterface;
@@ -44,6 +43,11 @@ final readonly class BrainController
     {
         $session = $this->getSession($request);
         $data = (array) ($request->getParsedBody() ?? []);
+        $submissionId = $data['submissionId'] ?? null;
+        if (! is_string($submissionId)
+            || preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $submissionId) !== 1) {
+            return $response->withStatus(400);
+        }
         $userStr = trim((string) ($data['message'] ?? ''));
         if ($userStr === '') {
             return $response->withStatus(422);
@@ -71,9 +75,17 @@ final readonly class BrainController
             return $response->withStatus(403);
         }
 
+        $userId = (string) $user->getId();
+        if ($this->entityManager->getConnection()->fetchOne(
+            'SELECT id FROM chat_turn WHERE user_id = ?'
+                . ' AND (submission_id = ? OR (thread_id = ? AND status = ?))',
+            [$userId, $submissionId, $threadId, 'running'],
+        ) !== false) {
+            return $response->withStatus(409);
+        }
+
         $messageId = uniqid('assistant-message-', true);
         $attachments = $this->extractAttachments($request, $user, includeStoredFiles: true);
-        $userId = (string) $session->get(Auth::USERID);
         $chatGenerationState = $this->chatStreamPublisher->generationState();
         $previous = $chatGenerationState->get($userId, $threadId);
         if (in_array($previous['status'] ?? '', ['queued', 'running', 'deleted'], true)) {
@@ -87,6 +99,7 @@ final readonly class BrainController
                     'threadId' => $threadId,
                     'sessionId' => $sessionId,
                     'messageId' => $messageId,
+                    'submissionId' => $submissionId,
                     'attachments' => $attachments,
                     'message' => $userStr,
                     'session' => $session->all(),
@@ -100,12 +113,46 @@ final readonly class BrainController
         $response->getBody()->write(json_encode([
             'threadId' => $threadId,
             'messageId' => $messageId,
+            'submissionId' => $submissionId,
             'accepted' => true,
         ], JSON_THROW_ON_ERROR));
 
         return $response
             ->withStatus(202)
             ->withHeader('Content-Type', 'application/json');
+    }
+
+    /** @param array<string, string> $args */
+    public function turn(Request $request, Response $response, array $args): Response
+    {
+        $response = $response->withHeader('Cache-Control', 'no-store');
+        $user = $this->entityManager->getRepository(\App\Entity\User::class)
+            ->getCurrentUser($this->getSession($request));
+        if ($user === null) {
+            return $response->withStatus(401);
+        }
+        $submissionId = $args['submissionId'] ?? null;
+        if (! is_string($submissionId)
+            || preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $submissionId) !== 1) {
+            return $response->withStatus(400);
+        }
+        $turn = $this->entityManager->getConnection()->fetchAssociative(
+            'SELECT submission_id, generation_id, thread_id, status FROM chat_turn'
+                . ' WHERE user_id = ? AND submission_id = ?',
+            [(string) $user->getId(), $submissionId],
+        );
+        if ($turn === false) {
+            return $response->withStatus(404);
+        }
+        $response->getBody()->write(json_encode([
+            'submissionId' => $turn['submission_id'],
+            'messageId' => $turn['generation_id'],
+            'threadId' => $turn['thread_id'],
+            'turnStatus' => $turn['status'],
+            'rollbackConfirmed' => $turn['status'] === 'rolled_back',
+        ], JSON_THROW_ON_ERROR));
+
+        return $response->withHeader('Content-Type', 'application/json');
     }
 
     public function generateAudio(Request $request, Response $response): Response

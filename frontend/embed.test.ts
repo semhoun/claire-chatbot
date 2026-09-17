@@ -91,6 +91,422 @@ function bootstrap(): ClaireBootstrap {
 }
 
 describe('embed public API', () => {
+  describe.each(['normal', 'embed'] as const)('submission rollback in %s', mode => {
+    it('submits with secure random bytes when randomUUID is unavailable', async () => {
+      const random = vi.fn(crypto.getRandomValues.bind(crypto))
+      vi.stubGlobal('crypto', { getRandomValues: random })
+      const ids: string[] = []
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path === '/brain/messages') {
+          const submissionId = String((init!.body as FormData).get('submissionId'))
+          ids.push(submissionId)
+          return Response.json({ submissionId, messageId: `g-${ids.length}` }, { status: 202 })
+        }
+        return new Response('0')
+      }))
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+      try {
+        await flushPromises()
+        for (let index = 0; index < 2; index++) {
+          await wrapper.get('textarea').setValue('Question')
+          await wrapper.get('form#claire-brain-chat').trigger('submit')
+          await flushPromises()
+          expect(ids[index]).toMatch(/^submission-[a-f0-9]{32}$/)
+          FakeEventSource.instances.at(-1)!.emit('chat.snapshot', {
+            submissionId: ids[index], generationMessageId: `g-${index + 1}`, turnStatus: 'succeeded',
+            generationStatus: 'done', responding: false, messages: [],
+          })
+          await flushPromises()
+          expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
+        }
+        expect(random).toHaveBeenCalledTimes(2)
+        expect(ids[0]).not.toBe(ids[1])
+      } finally { wrapper.unmount() }
+    })
+
+    it('revives only a correlated running generation after a delayed pre-admission snapshot', async () => {
+      let submissionId = ''
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path === '/brain/messages') {
+          submissionId = String((init!.body as FormData).get('submissionId'))
+          return Response.json({ submissionId, messageId: 'current' }, { status: 202 })
+        }
+        if (path.startsWith('/brain/turn/')) return new Response('', { status: 404 })
+        return new Response('0')
+      }))
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+      try {
+        await flushPromises()
+        await wrapper.get('textarea').setValue('Question')
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        const source = FakeEventSource.instances.at(-1)!
+        source.emit('chat.snapshot', { submissionId: 'previous', generationMessageId: 'previous-generation',
+          turnStatus: 'succeeded', generationStatus: 'done', responding: false, messages: [] })
+        const running = { submissionId, generationMessageId: 'current', activeMessageId: 'current',
+          turnStatus: 'running', generationStatus: 'running', responding: true, messages: [] }
+        source.emit('chat.snapshot', { ...running, submissionId: 'unrelated' })
+        source.emit('chat.assistant.update', { submissionId, messageId: 'current', message: 'Uncorrelated' })
+        await flushPromises()
+        expect(wrapper.find('#claire-current').exists()).toBe(false)
+        source.emit('chat.snapshot', { ...running, generationMessageId: 'wrong', activeMessageId: 'wrong' })
+        source.emit('chat.assistant.update', { submissionId, messageId: 'current', message: 'Wrong identity' })
+        await flushPromises()
+        expect(wrapper.find('#claire-current').exists()).toBe(false)
+        source.emit('chat.snapshot', running)
+        source.emit('chat.assistant.update', { submissionId, messageId: 'current', message: 'Live answer' })
+        source.emit('chat.tool.update', { submissionId, messageId: 'current',
+          toolsCall: [{ id: 'search', name: 'search', inputs: [], running: true, result: null }] })
+        await flushPromises()
+        expect(wrapper.get('#claire-current').text()).toContain('Live answer')
+        expect(wrapper.find('.claire-tools-running-flag').exists()).toBe(true)
+        source.emit('chat.assistant.done', { submissionId, messageId: 'current', turnStatus: 'succeeded' })
+        await flushPromises()
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
+        expect(wrapper.find('[data-role="claire-assistant-loader"]').exists()).toBe(false)
+      } finally { wrapper.unmount() }
+    })
+
+    it.each([403, 409, 422, 500, 'network'] as const)('distinguishes definitive refusal from ambiguity: %s', async status => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const ids: string[] = []
+      let release!: () => void
+      const lookups: string[] = []
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path.startsWith('/brain/turn/')) {
+          lookups.push(path.split('/').at(-1)!)
+          return new Response('', { status: 404 })
+        }
+        if (path === '/brain/messages') {
+          ids.push(String((init!.body as FormData).get('submissionId')))
+          if (ids.length === 1) throw new TypeError('Lost first response')
+          await new Promise<void>(resolve => { release = resolve })
+          if (status === 'network') throw new TypeError('Lost second response')
+          return new Response('', { status })
+        }
+        return new Response('0')
+      }))
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+      try {
+        await flushPromises()
+        await wrapper.get('textarea').setValue('Earlier ambiguous submission')
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        const local = new File(['bytes'], 'keep.txt', { type: 'text/plain' })
+        const upload = wrapper.get<HTMLInputElement>('#claire-chat-upload')
+        Object.defineProperty(upload.element, 'files', { configurable: true, value: [local] })
+        await upload.trigger('change')
+        await wrapper.get('textarea').setValue('  Second draft\n')
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        const input = wrapper.get<HTMLTextAreaElement>('textarea')
+        input.element.value = '  Changed while sending\n'
+        input.element.dispatchEvent(new Event('input', { bubbles: true }))
+        release()
+        await flushPromises()
+        FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { messages: [], responding: false })
+        await flushPromises()
+        const rejected = typeof status === 'number' && status < 500
+        expect(wrapper.find(`#claire-${ids[0]}`).exists()).toBe(true)
+        expect(wrapper.find(`#claire-${ids[1]}`).exists()).toBe(!rejected)
+        expect(lookups.includes(ids[1])).toBe(!rejected)
+        expect(input.element.value).toBe('  Changed while sending\n')
+        expect(input.element.disabled).toBe(false)
+        expect(wrapper.get('#claire-chat-attached-files-chat').text()).toContain('keep.txt')
+        expect(ids).toHaveLength(2)
+      } finally { wrapper.unmount() }
+    })
+
+    it('keeps failed drafts accessible after another send and rejects snapshots reviving a rollback', async () => {
+      let admit!: (response: Response) => void
+      const posts: FormData[] = []
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path === '/brain/messages') {
+          posts.push(init!.body as FormData)
+          return new Promise<Response>(resolve => { admit = resolve })
+        }
+        if (path.startsWith('/brain/turn/')) return new Response('', { status: 404 })
+        return new Response('0')
+      }))
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+      try {
+        await flushPromises()
+        const local = new File(['original bytes'], 'original.txt', { type: 'text/plain' })
+        const upload = wrapper.get<HTMLInputElement>('#claire-chat-upload')
+        Object.defineProperty(upload.element, 'files', { configurable: true, value: [local] })
+        await upload.trigger('change')
+        const input = wrapper.get<HTMLTextAreaElement>('textarea')
+        await input.setValue('  Original\n')
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        const submissionId = String(posts[0].get('submissionId'))
+        input.element.value = 'New draft'
+        input.element.dispatchEvent(new Event('input', { bubbles: true }))
+        admit(Response.json({ submissionId, messageId: 'failed' }, { status: 202 }))
+        await flushPromises()
+        const source = FakeEventSource.instances.at(-1)!
+        source.emit('chat.snapshot', { submissionId, generationMessageId: 'failed', turnStatus: 'rolled_back',
+          rollbackConfirmed: true, generationStatus: 'error', responding: false, messages: [] })
+        await flushPromises()
+        for (const identity of [{ submissionId }, {}]) {
+          source.emit('chat.snapshot', { ...identity, generationMessageId: 'failed', activeMessageId: 'failed',
+            turnStatus: 'running', responding: true, messages: [entry('failed', 'Stale partial')] })
+        }
+        await flushPromises()
+        expect(wrapper.find('#claire-failed').exists()).toBe(false)
+        expect(input.element.disabled).toBe(false)
+        await wrapper.get('[aria-label="Fermer la notification"]').trigger('click')
+        expect(wrapper.get('[role="alert"] button').text()).toContain('Restaurer')
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        const nextId = String(posts[1].get('submissionId'))
+        admit(Response.json({ submissionId: nextId, messageId: 'next' }, { status: 202 }))
+        await flushPromises()
+        source.emit('chat.snapshot', { submissionId: nextId, generationMessageId: 'next', turnStatus: 'succeeded',
+          generationStatus: 'done', responding: false, messages: [entry('next', 'Success')] })
+        await flushPromises()
+        expect(input.element.value).toBe('')
+        await wrapper.get('[role="alert"] button').trigger('click')
+        expect(input.element.value).toBe('  Original\n')
+        expect(wrapper.get('#claire-chat-attached-files-chat').text()).toContain('original.txt')
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        expect(posts[2].get('upload_files[]')).toBe(local)
+        admit(Response.json({ submissionId: posts[2].get('submissionId'), messageId: 'restored' }, { status: 202 }))
+        await flushPromises()
+      } finally { wrapper.unmount() }
+    })
+
+    it.each([true, false])('restores exact draft/files once, including SSE before admission=%s', async beforeAdmission => {
+      let admit!: (response: Response) => void
+      let submissionId = ''
+      const posts: FormData[] = []
+      const fetcher = vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path === '/files/list') return Response.json({ acceptedExt: '.txt', files: [{
+          fileId: 'stored-1', filename: 'stored.txt', mimeType: 'text/plain', sizeBytes: 1, createdAt: '2026-09-12',
+        }] })
+        if (path === '/brain/messages') {
+          posts.push(init!.body as FormData)
+          submissionId = String(posts.at(-1)!.get('submissionId'))
+          return new Promise<Response>(resolve => { admit = resolve })
+        }
+        if (path.startsWith('/brain/turn/')) return new Response('', { status: 404 })
+        return new Response('0')
+      })
+      vi.stubGlobal('fetch', fetcher)
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+      try {
+        await flushPromises()
+        await wrapper.get('#claire-files-toggle').trigger('click')
+        await flushPromises()
+        await wrapper.get('[aria-label="Ajouter ce fichier à la conversation"]').trigger('click')
+        const local = new File(['exact file bytes'], 'local.txt', { type: 'text/plain' })
+        const upload = wrapper.get<HTMLInputElement>('#claire-chat-upload')
+        Object.defineProperty(upload.element, 'files', { configurable: true, value: [local] })
+        await upload.trigger('change')
+        const text = '  Repeat this\n\n  '
+        const input = wrapper.get<HTMLTextAreaElement>('textarea')
+        await input.setValue(text)
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        expect(submissionId).toMatch(/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/)
+        const admission = () => admit(Response.json({ submissionId, messageId: 'generation-1' }, { status: 202 }))
+        if (!beforeAdmission) { admission(); await flushPromises(); expect(input.element.value).toBe('') }
+        const source = FakeEventSource.instances.at(-1)!
+        const identity = { submissionId, messageId: 'generation-1', threadId: 'thread-1' }
+        const previous = entry('previous', 'Previous exchange')
+        source.emit('chat.assistant.start', { ...identity, turnStatus: 'running' })
+        source.emit('chat.assistant.update', { ...identity, message: 'Partial answer' })
+        source.emit('chat.tool.update', { ...identity, toolsCall: [{ id: 't', name: 'search', inputs: [], running: true, result: null }] })
+        source.emit('chat.error', { ...identity, turnStatus: 'running', rollbackConfirmed: false, message: 'SECRET' })
+        await flushPromises()
+        expect(input.element.value).toBe(beforeAdmission ? text : '')
+        expect(wrapper.get('[role="alert"]').text()).not.toContain('SECRET')
+        expect(wrapper.get('[role="alert"]').element.closest('.claire-chat-input')).not.toBeNull()
+        expect(wrapper.get('[role="alert"]').element.closest('form')).toBeNull()
+        expect(wrapper.get('#claire-messages').text()).not.toContain('une erreur est survenue')
+        const rollback = { ...identity, turnStatus: 'rolled_back', rollbackConfirmed: true }
+        source.emit('chat.error', rollback)
+        await flushPromises()
+        const reconnected = FakeEventSource.instances.at(-1)!
+        reconnected.emit('chat.snapshot', { ...rollback, generationStatus: 'error', messages: [previous], responding: false })
+        await flushPromises()
+        if (beforeAdmission) { admission(); await flushPromises() }
+        expect(input.element.value).toBe(text)
+        expect(wrapper.get('#claire-chat-attached-files-chat').text()).toContain('local.txt')
+        expect(wrapper.get('#claire-chat-attached-files-chat').text()).toContain('stored.txt')
+        expect(wrapper.findAll('.claire-message[id]')).toHaveLength(1)
+        expect(wrapper.get('#claire-messages').text()).toBe('Previous exchange14:00')
+        expect(wrapper.find('[data-role="claire-assistant-loader"]').exists()).toBe(false)
+        await input.setValue('New draft')
+        reconnected.emit('chat.error', rollback)
+        reconnected.emit('chat.assistant.start', { ...identity, turnStatus: 'running' })
+        reconnected.emit('chat.snapshot', { ...rollback, messages: [previous], responding: false })
+        await flushPromises()
+        expect(input.element.value).toBe('New draft')
+        expect(posts).toHaveLength(1)
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        expect(posts).toHaveLength(2)
+        expect(posts[1].get('upload_files[]')).toBe(local)
+        expect(posts[1].getAll('file_ids[]')).toEqual(['stored-1'])
+        expect(posts[1].get('submissionId')).not.toBe(posts[0].get('submissionId'))
+        admission()
+        await flushPromises()
+      } finally { wrapper.unmount() }
+    })
+
+    it('preserves a changed composer and resolves an older turn behind a newer snapshot', async () => {
+      vi.useFakeTimers()
+      let admit!: (response: Response) => void
+      let submissionId = ''
+      let result: unknown = null
+      const fetcher = vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path === '/brain/messages') {
+          submissionId = String((init!.body as FormData).get('submissionId'))
+          return new Promise<Response>(resolve => { admit = resolve })
+        }
+        if (path.startsWith('/brain/turn/')) return result ? Response.json(result) : new Response('', { status: 404 })
+        return new Response('0')
+      })
+      vi.stubGlobal('fetch', fetcher)
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+      try {
+        await flushPromises()
+        const input = wrapper.get<HTMLTextAreaElement>('textarea')
+        await input.setValue('  Original\n')
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        // A programmatic edit/dictation can race the admission even with a disabled textarea.
+        input.element.value = 'Changed'
+        input.element.dispatchEvent(new Event('input', { bubbles: true }))
+        admit(Response.json({ submissionId, messageId: 'old-generation' }, { status: 202 }))
+        await flushPromises()
+        expect(input.element.value).toBe('Changed')
+        let source = FakeEventSource.instances.at(-1)!
+        source.onerror?.()
+        await vi.advanceTimersByTimeAsync(2000)
+        source = FakeEventSource.instances.at(-1)!
+        const newer = { submissionId: 'other-tab', messageId: 'new-generation', activeMessageId: 'new-generation',
+          turnStatus: 'running', generationStatus: 'running', responding: true, messages: [entry('new-generation', 'New answer')] }
+        source.emit('chat.snapshot', newer)
+        await flushPromises()
+        expect(input.element.value).toBe('Changed')
+        expect(wrapper.findAll('.claire-message[id]')).toHaveLength(1)
+        expect(fetcher.mock.calls.some(([url]) => new URL(url).pathname === `/brain/turn/${submissionId}`)).toBe(true)
+        result = { submissionId, messageId: 'old-generation', threadId: 'thread-1', turnStatus: 'rolled_back', rollbackConfirmed: true }
+        source.emit('chat.snapshot', newer)
+        await flushPromises()
+        source = FakeEventSource.instances.at(-1)!
+        source.emit('chat.snapshot', newer)
+        source.emit('chat.error', { submissionId, messageId: 'old-generation', turnStatus: 'rolled_back', rollbackConfirmed: true })
+        source.emit('chat.assistant.start', { submissionId, messageId: 'old-generation' })
+        await flushPromises()
+        expect(input.element.value).toBe('Changed')
+        expect(wrapper.get('#claire-new-generation').text()).toContain('New answer')
+        expect(wrapper.find('#claire-old-generation').exists()).toBe(false)
+        expect(wrapper.find('[data-role="claire-assistant-loader"]').exists()).toBe(true)
+        await wrapper.get('[role="alert"] button').trigger('click')
+        expect(input.element.value).toBe('  Original\n')
+        source.emit('chat.snapshot', newer)
+        await flushPromises()
+        expect(wrapper.find('[role="alert"] button').text()).toBe('Fermer')
+        expect(fetcher.mock.calls.filter(([url]) => new URL(url).pathname === '/brain/messages')).toHaveLength(1)
+      } finally { wrapper.unmount() }
+    })
+
+    it.each(['succeeded', 'rolled_back'] as const)('accepts a terminal %s snapshot before 202 without replay or duplicate restoration', async turnStatus => {
+      let admit!: (response: Response) => void
+      let submissionId = ''
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path === '/brain/messages') {
+          submissionId = String((init!.body as FormData).get('submissionId'))
+          return new Promise<Response>(resolve => { admit = resolve })
+        }
+        return new Response('0')
+      }))
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+      try {
+        await flushPromises()
+        const input = wrapper.get<HTMLTextAreaElement>('textarea')
+        await input.setValue('  Original\n')
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        const source = FakeEventSource.instances.at(-1)!
+        const snapshot = { submissionId, generation: { messageId: 'g', status: turnStatus === 'succeeded' ? 'done' : 'error' },
+          turnStatus, rollbackConfirmed: turnStatus === 'rolled_back', responding: false, activeMessageId: null,
+          generationStatus: turnStatus === 'succeeded' ? 'done' : 'error',
+          messages: turnStatus === 'succeeded' ? [{ ...entry(submissionId, 'Original'), sent: true }, entry('g', 'Success')] : [] }
+        source.emit('chat.snapshot', { ...snapshot, threadId: 'another-conversation' })
+        await flushPromises()
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+        source.emit('chat.snapshot', snapshot)
+        admit(Response.json({ submissionId, messageId: 'g' }, { status: 202 }))
+        await flushPromises()
+        expect(input.element.value).toBe(turnStatus === 'succeeded' ? '' : '  Original\n')
+        if (turnStatus === 'rolled_back') await wrapper.get('[aria-label="Fermer la notification"]').trigger('click')
+        await input.setValue('New draft')
+        source.emit('chat.error', { submissionId, messageId: 'g', turnStatus: 'rolled_back', rollbackConfirmed: true })
+        source.emit('chat.snapshot', snapshot)
+        source.emit('chat.audio.error', { submissionId, messageId: 'g' })
+        await flushPromises()
+        expect(input.element.value).toBe('New draft')
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+        expect(wrapper.findAll('.claire-message[id]')).toHaveLength(turnStatus === 'succeeded' ? 2 : 0)
+      } finally { wrapper.unmount() }
+    })
+
+    it('ignores a late authenticated turn lookup after changing conversation', async () => {
+      let resolve!: (response: Response) => void
+      let submissionId = ''
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path === '/brain/messages') {
+          submissionId = String((init!.body as FormData).get('submissionId'))
+          return Response.json({ submissionId, messageId: 'old' }, { status: 202 })
+        }
+        if (path.startsWith('/brain/turn/')) return new Promise<Response>(release => { resolve = release })
+        if (path === '/history/new') return Response.json({ threadId: 'new', sessionId: 'new-session' })
+        return new Response('0')
+      }))
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+      try {
+        await flushPromises()
+        await wrapper.get('textarea').setValue('Old draft')
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        const source = FakeEventSource.instances.at(-1)!
+        source.emit('chat.snapshot', { messages: [], responding: false })
+        await flushPromises()
+        await wrapper.get(mode === 'normal' ? '.claire-options-item' : '[aria-label="Nouvelle conversation"]').trigger('click')
+        await flushPromises()
+        await wrapper.get('textarea').setValue('New conversation draft')
+        resolve(Response.json({ submissionId, messageId: 'old', threadId: 'thread-1', turnStatus: 'rolled_back', rollbackConfirmed: true }))
+        source.emit('chat.error', { submissionId, messageId: 'old', turnStatus: 'rolled_back', rollbackConfirmed: true })
+        await flushPromises()
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('New conversation draft')
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+        expect(wrapper.findAll('.claire-message[id]')).toHaveLength(0)
+      } finally { wrapper.unmount() }
+    })
+  })
+
   it.each(['normal', 'embed'] as const)('resizes the composer after edits, submission and restored messages in %s', async mode => {
     const longMessage = 'Long message\n'.repeat(20)
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
@@ -127,9 +543,10 @@ describe('embed public API', () => {
       source.emit('chat.snapshot', { messages: [], restoredMessage: 'Short' })
       await flushPromises()
       expect(wrapper.findAll('.claire-message')).toHaveLength(0)
+      expect(input.element.value).toBe(longMessage)
+      await input.setValue('Short')
       expect(input.element.style.height).toBe('24px')
-      source.emit('chat.snapshot', { messages: [], restoredMessage: longMessage })
-      await flushPromises()
+      await input.setValue(longMessage)
       expect(input.element.style.height).toBe('160px')
       await input.setValue('')
       expect(input.element.style.height).toBe('24px')
@@ -488,7 +905,7 @@ describe('embed public API', () => {
       source.emit('chat.tool.update', { messageId: 'a', toolsCall: [tool] })
       await flushPromises()
       expect(wrapper.find('.claire-tools-running-flag').exists()).toBe(true)
-      expect(wrapper.find('[data-role="claire-assistant-loader"]').exists()).toBe(false)
+      expect(wrapper.find('[data-role="claire-assistant-loader"]').exists()).toBe(true)
       expect(wrapper.get('#claire-a').classes()).toContain('claire-message--tools-only')
       expect(wrapper.find('#claire-a .claire-message__meta').exists()).toBe(false)
       source.emit('chat.assistant.placeholder', { messageId: 'a', entry: entry('a', '') })
@@ -508,6 +925,52 @@ describe('embed public API', () => {
       expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
     } finally { wrapper.unmount() }
   })
+  it.each(['normal', 'embed'] as const)('shows waiting dots between text chunks and throughout tools in %s mode', async mode => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
+      new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
+    )))
+    const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, baseUrl: 'https://claire.test' } } })
+    const loading = () => wrapper.find('[data-role="claire-assistant-loader"]').exists()
+    try {
+      await flushPromises()
+      const source = FakeEventSource.instances[0]
+      source.emit('chat.assistant.start', { messageId: 'a' })
+      await flushPromises()
+      expect(loading()).toBe(true)
+      source.emit('chat.assistant.update', { messageId: 'a', message: 'Searching' })
+      await flushPromises()
+      expect(loading()).toBe(false)
+      await vi.advanceTimersByTimeAsync(500)
+      source.emit('chat.assistant.update', { messageId: 'a', message: 'Searching now' })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(500)
+      expect(loading()).toBe(false)
+      await vi.advanceTimersByTimeAsync(500)
+      expect(loading()).toBe(true)
+      source.emit('chat.assistant.update', { messageId: 'a', message: 'Searching now.' })
+      await flushPromises()
+      expect(loading()).toBe(false)
+      const tool = { id: 'search', name: 'search', inputs: [], running: true, result: null }
+      source.emit('chat.tool.update', { messageId: 'a', toolsCall: [tool] })
+      await flushPromises()
+      expect(loading()).toBe(true)
+      expect(wrapper.findAll('.claire-message')).toHaveLength(1)
+      expect(wrapper.find('#claire-a .claire-message__bubble [data-role="claire-assistant-loader"]').exists()).toBe(true)
+      source.emit('chat.tool.update', { messageId: 'a', toolsCall: [{ ...tool, running: false, result: 'Found' }] })
+      // Repeated text or file-only updates do not indicate fresh text transmission.
+      source.emit('chat.assistant.update', { messageId: 'a', message: 'Searching now.' })
+      await flushPromises()
+      expect(loading()).toBe(true)
+      source.emit('chat.assistant.update', { messageId: 'a', message: 'Searching now. Answer' })
+      await flushPromises()
+      expect(loading()).toBe(false)
+      source.emit('chat.assistant.done', { messageId: 'a' })
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(loading()).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+
   it.each(['normal', 'embed'] as const)('preserves pending user bubbles through stale snapshots and tool updates in %s mode', async mode => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new Response(
       new URL(input).pathname === '/auth/resource-token' ? capability() : '0',
@@ -522,28 +985,30 @@ describe('embed public API', () => {
       await wrapper.get('textarea').setValue('Repeat this')
       await wrapper.get('form#claire-brain-chat').trigger('submit')
       await flushPromises()
-      const bubble = wrapper.get('#claire-pending-user-1').element
+      const bubble = wrapper.get('[id^="claire-submission-"]').element
+      const pendingId = bubble.id
+      const submissionId = pendingId.slice('claire-'.length)
       source.emit('chat.snapshot', { messages: [previous], responding: false })
       source.emit('chat.assistant.start', { messageId: 'a' })
       const tool = { id: 'tool', name: 'generate_pdf', inputs: [], running: true, result: null }
       source.emit('chat.tool.update', { messageId: 'a', toolsCall: [tool] })
       await flushPromises()
-      expect(wrapper.get('#claire-pending-user-1').element).toBe(bubble)
-      expect(wrapper.get('#claire-pending-user-1').text()).toContain('Repeat this')
-      expect(wrapper.findAll('.claire-message')).toHaveLength(3)
+      expect(wrapper.get(`#${pendingId}`).element).toBe(bubble)
+      expect(wrapper.get(`#${pendingId}`).text()).toContain('Repeat this')
+      expect(wrapper.findAll('.claire-message[id]')).toHaveLength(3)
 
       const toolGroup = { ...entry('history-message-1', ''), toolsCall: [tool] }
       source.emit('chat.snapshot', { messages: [previous, toolGroup], responding: true, activeMessageId: 'a' })
       await flushPromises()
-      expect(wrapper.findAll('.claire-message').map(node => node.attributes('id')))
-        .toEqual(['claire-old-user', 'claire-pending-user-1', 'claire-a'])
+      expect(wrapper.findAll('.claire-message[id]').map(node => node.attributes('id')))
+        .toEqual(['claire-old-user', pendingId, 'claire-a'])
 
-      const persisted = { ...entry('new-user', 'Repeat this'), sent: true }
+      const persisted = { ...entry(submissionId, 'Repeat this'), submissionId, sent: true }
       source.emit('chat.snapshot', { messages: [previous, persisted, toolGroup], responding: true, activeMessageId: 'a' })
       await flushPromises()
-      expect(wrapper.find('#claire-pending-user-1').exists()).toBe(false)
-      expect(wrapper.get('#claire-new-user').text()).toContain('Repeat this')
-      expect(wrapper.findAll('.claire-message')).toHaveLength(3)
+      expect(wrapper.get(`#${pendingId}`).element).toBe(bubble)
+      expect(wrapper.get(`#${pendingId}`).text()).toContain('Repeat this')
+      expect(wrapper.findAll('.claire-message[id]')).toHaveLength(3)
       source.emit('chat.assistant.done', { messageId: 'a' })
       source.emit('chat.snapshot', { messages: [], responding: false })
       await flushPromises()
@@ -551,7 +1016,7 @@ describe('embed public API', () => {
     } finally { wrapper.unmount() }
   })
 
-  it.each(['normal', 'embed'] as const)('discards a rejected optimistic message before subsequent snapshots in %s mode', async mode => {
+  it.each(['normal', 'embed'] as const)('retains an ambiguous HTTP failure without resending in %s mode', async mode => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
       const path = new URL(input).pathname
@@ -564,10 +1029,10 @@ describe('embed public API', () => {
       await wrapper.get('textarea').setValue('Try again')
       await wrapper.get('form#claire-brain-chat').trigger('submit')
       await flushPromises()
-      expect(wrapper.findAll('.claire-message')).toHaveLength(0)
+      expect(wrapper.findAll('.claire-message')).toHaveLength(1)
       FakeEventSource.instances[0].emit('chat.snapshot', { messages: [], responding: false })
       await flushPromises()
-      expect(wrapper.findAll('.claire-message')).toHaveLength(0)
+      expect(wrapper.findAll('.claire-message')).toHaveLength(1)
       expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('Try again')
     } finally { wrapper.unmount() }
   })
@@ -588,9 +1053,9 @@ describe('embed public API', () => {
         generationStatus: 'running',
       })
       await flushPromises()
-      expect(wrapper.findAll('.claire-message')).toHaveLength(1)
+      expect(wrapper.findAll('.claire-message[id]')).toHaveLength(1)
       expect(wrapper.get('#claire-assistant-message-1').classes()).toContain('claire-message--tools-only')
-      expect(wrapper.find('[data-role="claire-assistant-loader"]').exists()).toBe(false)
+      expect(wrapper.find('[data-role="claire-assistant-loader"]').exists()).toBe(true)
       source.emit('chat.assistant.update', { messageId: 'assistant-message-1', message: 'Terminé' })
       await flushPromises()
       expect(wrapper.findAll('.claire-message')).toHaveLength(1)
@@ -629,7 +1094,7 @@ describe('embed public API', () => {
         expect(wrapper.get('#claire-a').element).toBe(bubble)
         expect(wrapper.get('#claire-message-a').text()).toBe('First. Second.')
         expect(wrapper.get('#claire-a').classes()).not.toContain('claire-message--tools-only')
-        expect(wrapper.findAll('.claire-message')).toHaveLength(2)
+        expect(wrapper.findAll('.claire-message[id]')).toHaveLength(2)
       }
 
       const text = 'First. Second. Answer'

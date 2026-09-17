@@ -170,8 +170,97 @@ final class TelegramSessionLifecycleTest extends TestCase
         ], JSON_THROW_ON_ERROR));
     }
 
+    public function testMediaPreparationFailuresRemainRetryableBeforeAgentEntry(): void
+    {
+        foreach (['photo', 'document', 'voice', 'audio'] as $type) {
+            $handler = $this->createMock(\NeuronAI\Agent\AgentHandler::class);
+            $handler->expects(self::once())->method('events')->willReturnCallback(static function (): \Generator { yield from []; });
+            $handler->method('getMessage')->willReturn(new \NeuronAI\Chat\Messages\AssistantMessage('Answer'));
+            [$service] = $this->service(handler: $handler);
+            $sql = new ReflectionProperty(TelegramService::class, 'entityManager')->getValue($service)->getConnection();
+            $journal = new \App\Services\TelegramJournal($sql);
+            $turns = new \App\Services\ChatTurnJournal($sql);
+            $id = \App\Services\TelegramJournal::id('test', 'update:42');
+            $fail = true;
+            $preparing = static function () use ($journal, $turns, $id): void {
+                self::assertFalse($journal->load($id)['attempted']);
+                self::assertNull($turns->get($id));
+            };
+            $transport = $this->createMock(\Phptg\BotApi\Transport\TransportInterface::class);
+            $transport->expects(self::exactly(2))->method('get')->willReturnCallback(
+                static function () use ($type, &$fail, $preparing): \Phptg\BotApi\Transport\ApiResponse {
+                    $preparing();
+                    if ($type === 'photo' && $fail) {
+                        $fail = false;
+                        throw new \RuntimeException('Preparation unavailable');
+                    }
+                    return new \Phptg\BotApi\Transport\ApiResponse(200,
+                        '{"ok":true,"result":{"file_id":"media","file_unique_id":"unique","file_path":"media.bin"}}');
+                });
+            $transport->expects(self::exactly($type === 'photo' ? 1 : 2))->method('downloadFile')->willReturnCallback(
+                static function () use ($type, &$fail, $preparing) {
+                    $preparing();
+                    if ($type === 'document' && $fail) {
+                        $fail = false;
+                        throw new \RuntimeException('Preparation unavailable');
+                    }
+                    $stream = fopen('php://temp', 'r+b');
+                    fwrite($stream, 'media bytes');
+                    rewind($stream);
+                    return $stream;
+                });
+            $transport->method('post')->willReturn(new \Phptg\BotApi\Transport\ApiResponse(200, '{"ok":true,"result":true}'));
+            $transport->method('postWithFiles')->willReturn(new \Phptg\BotApi\Transport\ApiResponse(200,
+                '{"ok":true,"result":{"message_id":1,"date":1,"chat":{"id":42,"type":"private"}}}'));
+            $api = new \Phptg\BotApi\TelegramBotApi('test', transport: $transport);
+            $audio = $this->createMock(\App\Services\Audio\AudioServiceInterface::class);
+            $audio->method('isAvailable')->willReturn(true);
+            $audio->method('maxUploadBytes')->willReturn(1000);
+            $audio->method('defaultVoice')->willReturn('voice');
+            $audio->method('isAllowedVoice')->willReturn(true);
+            $audio->method('speech')->willReturn(new \App\Services\Audio\SpeechResult('voice', 'audio/opus', 'opus'));
+            $audio->expects(self::exactly(in_array($type, ['audio', 'voice'], true) ? 2 : 0))->method('transcribe')
+                ->willReturnCallback(static function () use (&$fail, $preparing): array {
+                    $preparing();
+                    if ($fail) {
+                        $fail = false;
+                        throw new \RuntimeException('Preparation unavailable');
+                    }
+                    return ['text' => 'Prepared question'];
+                });
+            $settings = new ReflectionProperty(TelegramService::class, 'settings')->getValue($service);
+            foreach ([
+                'telegramBotApi' => $api, 'audioService' => $audio,
+                'telegramAudioService' => new \App\Services\TelegramAudioService($api, $audio, new NullLogger()),
+                'telegramChatActionHeartbeat' => new \App\Services\TelegramChatActionHeartbeat(
+                    $settings, new NullLogger(), static function (): void {}),
+                'filesystem' => $this->createStub(\League\Flysystem\Filesystem::class),
+            ] as $property => $value) {
+                new ReflectionProperty(TelegramService::class, $property)->setValue($service, $value);
+            }
+            $media = ['file_id' => 'media', 'file_unique_id' => 'unique', 'duration' => 1,
+                'width' => 10, 'height' => 10, 'file_name' => 'media.txt'];
+            $update = $this->contentUpdate([$type => $type === 'photo' ? [$media] : $media]);
+            try {
+                $service->processUpdate($update);
+                self::fail('Preparation must fail once');
+            } catch (\RuntimeException $error) {
+                self::assertSame('Preparation unavailable', $error->getMessage());
+                self::assertNotInstanceOf(\App\Services\Queue\NonRetryableJobException::class, $error);
+            }
+            self::assertFalse($journal->load($id)['attempted']);
+            self::assertNull($turns->get($id));
+            self::assertSame([], $service->sent);
+            $service->processUpdate($update);
+            $service->processUpdate($update);
+            self::assertSame('succeeded', $turns->get($id)['status']);
+            self::assertTrue($journal->load($id)['delivered']);
+            self::assertSame(['Answer'], $service->sent);
+        }
+    }
+
     /** @return array{LifecycleTelegramService, SessionEntity} */
-    private function service(?string $cachedResponse = null): array
+    private function service(?string $cachedResponse = null, ?\NeuronAI\Agent\AgentHandler $handler = null): array
     {
         $entity = new SessionEntity();
         $entity->setSessionData([Auth::AUTHENTICATED => true, Auth::USERID => 'user-42', 'brain_avatar' => 'first']);
@@ -182,6 +271,8 @@ final class TelegramSessionLifecycleTest extends TestCase
         $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         require_once Settings::getAppRoot() . '/test/Support/TelegramSqlSchema.php';
         \App\Test\Support\TelegramSqlSchema::create($connection);
+        require_once Settings::getAppRoot() . '/test/Support/ChatTurnSqlSchema.php';
+        \App\Test\Support\ChatTurnSqlSchema::create($connection);
         $manager->method('getConnection')->willReturn($connection);
         $settings = new Settings([
             'llm' => ['brains' => ['first' => LifecycleBrain::class, 'second' => LifecycleBrain::class]],
@@ -191,7 +282,11 @@ final class TelegramSessionLifecycleTest extends TestCase
         ]);
         $history = $this->createStub(UserChatHistory::class);
         $container = $this->createStub(ContainerInterface::class);
-        $container->method('get')->willReturn($history);
+        $container->method('get')->willReturnCallback(static fn (string $class): mixed => match ($class) {
+            \NeuronAI\Agent\AgentHandler::class => $handler,
+            \Doctrine\DBAL\Connection::class => $connection,
+            default => $history,
+        });
         $registry = new BrainRegistry($settings, $container, new ThemeRegistry($settings));
         new ReflectionProperty($registry, 'yamlBrainsCache')->setValue($registry, []);
         $workflows = new ComfyUIWorkflowRegistry($settings);
@@ -259,9 +354,21 @@ final class LifecycleBrain extends Agent implements BrainAvatar
 {
     private ChatHistoryInterface $testHistory;
 
+    private ?\NeuronAI\Agent\AgentHandler $testHandler;
+
     public function __construct(ContainerInterface $container, SessionInterface $session, ?string $threadId = null)
     {
+        $connection = $container->get(\Doctrine\DBAL\Connection::class);
+        TestCase::assertSame('running', $connection->fetchOne('SELECT status FROM chat_turn WHERE thread_id = ?', [$threadId]));
         $this->testHistory = $container->get(UserChatHistory::class);
+        $this->testHandler = $container->get(\NeuronAI\Agent\AgentHandler::class);
+    }
+
+    public function stream(
+        \NeuronAI\Chat\Messages\Message|array $messages = [],
+        ?\NeuronAI\Workflow\Interrupt\InterruptRequest $interrupt = null,
+    ): \NeuronAI\Agent\AgentHandler {
+        return $this->testHandler;
     }
 
     public function getOpeningText(): string

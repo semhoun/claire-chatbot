@@ -6,6 +6,9 @@ namespace App\Repository;
 
 use App\Entity\ChatHistory;
 use App\Entity\User;
+use App\Services\ChatGenerationBusyException;
+use App\Services\ChatThreadLock;
+use App\Services\ChatTurnJournal;
 use Doctrine\ORM\EntityRepository;
 use League\Flysystem\Filesystem;
 
@@ -83,13 +86,37 @@ class ChatHistoryRepository extends EntityRepository
             return 0;
         }
 
-        return (int) $this->createQueryBuilder('h')
-            ->delete()
-            ->where('h.user = :user')
-            ->andWhere('h.displayMessagesCount <= ' . self::MIN_MESSAGES . ' OR h.displayMessages IS NULL')
-            ->setParameter('user', $user)
-            ->getQuery()
-            ->execute();
+        $connection = $this->getEntityManager()->getConnection();
+        $threads = $connection->fetchFirstColumn(
+            'SELECT thread_id FROM chat_history WHERE user_id = ? AND display_messages_count <= ?'
+            . ' AND NOT EXISTS (SELECT 1 FROM chat_turn WHERE chat_turn.user_id = chat_history.user_id'
+            . ' AND chat_turn.thread_id = chat_history.thread_id)',
+            [$userId, self::MIN_MESSAGES],
+        );
+        $deleted = 0;
+        foreach ($threads as $threadId) {
+            try {
+                $lock = new ChatThreadLock($connection->getNativeConnection(), $userId, $threadId);
+            } catch (ChatGenerationBusyException) {
+                continue;
+            }
+            try {
+                // Journalized threads include selected Telegram openings and rolled-back drafts.
+                $eligible = $connection->fetchOne(
+                    'SELECT thread_id FROM chat_history WHERE user_id = ? AND thread_id = ?'
+                    . ' AND display_messages_count <= ? AND current_turn_id IS NULL'
+                    . ' AND NOT EXISTS (SELECT 1 FROM chat_turn WHERE chat_turn.user_id = chat_history.user_id'
+                    . ' AND chat_turn.thread_id = chat_history.thread_id)',
+                    [$userId, $threadId, self::MIN_MESSAGES],
+                );
+                if ($eligible !== false && $this->deleteThread($userId, $threadId)) {
+                    ++$deleted;
+                }
+            } finally {
+                $lock->release();
+            }
+        }
+        return $deleted;
     }
 
     /**
@@ -124,8 +151,13 @@ class ChatHistoryRepository extends EntityRepository
             $this->deleteAssociatedFiles($history, $filesystem);
         }
 
-        $this->getEntityManager()->remove($history);
-        $this->getEntityManager()->flush();
+        // Caller holds ChatThreadLock; recovery must never recreate a deleted thread.
+        $connection = $this->getEntityManager()->getConnection();
+        $connection->transactional(function () use ($connection, $userId, $threadId, $history): void {
+            new ChatTurnJournal($connection)->neutralize($userId, $threadId);
+            $this->getEntityManager()->remove($history);
+            $this->getEntityManager()->flush();
+        });
 
         return true;
     }

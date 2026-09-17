@@ -45,9 +45,22 @@ const filesCount = ref(0)
 const ragCount = ref(0)
 const busy = ref(false)
 const responding = ref(false)
+const textTransmitting = ref(false)
+let textActivityTimer: number | null = null
 const chatMessages = ref<ChatMessage[]>([])
-const pendingMessages = new Map<string, { entry: ChatMessage; occurrence: number }>()
-let optimisticMessageSequence = 0
+type PendingSubmission = {
+  entry: ChatMessage; text: string; files: File[]; stored: Array<{ id: string; name: string }>
+  revision: number; messageId?: string; persisted: boolean
+}
+const pendingMessages = new Map<string, PendingSubmission>()
+const terminalSubmissions = new Set<string>()
+const rolledBackSubmissions = new Set<string>()
+const terminalMessages = new Set<string>()
+const obsoleteMessages = new Set<string>()
+const failedDrafts = ref<PendingSubmission[]>([])
+const failedDraft = computed(() => failedDrafts.value[0] ?? null)
+const generationError = ref(false)
+let composerRevision = 0
 const activeMessageId = ref<string | null>(null)
 const message = ref('')
 const currentBrain = ref(props.config.currentBrain)
@@ -87,6 +100,7 @@ const invalidAudio = new Set<string>()
 let audioThreadId = threadId.value
 const localFiles = ref<File[]>([])
 const storedFiles = ref<Array<{ id: string; name: string }>>([])
+watch([message, localFiles, storedFiles], () => { composerRevision++ }, { deep: true, flush: 'sync' })
 const notification = ref<{ text: string; variant: string } | null>(null)
 type OptionModal = {
   title: string
@@ -195,6 +209,12 @@ function resetAudio(): void {
 
 function beginNavigation(): void {
   pendingMessages.clear()
+  terminalSubmissions.clear()
+  rolledBackSubmissions.clear()
+  terminalMessages.clear()
+  obsoleteMessages.clear()
+  failedDrafts.value = []
+  generationError.value = false
   streamReady = false
   contextGeneration++
   connectionGeneration++
@@ -226,12 +246,15 @@ const layoutLabel = computed(() => {
 })
 
 const composerDisabled = computed(() => busy.value || responding.value)
-const assistantLoading = computed(() => {
-  if (!responding.value) return false
-  const active = chatMessages.value.find(entry => entry.id === activeMessageId.value)
-  return active === undefined || (active.message.trim() === '' && active.files.length === 0
-    && active.toolsCall.length === 0)
-})
+const assistantLoading = computed(() => responding.value && !textTransmitting.value)
+
+function setTextTransmitting(active: boolean): void {
+  if (textActivityTimer !== null) window.clearTimeout(textActivityTimer)
+  textActivityTimer = null
+  textTransmitting.value = active
+  // SSE has no text-pause event; tolerate short gaps between chunks.
+  if (active) textActivityTimer = window.setTimeout(() => setTextTransmitting(false), 1000)
+}
 
 function endpoint(path: string): string {
   return `${props.config.baseUrl}${path}`
@@ -413,6 +436,27 @@ async function connectStream(): Promise<void> {
 function handleStreamUpdate(type: string, update: SseUpdate): void {
   if (update.threadId && update.threadId !== threadId.value) return
   if (update.sessionId && update.sessionId !== sessionId.value) return
+  if (type === 'chat.snapshot') {
+    update = { ...update, messageId: update.messageId ?? update.generation?.messageId ?? update.generationMessageId ?? undefined }
+    if (update.responding && ((update.submissionId && terminalSubmissions.has(update.submissionId))
+      || (update.messageId && terminalMessages.has(update.messageId)))) return
+  }
+  if (type !== 'chat.snapshot' && !type.startsWith('chat.audio.') && ((update.submissionId && terminalSubmissions.has(update.submissionId))
+    || (update.messageId && terminalMessages.has(update.messageId)))) return
+  const pending = update.submissionId ? pendingMessages.get(update.submissionId) : undefined
+  if (pending?.messageId && update.messageId && pending.messageId !== update.messageId) return
+  const correlatedRunning = type === 'chat.snapshot' && update.responding === true
+    && update.turnStatus === 'running' && update.messageId === update.activeMessageId
+    && pending?.messageId !== undefined && pending.messageId === update.messageId
+  if (pending && update.messageId) pending.messageId = update.messageId
+  if (type !== 'chat.snapshot' && update.rollbackConfirmed === true && update.turnStatus === 'rolled_back') {
+    settleTurn(update)
+    void connectStream()
+    return
+  }
+  if (type !== 'chat.snapshot' && !type.startsWith('chat.audio.')
+    && update.messageId && obsoleteMessages.has(update.messageId)) return
+  if (type === 'chat.assistant.start' && activeMessageId.value && update.messageId !== activeMessageId.value) return
   if (['chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update', 'chat.assistant.done'].includes(type)
     && (!responding.value || (activeMessageId.value !== null && update.messageId !== activeMessageId.value))) return
   if (['chat.error', 'chat.tool.update'].includes(type)
@@ -422,6 +466,10 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     finishResponse()
     showGenerationError()
   } else if (type === 'chat.snapshot') {
+    if (activeMessageId.value && activeMessageId.value !== update.activeMessageId) obsoleteMessages.add(activeMessageId.value)
+    // A delayed pre-admission snapshot may have superseded this local generation.
+    if (correlatedRunning) obsoleteMessages.delete(update.messageId!)
+    settleTurn(update)
     const messages = [...(update.messages ?? [])]
     const activeId = update.responding ? update.activeMessageId : null
     const last = messages.at(-1)
@@ -433,22 +481,25 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     const snapshotIndex = messages.findIndex(entry => !entry.sent && entry.id === activeId)
     const snapshotEntry = messages[snapshotIndex]
     // History persists completed tool rounds; text from the current round can be newer.
-    if (live && snapshotEntry && live.message.length > snapshotEntry.message.length
+    if (update.turnStatus !== 'rolled_back' && live && snapshotEntry && live.message.length > snapshotEntry.message.length
       && live.message.startsWith(snapshotEntry.message)) {
       messages[snapshotIndex] = { ...snapshotEntry, message: live.message, files: live.files }
     }
     // Queued/running snapshots can precede persistence of the submitted user turn.
     for (const [id, pending] of pendingMessages) {
-      const persisted = messages.filter(entry => entry.sent && entry.message === pending.entry.message)
-      if (persisted.length >= pending.occurrence) {
-        pendingMessages.delete(id)
+      if (messages.some(entry => entry.sent && (entry.id === id || entry.submissionId === id))) {
+        pending.persisted = true
         continue
       }
+      if (pending.persisted || update.turnStatus === 'rolled_back'
+        || (update.submissionId && update.submissionId !== id)) continue
       const activeIndex = messages.findIndex(entry => !entry.sent && entry.id === activeId)
       messages.splice(activeIndex < 0 ? messages.length : activeIndex, 0, pending.entry)
     }
     chatMessages.value = messages
-    if (update.generationStatus === 'error') showGenerationError()
+    if (update.generationStatus === 'error' && update.turnStatus !== 'succeeded'
+      && !(update.submissionId && terminalSubmissions.has(update.submissionId))) showGenerationError()
+    else if (update.generationStatus === 'done' && !failedDraft.value) generationError.value = false
     const retainedAudioIds = audioThreadId === threadId.value
       ? new Set(chatMessages.value.filter(entry => !entry.sent).map(entry => entry.id))
       : new Set<string>()
@@ -470,13 +521,15 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     }
     resyncAudio = false
     streamReady = true
-    if (typeof update.restoredMessage === 'string') message.value = update.restoredMessage
     if (typeof update.responding === 'boolean') {
+      if (activeMessageId.value !== update.activeMessageId) setTextTransmitting(false)
       responding.value = update.responding
       activeMessageId.value = update.activeMessageId ?? null
       if (!responding.value) finishResponse()
     }
+    void resolvePendingTurns()
   } else if (type === 'chat.assistant.start') {
+    setTextTransmitting(false)
     responding.value = true
     activeMessageId.value = update.messageId ?? null
   } else if (type === 'chat.assistant.placeholder') {
@@ -490,14 +543,21 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
       chatMessages.value.push({ id: update.messageId, message: '', sent: false, time: new Date().toISOString(), files: [], toolsCall: [] })
     }
     const entry = chatMessages.value.find(entry => entry.id === update.messageId)
-    if (entry) { entry.message = update.message ?? ''; entry.files = update.files ?? [] }
+    if (entry) {
+      const text = update.message ?? ''
+      if (text !== entry.message) setTextTransmitting(text.trim() !== '')
+      entry.message = text
+      entry.files = update.files ?? []
+    }
   } else if (type === 'chat.tool.update') {
+    setTextTransmitting(false)
     if (update.messageId && !chatMessages.value.some(entry => entry.id === update.messageId)) {
       chatMessages.value.push({ id: update.messageId, message: '', sent: false, time: new Date().toISOString(), files: [], toolsCall: [] })
     }
     const entry = chatMessages.value.find(entry => entry.id === update.messageId)
     if (entry) entry.toolsCall = update.toolsCall ?? []
   } else if (type === 'chat.assistant.done') {
+    settleTurn(update)
     finishResponse()
     expectAutoAudio(update.messageId, update.audioRequestId)
   } else if (type === 'chat.audio.ready') {
@@ -517,6 +577,8 @@ function findMessage(messageId?: string): ChatMessage | null {
 }
 
 function finishResponse(): void {
+  setTextTransmitting(false)
+  if (activeMessageId.value) obsoleteMessages.add(activeMessageId.value)
   responding.value = false
   activeMessageId.value = null
   for (const entry of chatMessages.value) {
@@ -527,11 +589,72 @@ function finishResponse(): void {
 }
 
 function showGenerationError(): void {
-  if (chatMessages.value.some(entry => entry.id === 'generation-error')) return
-  chatMessages.value.push({
-    id: 'generation-error', error: true, sent: false, time: '', toolsCall: [], files: [],
-    message: 'Désolé, une erreur est survenue lors du traitement de votre message.',
-  })
+  generationError.value = true
+}
+
+function restoreDraft(draft: PendingSubmission): void {
+  message.value = draft.text
+  localFiles.value = [...draft.files]
+  storedFiles.value = [...draft.stored]
+  failedDrafts.value = failedDrafts.value.filter(entry => entry.entry.id !== draft.entry.id)
+}
+
+function settleTurn(result: SseUpdate): boolean {
+  const id = result.submissionId
+  if (!id || terminalSubmissions.has(id)) return false
+  if (result.turnStatus !== 'succeeded'
+    && !(result.turnStatus === 'rolled_back' && result.rollbackConfirmed === true)) return false
+  terminalSubmissions.add(id)
+  const draft = pendingMessages.get(id)
+  pendingMessages.delete(id)
+  if (result.turnStatus === 'succeeded') {
+    if (activeMessageId.value === (result.messageId ?? draft?.messageId)) finishResponse()
+    return true
+  }
+  rolledBackSubmissions.add(id)
+  const generation = result.messageId ?? draft?.messageId
+  if (generation) terminalMessages.add(generation)
+  chatMessages.value = chatMessages.value.filter(entry => entry.id !== id
+    && entry.submissionId !== id && entry.id !== generation)
+  void nextTick(() => enhanceRenderedMessages())
+  if (!activeMessageId.value || activeMessageId.value === generation) {
+    finishResponse()
+  }
+  if (generation) {
+    invalidAudio.add(generation)
+    for (const cache of [readyAudio, pendingAudio, failedAudio, autoPlayedAudio, expectedAudio]) cache.delete(generation)
+    if (playingMessageId.value === generation) {
+      playbackGeneration++
+      browserAudio.stopPlayback()
+      playingMessageId.value = null
+    }
+  }
+  showGenerationError()
+  if (draft) {
+    if (composerRevision === draft.revision) restoreDraft(draft)
+    else failedDrafts.value.push(draft)
+  }
+  return true
+}
+
+let resolvingTurns: number | null = null
+async function resolvePendingTurns(): Promise<void> {
+  if (resolvingTurns === contextGeneration || pendingMessages.size === 0) return
+  const generation = contextGeneration
+  resolvingTurns = generation
+  const current = captureContext()
+  try {
+    for (const id of [...pendingMessages.keys()]) {
+      const response = await client.request(`/brain/turn/${encodeURIComponent(id)}`)
+      if (!current()) return
+      if (!response.ok) continue // 404 means not journaled yet, not a failed admission.
+      const result = await response.json() as SseUpdate
+      if (!current()) return
+      if (result.submissionId !== id || result.threadId !== threadId.value) continue
+      if (settleTurn(result)) void connectStream()
+    }
+  } catch { /* A later snapshot retries unresolved outcomes without resending. */ }
+  finally { if (resolvingTurns === generation) resolvingTurns = null }
 }
 
 function protectFileLink(link: HTMLAnchorElement): void {
@@ -650,11 +773,18 @@ function scrollToBottom(): void {
   })
 }
 
+function randomRequestId(): string {
+  // HTTP embed hosts expose secure random bytes, but not randomUUID.
+  return typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
 function optimisticMessage(text: string): string {
-  const id = `pending-user-${++optimisticMessageSequence}`
-  const entry = { id, message: text, sent: true, time: new Date().toISOString(), toolsCall: [], files: [] }
-  const occurrence = chatMessages.value.filter(entry => entry.sent && entry.message === text).length + 1
-  pendingMessages.set(id, { entry, occurrence })
+  const id = `submission-${randomRequestId()}`
+  const entry = { id, submissionId: id, message: text, sent: true, time: new Date().toISOString(), toolsCall: [], files: [] }
+  pendingMessages.set(id, { entry, text: message.value, files: [...localFiles.value],
+    stored: [...storedFiles.value], revision: composerRevision, persisted: false })
   chatMessages.value.push(entry)
   void nextTick(() => enhanceRenderedMessages())
   scrollToBottom()
@@ -665,29 +795,49 @@ async function submitMessage(): Promise<void> {
   const current = captureContext()
   const text = message.value.trim()
   if (text === '' || composerDisabled.value) return
+  const optimisticId = optimisticMessage(text)
   responding.value = true
   activeMessageId.value = null
-  const optimisticId = optimisticMessage(text)
+  const draft = pendingMessages.get(optimisticId)!
+  generationError.value = false
   const data = new FormData()
+  data.set('submissionId', optimisticId)
   data.set('message', text)
   data.set('threadId', threadId.value)
   data.set('sessionId', sessionId.value)
   for (const file of localFiles.value) data.append('upload_files[]', file)
   for (const file of storedFiles.value) data.append('file_ids[]', file.id)
   try {
-    await checkedRequest('/brain/messages', { method: 'POST', body: data })
+    const response = await client.request('/brain/messages', { method: 'POST', body: data })
     if (!current()) return
+    if (!response.ok) {
+      if (response.status >= 400 && response.status < 500) {
+        pendingMessages.delete(optimisticId)
+        chatMessages.value = chatMessages.value.filter(entry => entry.id !== optimisticId
+          && entry.submissionId !== optimisticId)
+      }
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const admission = await response.json() as SseUpdate
+    if (!current()) return
+    if (rolledBackSubmissions.has(optimisticId)) return
+    if (admission.submissionId === optimisticId && admission.messageId) {
+      draft.messageId = admission.messageId
+      if (!terminalSubmissions.has(optimisticId) && activeMessageId.value === null) activeMessageId.value = admission.messageId
+    }
+    if (composerRevision !== draft.revision) return
     message.value = ''
     localFiles.value = []
     storedFiles.value = []
+    draft.revision = composerRevision
     if (chatFileInput.value !== null) chatFileInput.value.value = ''
   } catch (error) {
     if (!current()) return
     console.error(error)
-    pendingMessages.delete(optimisticId)
-    chatMessages.value = chatMessages.value.filter(entry => entry.id !== optimisticId)
-    finishResponse()
+    if (terminalSubmissions.has(optimisticId)) return
+    if (activeMessageId.value === null) finishResponse()
     notify('Le message n’a pas pu être envoyé.', 'error')
+    void resolvePendingTurns()
   }
 }
 
@@ -794,10 +944,7 @@ async function requestSpeech(messageId: string, text: string): Promise<void> {
   if (!streamReady || !audioEnabled.value || !findMessage(messageId)) return
   const context = captureContext()
   const generation = audioGeneration
-  // HTTP embed hosts do not expose randomUUID, but still support secure random bytes.
-  const audioRequestId = typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('')
+  const audioRequestId = randomRequestId()
   expectedAudio.set(messageId, audioRequestId)
   invalidAudio.delete(messageId)
   readyAudio.delete(messageId)
@@ -1224,6 +1371,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   destroyed = true
+  setTextTransmitting(false)
   clearProtectedResources()
   eventSource?.close()
   eventSource = null
@@ -1303,8 +1451,13 @@ onBeforeUnmount(() => {
           </div>
         </nav>
         <section class="claire-chat-panel"><div class="claire-chat-shell">
-          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :loading="assistantLoading" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
-          <footer class="claire-chat-input"><form id="claire-brain-chat" class="claire-chat-input__form" :class="{ 'claire-chat-input__form--typing': message.trim() !== '' }" @submit.prevent="submitMessage">
+          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :active-message-id="activeMessageId" :loading="assistantLoading" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
+          <footer class="claire-chat-input">
+            <div v-if="generationError || failedDraft" class="claire-is-visible claire-turn-notice" id="claire-history-tooltip-banner" data-variant="error" role="alert"><span v-if="generationError">Désolé, une erreur est survenue lors du traitement de votre message.</span><span v-else>Un message échoué et ses pièces jointes peuvent être restaurés.</span>
+              <div class="claire-turn-notice__actions"><button v-if="failedDraft" class="claire-btn claire-btn--secondary" type="button" @click="restoreDraft(failedDraft)">Restaurer le message et ses pièces jointes</button>
+                <button v-if="generationError" class="claire-btn claire-btn--secondary" type="button" aria-label="Fermer la notification" @click="generationError = false">Fermer</button></div>
+            </div>
+            <form id="claire-brain-chat" class="claire-chat-input__form" :class="{ 'claire-chat-input__form--typing': message.trim() !== '' }" @submit.prevent="submitMessage">
             <label class="claire-chat-icon-btn claire-chat-icon-btn--upload claire-chat-input__toggleable" for="claire-chat-upload" aria-label="Joindre un fichier" :aria-disabled="composerDisabled">
               <ClaireIcon name="paperclip" />
             </label>
@@ -1333,8 +1486,13 @@ onBeforeUnmount(() => {
               </svg>
             </button>
           </header>
-          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :loading="assistantLoading" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
-          <footer class="claire-chat-input"><form id="claire-brain-chat" class="claire-chat-input__form" :class="{ 'claire-chat-input__form--typing': message.trim() !== '' }" @submit.prevent="submitMessage">
+          <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :active-message-id="activeMessageId" :loading="assistantLoading" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
+          <footer class="claire-chat-input">
+            <div v-if="generationError || failedDraft" class="claire-is-visible claire-turn-notice" id="claire-history-tooltip-banner" data-variant="error" role="alert"><span v-if="generationError">Désolé, une erreur est survenue lors du traitement de votre message.</span><span v-else>Un message échoué et ses pièces jointes peuvent être restaurés.</span>
+              <div class="claire-turn-notice__actions"><button v-if="failedDraft" class="claire-btn claire-btn--secondary" type="button" @click="restoreDraft(failedDraft)">Restaurer le message et ses pièces jointes</button>
+                <button v-if="generationError" class="claire-btn claire-btn--secondary" type="button" aria-label="Fermer la notification" @click="generationError = false">Fermer</button></div>
+            </div>
+            <form id="claire-brain-chat" class="claire-chat-input__form" :class="{ 'claire-chat-input__form--typing': message.trim() !== '' }" @submit.prevent="submitMessage">
             <label class="claire-chat-icon-btn claire-chat-icon-btn--upload claire-chat-input__toggleable" for="claire-chat-upload" aria-label="Joindre un fichier" :aria-disabled="composerDisabled">
               <ClaireIcon name="paperclip" />
             </label>
@@ -1397,7 +1555,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <div v-if="busy || modalBusy || transcribing" class="claire-global-action-indicator claire-is-requesting" role="status"><div class="claire-global-action-indicator__pill"><span class="claire-global-action-indicator__spinner"></span><span>{{ transcribing ? 'Transcription en cours...' : 'Action en cours...' }}</span></div></div>
-    <div v-if="notification" class="claire-is-visible" id="claire-history-tooltip-banner" :data-variant="notification.variant">{{ notification.text }}</div>
+    <div v-if="!generationError && !failedDraft && notification" class="claire-is-visible" id="claire-history-tooltip-banner" :data-variant="notification.variant" role="status">{{ notification.text }}</div>
     <div v-if="lightboxUrl" ref="lightboxElement" class="claire-image-lightbox claire-is-open" role="dialog" aria-modal="true" aria-label="Image agrandie" tabindex="-1" @click="lightboxUrl = null"><div class="claire-image-lightbox__backdrop"></div><div class="claire-image-lightbox__content"><button class="claire-image-lightbox__close" type="button" aria-label="Fermer l’image agrandie" @click.stop="lightboxUrl = null"><ClaireIcon name="close" /></button><img class="claire-image-lightbox__img" :src="lightboxUrl" alt="Image agrandie"></div></div>
   </div>
 </template>

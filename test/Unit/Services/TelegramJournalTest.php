@@ -28,6 +28,8 @@ final class TelegramJournalTest extends TestCase
         require_once Settings::getAppRoot() . '/test/Support/TelegramSqlSchema.php';
         $this->connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         TelegramSqlSchema::create($this->connection);
+        require_once Settings::getAppRoot() . '/test/Support/ChatTurnSqlSchema.php';
+        \App\Test\Support\ChatTurnSqlSchema::create($this->connection);
         $this->journal = new TelegramJournal($this->connection);
     }
 
@@ -37,6 +39,7 @@ final class TelegramJournalTest extends TestCase
         $this->connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true,
             'wrapperClass' => JournalCommitReplyLostConnection::class]);
         TelegramSqlSchema::create($this->connection);
+        \App\Test\Support\ChatTurnSqlSchema::create($this->connection);
         $this->journal = new TelegramJournal($this->connection);
         $redis = $this->createStub(RedisClient::class);
         $states = [];
@@ -50,17 +53,11 @@ final class TelegramJournalTest extends TestCase
         $generation = $this->generation($redis);
         $calls = 0;
         $generate = static function () use (&$calls): string { $calls++; return 'persisted answer'; };
-        try {
-            $generation->run('user', 'thread', 'commit-reply', $generate,
-                static function (): void { self::fail('Delivery waits for confirmed persistence'); });
-            self::fail('Commit acknowledgement failure was swallowed');
-        } catch (RuntimeException $error) {
-            self::assertSame('Response commit reply lost', $error->getMessage());
-            self::assertNotInstanceOf(\App\Services\Queue\NonRetryableJobException::class, $error);
-        }
+        $generation->run('user', 'thread', 'commit-reply', $generate,
+            static function (string $response): void { self::assertSame('persisted answer', $response); });
         $id = TelegramJournal::id('123', 'commit-reply');
         self::assertSame('persisted answer', $this->journal->load($id)['response']);
-        self::assertSame('error', array_values($states)[0]['status']);
+        self::assertSame('done', array_values($states)[0]['status']);
         $generation->run('user', 'different-thread', 'commit-reply', $generate,
             static function (string $response): void { self::assertSame('persisted answer', $response); });
         self::assertSame(1, $calls);
@@ -88,6 +85,99 @@ final class TelegramJournalTest extends TestCase
             self::assertSame(1, $stale['_revision']);
             self::assertSame('answer', $this->journal->load('id')['response']);
         }
+    }
+
+    public function testAgentFailureRollsBackBeforeSeparateNoticeAndNeverReplays(): void
+    {
+        $redis = $this->createStub(RedisClient::class);
+        $redis->method('hgetall')->willReturn([]);
+        $redis->method('hset')->willReturn(1);
+        $generation = $this->generation($redis);
+        $id = TelegramJournal::id('123', 'failure');
+        $calls = $notices = $preparations = 0;
+        $prepare = function () use (&$preparations, $id): string {
+            $preparations++;
+            self::assertFalse($this->journal->load($id)['attempted']);
+            return 'prepared';
+        };
+        $generate = function () use (&$calls): string {
+            $calls++;
+            $this->connection->executeStatement("UPDATE chat_history SET messages = '[\"partial\"]', display_messages = '[\"tool\"]'");
+            throw new RuntimeException('Provider failed');
+        };
+        $notice = function () use (&$notices, $id): void {
+            $notices++;
+            self::assertSame('rolled_back', new \App\Services\ChatTurnJournal($this->connection)->get($id)['status']);
+            self::assertSame('[]', $this->connection->fetchOne('SELECT messages FROM chat_history'));
+            self::assertSame('[]', $this->connection->fetchOne('SELECT display_messages FROM chat_history'));
+            self::assertArrayNotHasKey('response', $this->journal->load($id));
+        };
+        try {
+            $generation->run('user', 'thread', 'failure', $generate,
+                static function (): void { self::fail('Failure is not a response'); },
+                ['sessionId' => '42', 'chatId' => 42], $notice, $prepare);
+            self::fail('Expected terminal generation failure');
+        } catch (NonRetryableJobException) {
+            self::assertSame(1, $notices);
+        }
+        $generation->run('user', 'thread', 'failure', $generate, static function (): void {},
+            ['sessionId' => '42', 'chatId' => 42], $notice, $prepare);
+        self::assertSame(1, $calls);
+        self::assertSame(1, $preparations);
+        self::assertSame(1, $notices);
+        self::assertSame('confirmed', $this->journal->load($id)['deliveries']['failure-notice']['status']);
+    }
+
+    public function testAtomicJournalEntryPointRequiresExplicitTransaction(): void
+    {
+        $record = ['botId' => '123', 'updateId' => 'update', 'userId' => 'user', 'threadId' => 'thread'];
+        $this->expectExceptionMessage('Telegram atomic write requires a transaction');
+        $this->journal->saveInTransaction('id', $record);
+    }
+
+    public function testPreparationIsRetryableAndCachedResponseNeverPreparesAgain(): void
+    {
+        $redis = $this->createStub(RedisClient::class);
+        $redis->method('hgetall')->willReturn([]);
+        $redis->method('hset')->willReturn(1);
+        $generation = $this->generation($redis);
+        $id = TelegramJournal::id('123', 'prepared');
+        $turns = new \App\Services\ChatTurnJournal($this->connection);
+        $preparations = $calls = $deliveries = 0;
+        $prepare = function () use (&$preparations, $id, $turns): string {
+            self::assertFalse($this->journal->load($id)['attempted']);
+            self::assertNull($turns->get($id));
+            if (++$preparations === 1) {
+                throw new RuntimeException('Download/transcription unavailable');
+            }
+            return 'prepared input';
+        };
+        $generate = function (string $thread, callable $guard, string $prepared) use (&$calls, $id, $turns): string {
+            $calls++;
+            self::assertSame('prepared input', $prepared);
+            self::assertTrue($this->journal->load($id)['attempted']);
+            self::assertSame('running', $turns->get($id)['status']);
+            return 'answer';
+        };
+        $deliver = static function () use (&$deliveries): void {
+            if (++$deliveries === 1) {
+                throw new RuntimeException('Delivery unavailable');
+            }
+        };
+        for ($attempt = 0; $attempt < 4; $attempt++) {
+            try {
+                $generation->run('user', 'thread', 'prepared', $generate, $deliver,
+                    notifyFailure: static function (): void { self::fail('No failure notice'); }, prepare: $prepare);
+                self::assertGreaterThanOrEqual(2, $attempt);
+            } catch (RuntimeException $error) {
+                self::assertNotInstanceOf(NonRetryableJobException::class, $error);
+                self::assertSame($attempt === 0 ? 'Download/transcription unavailable' : 'Delivery unavailable', $error->getMessage());
+            }
+        }
+        self::assertSame(2, $preparations);
+        self::assertSame(1, $calls);
+        self::assertSame(2, $deliveries);
+        self::assertSame('succeeded', $turns->get($id)['status']);
     }
 
     public function testOuterTransactionCannotHideAttemptCommit(): void
@@ -143,6 +233,7 @@ final class TelegramJournalTest extends TestCase
         $observer = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => $path]);
         try {
             TelegramSqlSchema::create($this->connection);
+            \App\Test\Support\ChatTurnSqlSchema::create($this->connection);
             $redis = $this->createStub(RedisClient::class);
             $redis->method('hgetall')->willReturn([]);
             $redis->method('hset')->willReturn(1);

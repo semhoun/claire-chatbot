@@ -52,6 +52,7 @@ final class SseAccessDoctrineTest extends TestCase
         $configuration = ORMSetup::createAttributeMetadataConfiguration([Settings::getAppRoot() . '/src/Entity'], true);
         $configuration->enableNativeLazyObjects(true);
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $connection->executeStatement('CREATE TABLE chat_turn (id TEXT PRIMARY KEY)');
         $entityManager = new EntityManager($connection, $configuration);
         new SchemaTool($entityManager)->createSchema([
             $entityManager->getClassMetadata(User::class),

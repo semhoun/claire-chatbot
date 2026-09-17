@@ -60,6 +60,7 @@ final class ChatDatabaseTest extends TestCase
         $this->first->exec('CREATE TABLE ' . $this->table . ' ('
             . 'user_id VARCHAR(128) NOT NULL, thread_id VARCHAR(128) PRIMARY KEY,'
             . ' messages TEXT NOT NULL, display_messages TEXT NOT NULL,'
+            . ' revision BIGINT NOT NULL DEFAULT 0, current_turn_id VARCHAR(128) NULL,'
             . ' display_messages_count INTEGER NOT NULL DEFAULT 0, title TEXT NULL, summary TEXT NULL)' . $suffix);
     }
 

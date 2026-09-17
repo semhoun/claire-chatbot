@@ -145,6 +145,26 @@
     border-color: var(--claire-danger);
     color: var(--claire-danger-text);
 }
+#claire-history-tooltip-banner.claire-turn-notice {
+    position: static;
+    transform: none;
+    width: auto;
+    max-width: var(--claire-reading-width);
+    margin: 0 auto var(--claire-space-2);
+    white-space: normal;
+    pointer-events: auto;
+}
+.claire-turn-notice__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--claire-space-2);
+    margin-top: var(--claire-space-2);
+}
+.claire-turn-notice__actions .claire-btn {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+}
 
 .claire-telegram-config,
 .claire-telegram-card,

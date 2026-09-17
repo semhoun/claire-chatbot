@@ -71,6 +71,25 @@ final class RedisQueueBackendTest extends TestCase
         self::assertSame(0, $this->redis->zCard($this->key('leased')));
     }
 
+    public function testFailedMessageScanRetainsPayloadAndSkipsLiveJobs(): void
+    {
+        $id = $this->backend->dispatch('ExampleJob', ['submissionId' => 'submission'], 'telegram');
+        $message = $this->backend->reserveNextAvailable('telegram', 0);
+        self::assertFalse($this->backend->isFailed($message));
+        $this->backend->fail($message);
+        self::assertTrue($this->backend->isFailed($message));
+        $this->backend->dispatch('ExampleJob', ['live' => true], 'telegram');
+        $cursor = '0';
+        $found = [];
+        do {
+            foreach ($this->backend->failedMessages($cursor) as $failed) {
+                $found[$failed->id] = $failed->payload;
+            }
+        } while ($cursor !== '0');
+        self::assertSame([$id => ['submissionId' => 'submission']], $found);
+        self::assertTrue($this->backend->isFailed($message));
+    }
+
     public function testLogicalQueuesUseRawRedisWithoutSqlOutbox(): void
     {
         $sql = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
@@ -391,6 +410,72 @@ final class RedisQueueBackendTest extends TestCase
         }
     }
 
+    public function testWebSubmissionDeduplicationIsOwnerScopedAcrossThreadsAndQueues(): void
+    {
+        $payload = $this->webPayload();
+        $id = $this->backend->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'telegram');
+        $dedup = $this->redis->hGet($this->jobKey($id), 'deduplication_key');
+        self::assertSame($id, $this->redis->get($dedup));
+        self::assertSame(-1, $this->redis->ttl($dedup));
+        foreach (['thread-test', 'other-thread'] as $thread) {
+            try {
+                $this->newBackend()->dispatch(\App\Job\Web\NewMessageJob::class,
+                    array_replace($payload, ['messageId' => 'another-message', 'threadId' => $thread]), 'other-queue');
+                self::fail('Duplicate submission must reject rather than return the previous job ID');
+            } catch (\App\Services\ChatGenerationBusyException) {
+                self::assertSame([$id], $this->redis->lRange($this->key(), 0, -1));
+                self::assertSame(0, $this->redis->exists($this->prefix . 'queue:other-queue'));
+                self::assertCount(1, $this->redis->keys($this->prefix . 'queue:job:*'));
+                self::assertCount(1, $this->redis->keys($this->prefix . 'chat:generation:*'));
+            }
+        }
+        $payload['session'][\App\Services\Auth::USERID] = 'another-owner';
+        self::assertNotSame($id, $this->backend->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'telegram'));
+        self::assertSame(2, $this->redis->lLen($this->key()));
+    }
+
+    public function testConcurrentWebSubmissionAcrossThreadsEnqueuesOnlyOnce(): void
+    {
+        $children = [];
+        $signals = [];
+        for ($index = 0; $index < 4; $index++) {
+            [$parent, $child] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+            $pid = pcntl_fork();
+            self::assertNotSame(-1, $pid);
+            if ($pid === 0) {
+                fclose($parent);
+                fread($child, 1);
+                $payload = array_replace($this->webPayload(), [
+                    'threadId' => 'thread-' . $index, 'messageId' => 'message-' . $index,
+                ]);
+                try {
+                    $this->newBackend()->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'telegram');
+                    exit(0);
+                } catch (\App\Services\ChatGenerationBusyException) {
+                    exit(2);
+                }
+            }
+            fclose($child);
+            $signals[] = $parent;
+            $children[] = $pid;
+        }
+        foreach ($signals as $signal) {
+            fwrite($signal, '1');
+            fclose($signal);
+        }
+        $results = [];
+        foreach ($children as $pid) {
+            pcntl_waitpid($pid, $status);
+            self::assertTrue(pcntl_wifexited($status));
+            $results[] = pcntl_wexitstatus($status);
+        }
+        sort($results);
+        self::assertSame([0, 2, 2, 2], $results);
+        self::assertSame(1, $this->redis->lLen($this->key()));
+        self::assertCount(1, $this->redis->keys($this->prefix . 'queue:job:*'));
+        self::assertCount(1, $this->redis->keys($this->prefix . 'chat:generation:*'));
+    }
+
     public function testWrongTypesNeverLeaveQueuedStateOrOrphanJob(): void
     {
         foreach ([$this->key(), $this->generationKey()] as $badKey) {
@@ -480,7 +565,8 @@ final class RedisQueueBackendTest extends TestCase
     private function webPayload(): array
     {
         return ['threadId' => 'thread-test', 'sessionId' => 'session-test', 'messageId' => 'msg-test',
-            'message' => 'hello', 'session' => [\App\Services\Auth::USERID => 'user-test']];
+            'submissionId' => 'submission-test', 'message' => 'hello',
+            'session' => [\App\Services\Auth::USERID => 'user-test']];
     }
 
     public function testTelegramDeliveryRetryReusesDurableResponseAndThread(): void
@@ -541,14 +627,14 @@ final class RedisQueueBackendTest extends TestCase
             self::assertFalse($record['attempted']);
         }
         $state->set('user-test', 'thread-test', 'web-message', 'done', true);
-        for ($attempt = 0; $attempt < 2; $attempt++) {
-            try {
-                $generation->run('user-test', 'new-session-thread', 'update:43', $generate, $deliver);
-                self::fail('Unsafe attempt must fail');
-            } catch (\App\Services\Queue\NonRetryableJobException) {
-                self::assertSame(1, $calls);
-            }
+        try {
+            $generation->run('user-test', 'new-session-thread', 'update:43', $generate, $deliver);
+            self::fail('Unsafe attempt must fail');
+        } catch (\App\Services\Queue\NonRetryableJobException) {
+            self::assertSame(1, $calls);
         }
+        $generation->run('user-test', 'new-session-thread', 'update:43', $generate, $deliver);
+        self::assertSame(1, $calls);
         self::assertSame('error', $state->get('user-test', 'thread-test')['status']);
     }
 
@@ -615,6 +701,8 @@ final class RedisQueueBackendTest extends TestCase
             ]);
             require_once Settings::getAppRoot() . '/test/Support/TelegramSqlSchema.php';
             \App\Test\Support\TelegramSqlSchema::create($this->telegramConnection);
+            require_once Settings::getAppRoot() . '/test/Support/ChatTurnSqlSchema.php';
+            \App\Test\Support\ChatTurnSqlSchema::create($this->telegramConnection);
         }
         return new \App\Services\TelegramJournal($this->telegramConnection);
     }

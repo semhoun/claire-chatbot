@@ -37,8 +37,10 @@ final class QueueDispatchTest extends TestCase
         $sql->expects(self::never())->method('getNativeConnection');
         $backend = new RedisQueueBackend($redis, new Settings(['redis' => ['prefix' => 'test:']]), $sql);
         $valid = ['threadId' => 'thread', 'sessionId' => 'tab', 'messageId' => 'message-test',
-            'message' => 'hello', 'session' => [\App\Services\Auth::USERID => 'user']];
+            'submissionId' => 'submission-test', 'message' => 'hello',
+            'session' => [\App\Services\Auth::USERID => 'user']];
         foreach ([['session' => 'invalid'], ['messageId' => ''], ['message' => []],
+            ['submissionId' => null], ['submissionId' => []], ['submissionId' => 'invalid/id'],
             ['threadId' => ''], ['attachments' => ['fileIds' => 'invalid']]] as $invalid) {
             try {
                 $backend->dispatch(\App\Job\Web\NewMessageJob::class, array_replace($valid, $invalid), 'test');

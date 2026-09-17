@@ -91,6 +91,16 @@ final readonly class ChatMaintenance
 
         try {
             $state = $this->chatGenerationState->diagnostic($user, $thread);
+            $runningId = $this->connection->fetchOne(
+                "SELECT id FROM chat_turn WHERE user_id = ? AND thread_id = ? AND status = 'running'",
+                [$user, $thread],
+            );
+            $turn = new ChatTurnJournal($this->connection)->get(
+                $runningId === false ? (string) ($state['messageId'] ?? '') : $runningId,
+            );
+            if ($turn !== null) {
+                return [...$state, 'result' => 'chat-turn-retained', 'turnStatus' => $turn['status']];
+            }
             $journal = $this->connection->fetchOne(
                 'SELECT id FROM telegram_generation WHERE delivered = 0 '
                 . 'AND id = ? AND user_id = ? AND thread_id = ?',

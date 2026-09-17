@@ -16,6 +16,26 @@ use PHPUnit\Framework\TestCase;
 
 final class MessageFormatterTest extends TestCase
 {
+    public function testUserIdentityUsesValidatedSubmissionMetadataNotText(): void
+    {
+        $messages = new MessageFormatter([
+            new UserMessage('Same text')->addMetadata('claire_submission_id', 'submission-1'),
+            new AssistantMessage('Answer')->addMetadata('claire_submission_id', 'not-a-user'),
+            new UserMessage('Same text')->addMetadata('claire_submission_id', 'submission-2'),
+        ])->format();
+        self::assertSame(['submission-1', 'history-message-1', 'submission-2'], array_column($messages, 'id'));
+        self::assertSame('submission-1', $messages[0]['submissionId']);
+        self::assertSame('submission-2', $messages[2]['submissionId']);
+        self::assertArrayNotHasKey('submissionId', $messages[1]);
+        foreach ([null, [], '', 'bad id', "valid\n", str_repeat('a', 129)] as $invalid) {
+            $formatted = new MessageFormatter([
+                new UserMessage('Question')->addMetadata('claire_submission_id', $invalid),
+            ])->format();
+            self::assertSame('history-message-0', $formatted[0]['id']);
+            self::assertArrayNotHasKey('submissionId', $formatted[0]);
+        }
+    }
+
     public static function finalContents(): array
     {
         return ['nonempty' => ['Answer'], 'empty' => ['']];

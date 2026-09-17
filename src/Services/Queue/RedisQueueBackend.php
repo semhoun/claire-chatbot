@@ -32,6 +32,7 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
         $jobId = Uuid::uuid7()->toString();
         $stateKey = '';
         $messageId = '';
+        $deduplicationKey = '';
         $lock = null;
         if (in_array($jobClass, [NewMessageJob::class, StartThreadJob::class], true)) {
             foreach (['threadId', 'sessionId'] as $field) {
@@ -51,6 +52,13 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
 
             $messageId = 'opening-' . $payload['threadId'];
             if ($jobClass === NewMessageJob::class) {
+                $submissionId = $payload['submissionId'] ?? null;
+                if (! is_string($submissionId)
+                    || preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $submissionId) !== 1) {
+                    throw new \InvalidArgumentException('Stable submission ID is required');
+                }
+                $deduplicationKey = $this->prefix() . 'chat:submission:'
+                    . hash('sha256', json_encode([$userId, $submissionId], JSON_THROW_ON_ERROR));
                 $messageId = $payload['messageId'] ?? '';
                 if (! is_string($messageId) || preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $messageId) !== 1
                     || ! is_string($payload['message'] ?? null) || trim($payload['message']) === '') {
@@ -79,7 +87,6 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
             $payload['generationId'] ??= $jobId;
         }
 
-        $deduplicationKey = '';
         if ($jobClass === TelegramService::class && isset($payload['update_json'])) {
             $update = $this->deserialize((string) $payload['update_json']);
             if (isset($update['update_id']) && is_int($update['update_id'])) {
@@ -148,6 +155,48 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
     public function fail(QueueMessage $queueMessage): void
     {
         $this->transitionMessage($queueMessage, 'fail');
+    }
+
+    public function isFailed(QueueMessage $message): bool
+    {
+        return $this->queueRedisConnection->evaluate(
+            "return redis.call('HGET', KEYS[1], 'state') or ''", [$this->jobKey($message->id)], 1,
+        ) === 'dead';
+    }
+
+    /**
+     * Revisits dead jobs, including reservations exhausted by lease recovery without a worker catch.
+     *
+     * @return list<QueueMessage>
+     */
+    public function failedMessages(string &$cursor): array
+    {
+        $page = $this->queueRedisConnection->evaluate(<<<'LUA'
+            local page = redis.call('SCAN', ARGV[1], 'MATCH', ARGV[2], 'COUNT', 100)
+            local jobs = {}
+            for _, key in ipairs(page[2]) do
+                if redis.call('TYPE', key).ok == 'hash' and redis.call('HGET', key, 'state') == 'dead' then
+                    table.insert(jobs, redis.call('HGETALL', key))
+                end
+            end
+            return {page[1], jobs}
+            LUA, [$cursor, addcslashes($this->prefix(), '\\*?[]') . 'queue:job:*'], 0);
+        $cursor = (string) $page[0];
+        $messages = [];
+        foreach ($page[1] as $values) {
+            $data = [];
+            $count = count($values);
+            for ($i = 0; $i < $count; $i += 2) {
+                $data[$values[$i]] = $values[$i + 1];
+            }
+            try {
+                $messages[] = new QueueMessage($data['id'], $data['job_class'],
+                    $this->deserialize($data['payload']), $data['queue_name'], $data);
+            } catch (\Throwable) {
+                // Malformed jobs cannot safely identify a conversation.
+            }
+        }
+        return $messages;
     }
 
     public function defer(QueueMessage $queueMessage): void

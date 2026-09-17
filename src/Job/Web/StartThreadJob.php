@@ -11,6 +11,8 @@ use App\Services\Auth;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\ChatThreadLock;
+use App\Services\ChatTurnJournal;
+use App\Services\Queue\NonRetryableJobException;
 use App\Services\Queue\QueueDoer;
 use App\Services\Session\InMemorySession;
 use Doctrine\DBAL\Connection;
@@ -65,43 +67,85 @@ final class StartThreadJob implements QueueDoer
         $this->initContext($payload);
         $chatThreadLock = new ChatThreadLock($this->connection->getNativeConnection(), $this->userId, $this->threadId);
         $chatGenerationState = $this->chatStreamPublisher->generationState();
-        $previous = $chatGenerationState->get($this->userId, $this->threadId);
-        if (in_array($previous['status'] ?? '', ['done', 'deleted'], true)) {
-            return;
-        }
-
+        $journal = new ChatTurnJournal($this->connection);
         $messageId = 'opening-' . $this->threadId;
-        if (($previous['messageId'] ?? $messageId) !== $messageId) {
-            return;
-        }
-
-        if (($previous['attempted'] ?? '0') === '1') {
-            $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'error', true);
-            $nonRetryableJobException = new \App\Services\Queue\NonRetryableJobException('Unsafe opening generation retry refused');
-            try {
-                $this->handleChatError($nonRetryableJobException);
-            } finally {
-                throw $nonRetryableJobException;
-            }
-        }
-
         $attempted = false;
         try {
-            $inMemorySession = new InMemorySession($payload['session']);
-            $this->agent = $this->brainRegistry->get($inMemorySession->get('brain_avatar'), $inMemorySession, $this->threadId);
-            $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'running', true);
-            $attempted = true;
-            $messages = $this->startNewStream();
-        } catch (\Throwable $throwable) {
-            try {
-                if (($chatGenerationState->get($this->userId, $this->threadId)['status'] ?? '') !== 'done') {
-                    $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'error', $attempted);
+            $turn = $journal->get($messageId);
+            if ($turn !== null) {
+                if ($turn['userId'] !== $this->userId || $turn['threadId'] !== $this->threadId) {
+                    throw new \RuntimeException('Opening turn identity conflict');
                 }
+                if ($turn['status'] !== 'running') {
+                    return;
+                }
+                throw new NonRetryableJobException('Abandoned opening must not replay the agent');
+            }
 
-                $this->handleChatError($throwable);
+            // Redis loss must not let an old opening replace a used or deleted conversation.
+            if ($this->connection->fetchOne(
+                'SELECT id FROM chat_turn WHERE user_id = ? AND thread_id = ?',
+                [$this->userId, $this->threadId],
+            ) !== false || $this->connection->fetchOne(
+                'SELECT thread_id FROM chat_history WHERE thread_id = ?'
+                . " AND (user_id <> ? OR messages <> '[]' OR display_messages <> '[]'"
+                . ' OR display_messages_count <> 0 OR current_turn_id IS NOT NULL)',
+                [$this->threadId, $this->userId],
+            ) !== false) {
+                return;
+            }
+            $previous = $chatGenerationState->get($this->userId, $this->threadId);
+            if (in_array($previous['status'] ?? '', ['done', 'deleted'], true)
+                || ($previous['messageId'] ?? $messageId) !== $messageId) {
+                return;
+            }
+            $attempted = ($previous['attempted'] ?? '0') === '1';
+            if ($attempted) {
+                throw new NonRetryableJobException('Unsafe opening generation retry refused');
+            }
+
+            $inMemorySession = new InMemorySession($payload['session']);
+            if (! $this->brainRegistry->has($inMemorySession->get('brain_avatar'))) {
+                throw new \InvalidArgumentException('Unknown opening assistant');
+            }
+            $chatThreadLock->assertHeld();
+            $turn = $journal->begin($messageId, $this->userId, $this->threadId, 'web', $messageId,
+                notification: ['sessionId' => $this->sessionId]);
+            if (! $turn['entered']) {
+                return;
+            }
+            $attempted = true;
+            $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'running', true);
+            $chatThreadLock->assertHeld();
+            $this->agent = $this->brainRegistry->get($inMemorySession->get('brain_avatar'), $inMemorySession, $this->threadId);
+            $messages = $this->startNewStream($chatThreadLock);
+            $chatThreadLock->assertHeld();
+            $journal->succeed($messageId, $this->userId);
+            $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'done', true);
+        } catch (\Throwable $throwable) {
+            $chatThreadLock->assertHeld();
+            $turn = $journal->get($messageId);
+            if ($turn !== null) {
+                if ($turn['userId'] !== $this->userId || $turn['threadId'] !== $this->threadId) {
+                    throw $throwable;
+                }
+                // SQL success wins, including a lost commit acknowledgement or Redis failure.
+                if ($turn['status'] === 'succeeded' || $turn['deletedAt'] !== null) {
+                    return;
+                }
+                $turn = $journal->rollback($messageId, $this->userId);
+                $attempted = true;
+            }
+            try {
+                $previous = $chatGenerationState->get($this->userId, $this->threadId);
+                if (($previous['messageId'] ?? $messageId) === $messageId
+                    && ($previous['status'] ?? '') !== 'deleted') {
+                    $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'error', $attempted);
+                    $this->handleChatError($throwable, ($turn['status'] ?? '') === 'rolled_back');
+                }
             } finally {
                 throw $attempted
-                    ? new \App\Services\Queue\NonRetryableJobException('Opening attempt failed after agent entry', 0, $throwable)
+                    ? new NonRetryableJobException('Opening attempt failed after agent entry', 0, $throwable)
                     : $throwable;
             }
         } finally {
@@ -118,9 +162,11 @@ final class StartThreadJob implements QueueDoer
     }
 
     /** @return array<int, array<string, mixed>> */
-    public function startNewStream(): array
+    private function startNewStream(ChatThreadLock $chatThreadLock): array
     {
+        $chatThreadLock->assertHeld();
         $openingMessage = $this->agent->getOpeningText();
+        $chatThreadLock->assertHeld();
         $assistantMessage = new AssistantMessage($openingMessage)
             ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
         $chatHistory = $this->agent->getChatHistory();
@@ -129,14 +175,10 @@ final class StartThreadJob implements QueueDoer
         // context followed by the opening message actually shown to the user.
         $chatHistory->initializeWithOpeningMessage($assistantMessage);
 
-        $messages = $this->chatDataRenderer->messages(
+        return $this->chatDataRenderer->messages(
             $chatHistory->getFormattedMessages(),
             $this->userId,
         );
-        $chatGenerationState = $this->chatStreamPublisher->generationState();
-        $chatGenerationState->set($this->userId, $this->threadId, 'opening-' . $this->threadId, 'done', true);
-
-        return $messages;
     }
 
     /** @param array<string, mixed> $payload */
@@ -157,7 +199,7 @@ final class StartThreadJob implements QueueDoer
         $this->sessionId = ChatStreamSubscriber::scope($this->userId, $this->sessionId);
     }
 
-    private function handleChatError(\Throwable $throwable): void
+    private function handleChatError(\Throwable $throwable, bool $rollbackConfirmed = false): void
     {
         if ($this->sessionId === '') {
             throw $throwable;
@@ -167,6 +209,8 @@ final class StartThreadJob implements QueueDoer
             'threadId' => $this->threadId,
             'sessionId' => $this->sessionId,
             'messageId' => 'opening-' . $this->threadId,
+            'rollbackConfirmed' => $rollbackConfirmed,
+            'turnStatus' => $rollbackConfirmed ? 'rolled_back' : null,
             'message' => 'Impossible de démarrer la conversation.',
         ]);
     }

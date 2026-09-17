@@ -7,6 +7,31 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-09-17
+
+### Added
+- **Conversations** : journal SQL durable `chat_turn` avec checkpoints de l'historique pour les tours web, les messages d'ouverture et les générations Telegram ; route authentifiée `GET /brain/turn/{submissionId}` pour consulter le résultat d'un envoi
+- **Maintenance** : récupération des tours interrompus par les workers et via `chat:maintenance --recover`, en simulation par défaut, sans relancer le modèle ni les outils
+- **Fichiers** : commande `files:purge-orphans` pour nettoyer les lignes et fichiers physiques orphelins, avec simulation par défaut, ancienneté minimale configurable de 24 heures et confirmation `--writers-stopped` obligatoire avec `--apply`
+- **PDF** : limite de pages configurable `PDF_MAX_PAGES`, fixée à 100 par défaut et contrôlée pendant le rendu
+- **Tests** : couverture des checkpoints et de la récupération, de la migration SQL, de la purge des fichiers, des garde-fous PDF et des régressions du chat web et embarqué
+
+### Changed
+- **PDF** : davantage de liberté de mise en page HTML/CSS, normalisation des formats de page nommés, conservation des marges nulles et ajout de la police de substitution Symbola dans l'image Docker
+- **PDF** : validation de la surface imprimable, du contenu UTF-8 et de sa taille ; refus des ressources distantes, chemins locaux arbitraires, SVG et ressources CSS externes, avec images raster résolues uniquement via les marqueurs de fichiers Claire
+
+### Fixed
+- **Conversations** : restauration de l'historique antérieur après échec ou interruption récupérable ; conservation des succès déjà enregistrés en SQL même si une notification ultérieure échoue, et protection contre la résurrection de conversations supprimées
+- **Chat** : retrait des messages du tour échoué après confirmation du rollback et récupération du brouillon et de ses pièces jointes sans écraser une nouvelle saisie ; corrélation des envois par `submissionId` dans le web et le widget
+- **Streaming** : conservation des bulles de conversation pendant les appels d'outils et les mises à jour de l'historique
+- **Fichiers générés** : traitement des marqueurs tronqués dans les liens de téléchargement et suppression des boutons de téléchargement dupliqués sur les liens PDF libellés
+
+### Migration
+- Appliquer `Version20260917000000` avec `./console migrations:migrate --no-interaction` avant de reprendre les traitements : création de `chat_turn` et ajout de `revision` et `current_turn_id` à `chat_history`
+- Sauvegarder les données, suspendre les traitements et déployer ensemble backend, frontend/embed, daemon SSE et workers ; reconstruire les bundles pour une installation depuis les sources
+- La restauration d'un tour ne supprime pas les fichiers produits et n'annule pas les effets externes des outils ; les anciennes tentatives sans checkpoint fiable ne sont pas rétroactivement restaurables
+- Pour la purge des fichiers, arrêter réellement tous les producteurs pendant l'opération : `--writers-stopped` ne pose aucun verrou et n'arrête aucun processus
+
 ## [2.1.1] - 2026-09-14
 
 ### Added

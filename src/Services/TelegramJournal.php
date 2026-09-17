@@ -75,6 +75,24 @@ final readonly class TelegramJournal
         }
 
         $next = $record;
+        $this->connection->transactional(function () use ($id, &$next): void {
+            $this->saveInTransaction($id, $next);
+        });
+        $record = $next;
+    }
+
+    /**
+     * Only for the atomic chat-turn fence/response callbacks.
+     *
+     * @param array<string, mixed> $record
+     */
+    public function saveInTransaction(string $id, array &$record): void
+    {
+        if (! $this->connection->isTransactionActive()) {
+            throw new RuntimeException('Telegram atomic write requires a transaction');
+        }
+
+        $next = $record;
         $now = $this->now();
         $revision = $record['_revision'] ?? 0;
         $next += ['attempted' => false, 'delivered' => false, 'compacted' => false, 'createdAt' => $now];
@@ -91,16 +109,11 @@ final readonly class TelegramJournal
         }
 
         $data['deliveries'] = json_encode($next['deliveries'] ?? [], JSON_THROW_ON_ERROR);
-        $this->connection->transactional(function () use ($id, $data, $revision): void {
-            if ($revision === 0) {
-                $this->connection->insert('telegram_generation', ['id' => $id] + $data);
-                return;
-            }
-
-            if ($this->connection->update('telegram_generation', $data, ['id' => $id, 'revision' => $revision]) !== 1) {
-                throw new RuntimeException('Telegram journal revision conflict');
-            }
-        });
+        if ($revision === 0) {
+            $this->connection->insert('telegram_generation', ['id' => $id] + $data);
+        } elseif ($this->connection->update('telegram_generation', $data, ['id' => $id, 'revision' => $revision]) !== 1) {
+            throw new RuntimeException('Telegram journal revision conflict');
+        }
         $record = $next;
     }
 }

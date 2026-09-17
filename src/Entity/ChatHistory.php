@@ -45,6 +45,13 @@ class ChatHistory
     #[ORM\Column(name: 'summary', type: 'text', nullable: true)]
     private ?string $summary = null;
 
+    #[ORM\Version]
+    #[ORM\Column(name: 'revision', type: 'bigint', options: ['default' => 0])]
+    private int $revision = 0;
+
+    #[ORM\Column(name: 'current_turn_id', type: 'string', length: 128, nullable: true)]
+    private ?string $currentTurnId = null;
+
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable', nullable: false)]
     private \DateTimeImmutable $createdAt;
 

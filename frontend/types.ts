@@ -94,6 +94,7 @@ export interface ToolCall {
 }
 
 export interface ChatMessage {
+  submissionId?: string
   error?: boolean
   id: string
   message: string
@@ -104,6 +105,11 @@ export interface ChatMessage {
 }
 
 export interface SseUpdate {
+  generation?: { messageId: string; status: 'queued' | 'running' | 'done' | 'error' | '' }
+  generationMessageId?: string | null
+  submissionId?: string
+  turnStatus?: 'running' | 'succeeded' | 'rolled_back'
+  rollbackConfirmed?: boolean
   generationStatus?: 'queued' | 'running' | 'done' | 'error' | null
   audioRequestId?: string | null
   audioRequestIds?: Record<string, string>

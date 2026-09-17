@@ -69,6 +69,27 @@ final class ChatThreadLock
         $this->release();
     }
 
+    public function assertHeld(): void
+    {
+        if ($this->driver === 'sqlite') {
+            if (! is_resource($this->fileLock)) {
+                throw new RuntimeException('Chat lock was released');
+            }
+        } elseif (! $this->locked) {
+            throw new RuntimeException('Chat lock was released');
+        }
+        // Use the original PDO, never a silently reconnected DBAL session.
+        if ($this->driver === 'mysql') {
+            $statement = $this->pdo->prepare('SELECT IS_USED_LOCK(:key) = CONNECTION_ID()');
+            $statement->execute(['key' => $this->key]);
+            if ((int) $statement->fetchColumn() !== 1) {
+                throw new RuntimeException('Chat lock ownership was lost');
+            }
+        } else {
+            $this->pdo->query('SELECT 1');
+        }
+    }
+
     public function release(): void
     {
         if (is_resource($this->fileLock)) {

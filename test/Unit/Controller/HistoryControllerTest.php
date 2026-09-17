@@ -99,6 +99,7 @@ final class HistoryControllerTest extends TestCase
         $pdo = new \PDO('sqlite::memory:');
         $connection = $this->createStub(\Doctrine\DBAL\Connection::class);
         $connection->method('getNativeConnection')->willReturn($pdo);
+        $connection->method('fetchOne')->willReturn(false);
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->method('getConnection')->willReturn($connection);
         $entityManager->expects(self::never())->method('getRepository');
@@ -115,6 +116,36 @@ final class HistoryControllerTest extends TestCase
             ->withParsedBody(['threadId' => 'thread']);
         $response = $controller->deleteLastExchange($request, new \Slim\Psr7\Response());
         self::assertSame(409, $response->getStatusCode());
+    }
+
+    #[\PHPUnit\Framework\Attributes\TestWith([[]])]
+    #[\PHPUnit\Framework\Attributes\TestWith([['status' => 'error', 'messageId' => 'pending']])]
+    public function testDeleteLastExchangeRefusesUnrecoveredSqlTurn(array $redisState): void
+    {
+        $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        require_once __DIR__ . '/../../Support/ChatTurnSqlSchema.php';
+        \App\Test\Support\ChatTurnSqlSchema::create($connection);
+        new \App\Services\ChatTurnJournal($connection)->begin('pending', 'user-1', 'thread', 'web', 'pending');
+        $before = $connection->fetchAllAssociative('SELECT * FROM chat_history');
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('getConnection')->willReturn($connection);
+        $entityManager->expects(self::never())->method('getRepository');
+        $redis = $this->createStub(\App\Services\RedisClient::class);
+        $redis->method('hgetall')->willReturn($redisState);
+        $settings = new Settings(['redis' => ['prefix' => 'test:']]);
+        $publisher = new \App\Services\ChatStreamPublisher($redis,
+            new \App\Services\ChatStreamSubscriber($settings), $settings);
+        $controller = new HistoryController($this->chatRenderer($settings, $entityManager),
+            $entityManager, $settings, $publisher,
+            $this->createStub(\App\Services\Queue\QueueDispatcherInterface::class),
+            $this->createStub(Filesystem::class));
+        $request = new \Slim\Psr7\Factory\ServerRequestFactory()->createServerRequest('DELETE', '/history/last')
+            ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE,
+                new \App\Services\Session\InMemorySession([Auth::USERID => 'user-1']))
+            ->withParsedBody(['threadId' => 'thread']);
+
+        self::assertSame(409, $controller->deleteLastExchange($request, new \Slim\Psr7\Response())->getStatusCode());
+        self::assertSame($before, $connection->fetchAllAssociative('SELECT * FROM chat_history'));
     }
 
     #[\PHPUnit\Framework\Attributes\TestWith(['sess-current'])]
@@ -139,7 +170,7 @@ final class HistoryControllerTest extends TestCase
 
         $pdo = new \PDO('sqlite::memory:');
         $pdo->exec(
-            "CREATE TABLE chat_history (user_id TEXT NOT NULL, thread_id TEXT PRIMARY KEY, messages TEXT NOT NULL, display_messages TEXT NOT NULL DEFAULT '[]', display_messages_count INTEGER NOT NULL DEFAULT 0, title TEXT DEFAULT NULL, summary TEXT DEFAULT NULL)"
+            "CREATE TABLE chat_history (user_id TEXT NOT NULL, thread_id TEXT PRIMARY KEY, messages TEXT NOT NULL, display_messages TEXT NOT NULL DEFAULT '[]', display_messages_count INTEGER NOT NULL DEFAULT 0, title TEXT DEFAULT NULL, summary TEXT DEFAULT NULL, revision INTEGER NOT NULL DEFAULT 0, current_turn_id TEXT)"
         );
         $chatHistory = new \App\Brain\ChatHistory\UserChatHistory(
             $session,
@@ -166,6 +197,7 @@ final class HistoryControllerTest extends TestCase
 
         $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
         $connection->method('getNativeConnection')->willReturn($pdo);
+        $connection->method('fetchOne')->willReturn(false);
         $entityManager = $this->createMock(EntityManagerInterface::class);
         $entityManager->method('getConnection')->willReturn($connection);
         $entityManager->method('getRepository')->willReturn($repository);
@@ -239,7 +271,7 @@ final class HistoryControllerTest extends TestCase
         $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
         $pdo = new \PDO('sqlite::memory:');
 
-        $pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT, display_messages TEXT, display_messages_count INTEGER, title TEXT NULL, summary TEXT NULL)');
+        $pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT, display_messages TEXT, display_messages_count INTEGER, title TEXT NULL, summary TEXT NULL, revision INTEGER NOT NULL DEFAULT 0, current_turn_id TEXT)');
         $pdo->prepare('INSERT INTO chat_history (user_id, thread_id, messages, display_messages, display_messages_count) VALUES (?, ?, ?, ?, ?)')
             ->execute(['user-1', 'thread-1', '[]', '[{"role":"assistant","content":"Bonjour","metadata":{"timestamp":"2026-01-01T00:00:00+00:00"}}]', 1]);
 
@@ -304,7 +336,7 @@ final class HistoryControllerTest extends TestCase
         $connection = $this->createMock(\Doctrine\DBAL\Connection::class);
         $pdo = new \PDO('sqlite::memory:');
 
-        $pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT, display_messages TEXT, display_messages_count INTEGER, title TEXT NULL, summary TEXT NULL)');
+        $pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT, display_messages TEXT, display_messages_count INTEGER, title TEXT NULL, summary TEXT NULL, revision INTEGER NOT NULL DEFAULT 0, current_turn_id TEXT)');
         $pdo->prepare('INSERT INTO chat_history (user_id, thread_id, messages, display_messages, display_messages_count) VALUES (?, ?, ?, ?, ?)')
             ->execute(['user-1', 'thread-1', '[]', '[{"role":"assistant","content":"Bonjour","metadata":{"timestamp":"2026-01-01T00:00:00+00:00"}}]', 1]);
 

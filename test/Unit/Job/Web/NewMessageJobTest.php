@@ -70,6 +70,35 @@ final class StreamingJobTestAgent extends Agent implements BrainAvatar
 
 final class NewMessageJobTest extends TestCase
 {
+    public function testLockLostDuringToolPublicationStopsBeforeExecutingTheTool(): void
+    {
+        $toolCalls = 0;
+        $handler = $this->createStub(AgentHandler::class);
+        $handler->method('events')->willReturnCallback(static function () use (&$toolCalls): \Generator {
+            yield new ToolCallChunk(new Tool('probe')->setCallId('call-probe'));
+            $toolCalls++;
+        });
+        $lock = new ChatThreadLock(new \PDO('sqlite::memory:'), 'user-1', 'lost-tool-lock');
+        [$job] = $this->job($handler, static function (array $event) use ($lock): void {
+            if ($event['event'] === 'chat.tool.update') {
+                $lock->release();
+            }
+        });
+        new \ReflectionMethod($job, 'initContext')->invoke($job, $this->payload('lost-tool-lock'));
+        $agent = $this->createStub(Agent::class);
+        $agent->method('stream')->willReturn($handler);
+        new \ReflectionProperty($job, 'agent')->setValue($job, $agent);
+        try {
+            new \ReflectionMethod($job, 'processChatStream')->invoke($job, $lock);
+            self::fail('The generator resumed after losing the lock');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('Chat lock was released', $exception->getMessage());
+        } finally {
+            $lock->release();
+        }
+        self::assertSame(0, $toolCalls);
+    }
+
     public function testSummaryAndIdentityStayLockedButCompletionAndAudioDoNot(): void
     {
         $handler = $this->createStub(AgentHandler::class);
@@ -115,6 +144,7 @@ final class NewMessageJobTest extends TestCase
             },
             static function () use (&$summarySeen, &$doneSeen, &$publisher, &$pdo): void {
                 self::assertFalse($doneSeen);
+                self::assertSame('succeeded', $pdo->query('SELECT status FROM chat_turn')->fetchColumn());
                 self::assertTrue($publisher->generationState()->snapshot('user-1', 'completion-test')['responding']);
                 try {
                     new ChatThreadLock(new \PDO('sqlite::memory:'), 'user-1', 'completion-test');
@@ -304,17 +334,122 @@ final class NewMessageJobTest extends TestCase
         $failure = new \RuntimeException('Provider disconnected');
         $handler = $this->createMock(AgentHandler::class);
         $handler->expects(self::once())->method('events')->willThrowException($failure);
-        [$job, $publisher] = $this->job($handler);
+        $events = [];
+        [$job, $publisher, $pdo] = $this->job($handler, static function (array $event) use (&$events): void {
+            $events[] = $event;
+        });
+        $payload = $this->payload('thread');
+        $payload['submissionId'] = 'submission-failed';
         try {
-            $job->handle($this->payload('thread'));
+            $job->handle($payload);
             self::fail('Failure was swallowed');
         } catch (\RuntimeException $exception) {
             self::assertInstanceOf(\App\Services\Queue\NonRetryableJobException::class, $exception);
             self::assertSame($failure, $exception->getPrevious());
         }
         self::assertSame('error', $publisher->generationState()->get('user-1', 'thread')['status']);
-        $this->expectExceptionMessage('Unsafe chat retry refused');
-        $job->handle($this->payload('thread'));
+        self::assertSame('[]', $pdo->query('SELECT messages FROM chat_history')->fetchColumn());
+        self::assertSame('[]', $pdo->query('SELECT display_messages FROM chat_history')->fetchColumn());
+        self::assertSame('rolled_back', $pdo->query('SELECT status FROM chat_turn')->fetchColumn());
+        self::assertSame('submission-failed', $events[count($events) - 1]['payload']['submissionId']);
+        self::assertTrue($events[count($events) - 1]['payload']['rollbackConfirmed']);
+        $job->handle($payload);
+    }
+
+    public function testSubmissionIdentityIsPersistedOnUserMessageAndAllEvents(): void
+    {
+        $handler = $this->createStub(AgentHandler::class);
+        $handler->method('events')->willReturnCallback(static function (): \Generator { yield new TextChunk('id', 'Answer'); });
+        $handler->method('getMessage')->willReturn(new AssistantMessage('Answer'));
+        $events = [];
+        [$job, , $pdo] = $this->job($handler, static function (array $event) use (&$events): void { $events[] = $event; });
+        $payload = $this->payload('correlation');
+        $payload['submissionId'] = 'submission-exact';
+        $job->handle($payload);
+        $display = json_decode($pdo->query('SELECT display_messages FROM chat_history')->fetchColumn(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('submission-exact', $display[0]['claire_submission_id']);
+        foreach ($events as $event) {
+            self::assertSame('submission-exact', $event['payload']['submissionId']);
+        }
+        self::assertSame('succeeded', $events[count($events) - 1]['payload']['turnStatus']);
+    }
+
+    public function testLostSuccessCommitAcknowledgementNeverRollsBackOrReplays(): void
+    {
+        $handler = $this->createMock(AgentHandler::class);
+        $handler->expects(self::once())->method('events')->willReturnCallback(static function (): \Generator { yield from []; });
+        $handler->method('getMessage')->willReturn(new AssistantMessage('Answer'));
+        [$job, $publisher, $pdo] = $this->job($handler, connectionClass: WebCommitReplyLostConnection::class);
+        $job->handle($this->payload('lost-commit'));
+        self::assertSame('succeeded', $pdo->query('SELECT status FROM chat_turn')->fetchColumn());
+        self::assertSame('done', $publisher->generationState()->get('user-1', 'lost-commit')['status']);
+        $job->handle($this->payload('lost-commit'));
+    }
+
+    public function testOldTerminalRetryCannotRepopulateEmptyRedisOrReplaceQueuedGeneration(): void
+    {
+        $handler = $this->createMock(AgentHandler::class);
+        $handler->expects(self::never())->method('events');
+        [$job, $publisher] = $this->job($handler);
+        $sql = new \ReflectionProperty($job, 'connection')->getValue($job);
+        $journal = new \App\Services\ChatTurnJournal($sql);
+        $journal->begin('z-old', 'user-1', 'thread', 'web', 'z-old');
+        $journal->succeed('z-old', 'user-1');
+        $journal->begin('a-new', 'user-1', 'thread', 'web', 'a-new');
+        $journal->succeed('a-new', 'user-1');
+        $sql->executeStatement('UPDATE chat_turn SET created_at = 1234');
+        $payload = $this->payload('thread');
+        $payload['messageId'] = 'z-old';
+        $job->handle($payload);
+        self::assertSame([], $publisher->generationState()->get('user-1', 'thread'));
+        $publisher->generationState()->set('user-1', 'thread', 'z-old', 'running', true);
+        $payload['messageId'] = 'a-new';
+        $job->handle($payload);
+        self::assertSame('a-new', $publisher->generationState()->get('user-1', 'thread')['messageId']);
+        $publisher->generationState()->set('user-1', 'thread', 'pending', 'queued', false);
+        $job->handle($payload);
+        self::assertSame('pending', $publisher->generationState()->get('user-1', 'thread')['messageId']);
+        self::assertSame('queued', $publisher->generationState()->get('user-1', 'thread')['status']);
+    }
+
+    public function testWorkerOnlyFinalizesPreEntryFailureAfterConfirmedDeadLetter(): void
+    {
+        foreach ([false, true] as $dead) {
+            $events = [];
+            [$job, $publisher, $pdo] = $this->job($this->createStub(AgentHandler::class),
+                static function (array $event) use (&$events): void { $events[] = $event; });
+            $sql = new \ReflectionProperty($job, 'connection')->getValue($job);
+            $settings = new \ReflectionProperty($job, 'settings')->getValue($job);
+            $payload = $this->payload('final-failure');
+            $payload['session']['brain_avatar'] = 'missing';
+            $publisher->generationState()->set('user-1', 'final-failure', 'message-final-failure', 'queued', false);
+            $recovery = new \App\Services\ChatTurnRecovery($sql, $publisher,
+                new \App\Services\TelegramGeneration($settings, $sql, $publisher->generationState()),
+                $this->createStub(\App\Services\TelegramService::class), $settings, new NullLogger());
+            $queue = $this->createStub(\App\Services\Queue\QueueRedisConnection::class);
+            $queue->method('evaluate')->willReturnCallback(static function (string $script, array $args) use ($payload, $dead): mixed {
+                if (str_contains($script, "'SCAN'")) {
+                    return ['0', []];
+                }
+                if (str_starts_with($script, 'return redis.call')) {
+                    return $dead ? 'dead' : 'delayed';
+                }
+                if (($args[4] ?? '') === 'reserve') {
+                    return ['id', 'job', 'job_class', NewMessageJob::class,
+                        'payload', json_encode($payload, JSON_THROW_ON_ERROR), 'token', 'reservation', 'queue_name', 'test'];
+                }
+                return 1;
+            });
+            $backend = new \App\Services\Queue\RedisQueueBackend($queue, $settings, $sql);
+            $container = $this->createStub(ContainerInterface::class);
+            $container->method('has')->willReturnCallback(static fn (string $id): bool => $id === \App\Services\ChatTurnRecovery::class);
+            $container->method('get')->willReturnCallback(static fn (string $id): object => $id === NewMessageJob::class ? $job : $recovery);
+            $worker = new \App\Services\Queue\QueueWorker($backend, $container, new NullLogger());
+            self::assertSame(1, $worker->run(new \App\Services\Queue\QueueWorkerOptions('test', 0, 1, 10), 'worker'));
+            self::assertSame($dead ? 'error' : 'queued', $publisher->generationState()->get('user-1', 'final-failure')['status']);
+            self::assertSame($dead ? 'rolled_back' : false, $pdo->query('SELECT status FROM chat_turn')->fetchColumn());
+            self::assertCount($dead ? 1 : 0, $events);
+        }
     }
 
     public function testRecoverablePreStreamFailureCanBeRetried(): void
@@ -331,7 +466,7 @@ final class NewMessageJobTest extends TestCase
                 self::assertStringContainsString('missing', $exception->getMessage());
             }
         }
-        self::assertSame('0', $publisher->generationState()->get('user-1', 'thread')['attempted']);
+        self::assertSame([], $publisher->generationState()->get('user-1', 'thread'));
     }
 
     public function testInvalidPayloadCannotPublishUsingPreviousJobContext(): void
@@ -381,9 +516,10 @@ final class NewMessageJobTest extends TestCase
         ?callable $onPublish = null,
         ?callable $onSummary = null,
         ?AudioServiceInterface $audio = null,
+        string $connectionClass = Connection::class,
     ): array
     {
-        $settings = new Settings(['redis' => ['prefix' => 'test:'],
+        $settings = new Settings(['redis' => ['prefix' => 'test:'], 'queue' => [],
             'llm' => ['brains' => ['test' => StreamingJobTestAgent::class],
                 'yamlBrains' => ['path' => '/tmp/kilo/no-brains']]]);
         $redis = $this->createStub(RedisClient::class);
@@ -403,11 +539,12 @@ final class NewMessageJobTest extends TestCase
         });
         $redis->method('expire')->willReturn(true);
         $publisher = new ChatStreamPublisher($redis, new ChatStreamSubscriber($settings), $settings);
-        $pdo = new \PDO('sqlite::memory:');
-        $pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT,'
-            . " display_messages TEXT, display_messages_count INTEGER, title TEXT, summary TEXT)");
-        $connection = $this->createStub(Connection::class);
-        $connection->method('getNativeConnection')->willReturn($pdo);
+        $connection = \Doctrine\DBAL\DriverManager::getConnection([
+            'driver' => 'pdo_sqlite', 'memory' => true, 'wrapperClass' => $connectionClass,
+        ]);
+        require_once Settings::getAppRoot() . '/test/Support/ChatTurnSqlSchema.php';
+        \App\Test\Support\ChatTurnSqlSchema::create($connection);
+        $pdo = $connection->getNativeConnection();
         $logger = $this->createStub(\Psr\Log\LoggerInterface::class);
         $logger->method('error')->willReturnCallback(static function (string $message) use ($onSummary): void {
             if ($message === 'Chat summary failed after successful generation' && $onSummary !== null) {
@@ -423,5 +560,19 @@ final class NewMessageJobTest extends TestCase
             new BrainRegistry($settings, $container, new ThemeRegistry($settings)),
             $publisher, new ChatAudioPublisher($audio ?? $this->createStub(AudioServiceInterface::class),
                 $publisher, new NullLogger()), $connection, $settings), $publisher, $pdo];
+    }
+}
+
+final class WebCommitReplyLostConnection extends Connection
+{
+    private bool $lost = false;
+
+    public function commit(): void
+    {
+        parent::commit();
+        if (! $this->lost && $this->fetchOne("SELECT id FROM chat_turn WHERE status = 'succeeded'") !== false) {
+            $this->lost = true;
+            throw new \RuntimeException('Success commit acknowledgement lost');
+        }
     }
 }

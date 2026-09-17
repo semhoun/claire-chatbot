@@ -33,6 +33,14 @@ class Summary extends \NeuronAI\Agent\Agent
 
     public function generateAndPersist(bool $evolveLongTermMemory = false): void
     {
+        $owner = ['user_id' => $this->session->get(Auth::USERID), 'thread_id' => $this->threadId];
+        $before = $this->connection->fetchAssociative(
+            'SELECT revision, current_turn_id FROM chat_history WHERE user_id = ? AND thread_id = ?',
+            array_values($owner),
+        );
+        if ($before === false || $before['current_turn_id'] !== null) {
+            throw new \RuntimeException('Summary requires a completed conversation');
+        }
         $longTermMemory = new LongTermMemory(
             connection: $this->connection,
             session: $this->session,
@@ -47,13 +55,14 @@ class Summary extends \NeuronAI\Agent\Agent
         $message = $this->chat($userMessage)->getMessage();
         $jsonContent = $this->extractJsonContent($message->getContent());
 
-        $this->connection->update(UserChatHistory::TABLE, [
+        $affected = $this->connection->update(UserChatHistory::TABLE, [
             'title' => $jsonContent['title'] ?? 'Nouvelle conversation',
             'summary' => $jsonContent['summary'] ?? null,
-        ], [
-            'user_id' => $this->session->get(Auth::USERID),
-            'thread_id' => $this->threadId,
-        ]);
+            'revision' => (int) $before['revision'] + 1,
+        ], $owner + ['revision' => $before['revision'], 'current_turn_id' => null]);
+        if ($affected !== 1) {
+            throw new \RuntimeException('Chat history changed; refusing stale summary');
+        }
 
         if ($evolveLongTermMemory) {
             $longTermMemory->store((string) ($jsonContent['memory'] ?? ''));
@@ -68,6 +77,7 @@ class Summary extends \NeuronAI\Agent\Agent
             pdo: $this->connection->getNativeConnection(),
             contextWindow: $this->settings->get('llm.openai.contextWindow'),
             threadId: $this->threadId,
+            createIfMissing: false,
         );
     }
 
