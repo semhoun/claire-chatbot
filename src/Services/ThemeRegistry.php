@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services;
 
 use JsonException;
-use RuntimeException;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
@@ -47,47 +46,64 @@ final class ThemeRegistry
         }
 
         $this->catalog = [];
-        try {
-            $path = $this->settings->get('themes.path');
-        } catch (RuntimeException) {
-            $path = Settings::getAppRoot() . '/config/themes';
-        }
+        $path = $this->settings->get('themes.path', Settings::getAppRoot() . '/config/themes');
 
         // Only local files are read; never resolve URLs or agent-supplied paths.
         if (! is_string($path) || str_contains($path, '://') || ! is_dir($path)) {
             return;
         }
 
+        if ($this->loadContract($path)) {
+            $this->loadPresets($path);
+        }
+    }
+
+    private function loadContract(string $path): bool
+    {
         // Missing or unreadable optional catalogs fall back without leaking filesystem warnings.
         $json = @file_get_contents($path . '/contract.json');
         if ($json === false) {
-            return;
+            return false;
         }
 
         try {
             $contract = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
-            return;
+            return false;
         }
 
-        if (! is_array($contract) || ! is_array($contract['tokens'] ?? null)
-            || ! array_is_list($contract['tokens']) || ! is_array($contract['variants'] ?? null)) {
-            return;
+        if (! $this->hasThemeSections($contract) || ! array_is_list($contract['tokens'])) {
+            return false;
         }
 
-        foreach ($contract['tokens'] as $token) {
-            if (is_string($token) && preg_match('/^--claire-[a-z0-9-]+$/D', $token) === 1) {
-                $this->tokens[$token] = true;
-            }
-        }
+        $this->normalizeContract($contract);
+        return true;
+    }
 
-        foreach ($contract['variants'] as $key => $values) {
-            if (is_string($key) && preg_match('/^[a-z][a-z0-9-]*$/D', $key) === 1
-                && is_array($values) && array_is_list($values)) {
-                $this->variants[$key] = array_values(array_filter($values, is_string(...)));
-            }
-        }
+    /** @param array{tokens:list<mixed>, variants:array<mixed>} $contract */
+    private function normalizeContract(array $contract): void
+    {
+        $this->tokens = array_fill_keys(array_filter(
+            $contract['tokens'],
+            static fn (mixed $token): bool => is_string($token)
+                && preg_match('/^--claire-[a-z0-9-]+$/D', $token) === 1
+        ), true);
 
+        $variants = array_filter(
+            $contract['variants'],
+            static fn (mixed $values, int|string $key): bool => is_string($key)
+                && preg_match('/^[a-z][a-z0-9-]*$/D', $key) === 1
+                && is_array($values) && array_is_list($values),
+            ARRAY_FILTER_USE_BOTH
+        );
+        $this->variants = array_map(
+            static fn (array $values): array => array_values(array_filter($values, is_string(...))),
+            $variants
+        );
+    }
+
+    private function loadPresets(string $path): void
+    {
         $files = glob($path . '/*.yaml');
         foreach ($files === false ? [] : $files as $file) {
             $slug = basename($file, '.yaml');
@@ -101,15 +117,23 @@ final class ThemeRegistry
                 continue;
             }
 
-            if (! is_array($data) || ! is_array($data['tokens'] ?? null)
-                || ! is_array($data['variants'] ?? null)
-                || ($data['tokens'] !== [] && array_is_list($data['tokens']))
-                || ($data['variants'] !== [] && array_is_list($data['variants']))) {
+            if (! $this->hasThemeSections($data) || ! array_all(
+                [$data['tokens'], $data['variants']],
+                static fn (array $section): bool => $section === [] || ! array_is_list($section)
+            )) {
                 continue;
             }
 
             $this->catalog[$slug] = $this->filter($data);
         }
+    }
+
+    private function hasThemeSections(mixed $data): bool
+    {
+        return is_array($data) && array_all(
+            ['tokens', 'variants'],
+            static fn (string $key): bool => is_array($data[$key] ?? null)
+        );
     }
 
     /**
@@ -119,20 +143,16 @@ final class ThemeRegistry
      */
     private function filter(array $data): array
     {
-        $result = ['tokens' => [], 'variants' => []];
-        foreach (is_array($data['tokens'] ?? null) ? $data['tokens'] : [] as $key => $value) {
-            if (isset($this->tokens[$key]) && is_string($value)) {
-                $result['tokens'][$key] = $value;
-            }
-        }
+        $tokens = array_intersect_key(is_array($data['tokens'] ?? null) ? $data['tokens'] : [], $this->tokens);
+        $variants = array_intersect_key(is_array($data['variants'] ?? null) ? $data['variants'] : [], $this->variants);
 
-        foreach (is_array($data['variants'] ?? null) ? $data['variants'] : [] as $key => $value) {
-            if (isset($this->variants[$key]) && is_string($value)
-                && in_array($value, $this->variants[$key], true)) {
-                $result['variants'][$key] = $value;
-            }
-        }
-
-        return $result;
+        return [
+            'tokens' => array_filter($tokens, is_string(...)),
+            'variants' => array_filter(
+                $variants,
+                fn (mixed $value, string $key): bool => in_array($value, $this->variants[$key], true),
+                ARRAY_FILTER_USE_BOTH
+            ),
+        ];
     }
 }

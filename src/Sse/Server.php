@@ -222,21 +222,49 @@ final class Server
      */
     private function validAuthorization(array $data, array $parameters): bool
     {
-        foreach (['authorization', 'userId', 'threadId', 'sessionId'] as $key) {
-            if (! is_string($data[$key] ?? null) || $data[$key] === '' || strlen($data[$key]) > 4096) {
-                return false;
-            }
+        return $this->validAuthorizationContext($data, $parameters)
+            && $this->validAuthorizationPeriod($data)
+            && $this->validRememberAuthorization($data);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     * @param array<string, string> $parameters
+     */
+    private function validAuthorizationContext(array $data, array $parameters): bool
+    {
+        return array_all(
+            ['authorization', 'userId', 'threadId', 'sessionId'],
+            static fn (string $key): bool => is_string($data[$key] ?? null)
+                && $data[$key] !== '' && strlen($data[$key]) <= 4096
+        )
+            && preg_match('/^[a-f0-9]{64}$/D', $data['authorization']) === 1
+            && array_all(
+                ['threadId', 'sessionId'],
+                static fn (string $key): bool => $data[$key] === $parameters[$key]
+            );
+    }
+
+    /** @param array<string, mixed> $data */
+    private function validAuthorizationPeriod(array $data): bool
+    {
+        if (! array_all(
+            ['openedAt', 'deadline'],
+            static fn (string $key): bool => (is_int($data[$key] ?? null) || is_float($data[$key] ?? null))
+                && is_finite((float) $data[$key])
+        )) {
+            return false;
         }
 
-        if (preg_match('/^[a-f0-9]{64}$/D', $data['authorization']) !== 1
-            || $data['threadId'] !== $parameters['threadId'] || $data['sessionId'] !== $parameters['sessionId']
-            || (! is_int($data['openedAt'] ?? null) && ! is_float($data['openedAt'] ?? null))
-            || (! is_int($data['deadline'] ?? null) && ! is_float($data['deadline'] ?? null))
-            || ! is_finite((float) $data['openedAt']) || ! is_finite((float) $data['deadline'])
-            || $data['openedAt'] > ($this->clock)() || $data['deadline'] <= ($this->clock)()
+        return ! ($data['openedAt'] > ($this->clock)() || $data['deadline'] <= ($this->clock)()
             || $data['deadline'] <= $data['openedAt']
-            || $data['deadline'] - $data['openedAt'] > $this->config->get('max_duration')
-            || ! array_key_exists('remember', $data)) {
+            || $data['deadline'] - $data['openedAt'] > $this->config->get('max_duration'));
+    }
+
+    /** @param array<string, mixed> $data */
+    private function validRememberAuthorization(array $data): bool
+    {
+        if (! array_key_exists('remember', $data)) {
             return false;
         }
 

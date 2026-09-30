@@ -212,15 +212,45 @@ final class ThemeRegistryTest extends TestCase
         yield 'wrong variants type' => ['{"tokens":[],"variants":false}'];
     }
 
+    #[DataProvider('invalidContracts')]
+    public function testFailedCatalogLoadStaysCachedAfterFilesAreRepaired(?string $json): void
+    {
+        $contract = file_get_contents($this->path . '/contract.json');
+        unlink($this->path . '/contract.json');
+        if ($json !== null) {
+            file_put_contents($this->path . '/contract.json', $json);
+        }
+        file_put_contents($this->path . '/neon.yaml', 'tokens: [');
+        $registry = new ThemeRegistry($this->settings);
+        $theme = ['preset' => 'neon', 'tokens' => ['--claire-accent' => 'red'],
+            'variants' => ['effects' => 'glow']];
+        $fallback = ['preset' => 'cyberpunk', 'tokens' => [], 'variants' => []];
+        self::assertSame($fallback, $registry->resolve($theme));
+
+        file_put_contents($this->path . '/contract.json', $contract);
+        file_put_contents($this->path . '/neon.yaml', Yaml::dump([
+            'tokens' => ['--claire-accent' => 'repaired'], 'variants' => ['effects' => 'none'],
+        ]));
+
+        self::assertSame($fallback, $registry->resolve($theme));
+        self::assertSame([
+            'preset' => 'neon', 'tokens' => ['--claire-accent' => 'red'], 'variants' => ['effects' => 'glow'],
+        ], new ThemeRegistry($this->settings)->resolve($theme));
+    }
+
     public function testPresetAndContractEntriesAreFiltered(): void
     {
         file_put_contents($this->path . '/contract.json', json_encode([
-            'tokens' => ['--claire-accent', ':root', 'color', false, ['nested']],
-            'variants' => ['effects' => ['none', false], '.selector' => ['bad'], 'controls' => false],
+            'tokens' => ['--claire-accent', ':root', 'color', false, ['nested'], '--claire-accent'],
+            'variants' => [
+                'effects' => [false, 'none', 1, [], null], '.selector' => ['bad'], 'controls' => false,
+                'layout' => ['named' => 'wide'], 0 => ['numeric'],
+            ],
         ], JSON_THROW_ON_ERROR));
         file_put_contents($this->path . '/neon.yaml', Yaml::dump([
             'tokens' => ['--claire-accent' => 'red', ':root' => 'bad', 'color' => 'red', '--claire-bg-main' => false],
-            'variants' => ['effects' => 'none', '.selector' => 'bad', 'controls' => 'solid'],
+            'variants' => ['effects' => 'none', '.selector' => 'bad', 'controls' => 'solid',
+                'layout' => 'wide', 0 => 'numeric'],
             'css' => 'https://example.invalid/external.css',
         ]));
         self::assertSame([

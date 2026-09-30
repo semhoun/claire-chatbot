@@ -17,6 +17,7 @@ use App\Sse\RedisGateway;
 use App\Sse\RedisHub;
 use App\Sse\Server;
 use Evenement\EventEmitter;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use React\EventLoop\LoopInterface;
 use React\EventLoop\Timer\Timer;
@@ -429,7 +430,8 @@ final class DaemonTest extends TestCase
         self::assertSame(0, $server->metrics()['admissions']);
     }
 
-    public function testServerAcceptsFractionalDeadlineAndShutsDownAllReferences(): void
+    #[DataProvider('validAuthorizations')]
+    public function testServerAcceptsAuthorizationAndShutsDownAllReferences(array $overrides): void
     {
         $settings = $this->settings();
         $server = new Server($settings, new Config($settings), $this->loop, $this->backend, $this->redis,
@@ -438,7 +440,7 @@ final class DaemonTest extends TestCase
             ['X-Claire-Auth' => 'credential']);
         $response = null;
         $server->handle($request)->then(static function ($value) use (&$response): void { $response = $value; });
-        $this->backend->requests[0][2]->resolve($this->authorization(['openedAt' => 999.5, 'deadline' => 2799.5]));
+        $this->backend->requests[0][2]->resolve($this->authorization($overrides));
         $this->redis->ack->resolve(null);
         $this->backend->requests[1][2]->resolve($this->snapshot());
         self::assertSame(200, $response->getStatusCode());
@@ -448,6 +450,20 @@ final class DaemonTest extends TestCase
         self::assertSame([], $this->redis->listeners);
         self::assertSame([], $this->loop->timers);
         self::assertSame(0, $this->budget->bytes());
+    }
+
+    public static function validAuthorizations(): iterable
+    {
+        yield 'fractional timestamps' => [['openedAt' => 999.5, 'deadline' => 2799.5]];
+        yield 'integer timestamps and start at now' => [['openedAt' => 1000, 'deadline' => 2800]];
+        yield 'exact maximum duration' => [['openedAt' => 999.5, 'deadline' => 87399.5]];
+        yield 'deadline just after now' => [['deadline' => 1000.5]];
+        yield 'remember expires before deadline' => [[
+            'remember' => ['id' => str_repeat('b', 64), 'expires' => 1001],
+        ]];
+        yield 'remember expires after deadline' => [[
+            'remember' => ['id' => str_repeat('b', 64), 'expires' => 3000],
+        ]];
     }
 
     public function testRedisHubSharesAckFanoutReadsAndReconnectsWithoutOldListeners(): void
@@ -799,6 +815,71 @@ final class DaemonTest extends TestCase
         self::assertSame([], $this->redis->listeners);
         self::assertSame(0, $server->metrics()['connections']);
         self::assertSame([str_repeat('z', 64)], $this->backend->closed);
+    }
+
+    #[DataProvider('invalidAuthorizations')]
+    public function testServerRejectsMalformedAuthorizationBeforeSubscribing(
+        array $overrides,
+        ?string $missing = null,
+    ): void {
+        $settings = $this->settings();
+        $server = new Server($settings, new Config($settings), $this->loop, $this->backend, $this->redis,
+            $this->budget, fn (): float => $this->loop->now);
+        $response = null;
+        $server->handle(new ServerRequest('GET',
+            'http://claire.test/base/brain/stream?threadId=thread&sessionId=tab&token=secret',
+            ['Origin' => 'https://widget.test']))->then(
+                static function ($value) use (&$response): void { $response = $value; });
+        $authorization = $this->authorization($overrides);
+        if ($missing !== null) {
+            unset($authorization[$missing]);
+        }
+        $this->backend->requests[0][2]->resolve($authorization);
+
+        self::assertSame(503, $response->getStatusCode());
+        self::assertSame('https://widget.test', $response->getHeaderLine('Access-Control-Allow-Origin'));
+        self::assertSame([], $this->redis->listeners);
+        self::assertSame([], $this->loop->timers);
+        self::assertSame(0, $server->metrics()['connections']);
+        self::assertSame(0, $server->metrics()['admissions']);
+        self::assertSame(0, $this->budget->bytes());
+        self::assertCount(1, $this->backend->requests);
+        self::assertSame([str_repeat('a', 64)], $this->backend->closed);
+    }
+
+    public static function invalidAuthorizations(): iterable
+    {
+        foreach (['userId', 'threadId', 'sessionId'] as $key) {
+            yield $key . ' missing' => [[], $key];
+            foreach ([null, 123, '', str_repeat('x', 4097)] as $index => $value) {
+                yield $key . ' invalid ' . $index => [[$key => $value]];
+            }
+        }
+        yield 'wrong thread' => [['threadId' => 'other']];
+        yield 'wrong session' => [['sessionId' => 'other']];
+        foreach (['openedAt', 'deadline'] as $key) {
+            yield $key . ' missing' => [[], $key];
+            foreach ([null, '1001', false, [], INF, -INF, NAN] as $index => $value) {
+                yield $key . ' invalid ' . $index => [[$key => $value]];
+            }
+        }
+        yield 'future start' => [['openedAt' => 1000.5]];
+        yield 'deadline at now' => [['deadline' => 1000]];
+        yield 'deadline before now' => [['deadline' => 999.5]];
+        yield 'zero duration' => [['openedAt' => 999, 'deadline' => 999]];
+        yield 'negative duration' => [['openedAt' => 999, 'deadline' => 998]];
+        yield 'over maximum duration' => [['openedAt' => 999.5, 'deadline' => 87400]];
+        yield 'remember missing' => [[], 'remember'];
+        foreach ([false, 'invalid', [], ['expires' => 2000],
+            ['id' => str_repeat('z', 64), 'expires' => 2000],
+            ['id' => 123, 'expires' => 2000], ['id' => str_repeat('b', 64)]] as $index => $remember) {
+            yield 'remember invalid ' . $index => [['remember' => $remember]];
+        }
+        foreach ([null, '2000', 2000.0, INF, -INF, NAN, 999, 1000] as $index => $expires) {
+            yield 'remember expiry invalid ' . $index => [[
+                'remember' => ['id' => str_repeat('b', 64), 'expires' => $expires],
+            ]];
+        }
     }
 
     public function testBackendAuthorizationFailurePreservesCorsAndNeverSubscribes(): void
