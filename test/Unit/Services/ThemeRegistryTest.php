@@ -87,6 +87,18 @@ final class ThemeRegistryTest extends TestCase
         self::assertSame($registry->resolve('cyberpunk'), new ThemeRegistry(new Settings([]))->resolve(null));
     }
 
+    public function testLightPresetDefinesSecondaryControlColors(): void
+    {
+        $registry = new ThemeRegistry(new Settings([
+            'themes' => require Settings::getAppRoot() . '/config/settings/themes.php',
+        ]));
+        $tokens = $registry->resolve('light')['tokens'];
+
+        self::assertSame('#eeece5', $tokens['--claire-control-background']);
+        self::assertSame('#252f32', $tokens['--claire-control-text']);
+        self::assertSame('#e4e9e7', $tokens['--claire-control-hover']);
+    }
+
     public function testMissingCatalogDirectoryUsesEmptyFallback(): void
     {
         $registry = new ThemeRegistry(new Settings(['themes' => ['path' => $this->path . '/missing']]));
