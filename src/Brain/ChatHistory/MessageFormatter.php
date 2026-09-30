@@ -8,7 +8,7 @@ use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Tools\ToolInterface;
+use NeuronAI\Tools\ToolCall;
 
 final class MessageFormatter
 {
@@ -55,6 +55,15 @@ final class MessageFormatter
             'running' => false,
         ];
 
+        if ($message->getMetadata('generation_stopped') === true) {
+            $formattedMessage['stopped'] = true;
+            unset($formattedMessage['audioRequestId']);
+            $stoppedId = $message->getMetadata(UserChatHistory::MESSAGE_ID_METADATA);
+            if (is_string($stoppedId) && preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $stoppedId) === 1) {
+                $formattedMessage['id'] = $stoppedId;
+            }
+        }
+
         if ($message instanceof ToolCallMessage || $message instanceof ToolResultMessage) {
             if ($message instanceof ToolCallMessage) {
                 $formattedMessage['message'] .= $message->getContent();
@@ -88,7 +97,7 @@ final class MessageFormatter
             // Tool groups inherit the identity of their final assistant, not the tool call.
             $formattedMessage['id'] = $messageId;
             $audioRequestId = $message->getMetadata(UserChatHistory::AUDIO_REQUEST_ID_METADATA);
-            if (is_string($audioRequestId)
+            if (($formattedMessage['stopped'] ?? false) !== true && is_string($audioRequestId)
                 && preg_match(UserChatHistory::AUDIO_REQUEST_ID_PATTERN, $audioRequestId) === 1) {
                 $formattedMessage['audioRequestId'] = $audioRequestId;
             }
@@ -102,7 +111,7 @@ final class MessageFormatter
     {
         $tools = [];
         if ($message instanceof ToolCallMessage) {
-            foreach ($message->getTools() as $tool) {
+            foreach ($message->getToolCalls() as $tool) {
                 $callId = $tool->getCallId();
 
                 // On regarde si dans les réponse on a une réponse avec cette id, si c'est le cas on ne le décodera pas
@@ -111,7 +120,7 @@ final class MessageFormatter
                         continue;
                     }
 
-                    foreach ($toolResult->getTools() as $toolRes) {
+                    foreach ($toolResult->getToolCalls() as $toolRes) {
                         if ($toolRes->getCallId() === $callId) {
                             continue 3;
                         }
@@ -125,7 +134,7 @@ final class MessageFormatter
             return $tools;
         }
 
-        foreach ($message->getTools() as $tool) {
+        foreach ($message->getToolCalls() as $tool) {
             $tools[] = $this->formatTool($tool, $message instanceof ToolResultMessage);
         }
 
@@ -133,7 +142,7 @@ final class MessageFormatter
     }
 
     /** @return array<string, mixed> */
-    private function formatTool(ToolInterface $tool, bool $isResult): array
+    private function formatTool(ToolCall $tool, bool $isResult): array
     {
         $toolData = [
             'id' => $tool->getCallId(),
@@ -151,7 +160,12 @@ final class MessageFormatter
         }
 
         if ($isResult) {
-            $toolData['result'] = $tool->getResult();
+            $result = $tool->getResult();
+            $toolData['result'] = $result instanceof \NeuronAI\Tools\ToolOutput ? $result->getText() : $result;
+            if ($result instanceof \NeuronAI\Tools\ToolOutput && $result->isError()
+                && str_starts_with($result->getText(), 'CANCELLED:')) {
+                $toolData['interrupted'] = true;
+            }
         }
 
         return $toolData;

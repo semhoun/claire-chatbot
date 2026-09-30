@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controller\BrainController;
+use App\Controller\ChatStopController;
 use Slim\App;
 use Slim\Interfaces\RouteCollectorProxyInterface as Group;
 
@@ -11,6 +12,7 @@ return static function (
 ): void {
     $app->group('/brain', static function (Group $group): void {
         $group->post('/messages', [BrainController::class, 'submitMessage'])->setName('brain.messages');
+        $group->post('/stop', ChatStopController::class)->setName('brain.stop');
         $group->get('/turn/{submissionId}', [BrainController::class, 'turn'])->setName('brain.turn');
         $group->post('/audio', [BrainController::class, 'generateAudio'])->setName('brain.audio');
     });

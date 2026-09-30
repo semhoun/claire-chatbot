@@ -12,11 +12,14 @@ use NeuronAI\Chat\Messages\ContentBlocks\TextContent;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
+use NeuronAI\Tools\ToolCall;
 use NeuronAI\Tools\ToolProperty;
 use Throwable;
 
 class TextToSpeechTool extends Tool implements MessagePostProcessorInterface
 {
+    protected string $name = 'generate_speech';
+
     public function __construct(
         private readonly AudioGeneratorService $audioGeneratorService,
         AudioServiceInterface $audioService,
@@ -31,15 +34,13 @@ class TextToSpeechTool extends Tool implements MessagePostProcessorInterface
             ),
             $audioService->voices(),
         ));
-        $description = <<<EOT
+        $this->description = <<<EOT
 Generates a spoken MP3 audio file from text and sends it to the user.
 Use this tool whenever the user asks for text-to-speech, narration, a spoken version, or an audio recording of text.
 Available voices: {$voices}. Omit the voice parameter to use the default voice.
 
 The tool returns an "id" in the format @@GENERATED@@<uuid>@@. Always include this exact ID in the final message, with or without a Markdown link. Never invent a generated file ID.
 EOT;
-
-        parent::__construct('generate_speech', $description);
     }
 
     public function __invoke(
@@ -71,9 +72,9 @@ EOT;
     }
 
     #[\Override]
-    public function postProcessMessage(Message $message): Message
+    public function postProcessMessage(Message $message, ToolCall $call): Message
     {
-        $fileId = $this->extractFileId();
+        $fileId = $this->extractFileId($call);
         if ($fileId === null || str_contains($message->getContent() ?? '', $fileId)) {
             return $message;
         }
@@ -125,10 +126,10 @@ EOT;
         ];
     }
 
-    private function extractFileId(): ?string
+    private function extractFileId(ToolCall $call): ?string
     {
-        $result = $this->getResult();
-        if ($result === null) {
+        $result = $call->hasResult() ? $call->getResult() : null;
+        if (! is_string($result)) {
             return null;
         }
 

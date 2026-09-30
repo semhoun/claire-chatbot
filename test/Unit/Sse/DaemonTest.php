@@ -186,6 +186,25 @@ final class DaemonTest extends TestCase
         self::assertSame(0, $this->budget->bytes());
     }
 
+    public function testStoppedTerminalIsForwardedAndReconciledButStaleIdentityIsDropped(): void
+    {
+        $connection = $this->connection();
+        $this->live($connection);
+        $this->redis->state['status'] = 'stopped';
+        $connection->receive($this->event('chat.assistant.stopped', ['messageId' => 'older-generation']));
+        $this->loop->tick();
+        self::assertCount(1, $this->frames);
+        $connection->receive($this->event('chat.assistant.stopped', ['text' => 'partial answer']));
+        $this->loop->tick();
+        self::assertStringContainsString('chat.assistant.stopped', $this->frames[1]);
+        self::assertStringContainsString('partial answer', $this->frames[1]);
+        self::assertCount(2, $this->backend->requests);
+        $this->backend->requests[1][2]->resolve($this->snapshot('m1', 'stopped'));
+        self::assertStringStartsWith('event: chat.snapshot', $this->frames[2]);
+        $connection->close('test');
+        self::assertSame(0, $this->budget->bytes());
+    }
+
     public function testCallbacksAfterCloseCannotWriteOrRestartWork(): void
     {
         $connection = $this->connection();

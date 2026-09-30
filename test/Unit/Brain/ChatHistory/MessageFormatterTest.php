@@ -10,7 +10,7 @@ use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Tools\Tool;
+use NeuronAI\Tools\ToolCall;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -44,8 +44,8 @@ final class MessageFormatterTest extends TestCase
     #[DataProvider('finalContents')]
     public function testToolGroupUsesFinalAssistantIdentityNotToolMetadata(string $finalContent): void
     {
-        $firstTool = new Tool('first')->setCallId('call-1')->setResult('first result');
-        $secondTool = new Tool('second')->setCallId('call-2')->setResult('second result');
+        $firstTool = new ToolCall('first', 'call-1')->setResult('first result');
+        $secondTool = new ToolCall('second', 'call-2')->setResult('second result');
         $messages = new MessageFormatter([
             new UserMessage('Question'),
             new ToolCallMessage('First', [$firstTool])->addMetadata(UserChatHistory::MESSAGE_ID_METADATA, 'wrong-tool-id')
@@ -70,8 +70,8 @@ final class MessageFormatterTest extends TestCase
         foreach ([false, true] as $nextTurn) {
             $history = [
                 new UserMessage('Question'),
-                new ToolCallMessage('First', [new Tool('first')->setCallId('call-1')]),
-                new ToolCallMessage('second', [new Tool('second')->setCallId('call-2')]),
+                new ToolCallMessage('First', [new ToolCall('first', 'call-1')]),
+                new ToolCallMessage('second', [new ToolCall('second', 'call-2')]),
             ];
             if ($nextTurn) {
                 $history[] = new UserMessage('Next question');

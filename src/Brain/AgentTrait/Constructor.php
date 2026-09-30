@@ -21,15 +21,15 @@ trait Constructor
     public function __construct(
         protected readonly ContainerInterface $container,
         protected readonly SessionInterface $session,
-        protected ?string $threadId = null,
+        ?string $threadId = null,
     ) {
         $this->settings = $this->container->get(Settings::class);
         $this->connection = $this->container->get(Connection::class);
         $this->logger = $this->container->get(Logger::class);
 
-        parent::__construct();
+        parent::__construct(workflowId: $threadId);
 
-        $this->observe(new \App\Brain\Observability\Observer());
-        $this->observe(new \App\Brain\Event\TimestampObserver());
+        (new \App\Brain\Event\TimestampObserver())->subscribeTo($this);
+        (new \App\Brain\Observability\Observer())->subscribeTo($this);
     }
 }

@@ -74,6 +74,15 @@ final class SettingsTest extends TestCase
 
 
 
+    public function testExplicitDefaultDoesNotReplaceConfiguredValues(): void
+    {
+        $settings = new Settings(['enabled' => false, 'nullable' => null]);
+        self::assertFalse($settings->get('missing.enabled', false));
+        self::assertNull($settings->get('missing', null));
+        self::assertFalse($settings->get('enabled', true));
+        self::assertNull($settings->get('nullable', 'fallback'));
+    }
+
     public function testGetAppRoot(): void
 
     {
@@ -87,4 +96,3 @@ final class SettingsTest extends TestCase
     }
 
 }
-

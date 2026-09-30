@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Brain\AgentTrait;
 
-use NeuronAI\HttpClient\GuzzleHttpClient;
+use NeuronAI\HttpClient\Guzzle\GuzzleHttpClient;
 use NeuronAI\Providers\AIProviderInterface;
 
 trait AIProvider

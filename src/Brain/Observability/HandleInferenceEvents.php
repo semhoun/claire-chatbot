@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Brain\Observability;
 
-use NeuronAI\Observability\Events\InferenceStart;
-use NeuronAI\Observability\Events\InferenceStop;
-use NeuronAI\Observability\Events\MessageSaved;
-use NeuronAI\Observability\Events\MessageSaving;
+use NeuronAI\Agent\Observability\InferenceStart;
+use NeuronAI\Agent\Observability\InferenceStop;
+use NeuronAI\Agent\Observability\MessageSaved;
+use NeuronAI\Agent\Observability\MessageSaving;
 use OpenTelemetry\API\Trace\SpanInterface as Span;
 
 trait HandleInferenceEvents
@@ -32,6 +32,7 @@ trait HandleInferenceEvents
 
         $this->spanSetAttributes($this->message, 'neuron.Message', $this->prepareMessageItem($messageSaved->message));
         $this->message->end();
+        unset($this->message);
     }
 
     public function inferenceStart(object $source, string $event, InferenceStart $inferenceStart): void
@@ -48,8 +49,11 @@ trait HandleInferenceEvents
             return;
         }
 
-        $this->spanSetAttributes($this->inference, 'neuron.Message', $this->prepareMessageItem($inferenceStop->message));
-        $this->spanSetAttributes($this->inference, 'neuron.Response', $this->prepareMessageItem($inferenceStop->response));
+        if ($inferenceStop->message !== false) {
+            $this->spanSetAttributes($this->inference, 'neuron.Message', $this->prepareMessageItem($inferenceStop->message));
+        }
+        $this->spanSetAttributes($this->inference, 'neuron.Response', $this->prepareMessageItem($inferenceStop->response->message()));
         $this->inference->end();
+        unset($this->inference);
     }
 }

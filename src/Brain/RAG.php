@@ -8,6 +8,8 @@ use App\Entity\User;
 use App\Services\Auth;
 use App\Services\RagService;
 use Doctrine\ORM\EntityManagerInterface;
+use NeuronAI\Chat\Messages\ContentBlocks\SystemContent;
+use NeuronAI\Chat\Messages\SystemMessage;
 use NeuronAI\RAG\Embeddings\EmbeddingsProviderInterface;
 use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 
@@ -19,15 +21,19 @@ class RAG extends \NeuronAI\RAG\RAG
     use AgentTrait\Middleware;
 
     #[\Override]
-    public function resolveInstructions(): string
+    protected function resolveTools(): array
     {
-        $instructions = parent::resolveInstructions();
+        [$instructions, $tools] = parent::resolveTools();
         $dateLine = sprintf(
             "\n\n[Contexte système] Date et heure actuelles : %s\n",
             new \DateTimeImmutable()->format('Y-m-d H:i:s')
         );
 
-        return $instructions . $dateLine;
+        return [new SystemMessage([
+            ...$instructions->getContentBlocks(),
+            new SystemContent($dateLine),
+        ]), $tools,
+        ];
     }
 
     #[\Override]

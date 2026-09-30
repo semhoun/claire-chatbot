@@ -7,6 +7,9 @@ namespace App\Test\Unit\Controller;
 use App\Controller\AudioController;
 use App\Services\Audio\AudioServiceInterface;
 use App\Services\Audio\SpeechResult;
+use NeuronAI\Exceptions\HttpException;
+use NeuronAI\HttpClient\HttpRequest;
+use NeuronAI\HttpClient\HttpResponse;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Slim\Psr7\Factory\ResponseFactory;
@@ -83,6 +86,29 @@ final class AudioControllerTest extends TestCase
 
         self::assertSame(503, $response->getStatusCode());
         self::assertSame('audio_unavailable', $payload['error']['code']);
+    }
+
+    public function testV4HttpFailurePreservesUpstreamStatusAndErrorEnvelope(): void
+    {
+        $service = $this->availableService();
+        $service->expects(self::once())->method('transcribe')->willThrowException(new HttpException(
+            'Upstream failure',
+            HttpRequest::post('https://audio.test/v1/audio/transcriptions'),
+            new HttpResponse(429, '{"error":{"message":"Rate limited"}}'),
+        ));
+        $controller = new AudioController($service, $this->createStub(LoggerInterface::class));
+        $request = (new ServerRequestFactory())->createServerRequest('POST', '/v1/audio/transcriptions')
+            ->withParsedBody(['model' => 'client-model'])
+            ->withUploadedFiles(['file' => new UploadedFile(
+                (new StreamFactory())->createStream('audio bytes'), 'voice.webm', 'audio/webm', 11,
+            )]);
+
+        $response = $controller->transcriptions($request, (new ResponseFactory())->createResponse());
+        $payload = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+
+        self::assertSame(429, $response->getStatusCode());
+        self::assertSame('Rate limited', $payload['error']['message']);
+        self::assertSame('provider_error', $payload['error']['code']);
     }
 
     private function availableService(): AudioServiceInterface&\PHPUnit\Framework\MockObject\MockObject

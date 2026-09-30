@@ -6,16 +6,30 @@ namespace App\Brain\Event;
 
 use DateTimeImmutable;
 use DateTimeInterface;
+use NeuronAI\Agent\Observability\MessageSaving;
 use NeuronAI\Chat\Messages\Message;
-use NeuronAI\Observability\Events\MessageSaving;
-use NeuronAI\Observability\ObserverInterface;
+use NeuronAI\Workflow\Workflow;
 
-final class TimestampObserver implements ObserverInterface
+final class TimestampObserver
 {
-    public function onEvent(string $event, object $source, mixed $data = null, ?string $branchId = null): void
+    /** @var \WeakMap<Workflow, bool> */
+    private \WeakMap $subscriptions;
+
+    public function __construct()
     {
-        if ($event === 'message-saving' && $data instanceof MessageSaving) {
-            $this->addTimestampToMessage($data->message);
+        $this->subscriptions = new \WeakMap();
+    }
+
+    public function __invoke(MessageSaving $event): void
+    {
+        $this->addTimestampToMessage($event->message);
+    }
+
+    public function subscribeTo(Workflow $workflow): void
+    {
+        if (! isset($this->subscriptions[$workflow])) {
+            $workflow->subscribe(MessageSaving::class, $this);
+            $this->subscriptions[$workflow] = true;
         }
     }
 

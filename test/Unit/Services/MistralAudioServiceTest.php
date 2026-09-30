@@ -6,6 +6,12 @@ namespace App\Test\Unit\Services;
 
 use App\Services\Audio\MistralAudioService;
 use App\Services\Settings;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
+use GuzzleHttp\Psr7\Response;
+use NeuronAI\Exceptions\HttpException;
+use NeuronAI\HttpClient\Guzzle\GuzzleHttpClient;
 use NeuronAI\HttpClient\HttpClientInterface;
 use NeuronAI\HttpClient\HttpRequest;
 use NeuronAI\HttpClient\HttpResponse;
@@ -16,13 +22,14 @@ final class MistralAudioServiceTest extends TestCase
     public function testTranscriptionMapsOpenAiParametersToMistral(): void
     {
         $httpClient = $this->createMock(HttpClientInterface::class);
-        $this->configureClient($httpClient);
         $httpClient->expects(self::once())
             ->method('request')
             ->with(self::callback(static function (HttpRequest $httpRequest): bool {
                 $body = $httpRequest->body;
 
-                return $httpRequest->uri === 'audio/transcriptions'
+                return $httpRequest->uri === 'https://audio.test/v1/audio/transcriptions'
+                    && $httpRequest->headers['Authorization'] === 'Bearer secret'
+                    && $httpRequest->isMultipart()
                     && is_array($body)
                     && $body['model'] === 'fixed-stt-model'
                     && $body['language'] === 'fr'
@@ -59,13 +66,14 @@ final class MistralAudioServiceTest extends TestCase
     public function testSpeechMapsVoiceAndDecodesAudio(): void
     {
         $httpClient = $this->createMock(HttpClientInterface::class);
-        $this->configureClient($httpClient);
         $httpClient->expects(self::once())
             ->method('request')
             ->with(self::callback(static function (HttpRequest $httpRequest): bool {
                 $body = $httpRequest->body;
 
-                return $httpRequest->uri === 'audio/speech'
+                return $httpRequest->uri === 'https://audio.test/v1/audio/speech'
+                    && $httpRequest->headers['Authorization'] === 'Bearer secret'
+                    && ! $httpRequest->isMultipart()
                     && is_array($body)
                     && $body['model'] === 'fixed-tts-model'
                     && $body['voice_id'] === 'voice-1'
@@ -86,7 +94,6 @@ final class MistralAudioServiceTest extends TestCase
     public function testTranscriptionToleratesHttpClientClosingUploadStream(): void
     {
         $httpClient = $this->createStub(HttpClientInterface::class);
-        $this->configureClient($httpClient);
         $httpClient->method('request')->willReturnCallback(
             static function (HttpRequest $httpRequest): HttpResponse {
                 $body = $httpRequest->body;
@@ -107,10 +114,66 @@ final class MistralAudioServiceTest extends TestCase
         self::assertSame('Flux déjà fermé', $result['text']);
     }
 
-    private function configureClient(HttpClientInterface $httpClient): void
+    public function testGuzzleEncodesMultipartFilenameAndRepeatedParametersWithoutNetwork(): void
     {
-        $httpClient->method('withBaseUri')->willReturnSelf();
-        $httpClient->method('withHeaders')->willReturnSelf();
+        $requests = [];
+        $body = '';
+        $handler = HandlerStack::create(new MockHandler([new Response(200, [], '{"text":"Hello"}')]));
+        $handler->push(Middleware::history($requests));
+        $handler->push(Middleware::tap(static function ($request) use (&$body): void {
+            $body = (string) $request->getBody();
+        }));
+        $service = new MistralAudioService($this->settings(), new GuzzleHttpClient(handler: $handler));
+
+        $service->transcribe('audio bytes', 'voice.webm', 'audio/webm', [
+            'prompt' => 'Claire', 'timestamp_granularities' => ['word', 'segment'],
+        ]);
+
+        $request = $requests[0]['request'];
+        self::assertSame('https://audio.test/v1/audio/transcriptions', (string) $request->getUri());
+        self::assertSame('Bearer secret', $request->getHeaderLine('Authorization'));
+        self::assertStringStartsWith('multipart/form-data; boundary=', $request->getHeaderLine('Content-Type'));
+        self::assertStringContainsString('name="file"; filename="voice.webm"', $body);
+        self::assertStringContainsString('Content-Type: audio/webm', $body);
+        self::assertStringContainsString('audio bytes', $body);
+        self::assertStringContainsString('name="context_bias"', $body);
+        self::assertSame(2, substr_count($body, 'name="timestamp_granularities"'));
+    }
+
+    public function testMultipartFailurePropagatesAndClosesUploadResource(): void
+    {
+        $stream = null;
+        $http = $this->createStub(HttpClientInterface::class);
+        $http->method('request')->willReturnCallback(static function (HttpRequest $request) use (&$stream): never {
+            $stream = $request->body['file']['contents'];
+            throw new HttpException('Upstream failure', $request, new HttpResponse(429, '{"message":"Rate limited"}'));
+        });
+
+        try {
+            (new MistralAudioService($this->settings(), $http))->transcribe('bytes', 'voice.webm', 'audio/webm');
+            self::fail('Expected the provider failure');
+        } catch (HttpException $exception) {
+            self::assertSame(429, $exception->response->statusCode);
+            self::assertFalse(is_resource($stream));
+        }
+    }
+
+    public function testInvalidSpeechBase64IsRejected(): void
+    {
+        $http = $this->createStub(HttpClientInterface::class);
+        $http->method('request')->willReturn(new HttpResponse(200, '{"audio_data":"invalid!"}'));
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('invalid audio data');
+        (new MistralAudioService($this->settings(), $http))->speech('Hello', 'voice-1');
+    }
+
+    public function testMalformedTranscriptionJsonIsRejected(): void
+    {
+        $http = $this->createStub(HttpClientInterface::class);
+        $http->method('request')->willReturn(new HttpResponse(200, '{broken'));
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('invalid JSON');
+        (new MistralAudioService($this->settings(), $http))->transcribe('bytes', 'voice.webm', 'audio/webm');
     }
 
     private function settings(): Settings

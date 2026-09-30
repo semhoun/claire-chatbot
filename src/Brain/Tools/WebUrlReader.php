@@ -15,12 +15,12 @@ use NeuronAI\Tools\ToolProperty;
 
 class WebUrlReader extends Tool
 {
+    protected string $name = 'url_reader';
+
+    protected ?string $description = 'Get the content of a URL in markdown format.';
+
     public function __construct(private readonly string $maxContentLength = '20000')
     {
-        parent::__construct(
-            'url_reader',
-            'Get the content of a URL in markdown format.'
-        );
     }
 
     public function __invoke(string $url): string

@@ -8,6 +8,7 @@ use NeuronAI\Chat\Enums\SourceType;
 use NeuronAI\Chat\Messages\ContentBlocks\FileContent;
 use NeuronAI\Chat\Messages\ContentBlocks\ImageContent;
 use NeuronAI\Chat\Messages\ContentBlocks\TextContent;
+use NeuronAI\Exceptions\ProviderException;
 use Ramsey\Uuid\Uuid;
 
 class MessageMapper extends \NeuronAI\Providers\OpenAI\MessageMapper
@@ -55,7 +56,7 @@ class MessageMapper extends \NeuronAI\Providers\OpenAI\MessageMapper
     protected function mapBlocks(array $blocks): array
     {
         $data = $this->mapFileBlocks($blocks);
-        foreach ($blocks as &$block) {
+        foreach ($blocks as $block) {
             switch ($block::class) {
                 case TextContent::class:
                     $data[] = [
@@ -110,10 +111,19 @@ HTML;
     private function formatFileBlock(FileContent $fileContent): string
     {
         $fileId = Uuid::uuid7()->toString();
-        $content = in_array($fileContent->mediaType, $this->rawMimeTypes, false)
-            ? base64_decode($fileContent->content)
-            : sprintf(' encoding="base64">%s', $fileContent->content);
+        $raw = in_array($fileContent->mediaType, $this->rawMimeTypes, true);
+        $content = $raw ? base64_decode($fileContent->content, true) : $fileContent->content;
+        if ($content === false) {
+            throw new ProviderException('Invalid base64 file content');
+        }
 
-        return sprintf('<file id="%s" name="%s" type="%s">%s</file>', $fileId, $fileContent->filename, $fileContent->mediaType, $content);
+        return sprintf(
+            '<file id="%s" name="%s" type="%s"%s>%s</file>',
+            $fileId,
+            htmlspecialchars($fileContent->filename ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+            htmlspecialchars($fileContent->mediaType ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+            $raw ? '' : ' encoding="base64"',
+            $content,
+        );
     }
 }

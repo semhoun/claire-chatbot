@@ -70,6 +70,7 @@ final readonly class ChatGenerationState
             $status = match ($turnBefore['status'] ?? null) {
                 'running' => 'running',
                 'succeeded' => 'done',
+                'stopped' => 'stopped',
                 'rolled_back' => 'error',
                 default => $before['status'] ?? '',
             };
@@ -87,7 +88,7 @@ final readonly class ChatGenerationState
                         'messageId' => $after['messageId'] ?? '',
                         'status' => $after['status'] ?? '',
                     ],
-                    'generationStatus' => in_array($status, ['queued', 'running', 'done', 'error'], true)
+                    'generationStatus' => in_array($status, ['queued', 'running', 'done', 'stopped', 'error'], true)
                         ? $status : null,
                     'submissionId' => $turnAfter['submissionId'] ?? $after['submissionId'] ?? null,
                     'turnStatus' => $turnAfter['status'] ?? null,
@@ -135,7 +136,8 @@ final readonly class ChatGenerationState
 
         return match ($event) {
             'chat.assistant.done' => ($state['status'] ?? '') === 'done',
-            'chat.assistant.update' => in_array($state['status'] ?? '', ['queued', 'running', 'done'], true),
+            'chat.assistant.stopped' => ($state['status'] ?? '') === 'stopped',
+            'chat.assistant.update' => in_array($state['status'] ?? '', ['queued', 'running', 'done', 'stopped'], true),
             'chat.error' => ($state['status'] ?? '') === 'error',
             'chat.assistant.start', 'chat.assistant.placeholder',
             'chat.tool.update' => in_array($state['status'] ?? '', ['queued', 'running'], true),

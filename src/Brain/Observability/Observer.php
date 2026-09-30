@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace App\Brain\Observability;
 
+use NeuronAI\Agent\Observability as AgentEvents;
 use NeuronAI\Chat\Enums\SourceType;
 use NeuronAI\Chat\Messages\Message;
-use NeuronAI\Observability\Events\AgentError;
-use NeuronAI\Observability\ObserverInterface;
+use NeuronAI\Observability\ObservabilityEvent;
+use NeuronAI\RAG\Observability as RagEvents;
+use NeuronAI\Workflow\Observability as WorkflowEvents;
+use NeuronAI\Workflow\Observability\WorkflowError;
+use NeuronAI\Workflow\Workflow;
 use OpenTelemetry\API\Logs\LogRecord;
 use OpenTelemetry\API\Trace\SpanInterface as Span;
 use OpenTelemetry\API\Trace\StatusCode;
 
-class Observer implements ObserverInterface
+class Observer
 {
     use HandleAgentEvents;
 
@@ -39,68 +43,60 @@ class Observer implements ObserverInterface
      * @var array<string, string>
      */
     protected array $methodsMap = [
-        'error' => 'reportError',
-        'chat-start' => 'start',
-        'chat-stop' => 'stop',
-        'stream-start' => 'start',
-        'stream-stop' => 'stop',
-        'structured-start' => 'start',
-        'structured-stop' => 'stop',
-        'chat-rag-start' => 'start',
-        'chat-rag-stop' => 'stop',
-        'stream-rag-start' => 'start',
-        'stream-rag-stop' => 'stop',
-        'structured-rag-start' => 'start',
-        'structured-rag-stop' => 'stop',
-
-        'message-saving' => 'messageSaving',
-        'message-saved' => 'messageSaved',
-        'tools-bootstrapping' => 'toolsBootstrapping',
-        'tools-bootstrapped' => 'toolsBootstrapped',
-        'inference-start' => 'inferenceStart',
-        'inference-stop' => 'inferenceStop',
-        'tool-calling' => 'toolCalling',
-        'tool-called' => 'toolCalled',
-        'schema-generation' => 'schemaGeneration',
-        'schema-generated' => 'schemaGenerated',
-        'structured-extracting' => 'extracting',
-        'structured-extracted' => 'extracted',
-        'structured-deserializing' => 'deserializing',
-        'structured-deserialized' => 'deserialized',
-        'structured-validating' => 'validating',
-        'structured-validated' => 'validated',
-        'rag-retrieving' => 'ragRetrieving',
-        'rag-retrieved' => 'ragRetrieved',
-        'rag-preprocessing' => 'preProcessing',
-        'rag-preprocessed' => 'preProcessed',
-        'rag-postprocessing' => 'postProcessing',
-        'rag-postprocessed' => 'postProcessed',
-
-        'workflow-start' => 'workflowStart',
-        'workflow-resume' => 'workflowStart',
-        'workflow-end' => 'workflowEnd',
-        'workflow-node-start' => 'workflowNodeStart',
-        'workflow-node-end' => 'workflowNodeEnd',
+        WorkflowError::class => 'reportError',
+        AgentEvents\MessageSaving::class => 'messageSaving',
+        AgentEvents\MessageSaved::class => 'messageSaved',
+        AgentEvents\InferenceStart::class => 'inferenceStart',
+        AgentEvents\InferenceStop::class => 'inferenceStop',
+        AgentEvents\ToolCalling::class => 'toolCalling',
+        AgentEvents\ToolCalled::class => 'toolCalled',
+        AgentEvents\SchemaGeneration::class => 'schemaGeneration',
+        AgentEvents\SchemaGenerated::class => 'schemaGenerated',
+        AgentEvents\Extracting::class => 'extracting',
+        AgentEvents\Extracted::class => 'extracted',
+        AgentEvents\Deserializing::class => 'deserializing',
+        AgentEvents\Deserialized::class => 'deserialized',
+        AgentEvents\Validating::class => 'validating',
+        AgentEvents\Validated::class => 'validated',
+        RagEvents\Retrieving::class => 'ragRetrieving',
+        RagEvents\Retrieved::class => 'ragRetrieved',
+        RagEvents\PreProcessing::class => 'preProcessing',
+        RagEvents\PreProcessed::class => 'preProcessed',
+        RagEvents\PostProcessing::class => 'postProcessing',
+        RagEvents\PostProcessed::class => 'postProcessed',
+        WorkflowEvents\WorkflowStart::class => 'workflowStart',
+        WorkflowEvents\WorkflowEnd::class => 'workflowEnd',
+        WorkflowEvents\WorkflowNodeStart::class => 'workflowNodeStart',
+        WorkflowEvents\WorkflowNodeEnd::class => 'workflowNodeEnd',
     ];
+
+    /** @var \WeakMap<Workflow, bool> */
+    private \WeakMap $subscriptions;
 
     public function __construct(?object $instrumentation = null)
     {
+        $this->subscriptions = new \WeakMap();
         $this->instrumentation = $instrumentation
             ?? new \OpenTelemetry\API\Instrumentation\CachedInstrumentation(self::SPAN_TYPE);
     }
 
-    public function onEvent(string $event, object $source, mixed $data = null, ?string $branchId = null): void
+    public function subscribeTo(Workflow $workflow): void
     {
-        if (\array_key_exists($event, $this->methodsMap)) {
-            $method = $this->methodsMap[$event];
-            $this->$method($source, $event, $data);
+        if (isset($this->subscriptions[$workflow])) {
+            return;
         }
+        foreach ($this->methodsMap as $eventClass => $method) {
+            $workflow->subscribe($eventClass, function (ObservabilityEvent $event) use ($method): void {
+                $this->$method($event->source ?? $event, $event->name(), $event);
+            });
+        }
+        $this->subscriptions[$workflow] = true;
     }
 
     /**
      * @throws \Exception
      */
-    public function reportError(object $source, string $event, AgentError $agentError): void
+    public function reportError(object $source, string $event, WorkflowError $agentError): void
     {
         $logRecord = new LogRecord($agentError->exception->getMessage(), $agentError->exception->getTrace());
         $this->instrumentation->logger()->emit($logRecord);
@@ -129,7 +125,6 @@ class Observer implements ObserverInterface
             ...\array_values($this->agentSpans ?? []),
             ...\array_values($this->toolCalls ?? []),
             ...[
-                $this->toolBootstrap ?? null,
                 $this->inference ?? null,
                 $this->message ?? null,
                 $this->schema ?? null,
@@ -150,33 +145,42 @@ class Observer implements ObserverInterface
     /** @return array<string, mixed> */
     protected function prepareMessageItem(Message $message): array
     {
-        $messageJson = $message->jsonSerialize();
-        if (isset($messageJson['content'])) {
-            $messageJson['content'] = \array_map(static function (array $block): array {
-                if (isset($block['source_type']) && $block['source_type'] === SourceType::BASE64->value) {
-                    unset($block['source']);
-                }
-
-                return $block;
-            }, $messageJson['content']);
-        }
-
-        return $messageJson;
+        return $this->redact($message->jsonSerialize());
     }
 
     protected function spanSetAttributes(Span $span, string $attribute, mixed $data): void
     {
+        $data = $this->redact($data);
         if (\is_string($data)) {
             $span->setAttribute($attribute, $data);
             return;
         }
 
-        foreach ($data as $key => $value) {
+        foreach (is_array($data) ? $data : ['value' => $data] as $key => $value) {
             if (\is_string($value)) {
                 $span->setAttribute($attribute . '.' . $key, $value);
             } else {
-                $span->setAttribute($attribute . '.' . $key, \json_encode($value));
+                $span->setAttribute($attribute . '.' . $key, \json_encode($value, JSON_THROW_ON_ERROR));
             }
         }
+    }
+
+    private function redact(mixed $value): mixed
+    {
+        if ($value instanceof \JsonSerializable) {
+            $value = $value->jsonSerialize();
+        }
+        if (! is_array($value)) {
+            return $value;
+        }
+        if (($value['source_type'] ?? null) === SourceType::BASE64->value) {
+            unset($value['source'], $value['content']);
+        }
+        foreach ($value as $key => $item) {
+            $value[$key] = is_string($key)
+                && preg_match('/(?:secret|password|authorization|api[_-]?key|access[_-]?token|refresh[_-]?token)/i', $key)
+                ? '[redacted]' : $this->redact($item);
+        }
+        return $value;
     }
 }

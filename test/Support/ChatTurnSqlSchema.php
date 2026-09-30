@@ -13,7 +13,7 @@ final class ChatTurnSqlSchema
     {
         $connection->executeStatement('CREATE ' . ($temporary ? 'TEMPORARY ' : '') . 'TABLE IF NOT EXISTS chat_history ('
             . 'user_id VARCHAR(255) NOT NULL, thread_id VARCHAR(128) PRIMARY KEY, messages TEXT, display_messages TEXT,'
-            . ' display_messages_count INTEGER DEFAULT 0, title TEXT, summary TEXT,'
+            . ' display_messages_count INTEGER DEFAULT 0, title TEXT, summary TEXT, stored_messages TEXT DEFAULT NULL,'
             . ' created_at TEXT, updated_at TEXT)');
         require_once __DIR__ . '/TelegramSqlSchema.php';
         $migration = new Version20260917000000($connection, new \Psr\Log\NullLogger());

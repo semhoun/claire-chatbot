@@ -6,10 +6,9 @@ namespace App\Brain\AgentTrait;
 
 use App\Brain\Middleware\ShortMemory;
 use App\Brain\Middleware\ToolCalls;
-use NeuronAI\Agent\Nodes\ChatNode;
-use NeuronAI\Agent\Nodes\StreamingNode;
-use NeuronAI\Agent\Nodes\StructuredOutputNode;
-use NeuronAI\HttpClient\GuzzleHttpClient;
+use NeuronAI\Agent\Nodes\AgentEndNode;
+use NeuronAI\Agent\Nodes\InferenceNode;
+use NeuronAI\HttpClient\Guzzle\GuzzleHttpClient;
 
 trait Middleware
 {
@@ -31,12 +30,14 @@ trait Middleware
             messagesToKeep: $this->settings->get('llm.shortMemory.messageToKeep'),
         );
 
-        $toolCalls = new ToolCalls();
+        $history = $this->userChatHistory;
+        $toolCalls = new ToolCalls(
+            $history !== null && $this->resolveMessageStore() === $history->messageStore() ? $history : null,
+        );
 
         return [
-            ChatNode::class => [$toolCalls, $shortMemory],
-            StreamingNode::class => [$toolCalls, $shortMemory],
-            StructuredOutputNode::class => [$toolCalls, $shortMemory],
+            InferenceNode::class => [$toolCalls, $shortMemory],
+            AgentEndNode::class => [$toolCalls],
         ];
     }
 }

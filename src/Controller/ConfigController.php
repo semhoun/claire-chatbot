@@ -11,6 +11,7 @@ use App\Entity\User;
 use App\Services\Audio\AudioServiceInterface;
 use App\Services\Auth;
 use App\Services\ComfyUIWorkflowRegistry;
+use App\Services\SemanticMemoryRegistry;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
 use Doctrine\ORM\EntityManagerInterface;
@@ -201,6 +202,48 @@ final readonly class ConfigController
         return $response->withStatus(204);
     }
 
+    public function semanticMemory(Request $request, Response $response): Response
+    {
+        if ($this->settings->get('llm.semanticMemory.enabled', false) !== true) {
+            return $response->withStatus(404);
+        }
+
+        $data = (array) ($request->getParsedBody() ?? []);
+        if (! is_bool($data['enabled'] ?? null)) {
+            return $response->withStatus(400);
+        }
+
+        $session = $this->getSession($request);
+        $userId = (string) $session->get(Auth::USERID);
+        $user = $userId !== '' ? $this->entityManager->find(User::class, $userId) : null;
+        if (! $user instanceof User || $user->getId() !== $userId) {
+            return $response->withStatus(404);
+        }
+
+        new SemanticMemoryRegistry($this->entityManager->getConnection())
+            ->setEnabled($userId, $data['enabled']);
+        $session->set('semantic_memory_enabled', $data['enabled']);
+
+        return $response->withStatus(204);
+    }
+
+    public function clearSemanticMemory(Request $request, Response $response): Response
+    {
+        if ($this->settings->get('llm.semanticMemory.enabled', false) !== true) {
+            return $response->withStatus(404);
+        }
+
+        $userId = (string) $this->getSession($request)->get(Auth::USERID);
+        $user = $userId !== '' ? $this->entityManager->find(User::class, $userId) : null;
+        if (! $user instanceof User || $user->getId() !== $userId) {
+            return $response->withStatus(404);
+        }
+
+        new SemanticMemoryRegistry($this->entityManager->getConnection())->erase($userId);
+
+        return $response->withStatus(204);
+    }
+
     public function telegram(Request $request, Response $response): Response
     {
         $session = $this->getSession($request);
@@ -214,15 +257,23 @@ final readonly class ConfigController
         }
 
         if ($telegramId !== '' && ! ctype_digit($telegramId)) {
-            return $this->telegramResponse($response, $user->getTelegramId(),
-                error: 'L\'identifiant Telegram doit être composé uniquement de chiffres.', status: 422);
+            return $this->telegramResponse(
+                $response,
+                $user->getTelegramId(),
+                error: 'L\'identifiant Telegram doit être composé uniquement de chiffres.',
+                status: 422
+            );
         }
 
         if ($telegramId !== '') {
             $existingUser = $this->entityManager->getRepository(User::class)->findByTelegramId($telegramId);
             if ($existingUser !== null && $existingUser->getId() !== $user->getId()) {
-                return $this->telegramResponse($response, $user->getTelegramId(),
-                    error: 'Cet identifiant Telegram est déjà associé à un autre compte.', status: 409);
+                return $this->telegramResponse(
+                    $response,
+                    $user->getTelegramId(),
+                    error: 'Cet identifiant Telegram est déjà associé à un autre compte.',
+                    status: 409
+                );
             }
         }
 
@@ -251,22 +302,6 @@ final readonly class ConfigController
         return $this->telegramResponse($response, $user->getTelegramId());
     }
 
-    private function telegramResponse(
-        Response $response,
-        ?string $telegramId,
-        ?string $success = null,
-        ?string $error = null,
-        int $status = 200,
-    ): Response
-    {
-        $response->getBody()->write(json_encode([
-            'telegramId' => $telegramId,
-            'success' => $success,
-            'error' => $error,
-        ], JSON_THROW_ON_ERROR));
-        return $response->withStatus($status)->withHeader('Content-Type', 'application/json');
-    }
-
     public function comfyuiWorkflow(Request $request, Response $response): Response
     {
         if (! $this->comfyUIWorkflowRegistry->list()) {
@@ -293,5 +328,20 @@ final readonly class ConfigController
         }
 
         return $response->withStatus(204);
+    }
+
+    private function telegramResponse(
+        Response $response,
+        ?string $telegramId,
+        ?string $success = null,
+        ?string $error = null,
+        int $status = 200,
+    ): Response {
+        $response->getBody()->write(json_encode([
+            'telegramId' => $telegramId,
+            'success' => $success,
+            'error' => $error,
+        ], JSON_THROW_ON_ERROR));
+        return $response->withStatus($status)->withHeader('Content-Type', 'application/json');
     }
 }

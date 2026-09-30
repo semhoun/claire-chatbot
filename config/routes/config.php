@@ -21,6 +21,10 @@ return static function (
             '/long_term_memory/rebuild',
             [ConfigController::class, 'rebuildLongTermMemory']
         )->setName('config.long_term_memory.rebuild');
+        $group->post('/semantic-memory', [ConfigController::class, 'semanticMemory'])
+            ->setName('config.semantic_memory');
+        $group->post('/semantic-memory/clear', [ConfigController::class, 'clearSemanticMemory'])
+            ->setName('config.semantic_memory.clear');
         $group->post('/comfyui_workflow', [ConfigController::class, 'comfyuiWorkflow'])->setName('config.comfyui_workflow');
         $group->post('/telegram', [ConfigController::class, 'telegram'])->setName('config.telegram');
         $group->get('/telegram_form', [ConfigController::class, 'telegramForm'])->setName('config.telegram_form');

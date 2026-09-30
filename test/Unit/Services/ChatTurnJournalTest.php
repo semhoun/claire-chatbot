@@ -16,7 +16,7 @@ use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Tools\Tool;
+use NeuronAI\Tools\ToolCall;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use RuntimeException;
@@ -56,7 +56,7 @@ final class ChatTurnJournalTest extends TestCase
         $this->sql->executeStatement('CREATE TEMPORARY TABLE chat_history ('
             . 'user_id VARCHAR(128) NOT NULL, thread_id VARCHAR(128) PRIMARY KEY, messages TEXT NOT NULL,'
             . "display_messages TEXT NOT NULL, display_messages_count INTEGER NOT NULL DEFAULT 0,"
-            . 'title TEXT, summary TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            . 'title TEXT, summary TEXT, stored_messages TEXT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
             . 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
             . ($driver === 'pdo_mysql' ? ' ON UPDATE CURRENT_TIMESTAMP' : '') . ')');
         $migration = new Version20260917000000($this->sql, new NullLogger());
@@ -120,7 +120,7 @@ final class ChatTurnJournalTest extends TestCase
         self::assertTrue($turn['entered']);
         self::assertArrayNotHasKey('checkpoint', $turn);
         $writer = $this->history();
-        $tool = new Tool('lookup')->setCallId('call-1')->setResult('Tool result');
+        $tool = new ToolCall('lookup', 'call-1')->setResult('Tool result');
         $writer->addMessage(new UserMessage('Failed question'));
         $writer->addMessage(new ToolCallMessage(null, [$tool]));
         $writer->addMessage(new ToolResultMessage([$tool]));
@@ -144,8 +144,8 @@ final class ChatTurnJournalTest extends TestCase
         $this->history()->replaceMessages([new AssistantMessage('Opening')]);
         $raw = $this->row()['messages'];
         $this->begin();
-        $this->history(); // Loading an assistant-first context writes an opening user message.
-        self::assertNotSame($raw, $this->row()['messages']);
+        $this->history(); // Consultation must never write, including legacy repair.
+        self::assertSame($raw, $this->row()['messages']);
         $this->journal->rollback('turn', 'alice');
         self::assertSame($raw, $this->row()['messages']);
         $this->begin('next');
@@ -372,6 +372,64 @@ final class ChatTurnJournalTest extends TestCase
     private function begin(string $id = 'turn', ?callable $atomic = null): array
     {
         return $this->journal->begin($id, 'alice', 'thread', 'web', $id, atomic: $atomic);
+    }
+
+    public function testVersionTwoCheckpointRestoresArchivedCanonicalTranscriptByteForByte(): void
+    {
+        $history = $this->history();
+        $history->addMessage((new UserMessage('internal'))->addMetadata('message_type', 'out_of_context'));
+        $history->addMessage(new AssistantMessage('visible'));
+        $history->archiveMessages(2);
+        $before = $this->row()['stored_messages'];
+        $this->begin();
+        $checkpoint = json_decode($this->sql->fetchOne('SELECT checkpoint FROM chat_turn'),
+            true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame(2, $checkpoint['version']);
+        self::assertSame($before, $checkpoint['history']['stored_messages']);
+        $writer = $this->history();
+        $writer->flushAll();
+        $writer->addMessage(new UserMessage('failed turn'));
+        $this->journal->rollback('turn', 'alice');
+        self::assertSame($before, $this->row()['stored_messages']);
+        self::assertCount(2, $this->history()->messageStore()->loadAll('thread'));
+        self::assertSame([], $this->history()->getMessages());
+    }
+
+    public function testVersionOneCheckpointRestoresLegacyProjectionAndDiscardsNewCanonicalState(): void
+    {
+        $history = $this->history();
+        $history->addMessage(new UserMessage('old question'));
+        $history->addMessage(new AssistantMessage('old answer'));
+        $before = $this->row()['messages'];
+        $this->begin();
+        $checkpoint = json_decode($this->sql->fetchOne('SELECT checkpoint FROM chat_turn'),
+            true, flags: JSON_THROW_ON_ERROR);
+        $checkpoint['version'] = 1;
+        unset($checkpoint['history']['stored_messages']);
+        $this->sql->update('chat_turn', ['checkpoint' => json_encode($checkpoint, JSON_THROW_ON_ERROR)], ['id' => 'turn']);
+        $this->history()->addMessage(new UserMessage('must disappear'));
+        $this->journal->rollback('turn', 'alice');
+        self::assertSame($before, $this->row()['messages']);
+        self::assertNull($this->row()['stored_messages']);
+        self::assertCount(2, $this->history()->messageStore()->loadAll('thread'));
+        self::assertNull($this->row()['stored_messages']);
+    }
+
+    public function testMalformedCheckpointDoesNotAlterAnyHistoryProjection(): void
+    {
+        $this->begin();
+        $writer = $this->history();
+        $writer->addMessage(new UserMessage('partial'));
+        $before = $this->row();
+        $this->sql->update('chat_turn', ['checkpoint' => '{"version":2,"history":{}}'], ['id' => 'turn']);
+        try {
+            $this->journal->rollback('turn', 'alice');
+            self::fail('Malformed checkpoint accepted');
+        } catch (RuntimeException $exception) {
+            self::assertSame('Unsupported chat turn checkpoint', $exception->getMessage());
+        }
+        self::assertSame($before, $this->row());
+        self::assertSame('running', $this->journal->get('turn')['status']);
     }
 
     private function history(): UserChatHistory

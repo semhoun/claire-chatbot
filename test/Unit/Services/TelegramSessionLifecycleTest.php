@@ -17,7 +17,8 @@ use App\Services\Session\SessionInterface;
 use App\Services\Session\TelegramSession;
 use App\Services\Settings;
 use App\Services\TelegramService;
-use NeuronAI\Chat\History\ChatHistoryInterface;
+use NeuronAI\Chat\Messages\AssistantMessage;
+use NeuronAI\Testing\FakeAIProvider;
 use Phptg\BotApi\Type\Update\Update;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
@@ -173,10 +174,8 @@ final class TelegramSessionLifecycleTest extends TestCase
     public function testMediaPreparationFailuresRemainRetryableBeforeAgentEntry(): void
     {
         foreach (['photo', 'document', 'voice', 'audio'] as $type) {
-            $handler = $this->createMock(\NeuronAI\Agent\AgentHandler::class);
-            $handler->expects(self::once())->method('events')->willReturnCallback(static function (): \Generator { yield from []; });
-            $handler->method('getMessage')->willReturn(new \NeuronAI\Chat\Messages\AssistantMessage('Answer'));
-            [$service] = $this->service(handler: $handler);
+            $provider = new FakeAIProvider(new AssistantMessage('Answer'));
+            [$service] = $this->service(provider: $provider);
             $sql = new ReflectionProperty(TelegramService::class, 'entityManager')->getValue($service)->getConnection();
             $journal = new \App\Services\TelegramJournal($sql);
             $turns = new \App\Services\ChatTurnJournal($sql);
@@ -251,16 +250,18 @@ final class TelegramSessionLifecycleTest extends TestCase
             self::assertFalse($journal->load($id)['attempted']);
             self::assertNull($turns->get($id));
             self::assertSame([], $service->sent);
+            $provider->assertNothingSent();
             $service->processUpdate($update);
             $service->processUpdate($update);
             self::assertSame('succeeded', $turns->get($id)['status']);
             self::assertTrue($journal->load($id)['delivered']);
             self::assertSame(['Answer'], $service->sent);
+            $provider->assertCallCount(1);
         }
     }
 
     /** @return array{LifecycleTelegramService, SessionEntity} */
-    private function service(?string $cachedResponse = null, ?\NeuronAI\Agent\AgentHandler $handler = null): array
+    private function service(?string $cachedResponse = null, ?FakeAIProvider $provider = null): array
     {
         $entity = new SessionEntity();
         $entity->setSessionData([Auth::AUTHENTICATED => true, Auth::USERID => 'user-42', 'brain_avatar' => 'first']);
@@ -280,12 +281,14 @@ final class TelegramSessionLifecycleTest extends TestCase
             'redis' => ['prefix' => 'test:'],
             'telegram' => ['bot_token' => 'test'],
         ]);
-        $history = $this->createStub(UserChatHistory::class);
+        $provider ??= new FakeAIProvider(new AssistantMessage('Answer'));
         $container = $this->createStub(ContainerInterface::class);
         $container->method('get')->willReturnCallback(static fn (string $class): mixed => match ($class) {
-            \NeuronAI\Agent\AgentHandler::class => $handler,
+            FakeAIProvider::class => $provider,
             \Doctrine\DBAL\Connection::class => $connection,
-            default => $history,
+            Settings::class => $settings,
+            \Psr\Log\LoggerInterface::class => new NullLogger(),
+            default => throw new \LogicException('Unexpected test dependency: ' . $class),
         });
         $registry = new BrainRegistry($settings, $container, new ThemeRegistry($settings));
         new ReflectionProperty($registry, 'yamlBrainsCache')->setValue($registry, []);
@@ -352,32 +355,27 @@ final class LifecycleTelegramService extends TelegramService
 
 final class LifecycleBrain extends Agent implements BrainAvatar
 {
-    private ChatHistoryInterface $testHistory;
-
-    private ?\NeuronAI\Agent\AgentHandler $testHandler;
-
     public function __construct(ContainerInterface $container, SessionInterface $session, ?string $threadId = null)
     {
+        parent::__construct($container, $session, $threadId);
         $connection = $container->get(\Doctrine\DBAL\Connection::class);
         TestCase::assertSame('running', $connection->fetchOne('SELECT status FROM chat_turn WHERE thread_id = ?', [$threadId]));
-        $this->testHistory = $container->get(UserChatHistory::class);
-        $this->testHandler = $container->get(\NeuronAI\Agent\AgentHandler::class);
+        $this->setAiProvider($container->get(FakeAIProvider::class));
+        $this->setContextWindow(10000);
     }
 
-    public function stream(
-        \NeuronAI\Chat\Messages\Message|array $messages = [],
-        ?\NeuronAI\Workflow\Interrupt\InterruptRequest $interrupt = null,
-    ): \NeuronAI\Agent\AgentHandler {
-        return $this->testHandler;
+    protected function middleware(): array
+    {
+        return [];
+    }
+
+    protected function resolveTools(): array
+    {
+        return \NeuronAI\Agent\Agent::resolveTools();
     }
 
     public function getOpeningText(): string
     {
         return 'Welcome';
-    }
-
-    public function getChatHistory(): ChatHistoryInterface
-    {
-        return $this->testHistory;
     }
 }

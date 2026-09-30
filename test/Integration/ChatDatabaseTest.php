@@ -59,7 +59,7 @@ final class ChatDatabaseTest extends TestCase
         $suffix = $database === 'MYSQL' ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci' : '';
         $this->first->exec('CREATE TABLE ' . $this->table . ' ('
             . 'user_id VARCHAR(128) NOT NULL, thread_id VARCHAR(128) PRIMARY KEY,'
-            . ' messages TEXT NOT NULL, display_messages TEXT NOT NULL,'
+            . ' messages TEXT NOT NULL, display_messages TEXT NOT NULL, stored_messages TEXT NULL,'
             . ' revision BIGINT NOT NULL DEFAULT 0, current_turn_id VARCHAR(128) NULL,'
             . ' display_messages_count INTEGER NOT NULL DEFAULT 0, title TEXT NULL, summary TEXT NULL)' . $suffix);
     }
@@ -170,7 +170,7 @@ final class ChatDatabaseTest extends TestCase
         $this->connect($database);
         $session = new InMemorySession([Auth::USERID => 'alice']);
         $history = new UserChatHistory($session, $this->first, threadId: 'thread');
-        $tool = new \NeuronAI\Tools\Tool('lookup')->setCallId('call-1')->setResult('Tool result');
+        $tool = new \NeuronAI\Tools\ToolCall('lookup', 'call-1')->setResult('Tool result');
         $history->addMessage(new UserMessage('Question'));
         $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage(null, [$tool]));
         $history->addMessage(new \NeuronAI\Chat\Messages\ToolResultMessage([$tool]));
@@ -207,9 +207,10 @@ final class ChatDatabaseTest extends TestCase
     {
         $this->connect('PGSQL');
         $session = new InMemorySession([Auth::USERID => 'alice']);
+        (new UserChatHistory($session, $this->first, threadId: 'thread'))->replaceMessages([]);
         $stale = new UserChatHistory($session, $this->first, threadId: 'thread');
         $this->second->exec('DELETE FROM ' . $this->table);
-        new UserChatHistory($session, $this->second, threadId: 'thread');
+        (new UserChatHistory($session, $this->second, threadId: 'thread'))->replaceMessages([]);
         $this->expectExceptionMessage('refusing stale snapshot');
         $stale->replaceMessages([]);
     }
@@ -218,7 +219,7 @@ final class ChatDatabaseTest extends TestCase
     {
         $this->connect('MYSQL');
         $session = new InMemorySession([Auth::USERID => 'alice']);
-        new UserChatHistory($session, $this->first, threadId: 'thread');
+        (new UserChatHistory($session, $this->first, threadId: 'thread'))->replaceMessages([]);
         $this->first->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         $this->first->beginTransaction();
         $stale = new UserChatHistory($session, $this->first, threadId: 'thread');

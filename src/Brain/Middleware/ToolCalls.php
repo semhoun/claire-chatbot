@@ -6,60 +6,71 @@ namespace App\Brain\Middleware;
 
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\Tools\MessagePostProcessorInterface;
+use NeuronAI\Agent\AgentResources;
+use NeuronAI\Agent\AgentState;
+use NeuronAI\Agent\Events\AgentOutputEvent;
 use NeuronAI\Agent\Events\ToolCallEvent;
-use NeuronAI\Chat\Messages\ToolCallMessage;
+use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Workflow\Events\Event;
-use NeuronAI\Workflow\Events\StopEvent;
 use NeuronAI\Workflow\Middleware\WorkflowMiddleware;
 use NeuronAI\Workflow\NodeInterface;
+use NeuronAI\Workflow\WorkflowResources;
 use NeuronAI\Workflow\WorkflowState;
 
-class ToolCalls implements WorkflowMiddleware
+final class ToolCalls implements WorkflowMiddleware
 {
-    private ?ToolCallMessage $lastToolCallMessage = null;
-
-    public function before(NodeInterface $node, Event $event, WorkflowState $state): void
+    public function __construct(private readonly ?UserChatHistory $history = null)
     {
     }
 
-    public function after(NodeInterface $node, Event $result, WorkflowState $state): void
-    {
+    public function before(
+        NodeInterface $node,
+        Event $event,
+        WorkflowState $state,
+        WorkflowResources $resources,
+    ): void {
+        if (! $event instanceof AgentOutputEvent || ! $state instanceof AgentState
+            || ! $resources instanceof AgentResources || $state->getMessage() === null) {
+            return;
+        }
+        $message = $state->getMessage();
+        if ($message->getMetadata('stop_reason') === \NeuronAI\HttpClient\StoppableHttpClient::STOP_REASON
+            || $message->getMetadata('generation_stopped') === true) {
+            return;
+        }
+        $processed = [];
+        foreach ($state->getSteps() as $step) {
+            if (! $step instanceof ToolResultMessage) {
+                continue;
+            }
+            foreach ($step->getToolCalls() as $call) {
+                $tool = $resources->tools->find($call->getName());
+                if ($tool instanceof MessagePostProcessorInterface && $call->hasResult()
+                    && ! isset($processed[$call->getCallId()])) {
+                    $message = $tool->postProcessMessage($message, $call);
+                    $processed[$call->getCallId()] = true;
+                }
+            }
+        }
+        if ($processed !== []) {
+            $this->history?->updateMessage($message);
+            // Keep the original response envelope and its provider metadata intact.
+            $original = $state->getMessage();
+            if ($message !== $original) {
+                $original->setContents($message->getContentBlocks());
+                $original->setMetadata($message->jsonSerialize()['__meta']);
+            }
+        }
+    }
+
+    public function after(
+        NodeInterface $node,
+        Event $result,
+        WorkflowState $state,
+        WorkflowResources $resources,
+    ): void {
         if ($result instanceof ToolCallEvent) {
             $result->toolCallMessage->addMetadata('message_type', 'tool_call');
-            $this->lastToolCallMessage = $result->toolCallMessage;
         }
-
-        if ($result instanceof StopEvent && $this->lastToolCallMessage instanceof \NeuronAI\Chat\Messages\ToolCallMessage) {
-            $chatHistory = $state->getChatHistory();
-
-            if (! $chatHistory instanceof UserChatHistory) {
-                $this->lastToolCallMessage = null;
-                return;
-            }
-
-            $messages = $chatHistory->getMessages();
-            $lastMessage = array_pop($messages);
-            $messages[] = $this->applyPostProcessing($lastMessage);
-            $chatHistory->replaceMessages($messages);
-
-            $this->lastToolCallMessage = null;
-        }
-    }
-
-    /**
-     * Apply post-processing from tools that implement.
-     *
-     * MessagePostProcessorInterface.
-     */
-    private function applyPostProcessing(
-        \NeuronAI\Chat\Messages\Message $message
-    ): \NeuronAI\Chat\Messages\Message {
-        foreach ($this->lastToolCallMessage->getTools() as $tool) {
-            if ($tool instanceof MessagePostProcessorInterface) {
-                $message = $tool->postProcessMessage($message);
-            }
-        }
-
-        return $message;
     }
 }

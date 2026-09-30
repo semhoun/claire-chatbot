@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Brain\Tools;
 
 use NeuronAI\Chat\Messages\Message;
+use NeuronAI\Tools\ToolCall;
 
 /**
  * Interface for tools that need to modify the final assistant message
@@ -27,5 +28,5 @@ interface MessagePostProcessorInterface
      * @return Message The processed message (can be the same instance
      *                 modified or a new instance)
      */
-    public function postProcessMessage(Message $message): Message;
+    public function postProcessMessage(Message $message, ToolCall $call): Message;
 }

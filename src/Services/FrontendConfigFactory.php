@@ -16,6 +16,7 @@ final readonly class FrontendConfigFactory
         private ComfyUIWorkflowRegistry $comfyUIWorkflowRegistry,
         private Settings $settings,
         private AudioServiceInterface $audioService,
+        private ?SemanticMemoryRegistry $semanticMemoryRegistry = null,
     ) {
     }
 
@@ -31,6 +32,10 @@ final readonly class FrontendConfigFactory
         $userInfo = $session->get(Auth::USERINFO);
         $comfyuiEnabled = $this->settings->get('tools.comfyui.enabled') === true;
         $currentWorkflow = $this->currentWorkflow($session, $comfyuiEnabled);
+        $semanticAvailable = $this->settings->get('llm.semanticMemory.enabled', false) === true
+            && $this->semanticMemoryRegistry instanceof SemanticMemoryRegistry;
+        $semanticEnabled = $semanticAvailable
+            && ($this->semanticMemoryRegistry->preference((string) $session->get(Auth::USERID))['enabled'] ?? false);
         $audioVoice = (string) $session->get(
             AudioServiceInterface::VOICE_SESSION_KEY,
             $this->audioService->defaultVoice(),
@@ -70,6 +75,9 @@ final readonly class FrontendConfigFactory
                 LongTermMemory::SESSION_KEY,
                 false
             ),
+            'stopAvailable' => $this->settings->get('llm.stop.enabled', false) === true,
+            'semanticMemoryAvailable' => $semanticAvailable,
+            'semanticMemoryEnabled' => $semanticEnabled,
             'layoutMode' => $session->get('layout_mode', 'full'),
             'audioAvailable' => $this->audioService->isAvailable(),
             'audioEnabled' => $session->get(

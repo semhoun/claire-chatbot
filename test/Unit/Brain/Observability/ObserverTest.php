@@ -10,15 +10,20 @@ use NeuronAI\Chat\Enums\SourceType;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\ContentBlocks\ContentBlock;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Observability\Events\AgentError;
-use NeuronAI\Observability\Events\InferenceStart;
-use NeuronAI\Observability\Events\InferenceStop;
-use NeuronAI\Observability\Events\MessageSaved;
-use NeuronAI\Observability\Events\MessageSaving;
-use NeuronAI\Observability\Events\WorkflowEnd;
-use NeuronAI\Observability\Events\WorkflowNodeEnd;
-use NeuronAI\Observability\Events\WorkflowNodeStart;
-use NeuronAI\Observability\Events\WorkflowStart;
+use NeuronAI\Workflow\Observability\WorkflowError;
+use NeuronAI\Agent\Observability\InferenceStart;
+use NeuronAI\Agent\Observability\InferenceStop;
+use NeuronAI\Agent\Observability\MessageSaved;
+use NeuronAI\Agent\Observability\MessageSaving;
+use NeuronAI\Agent\Observability\ToolCalling;
+use NeuronAI\Agent\Observability\ToolCalled;
+use NeuronAI\Workflow\Observability\WorkflowEnd;
+use NeuronAI\Workflow\Observability\WorkflowNodeEnd;
+use NeuronAI\Workflow\Observability\WorkflowNodeStart;
+use NeuronAI\Workflow\Observability\WorkflowStart;
+use NeuronAI\Providers\ProviderResponse;
+use NeuronAI\Tools\ToolCall;
+use NeuronAI\Workflow\Workflow;
 use NeuronAI\Workflow\WorkflowState;
 use OpenTelemetry\API\Logs\LoggerInterface;
 use OpenTelemetry\API\Trace\SpanBuilderInterface;
@@ -80,7 +85,9 @@ final class ObserverTest extends TestCase
     public function testOnEventIgnoresUnknownEvent(): void
     {
         $this->expectNotToPerformAssertions();
-        $this->observer->onEvent('unknown-event', new \stdClass());
+        $workflow = new Workflow();
+        $this->observer->subscribeTo($workflow);
+        $workflow->getEventDispatcher()->dispatch(new \stdClass());
     }
 
     // ── reportError ─────────────────────────────────────────────────
@@ -95,7 +102,7 @@ final class ObserverTest extends TestCase
             ->method('emit')
             ->with($this->isInstanceOf(\OpenTelemetry\API\Logs\LogRecord::class));
 
-        $this->observer->reportError(new \stdClass(), 'error', new AgentError($exception));
+        $this->observer->reportError(new \stdClass(), 'error', new WorkflowError($exception));
     }
 
     public function testReportErrorLogRecordContainsExceptionMessage(): void
@@ -111,7 +118,7 @@ final class ObserverTest extends TestCase
                 return $ref->getValue($record) === 'body check';
             }));
 
-        $this->observer->reportError(new \stdClass(), 'error', new AgentError($exception));
+        $this->observer->reportError(new \stdClass(), 'error', new WorkflowError($exception));
     }
 
     public function testReportErrorMarksActiveSpansAsErrored(): void
@@ -141,7 +148,7 @@ final class ObserverTest extends TestCase
 
         $this->logger->method('emit');
 
-        $this->observer->reportError(new \stdClass(), 'error', new AgentError($exception));
+        $this->observer->reportError(new \stdClass(), 'error', new WorkflowError($exception));
     }
 
     public function testReportErrorHandlesMultipleActiveSpans(): void
@@ -163,7 +170,7 @@ final class ObserverTest extends TestCase
 
         $this->logger->method('emit');
 
-        $this->observer->reportError(new \stdClass(), 'error', new AgentError($exception));
+        $this->observer->reportError(new \stdClass(), 'error', new WorkflowError($exception));
     }
 
     public function testReportErrorWithNoActiveSpansDoesNotThrow(): void
@@ -173,7 +180,7 @@ final class ObserverTest extends TestCase
 
         $this->logger->expects($this->once())->method('emit');
 
-        $this->observer->reportError(new \stdClass(), 'error', new AgentError($exception));
+        $this->observer->reportError(new \stdClass(), 'error', new WorkflowError($exception));
     }
 
     // ── getEventPrefix ──────────────────────────────────────────────
@@ -443,7 +450,7 @@ final class ObserverTest extends TestCase
         $this->observer->inferenceStop(
             new \stdClass(),
             'inference-stop',
-            new InferenceStop($message, $response),
+            new InferenceStop($message, new ProviderResponse($response)),
         );
     }
 
@@ -455,7 +462,7 @@ final class ObserverTest extends TestCase
         $this->observer->inferenceStop(
             new \stdClass(),
             'inference-stop',
-            new InferenceStop(new UserMessage('q'), new AssistantMessage('a')),
+            new InferenceStop(new UserMessage('q'), new ProviderResponse(new AssistantMessage('a'))),
         );
     }
 
@@ -494,6 +501,68 @@ final class ObserverTest extends TestCase
         $this->span->expects($this->never())->method('end');
 
         $this->observer->messageSaved(new \stdClass(), 'message-saved', new MessageSaved(new UserMessage('x')));
+    }
+
+    public function testTypedSubscriptionsAreIdempotentAcrossRuns(): void
+    {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
+        $this->span->expects($this->exactly(2))->method('end');
+        $workflow = new Workflow();
+        $this->observer->subscribeTo($workflow);
+        $this->observer->subscribeTo($workflow);
+        $dispatcher = $workflow->getEventDispatcher();
+        for ($run = 0; $run < 2; $run++) {
+            $message = new UserMessage('q');
+            $dispatcher->dispatch(new MessageSaving($message));
+            $dispatcher->dispatch(new MessageSaved($message));
+            $dispatcher->dispatch(new WorkflowEnd(new WorkflowState()));
+        }
+        self::assertSame([], $this->invokeProtectedMethod($this->observer, 'getActiveSpans', []));
+    }
+
+    public function testToolSpansUseCallIdsAndCloseWithoutBootstrap(): void
+    {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
+        $this->span->expects($this->exactly(2))->method('end');
+        $workflow = new Workflow();
+        $this->observer->subscribeTo($workflow);
+        $dispatcher = $workflow->getEventDispatcher();
+        $first = ToolCall::make('search', 'call-one');
+        $second = ToolCall::make('search', 'call-two');
+        $dispatcher->dispatch(new ToolCalling($first));
+        $dispatcher->dispatch(new ToolCalling($second));
+        self::assertSame(['call-one', 'call-two'], array_keys(
+            new \ReflectionProperty($this->observer, 'toolCalls')->getValue($this->observer),
+        ));
+        $dispatcher->dispatch(new ToolCalled($second->setResult('second')));
+        $dispatcher->dispatch(new ToolCalled($first->setResult('first')));
+        $dispatcher->dispatch(new WorkflowEnd(new WorkflowState()));
+        self::assertSame([], $this->invokeProtectedMethod($this->observer, 'getActiveSpans', []));
+    }
+
+    public function testWorkflowEndClosesUnfinishedInferenceAndToolSpans(): void
+    {
+        $this->configureObserver(span: $this->createMock(SpanInterface::class));
+        $this->span->expects($this->exactly(2))->method('end');
+        $workflow = new Workflow();
+        $this->observer->subscribeTo($workflow);
+        $dispatcher = $workflow->getEventDispatcher();
+        $dispatcher->dispatch(new InferenceStart(new UserMessage('q')));
+        $dispatcher->dispatch(new ToolCalling(ToolCall::make('probe', 'call-one')));
+        $dispatcher->dispatch(new WorkflowError(new RuntimeException('provider failure')));
+        $dispatcher->dispatch(new WorkflowEnd(new WorkflowState()));
+        $dispatcher->dispatch(new WorkflowEnd(new WorkflowState()));
+        self::assertSame([], $this->invokeProtectedMethod($this->observer, 'getActiveSpans', []));
+    }
+
+    public function testMetadataSecretsAndNestedBase64AreRedacted(): void
+    {
+        $message = new UserMessage('visible');
+        $message->addMetadata('credentials', ['api_key' => 'secret', 'access_token' => 'token']);
+        $message->addMetadata('attachment', ['source_type' => 'base64', 'source' => 'binary']);
+        $result = $this->invokeProtectedMethod($this->observer, 'prepareMessageItem', [$message]);
+        self::assertSame(['api_key' => '[redacted]', 'access_token' => '[redacted]'], $result['__meta']['credentials']);
+        self::assertArrayNotHasKey('source', $result['__meta']['attachment']);
     }
 
     // ── Helper ──────────────────────────────────────────────────────

@@ -4,84 +4,36 @@ declare(strict_types=1);
 
 namespace App\Brain\Observability;
 
-use NeuronAI\Agent\AgentInterface;
-use NeuronAI\Observability\Events\ToolCalled;
-use NeuronAI\Observability\Events\ToolCalling;
-use NeuronAI\Observability\Events\ToolsBootstrapped;
-use NeuronAI\Tools\ProviderToolInterface;
-use NeuronAI\Tools\ToolInterface;
+use NeuronAI\Agent\Observability\ToolCalled;
+use NeuronAI\Agent\Observability\ToolCalling;
 use OpenTelemetry\API\Trace\SpanInterface as Span;
-use TypeError;
 
 trait HandleToolEvents
 {
-    protected Span $toolBootstrap;
-
-    /**
-     * @var array<Span>
-     */
+    /** @var array<string, Span> */
     protected array $toolCalls = [];
-
-    public function toolsBootstrapping(AgentInterface $agent, string $event, mixed $data): void
-    {
-        if (! $agent->getTools() === []) {
-            return;
-        }
-
-        $this->toolBootstrap = $this->instrumentation->tracer()->spanBuilder(self::SPAN_TYPE . '.tool.tools_bootstrap()')
-            ->startSpan();
-    }
-
-    public function toolsBootstrapped(object $source, string $event, ToolsBootstrapped $toolsBootstrapped): void
-    {
-        if (! isset($this->toolBootstrap)) {
-            return;
-        }
-
-        $this->spanSetAttributes($this->toolBootstrap, 'neuron.Tools', \array_reduce($toolsBootstrapped->tools, static function (array $carry, ToolInterface|ProviderToolInterface $tool): array {
-            if ($tool instanceof ProviderToolInterface) {
-                $carry[$tool->getType()] = $tool->getOptions();
-            } else {
-                $carry[$tool->getName()] = $tool->getDescription();
-            }
-
-            return $carry;
-        }, []));
-        $this->spanSetAttributes($this->toolBootstrap, 'neuron.Guidelines', $toolsBootstrapped->guidelines);
-        $this->toolBootstrap->end();
-    }
 
     public function toolCalling(object $source, string $event, ToolCalling $toolCalling): void
     {
-        $this->toolCalls[$toolCalling->tool::class] = $this->instrumentation->tracer()->spanBuilder(self::SPAN_TYPE . '.tool.tool_call('. $toolCalling->tool->getName() .')')
+        $id = $toolCalling->tool->getCallId();
+        $this->toolCalls[$id] = $this->instrumentation->tracer()
+            ->spanBuilder(self::SPAN_TYPE . '.tool.tool_call(' . $toolCalling->tool->getName() . ')')
             ->startSpan();
+        $this->toolCalls[$id]->setAttribute('neuron.tool.call_id', $id);
     }
 
     public function toolCalled(object $source, string $event, ToolCalled $toolCalled): void
     {
-        if (! \array_key_exists($toolCalled->tool::class, $this->toolCalls)) {
+        $id = $toolCalled->tool->getCallId();
+        if (! isset($this->toolCalls[$id])) {
             return;
         }
-
-        if (! isset($this->toolBootstrap)) {
-            return;
-        }
-
-        $output = null;
-        try {
-            $output = $toolCalled->tool->getResult();
-        } catch (TypeError) {
-            // The tool may not have run due to an error, like ToolMaxTries.
-            // In that case getResult will throw an error due to a null result.
-            $output = null;
-        }
-
-        $this->spanSetAttributes($this->toolBootstrap, 'neuron', [
-            'Properties' => $toolCalled->tool->getProperties(),
+        $span = $this->toolCalls[$id];
+        $this->spanSetAttributes($span, 'neuron', [
             'Inputs' => $toolCalled->tool->getInputs(),
-            'Output' => $output,
+            'Output' => $toolCalled->tool->hasResult() ? $toolCalled->tool->getResult() : null,
         ]);
-
-        $this->toolCalls[$toolCalled->tool::class]->end();
+        $span->end();
+        unset($this->toolCalls[$id]);
     }
 }

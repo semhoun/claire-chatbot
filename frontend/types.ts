@@ -61,6 +61,9 @@ export interface ClaireBootstrap {
   workflows: WorkflowOption[]
   currentWorkflow: string
   longTermMemoryEnabled: boolean
+  stopAvailable?: boolean
+  semanticMemoryAvailable?: boolean
+  semanticMemoryEnabled?: boolean
   layoutMode: LayoutMode
   audioAvailable: boolean
   audioEnabled: boolean
@@ -105,12 +108,12 @@ export interface ChatMessage {
 }
 
 export interface SseUpdate {
-  generation?: { messageId: string; status: 'queued' | 'running' | 'done' | 'error' | '' }
+  generation?: { messageId: string; status: 'queued' | 'running' | 'done' | 'stopped' | 'error' | '' }
   generationMessageId?: string | null
   submissionId?: string
-  turnStatus?: 'running' | 'succeeded' | 'rolled_back'
+  turnStatus?: 'running' | 'succeeded' | 'stopped' | 'rolled_back'
   rollbackConfirmed?: boolean
-  generationStatus?: 'queued' | 'running' | 'done' | 'error' | null
+  generationStatus?: 'queued' | 'running' | 'done' | 'stopped' | 'error' | null
   audioRequestId?: string | null
   audioRequestIds?: Record<string, string>
   responding?: boolean

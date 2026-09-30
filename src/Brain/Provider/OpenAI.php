@@ -27,7 +27,7 @@ class OpenAI extends OpenAILike
     }
 
     #[\Override]
-    public function messageMapper(): MessageMapperInterface
+    protected function messageMapper(): MessageMapperInterface
     {
         return $this->messageMapper ?? $this->messageMapper = new MessageMapper($this->rawMimeTypes);
     }

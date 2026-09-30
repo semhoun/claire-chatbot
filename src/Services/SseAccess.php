@@ -100,7 +100,7 @@ final readonly class SseAccess
         }
         $state = $this->generationState->get($userId, $threadId);
         if (($state['messageId'] ?? '') === ''
-            || ! in_array($state['status'] ?? '', ['queued', 'running', 'done', 'error'], true)) {
+            || ! in_array($state['status'] ?? '', ['queued', 'running', 'done', 'stopped', 'error'], true)) {
             throw new HttpForbiddenException($request);
         }
     }

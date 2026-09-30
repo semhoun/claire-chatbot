@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Brain\Observability;
 
-use NeuronAI\Observability\Events\PostProcessed;
-use NeuronAI\Observability\Events\PostProcessing;
-use NeuronAI\Observability\Events\PreProcessed;
-use NeuronAI\Observability\Events\PreProcessing;
-use NeuronAI\Observability\Events\Retrieved;
-use NeuronAI\Observability\Events\Retrieving;
+use NeuronAI\RAG\Observability\PostProcessed;
+use NeuronAI\RAG\Observability\PostProcessing;
+use NeuronAI\RAG\Observability\PreProcessed;
+use NeuronAI\RAG\Observability\PreProcessing;
+use NeuronAI\RAG\Observability\Retrieved;
+use NeuronAI\RAG\Observability\Retrieving;
 
 trait HandleRagEvents
 {
@@ -34,6 +34,7 @@ trait HandleRagEvents
                 'documents' => \count($retrieved->documents),
             ]);
             $span->end();
+            unset($this->spans[$id]);
         }
     }
 
@@ -52,6 +53,7 @@ trait HandleRagEvents
             $span = $this->spans[$preProcessed->processor];
             $this->spanSetAttributes($span, 'neuron.Processed', $preProcessed->processed->jsonSerialize());
             $span->end();
+            unset($this->spans[$preProcessed->processor]);
         }
     }
 
@@ -72,6 +74,7 @@ trait HandleRagEvents
             $span = $this->spans[$postProcessed->processor];
             $this->spanSetAttributes($span, 'neuron.PostProcess', $postProcessed->documents);
             $span->end();
+            unset($this->spans[$postProcessed->processor]);
         }
     }
 }

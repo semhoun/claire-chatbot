@@ -208,7 +208,7 @@ final class Connection
                 || ($payload['threadId'] ?? null) !== $this->authorization['threadId']
                 || ($event['threadId'] ?? null) !== $this->authorization['threadId']
                 || ! in_array($name, ['chat.snapshot', 'chat.assistant.start', 'chat.assistant.placeholder',
-                    'chat.assistant.update', 'chat.tool.update', 'chat.assistant.done', 'chat.audio.ready',
+                    'chat.assistant.update', 'chat.tool.update', 'chat.assistant.done', 'chat.assistant.stopped', 'chat.audio.ready',
                     'chat.audio.error', 'chat.error',
                 ], true)) {
                 $this->schedule();
@@ -270,7 +270,7 @@ final class Connection
                     $this->busy = false;
                     if (ChatGenerationState::acceptsState($state, $name, $payload['messageId'])) {
                         $this->event($name, $payload);
-                        if (in_array($name, ['chat.assistant.done', 'chat.error'], true)) {
+                        if (in_array($name, ['chat.assistant.done', 'chat.assistant.stopped', 'chat.error'], true)) {
                             $this->snapshotWanted = true;
                         }
                     }

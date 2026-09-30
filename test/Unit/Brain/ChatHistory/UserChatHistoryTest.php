@@ -11,7 +11,7 @@ use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\ToolCallMessage;
 use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Tools\Tool;
+use NeuronAI\Tools\ToolCall;
 use PDO;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
@@ -22,7 +22,7 @@ final class UserChatHistoryTest extends TestCase
     public function testAssistantIdentitySurvivesRoundTripAndToolGroupingWithoutChangingLlmContext(): void
     {
         [$history, $pdo, $session] = $this->history();
-        $tool = new Tool('lookup')->setCallId('call-1')->setResult('Tool result');
+        $tool = new ToolCall('lookup', 'call-1')->setResult('Tool result');
         $history->addMessage(new UserMessage('Question'));
         $history->addMessage(new ToolCallMessage(null, [$tool]));
         $history->addMessage(new ToolResultMessage([$tool]));
@@ -190,6 +190,7 @@ SQL
         $pdo->exec(
             <<<'SQL'
 CREATE TABLE chat_history (
+    stored_messages TEXT DEFAULT NULL,
     revision INTEGER NOT NULL DEFAULT 0,
     current_turn_id TEXT DEFAULT NULL,
     user_id TEXT NOT NULL,
@@ -246,6 +247,7 @@ SQL
         $pdo->exec(
             <<<'SQL'
 CREATE TABLE chat_history (
+    stored_messages TEXT DEFAULT NULL,
     revision INTEGER NOT NULL DEFAULT 0,
     current_turn_id TEXT DEFAULT NULL,
     user_id TEXT NOT NULL,
@@ -291,6 +293,7 @@ SQL
         $pdo->exec(
             <<<'SQL'
 CREATE TABLE chat_history (
+    stored_messages TEXT DEFAULT NULL,
     revision INTEGER NOT NULL DEFAULT 0,
     current_turn_id TEXT DEFAULT NULL,
     user_id TEXT NOT NULL,
@@ -310,6 +313,7 @@ SQL
             ['threadId', 'thread-1'],
         ]);
 
+        $pdo->exec("INSERT INTO chat_history (user_id, thread_id, messages) VALUES ('user-1', 'thread-1', '[]')");
         return [new UserChatHistory($session, $pdo, threadId: 'thread-1'), $pdo, $session];
     }
 }

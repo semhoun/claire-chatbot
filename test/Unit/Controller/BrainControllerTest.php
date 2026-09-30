@@ -210,8 +210,8 @@ final class BrainControllerTest extends TestCase
             );
             $history = new \App\Brain\ChatHistory\UserChatHistory($session, $pdo, threadId: 'thread');
             $history->addMessage(new \NeuronAI\Chat\Messages\UserMessage('Question'));
-            $firstTool = new \NeuronAI\Tools\Tool('first')->setCallId('call-1')->setResult('Hidden result');
-            $secondTool = new \NeuronAI\Tools\Tool('second')->setCallId('call-2')->setResult('Also hidden');
+            $firstTool = new \NeuronAI\Tools\ToolCall('first', 'call-1')->setResult('Hidden result');
+            $secondTool = new \NeuronAI\Tools\ToolCall('second', 'call-2')->setResult('Also hidden');
             $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage('First', [$firstTool]));
             $history->addMessage(new \NeuronAI\Chat\Messages\ToolResultMessage([$firstTool]));
             $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage('second', [$secondTool]));
@@ -237,10 +237,9 @@ final class BrainControllerTest extends TestCase
         );
         $history = new \App\Brain\ChatHistory\UserChatHistory($session, $pdo, threadId: 'thread');
         $history->addMessage(new \NeuronAI\Chat\Messages\UserMessage('Generate PDF'));
-        $tool = new \NeuronAI\Tools\Tool('generate_pdf', 'Test');
-        $tool->setCallId('pdf');
+        $tool = new \NeuronAI\Tools\ToolCall('generate_pdf', 'pdf', description: 'Test');
         $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage('Generating', [$tool]));
-        $secondTool = new \NeuronAI\Tools\Tool('check_pdf', 'Test')->setCallId('check');
+        $secondTool = new \NeuronAI\Tools\ToolCall('check_pdf', 'check', description: 'Test');
         $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage(' PDF', [$secondTool]));
         foreach (['running', 'error', 'error'] as $status) {
             $publisher->generationState()->set('user-1', 'thread', 'attempt', $status, true);
@@ -428,7 +427,7 @@ final class BrainControllerTest extends TestCase
         $history = new \App\Brain\ChatHistory\UserChatHistory($session, $pdo, threadId: 'thread');
         $history->addMessage(new \NeuronAI\Chat\Messages\UserMessage('Failed question'));
         $history->addMessage(new \NeuronAI\Chat\Messages\ToolCallMessage('Partial', [
-            new \NeuronAI\Tools\Tool('incomplete')->setCallId('call'),
+            new \NeuronAI\Tools\ToolCall('incomplete', 'call'),
         ]));
         $journal->rollback('attempt', 'user-1');
         $publisher->generationState()->set('user-1', 'thread', 'attempt', 'running', true);
@@ -478,7 +477,7 @@ final class BrainControllerTest extends TestCase
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
         $pdo = $connection->getNativeConnection();
         $pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT, '
-            . 'display_messages TEXT, display_messages_count INTEGER DEFAULT 0, title TEXT, summary TEXT, '
+            . 'display_messages TEXT, stored_messages TEXT NULL, display_messages_count INTEGER DEFAULT 0, title TEXT, summary TEXT, '
             . 'created_at TEXT, updated_at TEXT, revision INTEGER NOT NULL DEFAULT 0, current_turn_id TEXT)');
         $pdo->exec('CREATE TABLE chat_turn (id TEXT PRIMARY KEY, user_id TEXT, thread_id TEXT, channel TEXT, '
             . 'generation_id TEXT, submission_id TEXT, status TEXT, checkpoint TEXT, notification TEXT, '

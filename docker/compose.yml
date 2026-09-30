@@ -53,6 +53,12 @@ services:
       OPENAPI_CONTEXT_WINDOW: 256000
       OPENAPI_REQUEST_TIMEOUT: 600.0
 
+      # Activer uniquement apres les migrations et la bascule de tous les workers.
+      CLAIRE_STOP_ENABLED: "false"
+      SEMANTIC_MEMORY_ENABLED: "false"
+      # Dimension exacte de OPENAPI_MODEL_EMBED, a renseigner avant activation.
+      SEMANTIC_MEMORY_DIMENSIONS: 0
+
       MISTRAL_AUDIO_ENABLED: "true"
       MISTRAL_AUDIO_API_URL: https://api.mistral.ai/v1
       MISTRAL_AUDIO_API_KEY: ""
@@ -88,6 +94,7 @@ services:
       # === Bot Telegram (optionnel) ===
       TELEGRAM_BOT_TOKEN: ""
       TELEGRAM_WEBHOOK_SECRET: ""
+      TELEGRAM_BOT_USERNAME: ""
 
       # === Génération d'images (optionnel) ===
       COMFYUI_ENABLED: "false"

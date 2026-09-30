@@ -19,7 +19,6 @@ use App\Services\Rendering\GeneratedFileProcessor;
 use App\Services\Session\InMemorySession;
 use App\Services\Settings;
 use App\Services\ThemeRegistry;
-use NeuronAI\Chat\History\ChatHistoryInterface;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\UserMessage;
 use Doctrine\DBAL\Connection;
@@ -38,8 +37,6 @@ final class GeneratedOpeningTestAgent extends Agent implements \App\Brain\BrainA
 
     public const string THEME = 'cyberpunk';
 
-    private readonly UserChatHistory $userChatHistory;
-
     private readonly \Closure $opening;
 
     public function __construct(
@@ -56,7 +53,7 @@ final class GeneratedOpeningTestAgent extends Agent implements \App\Brain\BrainA
     }
 
     #[\Override]
-    public function getChatHistory(): ChatHistoryInterface
+    public function getUserChatHistory(): UserChatHistory
     {
         return $this->userChatHistory;
     }
@@ -198,6 +195,14 @@ final class StartThreadJobTest extends TestCase
             'Bienvenue générée',
             $userChatHistory->getDisplayMessages()[0]->getContent(),
         );
+        $reloaded = new UserChatHistory(
+            new InMemorySession($this->payload()['session']),
+            $this->connection->getNativeConnection(),
+            threadId: 'web-thread-1',
+        );
+        self::assertCount(2, $reloaded->getMessages());
+        self::assertCount(1, $reloaded->getDisplayMessages());
+        self::assertSame('Bienvenue générée', $reloaded->getDisplayMessages()[0]->getContent());
         self::assertSame('succeeded', $this->journal->get('opening-web-thread-1')['status']);
         self::assertCount(1, $this->events);
         $event = $this->events[0];

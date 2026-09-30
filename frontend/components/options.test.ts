@@ -53,6 +53,7 @@ describe.each<DisplayMode>(['normal', 'embed'])('Vue option flows (%s)', mode =>
       if (path === '/rag/text' || path === '/rag/url' || path === '/rag/upload') return json({ documents: [document], acceptedExt: '.txt' })
       if (path === '/files/upload') return json({ files: [file], acceptedExt: '.txt' })
       if (path === '/config/telegram_form') return json({ telegramId, success: null, error: null })
+      if (path === '/config/semantic-memory' || path === '/config/semantic-memory/clear') return new Response(null, { status: 204 })
       if (path === '/config/telegram') {
         if (telegramStatus === 200) telegramId = (init?.body as URLSearchParams).get('telegram_id') || null
         return json({ telegramId, success: telegramStatus === 200 ? 'Enregistré' : null, error: telegramStatus === 200 ? null : `Erreur ${telegramStatus}` }, telegramStatus)
@@ -72,6 +73,60 @@ describe.each<DisplayMode>(['normal', 'embed'])('Vue option flows (%s)', mode =>
     await wrapper.get(`#claire-${name}-toggle`).trigger('click')
     await flushPromises()
   }
+
+  it('gates semantic memory, saves explicit consent and erases independently of the text profile', async () => {
+    if (mode === 'embed') await wrapper.get('[aria-label="Préférences"]').trigger('click')
+    expect(wrapper.find('#claire-semantic-memory').exists()).toBe(false)
+    await wrapper.setProps({ config: { ...config(mode), semanticMemoryAvailable: true } })
+    const toggle = wrapper.get<HTMLInputElement>('#claire-semantic-memory')
+    expect(toggle.element.checked).toBe(false)
+    expect(toggle.attributes('aria-describedby')).toBe('claire-semantic-memory-help')
+    const help = wrapper.get('#claire-semantic-memory-help').text()
+    expect(help).toContain('nouveaux échanges terminés après activation')
+    expect(help).toContain('fournisseur d’embeddings configuré')
+    expect(help).toContain('Désactiver conserve les données')
+    expect(help).toContain('profil textuel')
+    await toggle.setValue(true)
+    await flushPromises()
+    expect(toggle.element.checked).toBe(true)
+    await toggle.setValue(false)
+    await flushPromises()
+    expect(toggle.element.checked).toBe(false)
+    expect(requests.filter(request => request.path === '/config/semantic-memory').map(request => ({
+      method: request.init?.method, body: JSON.parse(request.init?.body as string),
+      contentType: new Headers(request.init?.headers).get('Content-Type'),
+    }))).toEqual([
+      { method: 'POST', body: { enabled: true }, contentType: 'application/json' },
+      { method: 'POST', body: { enabled: false }, contentType: 'application/json' },
+    ])
+    expect(requests.some(request => request.path.endsWith('/semantic-memory/clear'))).toBe(false)
+    await wrapper.findAll('button').find(button => button.text() === 'Effacer la mémoire sémantique')!.trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('profil textuel et les conversations restent inchangés')
+    await wrapper.get('.claire-modal__footer .claire-btn--primary').trigger('click')
+    await flushPromises()
+    expect(requests.filter(request => request.path === '/config/semantic-memory/clear')).toHaveLength(1)
+    expect(requests.some(request => request.path.includes('long_term_memory'))).toBe(false)
+    expect(toggle.element.checked).toBe(false)
+  })
+
+  it('does not display semantic consent as saved while pending or after an API failure', async () => {
+    let release!: (response: Response) => void
+    const request = vi.spyOn(SessionClient.prototype, 'request')
+    const fallback = request.getMockImplementation()!
+    request.mockImplementation((path, init) => path === '/config/semantic-memory'
+      ? new Promise(resolve => { release = resolve }) : fallback(path, init))
+    await wrapper.setProps({ config: { ...config(mode), semanticMemoryAvailable: true } })
+    if (mode === 'embed') await wrapper.get('[aria-label="Préférences"]').trigger('click')
+    const toggle = wrapper.get<HTMLInputElement>('#claire-semantic-memory')
+    await toggle.setValue(true)
+    expect(toggle.element.checked).toBe(false)
+    expect(toggle.element.disabled).toBe(true)
+    release(new Response(null, { status: 503 }))
+    await flushPromises()
+    expect(toggle.element.checked).toBe(false)
+    expect(toggle.element.disabled).toBe(false)
+    expect(wrapper.text()).toContain('n’a pas pu être enregistrée')
+  })
 
   async function telegram(): Promise<void> {
     if (mode === 'embed') await wrapper.get('[aria-label="Compte"]').trigger('click')

@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Brain\Observability;
 
-use NeuronAI\Observability\Events\Deserialized;
-use NeuronAI\Observability\Events\Deserializing;
-use NeuronAI\Observability\Events\Extracted;
-use NeuronAI\Observability\Events\Extracting;
-use NeuronAI\Observability\Events\SchemaGenerated;
-use NeuronAI\Observability\Events\SchemaGeneration;
-use NeuronAI\Observability\Events\Validated;
-use NeuronAI\Observability\Events\Validating;
+use NeuronAI\Agent\Observability\Deserialized;
+use NeuronAI\Agent\Observability\Deserializing;
+use NeuronAI\Agent\Observability\Extracted;
+use NeuronAI\Agent\Observability\Extracting;
+use NeuronAI\Agent\Observability\SchemaGenerated;
+use NeuronAI\Agent\Observability\SchemaGeneration;
+use NeuronAI\Agent\Observability\Validated;
+use NeuronAI\Agent\Observability\Validating;
 use OpenTelemetry\API\Trace\SpanInterface as Span;
 
 trait HandleStructuredEvents
@@ -34,6 +34,7 @@ trait HandleStructuredEvents
     {
         $this->spanSetAttributes($this->schema, 'neuron.Schema', $schemaGenerated->schema);
         $this->schema->end();
+        unset($this->schema);
     }
 
     protected function extracting(object $source, string $event, Extracting $extracting): void
@@ -56,6 +57,7 @@ trait HandleStructuredEvents
             'Schema' => $extracted->schema,
         ]);
         $this->extract->end();
+        unset($this->extract);
     }
 
     protected function deserializing(object $source, string $event, Deserializing $deserializing): void
@@ -71,6 +73,7 @@ trait HandleStructuredEvents
         }
 
         $this->deserialize->end();
+        unset($this->deserialize);
     }
 
     protected function validating(object $source, string $event, Validating $validating): void
@@ -85,9 +88,11 @@ trait HandleStructuredEvents
             return;
         }
 
-        $this->spanSetAttributes($this->validate, 'neuron.Json', \json_decode($validated->json, true));
+        $this->spanSetAttributes($this->validate, 'neuron.Json', \json_decode($validated->json, true, flags: JSON_THROW_ON_ERROR));
         if ($validated->violations !== []) {
             $this->spanSetAttributes($this->validate, 'neuron.Violations', $validated->violations);
         }
+        $this->validate->end();
+        unset($this->validate);
     }
 }

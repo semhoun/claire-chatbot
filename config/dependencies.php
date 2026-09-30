@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Exception;
+use App\Job\Web\NewMessageJob;
 use App\Services\Audio\AudioServiceInterface;
 use App\Services\Audio\MistralAudioService;
 use App\Services\ComfyUIService;
 use App\Services\ComfyUIWorkflowRegistry;
+use App\Services\FrontendConfigFactory;
 use App\Services\PdfGeneratorService;
 use App\Services\Queue\QueueBackendInterface;
 use App\Services\Queue\QueueDispatcherInterface;
@@ -14,8 +16,11 @@ use App\Services\Queue\RedisQueueBackend;
 use App\Services\RagService;
 use App\Services\RagServiceInterface;
 use App\Services\RedisClient;
+use App\Services\SemanticMemoryRegistry;
+use App\Services\SemanticMemoryService;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
+use App\Services\TelegramService;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\Configuration;
@@ -28,6 +33,7 @@ use NeuronAI\RAG\Embeddings\OpenAILikeEmbeddings;
 use NeuronAI\RAG\VectorStore\FileVectorStore;
 use NeuronAI\RAG\VectorStore\VectorStoreInterface;
 use Phptg\BotApi\TelegramBotApi;
+use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
 use Slim\Views\Twig;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
@@ -85,6 +91,43 @@ return [
     EntityManagerInterface::class => DI\get(EntityManager::class),
     // Settings.
     Settings::class => DI\factory([Settings::class, 'load']),
+    FrontendConfigFactory::class => DI\autowire()
+        ->constructorParameter('semanticMemoryRegistry', DI\get(SemanticMemoryRegistry::class)),
+    NewMessageJob::class => DI\autowire()
+        ->constructorParameter('semanticMemoryRegistry', DI\get(SemanticMemoryRegistry::class))
+        ->constructorParameter('semanticQueue', DI\get(QueueDispatcherInterface::class)),
+    TelegramService::class => DI\autowire()
+        ->constructorParameter('semanticMemoryRegistry', DI\get(SemanticMemoryRegistry::class))
+        ->constructorParameter('semanticQueue', DI\get(QueueDispatcherInterface::class)),
+    SemanticMemoryRegistry::class => DI\factory(
+        static fn (Settings $settings, Connection $connection): SemanticMemoryRegistry
+            => new SemanticMemoryRegistry(
+                $connection,
+                $settings->get('llm.semanticMemory.enabled', false) === true,
+                (int) $settings->get('llm.semanticMemory.maxCharacters', 4000),
+            ),
+    ),
+    SemanticMemoryService::class => DI\factory(
+        static fn (Settings $settings, Connection $connection, Logger $logger,
+            ContainerInterface $container): SemanticMemoryService
+            => new SemanticMemoryService(
+                $connection,
+                new SemanticMemoryRegistry(
+                    $connection,
+                    $settings->get('llm.semanticMemory.enabled', false) === true,
+                    (int) $settings->get('llm.semanticMemory.maxCharacters', 4000),
+                ),
+                $settings->get('llm.semanticMemory.enabled', false) === true
+                    ? $container->get(EmbeddingsProviderInterface::class) : null,
+                $logger,
+                $settings->get('llm.semanticMemory.path', Settings::getDataPath() . '/semantic-memory'),
+                hash('sha256', rtrim((string) $settings->get('llm.openai.baseUri', ''), '/'))
+                    . ':' . $settings->get('llm.openai.modelEmbed', ''),
+                (int) $settings->get('llm.semanticMemory.dimensions', 0),
+                $settings->get('llm.semanticMemory.enabled', false) === true,
+                (int) $settings->get('llm.semanticMemory.topK', 4),
+            ),
+    ),
     Logger::class => static function (Settings $settings): Logger {
         $logger = new \Monolog\Logger($settings->get('logger.name'));
         $handlerOLTP = new \OpenTelemetry\Contrib\Logs\Monolog\Handler(

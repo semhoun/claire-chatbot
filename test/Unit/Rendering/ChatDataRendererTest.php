@@ -73,10 +73,8 @@ final class ChatDataRendererTest extends TestCase
     {
         $manager = $this->createStub(EntityManagerInterface::class);
         $renderer = new ChatDataRenderer(new GeneratedFileProcessor(new Settings([]), $manager));
-        $tool = new \NeuronAI\Tools\Tool('generate_pdf', 'Test');
-        $tool->setCallId('old-tool');
-        $current = clone $tool;
-        $current->setCallId('current-tool');
+        $tool = new \NeuronAI\Tools\ToolCall('generate_pdf', 'old-tool', description: 'Test');
+        $current = new \NeuronAI\Tools\ToolCall('generate_pdf', 'current-tool', description: 'Test');
         $messages = new MessageFormatter([
             new \NeuronAI\Chat\Messages\ToolCallMessage(null, [$tool]),
             new \NeuronAI\Chat\Messages\UserMessage('Next turn'),

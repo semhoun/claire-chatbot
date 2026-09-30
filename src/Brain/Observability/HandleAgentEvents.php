@@ -83,8 +83,7 @@ trait HandleAgentEvents
 
         return [
             'Agent' => [
-                'provider' => $agent->resolveProvider()::class,
-                'instructions' => $agent->resolveInstructions(),
+                'provider' => $agent->getProvider()::class,
             ],
             'Tools' => \array_map(static fn (ToolInterface|ToolkitInterface|ProviderToolInterface $tool) => match (true) {
                 $tool instanceof ToolInterface => $mapTool($tool),

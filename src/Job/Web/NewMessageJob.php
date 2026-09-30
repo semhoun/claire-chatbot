@@ -12,12 +12,16 @@ use App\Renderer\ChatDataRenderer;
 use App\Services\Audio\AudioServiceInterface;
 use App\Services\Auth;
 use App\Services\ChatAudioPublisher;
+use App\Services\ChatStopRequests;
 use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\ChatThreadLock;
 use App\Services\ChatTurnJournal;
 use App\Services\ChatTurnRecovery;
+use App\Services\GenerationExecution;
+use App\Services\GenerationStopToken;
 use App\Services\Queue\QueueDoer;
+use App\Services\SemanticMemoryRegistry;
 use App\Services\Session\InMemorySession;
 use App\Services\Settings;
 use DateTimeImmutable;
@@ -50,6 +54,9 @@ final class NewMessageJob implements QueueDoer
 {
     private string $streamedText = '';
 
+    /** @var array<string, string> */
+    private array $streamedMessages = [];
+
     private int $nbPublishedChunks = 0;
 
     private string $userMessage = '';
@@ -72,6 +79,15 @@ final class NewMessageJob implements QueueDoer
 
     private ?Agent $agent = null;
 
+    private ?GenerationStopToken $stopToken = null;
+
+    /** @var list<\NeuronAI\Chat\Messages\Message> */
+    private array $turnMessages = [];
+
+    private bool $streamStopped = false;
+
+    private string $finalAssistantText = '';
+
     /** @var array<int, string>|null */
     private ?array $attachments = null;
 
@@ -85,7 +101,9 @@ final class NewMessageJob implements QueueDoer
         private readonly ChatStreamPublisher $chatStreamPublisher,
         private readonly ChatAudioPublisher $chatAudioPublisher,
         private readonly Connection $connection,
-        private readonly Settings $settings
+        private readonly Settings $settings,
+        private readonly ?SemanticMemoryRegistry $semanticMemoryRegistry = null,
+        private readonly ?\App\Services\Queue\QueueDispatcherInterface $semanticQueue = null,
     ) {
     }
 
@@ -98,10 +116,15 @@ final class NewMessageJob implements QueueDoer
     public function handle(array $payload): void
     {
         $this->streamedText = '';
+        $this->streamedMessages = [];
         $this->toolsCall = [];
         $this->nbPublishedChunks = 0;
         $this->attachments = null;
         $this->agent = null;
+        $this->stopToken = null;
+        $this->turnMessages = [];
+        $this->streamStopped = false;
+        $this->finalAssistantText = '';
         $this->userMessage = '';
         $this->threadId = '';
         $this->sessionId = '';
@@ -112,7 +135,14 @@ final class NewMessageJob implements QueueDoer
         $this->initContext($payload);
         $this->turnStatus = 'running';
         $chatThreadLock = new ChatThreadLock($this->connection->getNativeConnection(), $this->userId, $this->threadId);
-        $journal = new ChatTurnJournal($this->connection);
+        $acceptedStatus = $this->settings->get('llm.stop.enabled', false) === true
+            ? $this->connection->fetchOne(
+                'SELECT status FROM chat_stop_request'
+                . ' WHERE user_id = ? AND thread_id = ? AND channel = ? AND generation_id = ?',
+                [$this->userId, $this->threadId, 'web', $this->messageId],
+            ) : false;
+        $stops = $acceptedStatus !== false ? new ChatStopRequests($this->connection) : null;
+        $journal = new ChatTurnJournal($this->connection, $stops);
         $turn = $journal->get($this->messageId);
         if ($turn !== null) {
             if ($turn['userId'] !== $this->userId || $turn['threadId'] !== $this->threadId) {
@@ -124,23 +154,57 @@ final class NewMessageJob implements QueueDoer
             $turn = $journal->rollback($this->messageId, $this->userId);
             $this->turnStatus = $turn['status'];
             $state = $this->chatStreamPublisher->generationState();
-            $previous = $state->get($this->userId, $this->threadId);
-            if (! ChatTurnRecovery::canProjectTerminal($this->connection, $turn, $previous)) {
+            try {
+                $previous = $state->get($this->userId, $this->threadId);
+                if (! ChatTurnRecovery::canProjectTerminal($this->connection, $turn, $previous)) {
+                    return;
+                }
+                $state->set(
+                    $this->userId,
+                    $this->threadId,
+                    $this->messageId,
+                    match ($this->turnStatus) {
+                        'succeeded' => 'done', 'stopped' => 'stopped', default => 'error',
+                    },
+                    true,
+                );
+            } catch (\Throwable $projectionError) {
+                if ($this->turnStatus !== 'stopped') {
+                    throw $projectionError;
+                }
+                $this->logger->warning('Cannot project stopped retry', ['exception' => $projectionError]);
                 return;
             }
-            $state->set(
-                $this->userId, $this->threadId, $this->messageId,
-                $this->turnStatus === 'succeeded' ? 'done' : 'error', true,
-            );
             if ($this->turnStatus === 'rolled_back') {
                 $this->handleChatError(new \RuntimeException('Interrupted chat attempt'));
             }
             return;
         }
+        if ($acceptedStatus !== false && $acceptedStatus !== 'accepted') {
+            // An acceptance terminalized before dispatch cannot authorize a fresh worker attempt.
+            return;
+        }
         $chatGenerationState = $this->chatStreamPublisher->generationState();
-        $previous = $chatGenerationState->get($this->userId, $this->threadId);
+        if ($stops !== null) {
+            $userId = $this->userId;
+            $threadId = $this->threadId;
+            $generationId = $this->messageId;
+            $this->stopToken = new GenerationStopToken(
+                static fn (): bool => $stops->isRequested($userId, $threadId, 'web', $generationId),
+            );
+        }
+        $preStopped = $this->stopToken?->isRequested() ?? false;
+        try {
+            $previous = $chatGenerationState->get($this->userId, $this->threadId);
+        } catch (\Throwable $projectionError) {
+            if (! $preStopped) {
+                throw $projectionError;
+            }
+            $previous = [];
+        }
         if (($previous['status'] ?? '') === 'deleted'
-            || (($previous['messageId'] ?? '') === $this->messageId && ($previous['status'] ?? '') === 'done')) {
+            || (($previous['messageId'] ?? '') === $this->messageId
+                && in_array($previous['status'] ?? '', ['done', 'stopped'], true))) {
             return;
         }
 
@@ -158,42 +222,124 @@ final class NewMessageJob implements QueueDoer
             }
         }
 
+        $responseText = '';
+        $semanticDocumentId = null;
         try {
             $brain = (string) $this->inMemorySession->get('brain_avatar');
-            if (! $this->brainRegistry->has($brain)) {
+            if (! $preStopped && ! $this->brainRegistry->has($brain)) {
                 throw new \InvalidArgumentException('Assistant inconnu: ' . $brain);
             }
-            $journal->begin($this->messageId, $this->userId, $this->threadId, 'web',
-                $this->messageId, $this->submissionId, ['sessionId' => $this->sessionId]);
-            $this->agent = $this->brainRegistry->get(
-                $this->inMemorySession->get('brain_avatar'),
-                $this->inMemorySession,
-                $this->threadId
+            $journal->begin(
+                $this->messageId,
+                $this->userId,
+                $this->threadId,
+                'web',
+                $this->messageId,
+                $this->submissionId,
+                ['sessionId' => $this->sessionId],
+                atomic: function (): void {
+                    if ($this->settings->get('llm.semanticMemory.enabled', false) === true) {
+                        $this->semanticMemoryRegistry?->captureTurn($this->userId, $this->messageId);
+                    }
+                }
             );
-            $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'running', false);
-            $this->publishStartMessages();
-            // Persist the fence BEFORE entering agent code, including middleware and tool execution.
-            $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'running', true);
+            if (! $preStopped) {
+                $this->agent = $this->brainRegistry->get(
+                    $this->inMemorySession->get('brain_avatar'),
+                    $this->inMemorySession,
+                    $this->threadId
+                );
+            }
+            if (! $preStopped) {
+                try {
+                    $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'running', false);
+                    $this->publishStartMessages();
+                    // Persist the fence BEFORE entering agent code, including middleware and tool execution.
+                    $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'running', true);
+                } catch (\Throwable $projectionError) {
+                    if (! ($this->stopToken?->isRequested() ?? false)) {
+                        throw $projectionError;
+                    }
+                }
+            }
             $responseText = $this->processChatStream($chatThreadLock);
             $chatThreadLock->assertHeld();
-            if ($journal->succeed($this->messageId, $this->userId)['status'] !== 'succeeded') {
+            $completed = $journal->complete(
+                $this->messageId,
+                $this->userId,
+                $this->streamStopped ? 'stopped' : 'succeeded',
+                function (Connection $_connection, string $status) use (&$semanticDocumentId): void {
+                    if ($status === 'stopped') {
+                        $history = new UserChatHistory(
+                            $this->inMemorySession,
+                            $this->connection->getNativeConnection(),
+                            threadId: $this->threadId
+                        );
+                        $history->persistStoppedTurn($this->turnMessages, $this->messageId, $this->messageId);
+                        return;
+                    }
+                    if ($this->settings->get('llm.semanticMemory.enabled', false) === true) {
+                        $semanticDocumentId = $this->semanticMemoryRegistry?->recordSucceededTurn(
+                            $this->userId,
+                            $this->messageId,
+                            $this->userClaireId(),
+                            $this->messageId,
+                            $this->userMessage,
+                            $this->finalAssistantText,
+                        );
+                    }
+                }
+            );
+            if (! in_array($completed['status'], ['succeeded', 'stopped'], true)) {
                 throw new \RuntimeException('Chat turn was invalidated before completion');
             }
-            $this->turnStatus = 'succeeded';
-            try {
-                $this->manageSummary();
-            } catch (\Throwable $throwable) {
-                $this->logger->error('Chat summary failed after successful generation', ['exception' => $throwable]);
+            $this->turnStatus = $completed['status'];
+            if ($this->turnStatus === 'succeeded') {
+                if ($semanticDocumentId !== null && $this->semanticQueue !== null) {
+                    try {
+                        $this->semanticQueue->dispatch(
+                            \App\Job\SemanticMemory\IndexTurnJob::class,
+                            ['userId' => $this->userId, 'documentId' => $semanticDocumentId],
+                            (string) $this->settings->get('queue.defaultQueue'),
+                        );
+                    } catch (\Throwable $enqueueError) {
+                        $this->logger->warning('Semantic indexing enqueue failed', ['error' => $enqueueError::class]);
+                    }
+                }
+                try {
+                    $this->manageSummary();
+                } catch (\Throwable $throwable) {
+                    $this->logger->error('Chat summary failed after successful generation', ['exception' => $throwable]);
+                }
+            } else {
+                $this->autoAudioRequestId = null;
+                $responseText = $this->streamedText;
             }
 
-            $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'done', true);
+            $chatGenerationState->set(
+                $this->userId,
+                $this->threadId,
+                $this->messageId,
+                $this->turnStatus === 'stopped' ? 'stopped' : 'done',
+                true
+            );
         } catch (\Throwable $throwable) {
             // Resolve lost commit acknowledgements from SQL, never from Redis.
             $turn = $journal->get($this->messageId);
-            if (($turn['status'] ?? '') === 'succeeded') {
-                $this->turnStatus = 'succeeded';
+            if (in_array($turn['status'] ?? '', ['succeeded', 'stopped'], true)) {
+                $this->turnStatus = $turn['status'];
+                if ($this->turnStatus === 'stopped') {
+                    $this->autoAudioRequestId = null;
+                    $responseText = $this->streamedText;
+                }
                 try {
-                    $chatGenerationState->set($this->userId, $this->threadId, $this->messageId, 'done', true);
+                    $chatGenerationState->set(
+                        $this->userId,
+                        $this->threadId,
+                        $this->messageId,
+                        $this->turnStatus === 'stopped' ? 'stopped' : 'done',
+                        true
+                    );
                 } catch (\Throwable $projectionError) {
                     // Periodic recovery repairs the disposable projection.
                     $this->logger->warning('Chat success projection failed', ['exception' => $projectionError]);
@@ -219,6 +365,27 @@ final class NewMessageJob implements QueueDoer
 
         // Success is durable and the mutation lock is released before notifying clients.
         // A delivery failure must not turn a completed generation into a retryable one.
+        if ($this->turnStatus === 'stopped') {
+            try {
+                if ($responseText !== '') {
+                    $this->publishContent($responseText);
+                }
+                foreach ($this->turnMessages as $message) {
+                    if ($message instanceof \NeuronAI\Chat\Messages\ToolResultMessage) {
+                        foreach ($message->getToolCalls() as $call) {
+                            $this->processToolChunk(new ToolResultChunk($call));
+                        }
+                    }
+                }
+                $this->publish('chat.assistant.stopped', [
+                    'threadId' => $this->threadId, 'sessionId' => $this->sessionId, 'messageId' => $this->messageId,
+                ]);
+            } catch (\Throwable $projectionError) {
+                // A stopped SQL turn is already acknowledged; reconnect/recovery restores the projection.
+                $this->logger->warning('Cannot publish stopped generation', ['exception' => $projectionError]);
+            }
+            return;
+        }
         $this->publishContent($responseText);
         $this->publishDoneMessages();
         try {
@@ -283,14 +450,34 @@ final class NewMessageJob implements QueueDoer
     {
         $userMessage = new UserMessage($this->userMessage);
         $userMessage->addMetadata('timestamp', new DateTimeImmutable()->format(DateTimeInterface::ATOM));
-        if ($this->submissionId !== null) {
-            $userMessage->addMetadata('claire_submission_id', $this->submissionId);
-        }
+        $userMessage->addMetadata('claire_submission_id', $this->userClaireId());
         $this->addAttachments($userMessage);
 
-        $agentHandler = $this->agent->stream($userMessage);
+        $lock->assertHeld();
+        if ($this->stopToken?->isRequested()) {
+            $this->turnMessages = [$userMessage];
+            $this->streamStopped = true;
+            return '';
+        }
+        if ($this->stopToken !== null) {
+            $provider = $this->agent->getProvider();
+            if (method_exists($provider, 'getHttpClient') && method_exists($provider, 'setHttpClient')) {
+                $provider = clone $provider;
+                $provider->setHttpClient($this->stopToken->httpClient($provider->getHttpClient()));
+            }
+            $this->agent->setAiProvider($provider);
+            $stream = new GenerationExecution($this->stopToken)->stream(
+                $this->agent,
+                $userMessage,
+                $lock->assertHeld(...),
+            );
+        } else {
+            $stream = $this->agent->stream($userMessage);
+        }
 
-        foreach ($agentHandler->events() as $chunk) {
+        // valid() starts the generator; next() can execute tools before yielding.
+        $lock->assertHeld();
+        foreach ($stream as $chunk) {
             $lock->assertHeld();
             $this->publishPlaceHolder();
             $this->processChunk($chunk);
@@ -299,10 +486,39 @@ final class NewMessageJob implements QueueDoer
             $lock->assertHeld();
         }
 
-        $finalText = $agentHandler->getMessage()->getContent();
-        // The final provider message excludes narration from earlier tool rounds.
-        $responseText = $this->streamedText !== '' ? $this->streamedText : ($finalText ?? '');
-        $chatHistory = $this->agent->getChatHistory();
+        $result = $stream->getReturn();
+        if ($result instanceof \App\Services\GenerationExecutionResult) {
+            $this->turnMessages = $result->messages;
+            $this->streamStopped = $result->stopped;
+            if ($result->stopped) {
+                return $this->streamedText;
+            }
+            $state = $result->state;
+        } else {
+            $state = $result;
+            $this->turnMessages = $state->getSteps();
+        }
+        if ($state === null) {
+            throw new \UnexpectedValueException('Web generation completed without state');
+        }
+        if ($state->isInterrupted()) {
+            throw new \UnexpectedValueException('Unexpected workflow suspension during Web generation');
+        }
+        $message = $state->getMessage();
+        if ($message === null) {
+            throw new \UnexpectedValueException('Web generation completed without an assistant message');
+        }
+        if ($message->getMetadata('stop_reason') === \NeuronAI\HttpClient\StoppableHttpClient::STOP_REASON) {
+            // The technical migration must not commit a stopped provider response as success.
+            throw new \UnexpectedValueException('Stopped Web stream requires durable stop finalization');
+        }
+        // Replace the final stream's text with its postprocessed message, keeping earlier narration.
+        $this->streamedMessages[$message->getId()] = $message->getContent() ?? '';
+        $this->finalAssistantText = trim(
+            preg_replace('/@@GENERATED@@[^@]+@@/', '', $message->getContent() ?? '') ?? '',
+        );
+        $responseText = implode('', $this->streamedMessages);
+        $chatHistory = $this->agent->getUserChatHistory();
         if (! $chatHistory instanceof UserChatHistory) {
             throw new \RuntimeException('Persistent chat history is required for Web messages');
         }
@@ -314,6 +530,11 @@ final class NewMessageJob implements QueueDoer
         $chatHistory->identifyLastAssistantMessage($this->messageId, $this->autoAudioRequestId);
 
         return $responseText;
+    }
+
+    private function userClaireId(): string
+    {
+        return $this->submissionId ?? 'user-' . hash('sha256', $this->messageId);
     }
 
     private function publishAudio(string $responseText): void
@@ -388,6 +609,7 @@ final class NewMessageJob implements QueueDoer
         }
 
         $this->streamedText .= $chunk->content;
+        $this->streamedMessages[$chunk->messageId] = ($this->streamedMessages[$chunk->messageId] ?? '') . $chunk->content;
 
         $content = $this->chatDataRenderer->content($this->streamedText, $this->userId, true);
 
@@ -503,7 +725,7 @@ final class NewMessageJob implements QueueDoer
     private function manageSummary(): void
     {
         $summary = new Summary($this->connection, $this->settings, $this->inMemorySession, $this->threadId);
-        $chatHistory = $summary->getChatHistory();
+        $chatHistory = $summary->getUserChatHistory();
 
         if (! ($chatHistory instanceof \App\Brain\ChatHistory\UserChatHistory)) {
             $this->logger->error('Summary not available for non-user chat history');

@@ -30,6 +30,9 @@ final class QueueScripts
                 or previous == ARGV[7] then return 'CHAT_BUSY' end
             redis.call('HSET', ARGV[6], 'messageId', ARGV[7], 'status', 'queued', 'attempted', '0',
                 'jobId', ARGV[1], 'queue', ARGV[2], 'jobMessageId', ARGV[7])
+            if ARGV[8] ~= '' then
+                redis.call('HSET', ARGV[6], 'submissionId', ARGV[8], 'submissionMessageId', ARGV[7])
+            end
         end
         redis.call('HSET', KEYS[2], 'id', ARGV[1], 'queue_name', ARGV[2],
             'job_class', ARGV[3], 'payload', ARGV[4], 'attempts', 0, 'state', 'ready',

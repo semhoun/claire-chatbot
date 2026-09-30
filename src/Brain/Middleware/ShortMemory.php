@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Brain\Middleware;
 
-use App\Brain\ChatHistory\UserChatHistory;
+use App\Brain\ChatHistory\WorkingChatHistory;
 use function array_slice;
+use NeuronAI\Agent\AgentResources;
 use NeuronAI\Agent\AgentState;
 use NeuronAI\Agent\Events\AIInferenceEvent;
 use NeuronAI\Agent\Middleware\Summarization;
+use NeuronAI\Agent\Nodes\AgentNodeInterface;
 use NeuronAI\Chat\Enums\MessageRole;
+use NeuronAI\Chat\History\ChatHistory;
 use NeuronAI\Chat\History\TokenCounter;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Chat\Messages\ToolCallMessage;
@@ -17,8 +20,6 @@ use NeuronAI\Chat\Messages\ToolResultMessage;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Providers\AIProviderInterface;
 use NeuronAI\Workflow\Events\Event;
-use NeuronAI\Workflow\NodeInterface;
-use NeuronAI\Workflow\WorkflowState;
 use Psr\Log\LoggerInterface as Logger;
 
 class ShortMemory extends Summarization
@@ -27,10 +28,10 @@ class ShortMemory extends Summarization
 
     public function __construct(
         protected Logger $logger,
-        protected AIProviderInterface $provider,
-        protected int $maxTokens = 50000,
-        protected int $messagesToKeep = 5,
-        protected ?string $summaryPrompt = null,
+        ?AIProviderInterface $provider,
+        int $maxTokens = 50000,
+        int $messagesToKeep = 5,
+        ?string $summaryPrompt = null,
     ) {
         $this->tokenCounter = new TokenCounter();
 
@@ -38,8 +39,12 @@ class ShortMemory extends Summarization
     }
 
     #[\Override]
-    public function before(NodeInterface $node, Event $event, WorkflowState $state): void
-    {
+    protected function beforeAgentNode(
+        AgentNodeInterface $node,
+        Event $event,
+        AgentState $state,
+        AgentResources $resources,
+    ): void {
         // Only apply to ChatNode, StreamingNode, and StructuredOutputNode
 
         if (! $event instanceof AIInferenceEvent || ! $state instanceof AgentState) {
@@ -52,7 +57,7 @@ class ShortMemory extends Summarization
             return;
         }
 
-        $chatHistory = $state->getChatHistory();
+        $chatHistory = $resources->history;
 
         $messages = $chatHistory->getMessages();
 
@@ -66,7 +71,7 @@ class ShortMemory extends Summarization
 
         // Perform summarization
 
-        $this->summarizeHistory($state, $messages);
+        $this->summarizeHistory($chatHistory, $messages, $this->provider ?? $resources->provider);
     }
 
     /** @param array<Message> $messages */
@@ -87,8 +92,11 @@ class ShortMemory extends Summarization
 
     #[\Override]
 
-    protected function summarizeHistory(AgentState $state, array $messages): void
+    protected function summarizeHistory(ChatHistory $chatHistory, array $messages, AIProviderInterface $provider): void
     {
+        if (! $chatHistory instanceof WorkingChatHistory) {
+            return;
+        }
         // Find a safe cutoff point
 
         $cutoffIndex = $this->findSafeCutoffIndex($messages);
@@ -107,7 +115,10 @@ class ShortMemory extends Summarization
 
         // Generate summary of old messages
 
-        $summary = $this->generateSummary($oldMessages);
+        $summary = $this->generateSummary($provider, $oldMessages);
+        if ($summary === null || $summary === '') {
+            return;
+        }
 
         $userMessage = new UserMessage("[OC]Previous conversation summary:\n\n{$summary}\n[\OC]");
 
@@ -123,19 +134,7 @@ class ShortMemory extends Summarization
 
         ];
 
-        $chatHistory = $state->getChatHistory();
-
-        if (! $chatHistory instanceof UserChatHistory) {
-            $chatHistory->flushAll();
-
-            foreach ($newMessages as $newMessage) {
-                $state->getChatHistory()->addMessage($newMessage);
-            }
-
-            return;
-        }
-
-        $chatHistory->replaceMessages($newMessages);
+        $chatHistory->replaceActiveMessages($newMessages);
     }
 
     /**

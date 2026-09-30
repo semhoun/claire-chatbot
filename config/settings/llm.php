@@ -12,6 +12,17 @@ Env::require([
 ]);
 
 return [
+    'stop' => [
+        'enabled' => filter_var(Env::get('CLAIRE_STOP_ENABLED', false), FILTER_VALIDATE_BOOL),
+    ],
+    'semanticMemory' => [
+        'enabled' => filter_var(Env::get('SEMANTIC_MEMORY_ENABLED', false), FILTER_VALIDATE_BOOL),
+        'path' => Settings::getDataPath() . '/semantic-memory',
+        'dimensions' => (int) Env::get('SEMANTIC_MEMORY_DIMENSIONS', 0),
+        'maxCharacters' => 4000,
+        'contextBudget' => 6000,
+        'topK' => 4,
+    ],
     'openai' => [
         'key' => Env::get('OPENAPI_KEY'),
         'baseUri' => Env::get('OPENAPI_URL'),

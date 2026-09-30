@@ -12,17 +12,14 @@ use NeuronAI\Chat\Messages\ContentBlocks\TextContent;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
+use NeuronAI\Tools\ToolCall;
 use NeuronAI\Tools\ToolProperty;
 
 class PdfGeneratorTool extends Tool implements MessagePostProcessorInterface
 {
-    public function __construct(
-        private readonly PdfGeneratorService $pdfGeneratorService,
-        private readonly Settings $settings,
-        private readonly SessionInterface $session,
-        private readonly string $threadId,
-    ) {
-        $description = <<<'EOT'
+    protected string $name = 'generate_pdf';
+
+    protected ?string $description = <<<'EOT'
 Generates a PDF document from HTML or Markdown content. The generated PDF will be sent to the user.
 Use this tool whenever the user requests or needs a PDF document, report, or printable output.
 The content can be provided as HTML or Markdown (specify the format using the 'format' parameter).
@@ -46,10 +43,12 @@ IMPORTANT: Use ONLY image IDs that have been explicitly provided by the generate
 If you need to include an image that hasn't been generated yet, you MUST call generate_image FIRST, wait for the response to get the ID, and ONLY THEN call generate_pdf. NEVER call both tools in parallel if one depends on the other.
 EOT;
 
-        parent::__construct(
-            'generate_pdf',
-            $description
-        );
+    public function __construct(
+        private readonly PdfGeneratorService $pdfGeneratorService,
+        private readonly Settings $settings,
+        private readonly SessionInterface $session,
+        private readonly string $threadId,
+    ) {
     }
 
     /**
@@ -118,9 +117,9 @@ EOT;
     }
 
     #[\Override]
-    public function postProcessMessage(Message $message): Message
+    public function postProcessMessage(Message $message, ToolCall $call): Message
     {
-        $fileId = $this->extractFileId();
+        $fileId = $this->extractFileId($call);
 
         if ($fileId === null) {
             return $message;
@@ -197,11 +196,11 @@ EOT;
         ];
     }
 
-    private function extractFileId(): ?string
+    private function extractFileId(ToolCall $call): ?string
     {
-        $result = $this->getResult();
+        $result = $call->hasResult() ? $call->getResult() : null;
 
-        if ($result === null) {
+        if (! is_string($result)) {
             return null;
         }
 
@@ -212,7 +211,7 @@ EOT;
                 return null;
             }
 
-            return $resultData['id'];
+            return is_string($resultData['id']) ? $resultData['id'] : null;
         } catch (JsonException) {
             return null;
         }

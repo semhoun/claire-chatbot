@@ -88,6 +88,87 @@ final class ConfigControllerTest extends TestCase
         self::assertSame(401, $result->getStatusCode());
     }
 
+    public function testSemanticEndpointsAreUnavailableByDefaultWithoutSqlAccess(): void
+    {
+        $this->entityManager->expects(self::never())->method('getConnection');
+        $request = $this->createRequestWithSession(['enabled' => true]);
+        self::assertSame(404, $this->controller->semanticMemory($request,
+            $this->responseFactory->createResponse())->getStatusCode());
+        self::assertSame(404, $this->controller->clearSemanticMemory($request,
+            $this->responseFactory->createResponse())->getStatusCode());
+    }
+
+    public function testSemanticConsentUsesSqlAndErasurePreservesIndependentPreferences(): void
+    {
+        [$controller, $sql] = $this->semanticController();
+        $this->session->method('get')->with(Auth::USERID)->willReturn('user-123');
+        $this->entityManager->method('find')->with(User::class, 'user-123')->willReturn($this->user);
+        $this->entityManager->expects(self::never())->method('flush');
+        $this->user->expects(self::never())->method('setParams');
+        $this->session->expects(self::exactly(2))->method('set')->with('semantic_memory_enabled', self::isBool());
+        foreach ([true, false] as $enabled) {
+            self::assertSame(204, $controller->semanticMemory($this->createRequestWithSession(['enabled' => $enabled]),
+                $this->responseFactory->createResponse())->getStatusCode());
+            self::assertSame((int) $enabled, (int) $sql->fetchOne(
+                'SELECT enabled FROM semantic_memory_preference WHERE user_id = ?', ['user-123'],
+            ));
+        }
+        $before = $sql->fetchAssociative('SELECT * FROM semantic_memory_preference');
+        self::assertSame(204, $controller->clearSemanticMemory($this->createRequestWithSession(),
+            $this->responseFactory->createResponse())->getStatusCode());
+        $after = $sql->fetchAssociative('SELECT * FROM semantic_memory_preference');
+        self::assertSame(0, (int) $after['enabled']);
+        self::assertSame((int) $before['revision'] + 1, (int) $after['revision']);
+        self::assertSame((int) $before['index_version'] + 1, (int) $after['index_version']);
+        self::assertSame(1, (int) $after['purge_pending']);
+    }
+
+    public function testSemanticConsentRequiresBooleanAndAuthenticatedExistingOwner(): void
+    {
+        [$controller, $sql] = $this->semanticController();
+        $this->session->method('get')->with(Auth::USERID)->willReturn('missing-user');
+        $this->entityManager->method('find')->willReturn(null);
+        foreach (['true', 1, null, []] as $invalid) {
+            self::assertSame(400, $controller->semanticMemory($this->createRequestWithSession(['enabled' => $invalid]),
+                $this->responseFactory->createResponse())->getStatusCode());
+        }
+        self::assertSame(404, $controller->semanticMemory($this->createRequestWithSession(['enabled' => true]),
+            $this->responseFactory->createResponse())->getStatusCode());
+        self::assertSame(404, $controller->clearSemanticMemory($this->createRequestWithSession(),
+            $this->responseFactory->createResponse())->getStatusCode());
+        self::assertSame(0, (int) $sql->fetchOne('SELECT COUNT(*) FROM semantic_memory_preference'));
+    }
+
+    public function testSemanticEndpointsRejectCaseAliasedAccountLookup(): void
+    {
+        [$controller, $sql] = $this->semanticController();
+        $this->session->method('get')->with(Auth::USERID)->willReturn('USER-123');
+        $this->entityManager->method('find')->with(User::class, 'USER-123')->willReturn($this->user);
+        self::assertSame(404, $controller->semanticMemory($this->createRequestWithSession(['enabled' => true]),
+            $this->responseFactory->createResponse())->getStatusCode());
+        self::assertSame(404, $controller->clearSemanticMemory($this->createRequestWithSession(),
+            $this->responseFactory->createResponse())->getStatusCode());
+        self::assertSame(0, (int) $sql->fetchOne('SELECT COUNT(*) FROM semantic_memory_preference'));
+    }
+
+    private function semanticController(): array
+    {
+        $sql = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $sql->executeStatement('CREATE TABLE account (id VARCHAR(255) PRIMARY KEY)');
+        $sql->insert('account', ['id' => 'user-123']);
+        $migration = new \Migrations\Version20260930000200($sql, new \Psr\Log\NullLogger());
+        $migration->up(new \Doctrine\DBAL\Schema\Schema());
+        foreach ($migration->getSql() as $query) {
+            $sql->executeStatement($query->getStatement(), $query->getParameters(), $query->getTypes());
+        }
+        $this->entityManager->method('getConnection')->willReturn($sql);
+        $settings = new Settings(['llm' => ['brains' => [], 'semanticMemory' => ['enabled' => true]],
+            'tools' => ['comfyui' => ['enabled' => false]]]);
+        return [new ConfigController($this->entityManager,
+            new BrainRegistry($settings, $this->createStub(ContainerInterface::class), new ThemeRegistry($settings)),
+            new ComfyUIWorkflowRegistry($settings), $settings, $this->createStub(AudioServiceInterface::class)), $sql];
+    }
+
     public function testAudioPreferencesArePersisted(): void
     {
         $this->session->method('get')->with(Auth::USERID)->willReturn('user-123');

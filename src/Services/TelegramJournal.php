@@ -48,7 +48,10 @@ final readonly class TelegramJournal
             return null;
         }
 
-        $record = ['deliveries' => json_decode($row['deliveries'] ?? '{}', true, flags: JSON_THROW_ON_ERROR)];
+        $deliveries = json_decode($row['deliveries'] ?? '{}', true, flags: JSON_THROW_ON_ERROR);
+        $record = ['stopped' => ($deliveries['_terminal']['status'] ?? null) === 'stopped'];
+        unset($deliveries['_terminal']);
+        $record['deliveries'] = $deliveries;
         foreach (self::FIELDS as $field => $column) {
             if ($field === 'response' && $row[$column] === null) {
                 continue;
@@ -95,7 +98,9 @@ final readonly class TelegramJournal
         $next = $record;
         $now = $this->now();
         $revision = $record['_revision'] ?? 0;
-        $next += ['attempted' => false, 'delivered' => false, 'compacted' => false, 'createdAt' => $now];
+        $next += ['attempted' => false, 'delivered' => false, 'compacted' => false,
+            'stopped' => false, 'createdAt' => $now,
+        ];
         $next['updatedAt'] = $now;
         $next['_revision'] = $revision + 1;
         if ($next['delivered'] && ! isset($next['completedAt'])) {
@@ -108,7 +113,13 @@ final readonly class TelegramJournal
                 ? (int) $next[$field] : ($next[$field] ?? null);
         }
 
-        $data['deliveries'] = json_encode($next['deliveries'] ?? [], JSON_THROW_ON_ERROR);
+        $deliveries = $next['deliveries'] ?? [];
+        // Reserved metadata keeps old response TEXT and delivery-step readers compatible.
+        unset($deliveries['_terminal']);
+        if ($next['stopped']) {
+            $deliveries['_terminal'] = ['status' => 'stopped'];
+        }
+        $data['deliveries'] = json_encode($deliveries, JSON_THROW_ON_ERROR);
         if ($revision === 0) {
             $this->connection->insert('telegram_generation', ['id' => $id] + $data);
         } elseif ($this->connection->update('telegram_generation', $data, ['id' => $id, 'revision' => $revision]) !== 1) {

@@ -74,7 +74,7 @@ final class ChatTurnRecovery
                 $locks[] = new ChatThreadLock($this->connection->getNativeConnection(), 'telegram-journal', $turn['id']);
             }
             $locks[] = new ChatThreadLock($this->connection->getNativeConnection(), $turn['userId'], $turn['threadId']);
-            $journal = new ChatTurnJournal($this->connection);
+            $journal = $this->journalForTurn($turn);
             $turn = $journal->rollback($turn['id'], $turn['userId']);
             if (($turn['deletedAt'] ?? null) !== null) {
                 return 'deleted';
@@ -121,7 +121,10 @@ final class ChatTurnRecovery
         }
         $lock = new ChatThreadLock($this->connection->getNativeConnection(), $user, $thread);
         try {
-            $journal = new ChatTurnJournal($this->connection);
+            $stops = $this->registeredStops(['userId' => $user, 'threadId' => $thread,
+                'channel' => 'web', 'generationId' => $id,
+            ]);
+            $journal = new ChatTurnJournal($this->connection, $stops);
             $turn = $journal->get($id);
             if ($turn === null) {
                 $state = $this->publisher->generationState()->get($user, $thread);
@@ -138,11 +141,57 @@ final class ChatTurnRecovery
                     $payload['submissionId'] ?? null,
                     ['sessionId' => ChatStreamSubscriber::scope($user, (string) $payload['sessionId'])]
                 );
+                $text = is_string($payload['message'] ?? null) ? trim($payload['message']) : '';
+                if ($text !== '' && $stops?->isRequested($user, $thread, 'web', $id)) {
+                    $this->project($journal->complete($id, $user, 'stopped', function () use (
+                        $payload,
+                        $text,
+                        $id,
+                        $user,
+                        $thread,
+                    ): void {
+                        $message = new \NeuronAI\Chat\Messages\UserMessage($text)
+                            ->addMetadata('timestamp', gmdate(DATE_ATOM))
+                            ->addMetadata('claire_submission_id', $payload['submissionId'] ?? 'user-' . hash('sha256', $id));
+                        new \App\Brain\ChatHistory\UserChatHistory(
+                            new \App\Services\Session\InMemorySession([Auth::USERID => $user]),
+                            $this->connection->getNativeConnection(),
+                            threadId: $thread,
+                            createIfMissing: false,
+                        )->persistStoppedTurn([$message], $id, $id);
+                    }));
+                    return;
+                }
             }
             $this->project($journal->rollback($id, $user));
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Caller holds the conversation lock. Unknown Redis generations may still be queued for entry.
+     *
+     * @param array<string, mixed> $turn
+     * @param array<string, mixed> $previous
+     */
+    public static function canProjectTerminal(Connection $connection, array $turn, array $previous): bool
+    {
+        if (($turn['deletedAt'] ?? null) !== null || ($previous['status'] ?? '') === 'deleted'
+             || ! in_array($turn['status'], ['succeeded', 'stopped', 'rolled_back'], true)
+            || $connection->fetchOne(
+                'SELECT id FROM chat_turn WHERE user_id = ? AND thread_id = ? ORDER BY history_revision DESC LIMIT 1',
+                [$turn['userId'], $turn['threadId']],
+            ) !== $turn['id']) {
+            return false;
+        }
+        if ($previous === [] || ($previous['messageId'] ?? '') === $turn['id']) {
+            return true;
+        }
+        $older = new ChatTurnJournal($connection)->get((string) ($previous['messageId'] ?? ''));
+        return $older !== null && $older['userId'] === $turn['userId'] && $older['threadId'] === $turn['threadId']
+            && $older['historyRevision'] < $turn['historyRevision']
+            && in_array($older['status'], ['succeeded', 'stopped', 'rolled_back'], true);
     }
 
     /** @param array<string, mixed> $turn */
@@ -157,9 +206,18 @@ final class ChatTurnRecovery
             $turn['userId'],
             $turn['threadId'],
             $turn['id'],
-            $turn['status'] === 'succeeded' ? 'done' : 'error',
+            match ($turn['status']) {
+                'succeeded' => 'done', 'stopped' => 'stopped', default => 'error'
+            },
             true
         );
+        if ($turn['channel'] === 'web' && $turn['status'] === 'stopped'
+            && isset($turn['notification']['sessionId'])) {
+            $this->publisher->publish($turn['notification']['sessionId'], 'chat.assistant.stopped', [
+                'threadId' => $turn['threadId'], 'sessionId' => $turn['notification']['sessionId'],
+                'messageId' => $turn['id'], 'submissionId' => $turn['submissionId'], 'turnStatus' => 'stopped',
+            ]);
+        }
         if ($turn['channel'] === 'web' && $turn['status'] === 'rolled_back'
             && isset($turn['notification']['sessionId'])) {
             $this->publisher->publish($turn['notification']['sessionId'], 'chat.error', [
@@ -171,28 +229,25 @@ final class ChatTurnRecovery
         }
     }
 
-    /**
-     * Caller holds the conversation lock. Unknown Redis generations may still be queued for entry.
-     *
-     * @param array<string, mixed> $turn
-     * @param array<string, mixed> $previous
-     */
-    public static function canProjectTerminal(Connection $connection, array $turn, array $previous): bool
+    /** @param array<string, mixed> $turn */
+    private function journalForTurn(array $turn): ChatTurnJournal
     {
-        if (($turn['deletedAt'] ?? null) !== null || ($previous['status'] ?? '') === 'deleted'
-            || ! in_array($turn['status'], ['succeeded', 'rolled_back'], true)
-            || $connection->fetchOne(
-                'SELECT id FROM chat_turn WHERE user_id = ? AND thread_id = ? ORDER BY history_revision DESC LIMIT 1',
-                [$turn['userId'], $turn['threadId']],
-            ) !== $turn['id']) {
-            return false;
+        return new ChatTurnJournal($this->connection, $this->registeredStops($turn));
+    }
+
+    /** @param array<string, mixed> $turn */
+    private function registeredStops(array $turn): ?ChatStopRequests
+    {
+        $stops = null;
+        if ($this->settings->get('llm.stop.enabled', false) === true) {
+            // Legacy/welcome turns have no accepted stop identity, even when the feature is enabled now.
+            $id = hash('sha256', json_encode([$turn['userId'], $turn['threadId'],
+                $turn['channel'], $turn['generationId'],
+            ], JSON_THROW_ON_ERROR));
+            if ($this->connection->fetchOne('SELECT id FROM chat_stop_request WHERE id = ?', [$id]) === $id) {
+                $stops = new ChatStopRequests($this->connection);
+            }
         }
-        if ($previous === [] || ($previous['messageId'] ?? '') === $turn['id']) {
-            return true;
-        }
-        $older = new ChatTurnJournal($connection)->get((string) ($previous['messageId'] ?? ''));
-        return $older !== null && $older['userId'] === $turn['userId'] && $older['threadId'] === $turn['threadId']
-            && $older['historyRevision'] < $turn['historyRevision']
-            && in_array($older['status'], ['succeeded', 'rolled_back'], true);
+        return $stops;
     }
 }

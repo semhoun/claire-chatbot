@@ -1,0 +1,18 @@
+{
+  "title": "Synthetic fixture conversation",
+  "summary": "The synthetic user requested a report and audio.",
+  "messages": [
+    {"__id":"msg_summary","message_type":"out_of_context","role":"user","content":[{"type":"text","content":"[OC]Previous conversation summary:\n\nThe synthetic user requested a report and audio.\n[\\OC]","meta":[]}]},
+    {"__id":"msg_final","timestamp":"2026-01-02T03:04:12+00:00","role":"assistant","content":[{"type":"text","content":"Report: @@GENERATED@@/fixture.pdf Audio: @@GENERATED@@/fixture.mp3","meta":[]}],"usage":{"input_tokens":42,"output_tokens":12,"cached_input_tokens":0,"reasoning_tokens":0}}
+  ],
+  "display_messages": [
+    {"__id":"msg_user","timestamp":"2026-01-02T03:04:05+00:00","claire_submission_id":"submission_fixture","role":"user","content":[{"type":"text","content":"Hello, synthetic Claire.","meta":[]}]},
+    {"__id":"msg_hello","timestamp":"2026-01-02T03:04:06+00:00","claire_message_id":"assistant.fixture.hello","claire_audio_request_id":null,"role":"assistant","content":[{"type":"text","content":"Hello, synthetic user.","meta":[]}]},
+    {"__id":"msg_assets","timestamp":"2026-01-02T03:04:07+00:00","role":"user","content":[{"type":"text","content":"Make a report and audio from these synthetic attachments.","meta":[]},{"type":"image","content":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII=","source_type":"base64","media_type":"image/png"},{"type":"file","content":"U3ludGhldGljIGZpeHR1cmUuCg==","source_type":"base64","media_type":"text/plain","filename":"fixture.txt","meta":{"purpose":"synthetic"}}]},
+    {"__id":"msg_call_1","timestamp":"2026-01-02T03:04:08+00:00","role":"assistant","content":[{"type":"text","content":"Preparing the report.","meta":[]}],"type":"tool_call","tools":[{"callId":"call_fixture_1","name":"generate_pdf","description":"Synthetic report tool","parameters":{"type":"object","properties":{"text":{"type":"string"}}},"inputs":{"text":"Synthetic fixture."},"result":null}]},
+    {"__id":"msg_result_1","timestamp":"2026-01-02T03:04:09+00:00","role":"user","content":[],"type":"tool_call_result","tools":[{"callId":"call_fixture_1","name":"generate_pdf","description":"Synthetic report tool","parameters":{"type":"object","properties":{"text":{"type":"string"}}},"inputs":{"text":"Synthetic fixture."},"result":"@@GENERATED@@/fixture.pdf"}]},
+    {"__id":"msg_call_2","timestamp":"2026-01-02T03:04:10+00:00","role":"assistant","content":[{"type":"text","content":"Preparing the audio next.","meta":[]}],"type":"tool_call","tools":[{"callId":"call_fixture_2","name":"generate_speech","description":"Synthetic audio tool","parameters":[],"inputs":{},"result":null}]},
+    {"__id":"msg_result_2","timestamp":"2026-01-02T03:04:11+00:00","role":"user","content":[],"type":"tool_call_result","tools":[{"callId":"call_fixture_2","name":"generate_speech","description":"Synthetic audio tool","parameters":[],"inputs":{},"result":"@@GENERATED@@/fixture.mp3"}]},
+    {"__id":"msg_final","timestamp":"2026-01-02T03:04:12+00:00","claire_message_id":"assistant.fixture.final","claire_audio_request_id":"audio_fixture_final","role":"assistant","content":[{"type":"text","content":"Report: @@GENERATED@@/fixture.pdf Audio: @@GENERATED@@/fixture.mp3","meta":[]}],"usage":{"input_tokens":42,"output_tokens":12,"cached_input_tokens":0,"reasoning_tokens":0}}
+  ]
+}

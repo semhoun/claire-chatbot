@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console;
 
+use App\Services\Settings;
 use App\Services\TelegramService;
 use Phptg\BotApi\TelegramBotApi;
 use Phptg\BotApi\Type\BotCommand;
@@ -22,6 +23,7 @@ final class TelegramSetCommandsCommand extends Command
     public function __construct(
         private readonly TelegramBotApi $telegramBotApi,
         private readonly Logger $logger,
+        private readonly Settings $settings,
     ) {
         parent::__construct();
     }
@@ -30,8 +32,12 @@ final class TelegramSetCommandsCommand extends Command
     {
         try {
             $commands = [];
+            $descriptions = TelegramService::COMMANDS;
+            if ($this->settings->get('llm.stop.enabled', false)) {
+                $descriptions['stop'] = 'Arreter la reponse en cours';
+            }
 
-            foreach (TelegramService::COMMANDS as $command => $description) {
+            foreach ($descriptions as $command => $description) {
                 $commands[] = new BotCommand(
                     command: $command,
                     description: $description,
@@ -43,12 +49,12 @@ final class TelegramSetCommandsCommand extends Command
             if ($result === true) {
                 $output->writeln('<info>Telegram bot commands set successfully:</info>');
 
-                foreach (TelegramService::COMMANDS as $command => $description) {
+                foreach ($descriptions as $command => $description) {
                     $output->writeln(sprintf('  /%s - %s', $command, $description));
                 }
 
                 $this->logger->info('Telegram bot commands updated', [
-                    'commands' => array_keys(TelegramService::COMMANDS),
+                    'commands' => array_keys($descriptions),
                 ]);
 
                 return Command::SUCCESS;

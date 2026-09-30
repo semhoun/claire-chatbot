@@ -8,7 +8,6 @@ use App\Brain\BrainRegistry;
 use App\Brain\ChatHistory\UserChatHistory;
 use App\Brain\LongTermMemory;
 use App\Brain\LongTermMemoryRebuilder;
-use App\Brain\Tools\GenerateImageTool;
 use App\Entity\File;
 use App\Entity\User;
 use App\Enums\TelegramAction;
@@ -56,6 +55,8 @@ class TelegramService implements QueueDoer
 
     private string $generationId = '';
 
+    private ?int $deliveryTopicId = null;
+
     /** @var \Closure(string, callable(): void): void|null */
     private ?\Closure $deliveryCheckpoint = null;
 
@@ -72,6 +73,8 @@ class TelegramService implements QueueDoer
         private readonly TelegramAudioService $telegramAudioService,
         private readonly TelegramChatActionHeartbeat $telegramChatActionHeartbeat,
         private readonly TelegramGeneration $telegramGeneration,
+        private readonly ?SemanticMemoryRegistry $semanticMemoryRegistry = null,
+        private readonly ?\App\Services\Queue\QueueDispatcherInterface $semanticQueue = null,
     ) {
         $this->telegramSession = new TelegramSession($entityManager);
     }
@@ -99,6 +102,7 @@ class TelegramService implements QueueDoer
      */
     public function failed(array $payload): void
     {
+        $message = null;
         if (isset($payload['update_json'])) {
             $update = Update::fromJson((string) $payload['update_json']);
             $message = $update->message;
@@ -124,16 +128,49 @@ class TelegramService implements QueueDoer
         if ($sessionId === '' || $chatId === 0) {
             return;
         }
-        $lock = new ChatThreadLock($this->entityManager->getConnection()->getNativeConnection(),
-            'telegram-session', $sessionId);
+        $lock = new ChatThreadLock(
+            $this->entityManager->getConnection()->getNativeConnection(),
+            'telegram-session',
+            $sessionId
+        );
         try {
             if (! $this->manageSession($sessionId)) {
                 return;
             }
-            $this->telegramGeneration->fail((string) $this->telegramSession->get(Auth::USERID),
+            $this->telegramGeneration->fail(
+                (string) $this->telegramSession->get(Auth::USERID),
                 (string) ($this->telegramSession->get('threadId') ?: uniqid(UserChatHistory::CHAT_TELEGRAM, true)),
-                $generationId, ['sessionId' => $sessionId, 'chatId' => $chatId],
-                fn () => $this->sendFailureNotice($chatId));
+                $generationId,
+                ['sessionId' => $sessionId, 'chatId' => $chatId],
+                fn () => $this->sendFailureNotice($chatId),
+                preserveStoppedInput: function (string $threadId) use ($message, $generationId): void {
+                    $text = $message->text ?? $message->caption ?? '';
+                    if ($text === '') {
+                        return;
+                    }
+                    $id = TelegramJournal::id(
+                        explode(':', (string) $this->settings->get('telegram.bot_token'), 2)[0],
+                        $generationId
+                    );
+                    new UserChatHistory(
+                        $this->telegramSession,
+                        $this->entityManager->getConnection()->getNativeConnection(),
+                        threadId: $threadId
+                    )
+                        ->addMessage(new UserMessage($text)
+                            ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM))
+                            ->addMetadata('claire_submission_id', 'user-' . $id)
+                            ->addMetadata('generation_stopped', true));
+                },
+                notifyStopped: function (array $notification) use ($chatId): void {
+                    $this->deliveryTopicId = (int) ($notification['messageThreadId'] ?? 0) ?: null;
+                    try {
+                        $this->sendMessage((int) ($notification['chatId'] ?? $chatId), 'Génération arrêtée.');
+                    } finally {
+                        $this->deliveryTopicId = null;
+                    }
+                }
+            );
         } finally {
             $lock->release();
         }
@@ -248,7 +285,7 @@ class TelegramService implements QueueDoer
                     $threadId,
                 );
                 $text = $agent->getOpeningText();
-                $agent->getChatHistory()->initializeWithOpeningMessage(
+                $agent->getUserChatHistory()->initializeWithOpeningMessage(
                     new AssistantMessage($text)
                         ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM)),
                     false,
@@ -403,8 +440,10 @@ class TelegramService implements QueueDoer
      */
     public function sendFailureNotice(int $telegramChatId): void
     {
-        $result = $this->telegramBotApi->sendMessage(chatId: $telegramChatId,
-            text: 'Désolé, une erreur est survenue lors du traitement de votre message. Veuillez le renvoyer.');
+        $result = $this->telegramBotApi->sendMessage(
+            chatId: $telegramChatId,
+            text: 'Désolé, une erreur est survenue lors du traitement de votre message. Veuillez le renvoyer.'
+        );
         if ($result instanceof FailResult) {
             throw new \RuntimeException('Telegram rejected failure notification');
         }
@@ -423,7 +462,12 @@ class TelegramService implements QueueDoer
             $chunks = $this->splitMessage($formattedText);
             foreach ($chunks as $index => $chunk) {
                 $send = function () use ($telegramChatId, $chunk): void {
-                    $result = $this->telegramBotApi->sendMessage(chatId: $telegramChatId, text: $chunk, parseMode: ParseMode::MARKDOWN_V2);
+                    $result = $this->telegramBotApi->sendMessage(
+                        chatId: $telegramChatId,
+                        text: $chunk,
+                        messageThreadId: $this->deliveryTopicId,
+                        parseMode: ParseMode::MARKDOWN_V2
+                    );
                     if ($result instanceof FailResult) {
                         $this->logger->error('Failed to send message chunk', ['chatId' => $telegramChatId, 'chunk' => $chunk, 'error' => $result]);
                         throw new \RuntimeException('Telegram rejected a message chunk');
@@ -471,12 +515,21 @@ class TelegramService implements QueueDoer
         $photo = $photos[count($photos) - 1];
         $fileId = $photo->fileId;
 
-        $this->processChatMessage($telegramChatId, function () use ($fileId, $message): string {
+        $this->processChatMessage($telegramChatId, function (?callable $stopRequested = null) use (
+            $fileId,
+            $message,
+        ): string {
             $file = $this->telegramBotApi->getFile(fileId: $fileId);
             if ($file instanceof FailResult) {
                 throw new \RuntimeException('Telegram could not resolve the image file');
             }
+            if ($stopRequested !== null && $stopRequested()) {
+                throw new \RuntimeException('Media preparation stopped');
+            }
             $imageContent = $this->telegramBotApi->downloadFile($file)->getBody();
+            if ($stopRequested !== null && $stopRequested()) {
+                throw new \RuntimeException('Media preparation stopped');
+            }
 
             $localPath = sprintf('telegram/%s/', $this->telegramSession->get(Auth::USERID)) . uniqid('photo_', true) . '.jpg';
             $this->filesystem->write($localPath, $imageContent);
@@ -484,7 +537,7 @@ class TelegramService implements QueueDoer
             $caption = $message->caption ?? 'Décris cette image';
 
             return "[Image: {$localPath}]\n\n{$caption}";
-        });
+        }, memoryText: $message->caption ?? '');
     }
 
     private function handleDocument(int $telegramChatId, Message $message): void
@@ -499,12 +552,23 @@ class TelegramService implements QueueDoer
         $fileName = $document->fileName ?? 'document';
         $mimeType = $document->mimeType ?? 'application/octet-stream';
 
-        $this->processChatMessage($telegramChatId, function () use ($fileId, $fileName, $mimeType, $message): string {
+        $this->processChatMessage($telegramChatId, function (?callable $stopRequested = null) use (
+            $fileId,
+            $fileName,
+            $mimeType,
+            $message,
+        ): string {
             $file = $this->telegramBotApi->getFile(fileId: $fileId);
             if ($file instanceof FailResult) {
                 throw new \RuntimeException('Telegram could not resolve the document file');
             }
+            if ($stopRequested !== null && $stopRequested()) {
+                throw new \RuntimeException('Media preparation stopped');
+            }
             $fileContent = $this->telegramBotApi->downloadFile($file)->getBody();
+            if ($stopRequested !== null && $stopRequested()) {
+                throw new \RuntimeException('Media preparation stopped');
+            }
 
             $extension = pathinfo($fileName, PATHINFO_EXTENSION);
             $localPath = sprintf('telegram/%s/', $this->telegramSession->get(Auth::USERID)) . uniqid('doc_', true) . '.' . $extension;
@@ -513,7 +577,7 @@ class TelegramService implements QueueDoer
             $caption = $message->caption ?? 'Analyse ce document';
 
             return "[Document: {$localPath} ({$mimeType})]\n\n{$caption}";
-        });
+        }, memoryText: $message->caption ?? '');
     }
 
     private function processMessageByType(int $telegramChatId, Message $message): void
@@ -664,48 +728,179 @@ class TelegramService implements QueueDoer
         int $telegramChatId,
         string|callable $text,
         bool $voiceResponse = false,
+        ?string $memoryText = null,
     ): void {
         $threadId = (string) $this->telegramSession->get('threadId', '');
+        $userId = (string) $this->telegramSession->get(Auth::USERID);
+        $id = TelegramJournal::id(
+            explode(':', (string) $this->settings->get('telegram.bot_token'), 2)[0],
+            $this->generationId
+        );
+        $turn = (object) [
+            'threadId' => $threadId, 'messages' => [], 'streamedText' => '', 'assistantText' => '',
+            'userText' => $memoryText ?? (is_string($text) ? $text : ''),
+            'userMessageId' => 'user-' . $id, 'assistantMessageId' => 'assistant-' . $id,
+        ];
+        $semanticDocumentId = null;
         $this->telegramGeneration->run(
-            (string) $this->telegramSession->get(Auth::USERID),
+            $userId,
             $threadId !== '' ? $threadId : uniqid(UserChatHistory::CHAT_TELEGRAM, true),
             $this->generationId,
-            function (string $threadId, callable $guard, string $preparedText) use ($telegramChatId): string {
+            function (string $threadId, callable $guard, string $preparedText, ?callable $stopRequested = null) use (
+                $telegramChatId,
+                $turn,
+                $voiceResponse,
+                $memoryText,
+            ): string {
+                $turn->threadId = $threadId;
+                if ($voiceResponse && $memoryText === null) {
+                    $turn->userText = $preparedText;
+                }
                 if (! $this->telegramSession->get('threadId')) {
                     $this->telegramSession->set('threadId', $threadId);
                     $this->telegramSession->save();
                 }
 
-                return $this->generateChatResponse($telegramChatId, $preparedText, $threadId, $guard);
+                return $this->generateChatResponse(
+                    $telegramChatId,
+                    $preparedText,
+                    $threadId,
+                    $guard,
+                    $stopRequested,
+                    $turn,
+                );
             },
-            function (string $responseText, callable $checkpoint) use ($telegramChatId, $voiceResponse): void {
-                $this->deliverChatResponse($telegramChatId, $responseText, $checkpoint, $voiceResponse);
+            function (string $responseText, callable $checkpoint, bool $stopped = false, array $notification = []) use (
+                $telegramChatId,
+                $voiceResponse,
+            ): void {
+                $this->deliveryTopicId = (int) ($notification['messageThreadId'] ?? 0) ?: null;
+                try {
+                    $this->deliverChatResponse(
+                        (int) ($notification['chatId'] ?? $telegramChatId),
+                        $responseText,
+                        $checkpoint,
+                        $voiceResponse && ! $stopped,
+                        $stopped
+                    );
+                } finally {
+                    $this->deliveryTopicId = null;
+                }
             },
             notification: ['chatId' => $telegramChatId, 'sessionId' => (string) $this->telegramSession->get('telegram_id')],
             notifyFailure: fn () => $this->sendFailureNotice($telegramChatId),
-            prepare: static fn (): string => is_string($text) ? $text : $text(),
+            prepare: static fn (?callable $stopRequested = null): string => is_string($text) ? $text : $text($stopRequested),
+            preserveStoppedInput: function (string $threadId, mixed $prepared) use ($text, $turn, $memoryText): void {
+                $turn->threadId = $threadId;
+                if (! $this->telegramSession->get('threadId')) {
+                    $this->telegramSession->set('threadId', $threadId);
+                    $this->telegramSession->save();
+                }
+                $accepted = is_string($prepared) ? $prepared : (is_string($text) ? $text : ($memoryText ?? ''));
+                if ($accepted !== '') {
+                    $turn->messages = [new UserMessage($accepted)
+                        ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM))
+                        ->addMetadata('claire_submission_id', $turn->userMessageId),
+                    ];
+                }
+            },
+            onBegin: function (\Doctrine\DBAL\Connection $_connection, string $turnId) use ($userId): void {
+                if ($this->settings->get('llm.semanticMemory.enabled', false) === true) {
+                    $this->semanticMemoryRegistry?->captureTurn($userId, $turnId);
+                }
+            },
+            onComplete: function (\Doctrine\DBAL\Connection $_connection, string $turnId, string $status) use (
+                $turn,
+                $userId,
+                &$semanticDocumentId,
+            ): ?string {
+                if ($status === 'stopped') {
+                    if ($turn->messages !== []) {
+                        $history = new UserChatHistory(
+                            $this->telegramSession,
+                            $this->entityManager->getConnection()->getNativeConnection(),
+                            threadId: $turn->threadId
+                        );
+                        $history->persistStoppedTurn($turn->messages, $turn->assistantMessageId, $turnId);
+                    }
+                    return $turn->streamedText;
+                }
+                if ($this->settings->get('llm.semanticMemory.enabled', false) === true) {
+                    $semanticDocumentId = $this->semanticMemoryRegistry?->recordSucceededTurn(
+                        $userId,
+                        $turnId,
+                        $turn->userMessageId,
+                        $turn->assistantMessageId,
+                        $turn->userText,
+                        $turn->assistantText
+                    );
+                }
+                return null;
+            },
         );
+        if ($semanticDocumentId !== null && $this->semanticQueue !== null) {
+            try {
+                $this->semanticQueue->dispatch(
+                    \App\Job\SemanticMemory\IndexTurnJob::class,
+                    ['userId' => $userId, 'documentId' => $semanticDocumentId],
+                    (string) $this->settings->get('queue.defaultQueue'),
+                );
+            } catch (\Throwable $enqueueError) {
+                $this->logger->warning('Semantic indexing enqueue failed', ['error' => $enqueueError::class]);
+            }
+        }
     }
 
-    private function generateChatResponse(int $telegramChatId, string $text, string $threadId, callable $guard): string
-    {
+    private function generateChatResponse(
+        int $telegramChatId,
+        string $text,
+        string $threadId,
+        callable $guard,
+        ?callable $stopRequested = null,
+        ?\stdClass $turn = null,
+    ): string {
+        $guard();
         $this->logger->info('Generating chat response for chat ID: ' . $telegramChatId, ['text' => $text, 'threadId' => $threadId]);
-        $this->sendChatAction($telegramChatId, TelegramAction::TEXT, force: true);
-
-        $currentBrain = $this->telegramSession->get('brain_avatar');
-        $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession, $threadId);
-
         $userMessage = new UserMessage($text);
         $userMessage->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
+        if ($turn !== null) {
+            $userMessage->addMetadata('claire_submission_id', $turn->userMessageId);
+            $userMessage->addMetadata('semantic_query', $turn->userText);
+            $turn->messages = [$userMessage];
+        }
+        $token = $stopRequested === null ? null : new GenerationStopToken($stopRequested);
+        if ($token?->isRequested()) {
+            return '';
+        }
+        $this->sendChatAction($telegramChatId, TelegramAction::TEXT, force: true);
+        $currentBrain = $this->telegramSession->get('brain_avatar');
+        $agent = $this->brainRegistry->get($currentBrain, $this->telegramSession, $threadId);
+        if ($token !== null) {
+            $provider = $agent->getProvider();
+            if (method_exists($provider, 'getHttpClient') && method_exists($provider, 'setHttpClient')) {
+                $provider = clone $provider;
+                $provider->setHttpClient($token->httpClient($provider->getHttpClient()));
+            }
+            $agent->setAiProvider($provider);
+        }
 
         return $this->telegramChatActionHeartbeat->run(
             $telegramChatId,
             TelegramAction::TEXT,
-            function () use ($agent, $userMessage, $telegramChatId, $guard): string {
+            function () use ($agent, $userMessage, $telegramChatId, $guard, $token, $turn): string {
                 $guard();
-                $agentHandler = $agent->stream($userMessage);
-                foreach ($agentHandler->events() as $chunk) {
+                $stream = $token === null ? $agent->stream($userMessage)
+                    : new GenerationExecution($token)->stream($agent, $userMessage, $guard);
+                $streamedMessages = [];
+                $guard();
+                foreach ($stream as $chunk) {
                     $guard();
+                    if ($chunk instanceof TextChunk && ! $chunk instanceof ReasoningChunk) {
+                        $streamedMessages[$chunk->messageId] = ($streamedMessages[$chunk->messageId] ?? '') . $chunk->content;
+                        if ($turn !== null) {
+                            $turn->streamedText .= $chunk->content;
+                        }
+                    }
                     $action = $this->resolveChunkAction($chunk);
                     if ($action instanceof \App\Enums\TelegramAction) {
                         $this->sendChatAction($telegramChatId, $action);
@@ -714,13 +909,43 @@ class TelegramService implements QueueDoer
                     $guard();
                 }
 
-                $agentMessage = $agentHandler->getMessage();
-                $agentMessage->addMetadata(
-                    'timestamp',
-                    new \DateTimeImmutable()->format(\DateTimeInterface::ATOM),
-                );
+                $result = $stream->getReturn();
+                if ($result instanceof GenerationExecutionResult) {
+                    if ($turn !== null) {
+                        $turn->messages = $result->messages;
+                    }
+                    if ($result->stopped) {
+                        return implode('', $streamedMessages);
+                    }
+                    $state = $result->state;
+                } else {
+                    $state = $result;
+                    if ($turn !== null) {
+                        $turn->messages = $state->getSteps();
+                    }
+                }
+                if ($state === null) {
+                    throw new \UnexpectedValueException('Telegram generation completed without state');
+                }
+                if ($state->isInterrupted()) {
+                    throw new \UnexpectedValueException('Unexpected workflow suspension during Telegram generation');
+                }
+                $agentMessage = $state->getMessage();
+                if ($agentMessage === null) {
+                    throw new \UnexpectedValueException('Telegram generation completed without an assistant message');
+                }
+                if ($agentMessage->getMetadata('stop_reason') === \NeuronAI\HttpClient\StoppableHttpClient::STOP_REASON) {
+                    throw new \UnexpectedValueException('Stopped Telegram stream requires durable stop finalization');
+                }
 
-                return $agentMessage->getContent() ?? '';
+                $streamedMessages[$agentMessage->getId()] = $agentMessage->getContent() ?? '';
+                if ($turn !== null) {
+                    $turn->assistantText = trim(
+                        preg_replace('/@@GENERATED@@[^@]+@@/', '', $agentMessage->getContent() ?? '') ?? '',
+                    );
+                    $agent->getUserChatHistory()->identifyLastAssistantMessage($turn->assistantMessageId);
+                }
+                return implode('', $streamedMessages);
             }
         );
     }
@@ -740,7 +965,7 @@ class TelegramService implements QueueDoer
 
     private function resolveToolChunkAction(ToolCallChunk|ToolResultChunk $chunk): TelegramAction
     {
-        return $chunk->tool instanceof GenerateImageTool
+        return $chunk->tool->getName() === 'generate_image'
             ? TelegramAction::GENERATE
             : TelegramAction::TEXT;
     }
@@ -751,9 +976,18 @@ class TelegramService implements QueueDoer
         string $responseText,
         callable $checkpoint,
         bool $voiceResponse = false,
+        bool $stopped = false,
     ): void {
         $this->deliveryCheckpoint = \Closure::fromCallable($checkpoint);
         try {
+            if ($stopped) {
+                // This is a delivery notice, not a fabricated assistant history message.
+                $checkpoint('text', fn () => $this->sendMessage(
+                    $telegramChatId,
+                    $responseText !== '' ? $responseText . "\n\nGénération arrêtée." : 'Génération arrêtée.'
+                ));
+                return;
+            }
             $checkpoint('text', fn () => $this->sendChatResponse($telegramChatId, $responseText));
             if ($voiceResponse) {
                 $voice = (string) $this->telegramSession->get(
@@ -1105,6 +1339,9 @@ class TelegramService implements QueueDoer
         $message = "Commandes disponibles :\n";
         foreach (self::COMMANDS as $key => $val) {
             $message .= sprintf('/%s - %s', $key, $val) . "\n";
+        }
+        if ($this->settings->get('llm.stop.enabled', false) === true) {
+            $message .= "/stop - Arrêter la génération en cours\n";
         }
 
         $this->sendMessage($telegramChatId, $message);

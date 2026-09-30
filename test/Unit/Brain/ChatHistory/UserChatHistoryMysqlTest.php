@@ -43,6 +43,7 @@ final class UserChatHistoryMysqlTest extends TestCase
         $load->method('fetchAll')->willReturn([[
             'messages' => '[]', 'display_messages' => '[]', 'title' => null, 'summary' => null,
             'revision' => 0, 'current_turn_id' => null,
+            'stored_messages' => null, 'user_id' => 'user', 'thread_id' => 'thread',
         ]]);
         $update = $this->createStub(PDOStatement::class);
         $update->method('rowCount')->willReturn($exists ? 1 : 0);

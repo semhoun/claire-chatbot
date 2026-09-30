@@ -62,6 +62,9 @@ const failedDraft = computed(() => failedDrafts.value[0] ?? null)
 const generationError = ref(false)
 let composerRevision = 0
 const activeMessageId = ref<string | null>(null)
+const activeSubmissionId = ref<string | null>(null)
+const stopRequested = ref<string | null>(null)
+const generationStopped = ref(false)
 const message = ref('')
 const currentBrain = ref(props.config.currentBrain)
 const brainInfo = computed(() => currentBrain.value === props.config.currentBrain
@@ -81,6 +84,9 @@ const theme = computed<Theme>(() => {
 })
 const currentWorkflow = ref(props.config.currentWorkflow)
 const longTermMemory = ref(props.config.longTermMemoryEnabled)
+const semanticMemory = ref(props.config.semanticMemoryEnabled === true)
+const semanticMemoryBusy = ref(false)
+const semanticMemoryHelp = 'Seuls les nouveaux échanges terminés après activation sont mémorisés, sans reprise des anciens historiques. Des extraits sont envoyés au fournisseur d’embeddings configuré. Désactiver conserve les données ; utilisez l’effacement dédié pour les supprimer. Le profil textuel de mémoire longue durée reste indépendant et inchangé.'
 const layoutMode = ref(props.config.layoutMode)
 const audioEnabled = ref(props.config.audioEnabled)
 const audioAutoGenerate = ref(props.config.audioAutoGenerate)
@@ -215,6 +221,7 @@ function beginNavigation(): void {
   obsoleteMessages.clear()
   failedDrafts.value = []
   generationError.value = false
+  generationStopped.value = false
   streamReady = false
   contextGeneration++
   connectionGeneration++
@@ -246,6 +253,8 @@ const layoutLabel = computed(() => {
 })
 
 const composerDisabled = computed(() => busy.value || responding.value)
+const canStop = computed(() => props.config.stopAvailable === true && responding.value
+  && activeMessageId.value !== null && activeSubmissionId.value !== null)
 const assistantLoading = computed(() => responding.value && !textTransmitting.value)
 
 function setTextTransmitting(active: boolean): void {
@@ -409,6 +418,7 @@ async function connectStream(): Promise<void> {
       'chat.assistant.placeholder',
       'chat.assistant.update',
       'chat.assistant.done',
+      'chat.assistant.stopped',
       'chat.audio.ready',
       'chat.audio.error',
       'chat.tool.update',
@@ -438,6 +448,11 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
   if (update.sessionId && update.sessionId !== sessionId.value) return
   if (type === 'chat.snapshot') {
     update = { ...update, messageId: update.messageId ?? update.generation?.messageId ?? update.generationMessageId ?? undefined }
+    // A stale idle snapshot is not acknowledgement of a pending stop request.
+    if (stopRequested.value && update.responding === false
+      && (update.messageId !== stopRequested.value
+        || (!['succeeded', 'stopped', 'rolled_back'].includes(update.turnStatus ?? '')
+          && !['done', 'stopped', 'error'].includes(update.generationStatus ?? '')))) return
     if (update.responding && ((update.submissionId && terminalSubmissions.has(update.submissionId))
       || (update.messageId && terminalMessages.has(update.messageId)))) return
   }
@@ -457,7 +472,7 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
   if (type !== 'chat.snapshot' && !type.startsWith('chat.audio.')
     && update.messageId && obsoleteMessages.has(update.messageId)) return
   if (type === 'chat.assistant.start' && activeMessageId.value && update.messageId !== activeMessageId.value) return
-  if (['chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update', 'chat.assistant.done'].includes(type)
+  if (['chat.assistant.placeholder', 'chat.assistant.update', 'chat.tool.update', 'chat.assistant.done', 'chat.assistant.stopped'].includes(type)
     && (!responding.value || (activeMessageId.value !== null && update.messageId !== activeMessageId.value))) return
   if (['chat.error', 'chat.tool.update'].includes(type)
     && activeMessageId.value !== null && update.messageId && update.messageId !== activeMessageId.value) return
@@ -499,7 +514,12 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     chatMessages.value = messages
     if (update.generationStatus === 'error' && update.turnStatus !== 'succeeded'
       && !(update.submissionId && terminalSubmissions.has(update.submissionId))) showGenerationError()
-    else if (update.generationStatus === 'done' && !failedDraft.value) generationError.value = false
+    else if (['done', 'stopped'].includes(update.generationStatus ?? '') && !failedDraft.value) generationError.value = false
+    generationStopped.value = update.turnStatus === 'stopped' || update.generationStatus === 'stopped'
+    if (generationStopped.value && update.messageId) {
+      terminalMessages.add(update.messageId)
+      invalidAudio.add(update.messageId)
+    }
     const retainedAudioIds = audioThreadId === threadId.value
       ? new Set(chatMessages.value.filter(entry => !entry.sent).map(entry => entry.id))
       : new Set<string>()
@@ -525,6 +545,7 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
       if (activeMessageId.value !== update.activeMessageId) setTextTransmitting(false)
       responding.value = update.responding
       activeMessageId.value = update.activeMessageId ?? null
+      activeSubmissionId.value = update.responding ? update.submissionId ?? null : null
       if (!responding.value) finishResponse()
     }
     void resolvePendingTurns()
@@ -532,6 +553,8 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     setTextTransmitting(false)
     responding.value = true
     activeMessageId.value = update.messageId ?? null
+    activeSubmissionId.value = update.submissionId ?? activeSubmissionId.value
+    generationStopped.value = false
   } else if (type === 'chat.assistant.placeholder') {
     if (activeMessageId.value !== null && update.messageId !== activeMessageId.value) return
     activeMessageId.value = update.messageId ?? null
@@ -556,10 +579,15 @@ function handleStreamUpdate(type: string, update: SseUpdate): void {
     }
     const entry = chatMessages.value.find(entry => entry.id === update.messageId)
     if (entry) entry.toolsCall = update.toolsCall ?? []
-  } else if (type === 'chat.assistant.done') {
+  } else if (type === 'chat.assistant.done' || type === 'chat.assistant.stopped') {
+    if (type === 'chat.assistant.stopped') {
+      update = { ...update, turnStatus: 'stopped', generationStatus: 'stopped' }
+      generationStopped.value = true
+      if (update.messageId) invalidAudio.add(update.messageId)
+    }
     settleTurn(update)
     finishResponse()
-    expectAutoAudio(update.messageId, update.audioRequestId)
+    if (type === 'chat.assistant.done') expectAutoAudio(update.messageId, update.audioRequestId)
   } else if (type === 'chat.audio.ready') {
     receiveReadyAudio(update)
   } else if (type === 'chat.audio.error' && update.messageId && audioEnabled.value
@@ -581,10 +609,30 @@ function finishResponse(): void {
   if (activeMessageId.value) obsoleteMessages.add(activeMessageId.value)
   responding.value = false
   activeMessageId.value = null
+  activeSubmissionId.value = null
+  stopRequested.value = null
   for (const entry of chatMessages.value) {
     for (const tool of entry.toolsCall) {
       if (tool.running) { tool.running = false; tool.interrupted = true }
     }
+  }
+}
+
+async function stopGeneration(): Promise<void> {
+  const generation = activeMessageId.value
+  if (!canStop.value || !generation || stopRequested.value === generation) return
+  const context = captureContext()
+  const current = () => context() && activeMessageId.value === generation
+  stopRequested.value = generation
+  try {
+    const status = await client.stopGeneration(threadId.value, generation)
+    if (!current()) return
+    // Acknowledgement is not completion; reconcile terminal races from durable history.
+    if (['stopped', 'succeeded', 'rolled_back'].includes(status)) void connectStream()
+  } catch {
+    if (!current()) return
+    stopRequested.value = null
+    notify('La demande d’arrêt a échoué. Réessayez.', 'error')
   }
 }
 
@@ -602,12 +650,14 @@ function restoreDraft(draft: PendingSubmission): void {
 function settleTurn(result: SseUpdate): boolean {
   const id = result.submissionId
   if (!id || terminalSubmissions.has(id)) return false
-  if (result.turnStatus !== 'succeeded'
+  if (result.turnStatus !== 'succeeded' && result.turnStatus !== 'stopped'
     && !(result.turnStatus === 'rolled_back' && result.rollbackConfirmed === true)) return false
   terminalSubmissions.add(id)
   const draft = pendingMessages.get(id)
   pendingMessages.delete(id)
-  if (result.turnStatus === 'succeeded') {
+  if (result.turnStatus === 'succeeded' || result.turnStatus === 'stopped') {
+    if (result.messageId) terminalMessages.add(result.messageId)
+    generationStopped.value = result.turnStatus === 'stopped'
     if (activeMessageId.value === (result.messageId ?? draft?.messageId)) finishResponse()
     return true
   }
@@ -798,6 +848,8 @@ async function submitMessage(): Promise<void> {
   const optimisticId = optimisticMessage(text)
   responding.value = true
   activeMessageId.value = null
+  activeSubmissionId.value = optimisticId
+  generationStopped.value = false
   const draft = pendingMessages.get(optimisticId)!
   generationError.value = false
   const data = new FormData()
@@ -823,7 +875,11 @@ async function submitMessage(): Promise<void> {
     if (rolledBackSubmissions.has(optimisticId)) return
     if (admission.submissionId === optimisticId && admission.messageId) {
       draft.messageId = admission.messageId
-      if (!terminalSubmissions.has(optimisticId) && activeMessageId.value === null) activeMessageId.value = admission.messageId
+      if (!terminalSubmissions.has(optimisticId) && activeMessageId.value === null) {
+        activeMessageId.value = admission.messageId
+        activeSubmissionId.value = optimisticId
+        responding.value = true
+      }
     }
     if (composerRevision !== draft.revision) return
     message.value = ''
@@ -1247,6 +1303,32 @@ async function changeMemory(): Promise<void> {
   await postSetting('/config/long_term_memory', { enabled: String(longTermMemory.value) })
 }
 
+async function changeSemanticMemory(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const enabled = input.checked
+  input.checked = semanticMemory.value
+  if (props.config.semanticMemoryAvailable !== true || semanticMemoryBusy.value) return
+  semanticMemoryBusy.value = true
+  try {
+    await checkedRequest('/config/semantic-memory', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
+    })
+    if (!destroyed) semanticMemory.value = enabled
+  } catch {
+    notify('La préférence de mémoire sémantique n’a pas pu être enregistrée.', 'error')
+  } finally {
+    semanticMemoryBusy.value = false
+  }
+}
+
+function clearSemanticMemory(): void {
+  if (props.config.semanticMemoryAvailable !== true || semanticMemoryBusy.value) return
+  confirmAction('Effacer la mémoire sémantique', 'Supprimer les extraits mémorisés ? Le profil textuel et les conversations restent inchangés. Si la mémoire sémantique reste activée, les prochains échanges terminés pourront être mémorisés.', 'Effacer', async () => {
+    await checkedRequest('/config/semantic-memory/clear', { method: 'POST' })
+    notify('Mémoire sémantique effacée.')
+  })
+}
+
 async function changeAudioEnabled(): Promise<void> {
   if (!audioEnabled.value) {
     resetAudio()
@@ -1433,6 +1515,11 @@ onBeforeUnmount(() => {
                 </label>
                 <label class="claire-embed-toolbar__subpanel-section">Mémoire longue durée <input id="claire-long-term-memory" v-model="longTermMemory" type="checkbox" role="switch" @change="changeMemory"></label>
                 <button id="claire-rebuild-long-term-memory" class="claire-embed-toolbar__subpanel-section claire-memory-rebuild" type="button" @click="rebuildMemory">Reconstruire depuis l’historique</button>
+                <template v-if="config.semanticMemoryAvailable === true">
+                  <label class="claire-embed-toolbar__subpanel-section">Mémoire sémantique <input id="claire-semantic-memory" :checked="semanticMemory" type="checkbox" role="switch" aria-describedby="claire-semantic-memory-help" :disabled="semanticMemoryBusy || modalBusy" @change="changeSemanticMemory"></label>
+                  <p id="claire-semantic-memory-help" class="claire-semantic-memory-help">{{ semanticMemoryHelp }}</p>
+                  <button class="claire-embed-toolbar__subpanel-section" type="button" :disabled="semanticMemoryBusy || modalBusy" @click="clearSemanticMemory">Effacer la mémoire sémantique</button>
+                </template>
                 <label v-if="config.audioAvailable" class="claire-embed-toolbar__subpanel-section">Audio <input v-model="audioEnabled" type="checkbox" role="switch" @change="changeAudioEnabled"></label>
                 <label v-if="config.audioAvailable && audioEnabled" class="claire-embed-toolbar__subpanel-section">Voix
                   <select v-model="audioVoice" @change="changeAudioVoice"><option v-for="voice in config.audioVoices" :key="voice.id" :value="voice.id">{{ voice.label }}</option></select>
@@ -1453,6 +1540,8 @@ onBeforeUnmount(() => {
         <section class="claire-chat-panel"><div class="claire-chat-shell">
           <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :active-message-id="activeMessageId" :loading="assistantLoading" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
           <footer class="claire-chat-input">
+            <p v-if="stopRequested || generationStopped" class="claire-turn-notice" role="status">{{ stopRequested ? 'Arrêt demandé. Un outil en cours peut encore se terminer ; ses effets ne sont pas annulés.' : 'Génération arrêtée. Le texte partiel a été conservé.' }}</p>
+            <button v-if="canStop" class="claire-btn claire-btn--secondary" type="button" :disabled="stopRequested !== null" :aria-busy="stopRequested !== null" @click="stopGeneration">{{ stopRequested ? 'Arrêt demandé' : 'Arrêter la génération' }}</button>
             <div v-if="generationError || failedDraft" class="claire-is-visible claire-turn-notice" id="claire-history-tooltip-banner" data-variant="error" role="alert"><span v-if="generationError">Désolé, une erreur est survenue lors du traitement de votre message.</span><span v-else>Un message échoué et ses pièces jointes peuvent être restaurés.</span>
               <div class="claire-turn-notice__actions"><button v-if="failedDraft" class="claire-btn claire-btn--secondary" type="button" @click="restoreDraft(failedDraft)">Restaurer le message et ses pièces jointes</button>
                 <button v-if="generationError" class="claire-btn claire-btn--secondary" type="button" aria-label="Fermer la notification" @click="generationError = false">Fermer</button></div>
@@ -1488,6 +1577,8 @@ onBeforeUnmount(() => {
           </header>
           <main ref="chatBodyElement" class="claire-chat-body"><div id="claire-chat-stream" :data-thread-id="threadId" :data-stream-session-id="sessionId" style="display: contents"><div id="claire-messages" ref="messagesElement" class="claire-messages"><ChatMessages :messages="chatMessages" :active-message-id="activeMessageId" :loading="assistantLoading" :audio-enabled="audioEnabled" :playing="playingMessageId" :pending="pendingAudio" :ready="readyAudio" :failed="failedAudio" /></div></div><button id="claire-scroll-down-btn" class="claire-scroll-down-button" type="button" aria-label="Descendre au dernier message" @click="scrollToBottom"><ClaireIcon name="arrow-down" /></button></main>
           <footer class="claire-chat-input">
+            <p v-if="stopRequested || generationStopped" class="claire-turn-notice" role="status">{{ stopRequested ? 'Arrêt demandé. Un outil en cours peut encore se terminer ; ses effets ne sont pas annulés.' : 'Génération arrêtée. Le texte partiel a été conservé.' }}</p>
+            <button v-if="canStop" class="claire-btn claire-btn--secondary" type="button" :disabled="stopRequested !== null" :aria-busy="stopRequested !== null" @click="stopGeneration">{{ stopRequested ? 'Arrêt demandé' : 'Arrêter la génération' }}</button>
             <div v-if="generationError || failedDraft" class="claire-is-visible claire-turn-notice" id="claire-history-tooltip-banner" data-variant="error" role="alert"><span v-if="generationError">Désolé, une erreur est survenue lors du traitement de votre message.</span><span v-else>Un message échoué et ses pièces jointes peuvent être restaurés.</span>
               <div class="claire-turn-notice__actions"><button v-if="failedDraft" class="claire-btn claire-btn--secondary" type="button" @click="restoreDraft(failedDraft)">Restaurer le message et ses pièces jointes</button>
                 <button v-if="generationError" class="claire-btn claire-btn--secondary" type="button" aria-label="Fermer la notification" @click="generationError = false">Fermer</button></div>
@@ -1524,6 +1615,11 @@ onBeforeUnmount(() => {
           <label v-if="config.comfyuiEnabled" class="claire-options-item"><span class="claire-options-item__label">Workflow ComfyUI</span><select id="claire-comfyui-workflow-selector" v-model="currentWorkflow" @change="changeWorkflow"><option v-for="workflow in config.workflows" :key="workflow.slug" :value="workflow.slug">{{ workflow.label }}</option></select></label>
           <label class="claire-options-item"><span class="claire-options-item__label">Mémoire longue durée</span><input id="claire-long-term-memory" v-model="longTermMemory" type="checkbox" role="switch" @change="changeMemory"></label>
           <button id="claire-rebuild-long-term-memory" class="claire-options-item" type="button" @click="rebuildMemory"><span class="claire-options-item__label">Reconstruire la mémoire depuis l’historique</span></button>
+          <template v-if="config.semanticMemoryAvailable === true">
+            <label class="claire-options-item"><span class="claire-options-item__label">Mémoire sémantique</span><input id="claire-semantic-memory" :checked="semanticMemory" type="checkbox" role="switch" aria-describedby="claire-semantic-memory-help" :disabled="semanticMemoryBusy || modalBusy" @change="changeSemanticMemory"></label>
+            <p id="claire-semantic-memory-help" class="claire-semantic-memory-help">{{ semanticMemoryHelp }}</p>
+            <button class="claire-options-item" type="button" :disabled="semanticMemoryBusy || modalBusy" @click="clearSemanticMemory"><span class="claire-options-item__label">Effacer la mémoire sémantique</span></button>
+          </template>
           <label v-if="config.audioAvailable" class="claire-options-item"><span class="claire-options-item__label">Audio</span><input v-model="audioEnabled" type="checkbox" role="switch" @change="changeAudioEnabled"></label>
           <label v-if="config.audioAvailable && audioEnabled" class="claire-options-item"><span class="claire-options-item__label">Voix</span><select v-model="audioVoice" @change="changeAudioVoice"><option v-for="voice in config.audioVoices" :key="voice.id" :value="voice.id">{{ voice.label }}</option></select></label>
           <label v-if="config.audioAvailable && audioEnabled" class="claire-options-item"><span class="claire-options-item__label">Génération audio automatique</span><input v-model="audioAutoGenerate" type="checkbox" role="switch" @change="changeAudioAutoGenerate"></label>

@@ -14,10 +14,14 @@ use App\Services\ChatStreamPublisher;
 use App\Services\ChatStreamSubscriber;
 use App\Services\ChatThreadLock;
 use App\Services\Queue\QueueDispatcherInterface;
+use App\Services\SemanticMemoryRegistry;
 use App\Services\Session\Trait\SessionFromRequest;
 use App\Services\Settings;
+use Doctrine\DBAL\Exception\TableNotFoundException;
 use Doctrine\ORM\EntityManagerInterface;
 use League\Flysystem\Filesystem;
+use NeuronAI\Chat\Messages\ToolResultMessage;
+use NeuronAI\Chat\Messages\UserMessage;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -252,15 +256,42 @@ final readonly class HistoryController
 
         $session->set('threadId', $threadId);
 
-        $userChatHistory = new UserChatHistory(
-            session: $session,
-            pdo: $this->entityManager->getConnection()->getNativeConnection(),
-            contextWindow: $this->settings->get('llm.openai.contextWindow'),
-            threadId: $threadId,
-            createIfMissing: false,
-        );
-
-        $removedMessage = $userChatHistory->removeLastExchange();
+        $connection = $this->entityManager->getConnection();
+        $semanticMemory = $this->semanticMemoryAvailable();
+        [$userChatHistory, $removedMessage] = $connection->transactional(function () use (
+            $connection,
+            $semanticMemory,
+            $session,
+            $userId,
+            $threadId,
+        ): array {
+            $userChatHistory = new UserChatHistory(
+                session: $session,
+                pdo: $connection->getNativeConnection(),
+                contextWindow: $this->settings->get('llm.openai.contextWindow'),
+                threadId: $threadId,
+                createIfMissing: false,
+            );
+            $sourceIds = [];
+            $hasUserMessage = false;
+            foreach (array_reverse($userChatHistory->getDisplayMessages()) as $message) {
+                foreach ([$message->getId(), $message->getMetadata('claire_submission_id'),
+                    $message->getMetadata('claire_message_id'),
+                ] as $id) {
+                    if (is_string($id) && $id !== '') {
+                        $sourceIds[] = $id;
+                    }
+                }
+                if ($message instanceof UserMessage && ! $message instanceof ToolResultMessage) {
+                    $hasUserMessage = true;
+                    break;
+                }
+            }
+            if ($semanticMemory && $hasUserMessage) {
+                new SemanticMemoryRegistry($connection)->invalidateSources($userId, $threadId, array_unique($sourceIds));
+            }
+            return [$userChatHistory, $userChatHistory->removeLastExchange()];
+        });
         if ($removedMessage === null) {
             return $response->withStatus(400);
         }
@@ -284,6 +315,29 @@ final readonly class HistoryController
         return $response->withHeader('Content-Type', 'application/json');
     }
 
+    private function semanticMemoryAvailable(): bool
+    {
+        $connection = $this->entityManager->getConnection();
+        $missing = 0;
+        foreach (['semantic_memory_preference', 'semantic_memory_excerpt'] as $table) {
+            try {
+                // A savepoint also protects an outer PostgreSQL transaction on legacy schemas.
+                $connection->transactional(static function () use ($connection, $table): void {
+                    $connection->executeQuery('SELECT 1 FROM ' . $table . ' WHERE 1 = 0')->free();
+                });
+            } catch (TableNotFoundException) {
+                ++$missing;
+            }
+        }
+        if ($missing === 0) {
+            return true;
+        }
+        if ($missing !== 2 || $this->settings->get('llm.semanticMemory.enabled', false)) {
+            throw new \RuntimeException('Semantic memory schema is incomplete; refusing source deletion.');
+        }
+        return false;
+    }
+
     /** @return array<int, array<string, mixed>> */
     private function publishSnapshot(
         string $threadId,
@@ -300,8 +354,10 @@ final readonly class HistoryController
                 $messages = $userChatHistory?->getFormattedMessages() ?? [];
                 return [
                     'messages' => $this->chatDataRenderer->messages($messages, $userId),
-                    'audioRequestIds' => array_column(array_filter($messages,
-                        static fn (array $message): bool => isset($message['audioRequestId'])), 'audioRequestId', 'id'),
+                    'audioRequestIds' => array_column(array_filter(
+                        $messages,
+                        static fn (array $message): bool => isset($message['audioRequestId'])
+                    ), 'audioRequestId', 'id'),
                 ];
             },
         );

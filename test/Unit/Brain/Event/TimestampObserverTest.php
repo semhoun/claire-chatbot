@@ -8,7 +8,9 @@ use App\Brain\Event\TimestampObserver;
 use DateTimeImmutable;
 use DateTimeInterface;
 use NeuronAI\Chat\Messages\UserMessage;
-use NeuronAI\Observability\Events\MessageSaving;
+use NeuronAI\Agent\Observability\MessageSaving;
+use NeuronAI\Agent\Observability\MessageSaved;
+use NeuronAI\Workflow\Workflow;
 use PHPUnit\Framework\TestCase;
 
 final class TimestampObserverTest extends TestCase
@@ -19,7 +21,7 @@ final class TimestampObserverTest extends TestCase
         $message = new UserMessage('Hello');
         $event = new MessageSaving($message);
 
-        $observer->onEvent('message-saving', new \stdClass(), $event);
+        $observer($event);
 
         $timestamp = $message->getMetadata('timestamp');
         $this->assertNotNull($timestamp);
@@ -36,7 +38,7 @@ final class TimestampObserverTest extends TestCase
         $existingTs = '2024-01-15T10:30:00+00:00';
         $message->addMetadata('timestamp', $existingTs);
 
-        $observer->onEvent('message-saving', new \stdClass(), new MessageSaving($message));
+        $observer(new MessageSaving($message));
 
         $this->assertSame($existingTs, $message->getMetadata('timestamp'));
     }
@@ -46,22 +48,22 @@ final class TimestampObserverTest extends TestCase
         $observer = new TimestampObserver();
         $message = new UserMessage('Hello');
 
-        $observer->onEvent('message-saved', new \stdClass(), null);
-        $observer->onEvent('inference-start', new \stdClass(), null);
-        $observer->onEvent('chat-start', new \stdClass(), null);
-        $observer->onEvent('error', new \stdClass(), null);
+        $workflow = new Workflow();
+        $observer->subscribeTo($workflow);
+        $workflow->getEventDispatcher()->dispatch(new MessageSaved($message));
 
         $this->assertNull($message->getMetadata('timestamp'));
     }
 
-    public function testIgnoresMessageSavingEventWithWrongDataType(): void
+    public function testRepeatedSubscriptionIsIdempotent(): void
     {
         $observer = new TimestampObserver();
         $message = new UserMessage('Hello');
 
-        $observer->onEvent('message-saving', new \stdClass(), new \stdClass());
-
-        $this->assertNull($message->getMetadata('timestamp'));
+        $workflow = $this->createMock(Workflow::class);
+        $workflow->expects($this->once())->method('subscribe')->with(MessageSaving::class, $observer)->willReturnSelf();
+        $observer->subscribeTo($workflow);
+        $observer->subscribeTo($workflow);
     }
 
     public function testTimestampFormatIsAtom(): void
@@ -69,12 +71,46 @@ final class TimestampObserverTest extends TestCase
         $observer = new TimestampObserver();
         $message = new UserMessage('format test');
 
-        $observer->onEvent('message-saving', new \stdClass(), new MessageSaving($message));
+        $observer(new MessageSaving($message));
 
         $timestamp = $message->getMetadata('timestamp');
         $this->assertNotNull($timestamp);
 
         $parsed = DateTimeImmutable::createFromFormat(DateTimeInterface::ATOM, $timestamp);
         $this->assertInstanceOf(DateTimeImmutable::class, $parsed);
+    }
+
+    public function testRealAgentAddsTimestampBeforeStoreAppendAcrossRuns(): void
+    {
+        $store = new class extends \NeuronAI\Chat\History\InMemoryMessageStore {
+            public array $timestamps = [];
+
+            public function append(string $threadId, \NeuronAI\Chat\Messages\Message $message): void
+            {
+                $this->timestamps[] = $message->getMetadata('timestamp');
+                parent::append($threadId, $message);
+            }
+        };
+        $provider = new \NeuronAI\Testing\FakeAIProvider(
+            new \NeuronAI\Chat\Messages\AssistantMessage('one'),
+            new \NeuronAI\Chat\Messages\AssistantMessage('two'),
+        );
+        $agent = new \NeuronAI\Agent\Agent('timestamp-test');
+        $agent->setAiProvider($provider)->setMessageStore($store);
+        $observer = new TimestampObserver();
+        $observer->subscribeTo($agent);
+        $observer->subscribeTo($agent);
+        foreach (['first', 'second'] as $question) {
+            $stream = $agent->stream(new UserMessage($question));
+            iterator_to_array($stream);
+            self::assertNotNull($stream->getReturn()->getMessage());
+        }
+        self::assertCount(4, $store->timestamps);
+        foreach ($store->timestamps as $timestamp) {
+            self::assertIsString($timestamp);
+            self::assertInstanceOf(DateTimeImmutable::class,
+                DateTimeImmutable::createFromFormat(DateTimeInterface::ATOM, $timestamp));
+        }
+        self::assertSame(2, $provider->getCallCount());
     }
 }

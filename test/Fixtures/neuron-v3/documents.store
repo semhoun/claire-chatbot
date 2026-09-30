@@ -1,0 +1,2 @@
+{"id":"fixture-document-1","content":"Synthetic report source.","embedding":[1,0,0],"sourceType":"file","sourceName":"fixture.txt","score":0,"metadata":{"document_id":101,"chunk":0}}
+{"id":102,"content":"Synthetic audio source.","embedding":[0,1,0],"sourceType":"file","sourceName":"audio.txt","score":0,"metadata":{"document_id":102,"chunk":0}}

@@ -177,9 +177,11 @@ Pour MySQL/MariaDB ou PostgreSQL, ajoutez `DATABASE_HOST`, `DATABASE_PORT`, `DAT
 | Recherche web | `SEARXNG_URL`. |
 | RAG | `OPENAPI_MODEL_EMBED`, `RAG_CHUNK_SIZE=1000`, `RAG_TOP_K=4`. |
 | Mémoire durable | `LONG_TERM_MEMORY_MAX_CHARACTERS=4000`, `LONG_TERM_MEMORY_UPDATE_EVERY_USER_MESSAGES=5`, `LONG_TERM_MEMORY_REBUILD_BATCH_SIZE=20`. |
+| Arrêt coopératif | `CLAIRE_STOP_ENABLED=false`. Activer après migration SQL et mise à jour de tous les processus. |
+| Mémoire sémantique | `SEMANTIC_MEMORY_ENABLED=false`, `OPENAPI_MODEL_EMBED` (fournisseur/modèle RAG partagé), `SEMANTIC_MEMORY_DIMENSIONS` (dimension exacte du modèle, obligatoire avant activation). |
 | Images | `COMFYUI_ENABLED=false`, `COMFYUI_URL`, `COMFYUI_DEFAULT_WORKFLOW`. |
 | PDF | `PDF_ENABLED=true`, `PDF_DEFAULT_FORMAT=html`, `PDF_DEFAULT_PAGE_SIZE=A4`, `PDF_MAX_PAGES=100`, `PDF_TEMP_DIR`. |
-| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`. |
+| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_USERNAME` pour `/stop@nomdubot`. |
 | Observabilité | `OTEL_SERVICE_NAME`, exporteurs `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` et endpoint `OTEL_EXPORTER_OTLP_ENDPOINT`. |
 
 ### Audio Mistral
@@ -208,6 +210,14 @@ Après connexion, choisissez un agent, démarrez une conversation et envoyez vot
 Les tours de conversation sont journalisés en SQL. En cas d'échec, un checkpoint permet de restaurer l'historique antérieur sans relancer automatiquement le modèle ni les outils. Après confirmation de cette restauration, le web et le widget retirent le tour échoué et récupèrent son texte et ses pièces jointes sans écraser une nouvelle saisie. Ce brouillon reste en mémoire dans l'interface, pas après un rechargement. **Les effets externes des outils et les fichiers déjà produits ne sont pas annulés** : une nouvelle soumission manuelle peut répéter ces actions.
 
 Claire résume automatiquement le contexte court. La **mémoire long terme**, désactivée par défaut, s'active dans les préférences web, du widget ou de la Mini-App. Elle conserve une synthèse par utilisateur entre ses conversations, évolue périodiquement et peut être reconstruite depuis les résumés existants. Elle est supprimée avec le compte.
+
+Lorsque l'arrêt coopératif est activé sur le serveur, le bouton **Arrêter** du chat normal/widget et la commande Telegram `/stop` ciblent la génération courante, même encore en queue. L'interface attend le terminal confirmé avant de permettre un nouvel envoi. Le message utilisateur et le texte partiel engagé sont conservés ; aucun audio automatique ni extrait de mémoire sémantique n'est produit pour ce tour. Un outil synchrone déjà lancé peut terminer : ses effets ne sont pas annulés. Une lecture réseau bloquante peut retarder l'arrêt. Fermer le widget ou perdre la connexion SSE ne demande pas l'arrêt. Les accueils ne sont pas concernés et la Mini-App n'a pas de bouton d'arrêt.
+
+La **mémoire sémantique** est une option séparée du profil textuel. Après activation serveur, chaque utilisateur choisit explicitement de l'activer dans les options web/widget ou la Mini-App. Seuls les nouveaux échanges éligibles, terminés avec succès sous ce consentement, envoient des extraits au fournisseur d'embeddings configuré. Aucun historique ancien n'est réindexé automatiquement. Le rappel partage les sources entre agents du même utilisateur, exclut la conversation courante et traite leur contenu comme des données non fiables. Une panne d'embeddings ne doit pas faire échouer le chat.
+
+Désactiver cette option suspend le rappel et les nouvelles écritures sans effacer les extraits déjà indexés. Le bouton d'effacement dédié invalide les sources immédiatement en SQL ; la purge physique est reprise par les workers. Supprimer une source retire son éligibilité au rappel. Les index sémantiques résident dans `DATA_PATH/semantic-memory` (`var/data/semantic-memory` par défaut), séparément des documents RAG. Un changement de modèle ou de dimension n'entraîne pas de réindexation payante implicite. Le bouton de reconstruction du profil textuel reste indépendant.
+
+Les workers reprennent les extraits en attente par lots bornés et exécutent aussi les purges lorsque la mémoire est désactivée. La recherche des comptes supprimés parcourt encore le registre des consentements : surveillez son coût sur les grandes installations. Les index vectoriels locaux ne remplacent pas un service de recherche distribué.
 
 ### Documents et recherche
 
@@ -393,7 +403,7 @@ Le Custom Element `<claire-chat-widget>` utilise un Shadow DOM. Le bundle ne rem
 
 ### Configurer le bot
 
-Créez un bot avec BotFather, puis configurez `TELEGRAM_BOT_TOKEN` et un `TELEGRAM_WEBHOOK_SECRET` robuste. **Sans secret webhook, son contrôle est désactivé.** L'URL publique de Claire doit être accessible à Telegram.
+Créez un bot avec BotFather, puis configurez `TELEGRAM_BOT_TOKEN` et un `TELEGRAM_WEBHOOK_SECRET` robuste. Sans secret webhook, le contrôle historique est désactivé ; lorsque `CLAIRE_STOP_ENABLED=true`, les webhooks sans secret configuré sont refusés. Renseignez aussi `TELEGRAM_BOT_USERNAME` pour reconnaître `/stop@nomdubot`. L'URL publique de Claire doit être accessible à Telegram.
 
 Après application de l'environnement et des migrations :
 
@@ -491,12 +501,14 @@ Les routes applicatives exigent une session ou, pour les ressources concernées,
 | Historique | `GET /history/count`, `GET /history/list`, `GET /history/open/{threadId}` |
 | Conversations | `POST /history/new`, `DELETE /history/exchange/last`, `DELETE /history/delete/{threadId}` |
 | Messages | `POST /brain/messages`, `POST /brain/audio` |
+| Arrêt exact d'une génération | `POST /brain/stop` avec `{ "threadId": "THREAD_ID", "generationId": "GENERATION_ID" }`, lorsque disponible |
 | Résultat d'un envoi | `GET /brain/turn/{submissionId}` |
 | Fichiers | `GET /files/count`, `GET /files/list`, `GET /files/serve/{id}` |
 | Gestion des fichiers | `POST /files/upload`, `POST /files/upload_rag`, `DELETE /files/delete/{id}` |
 | Consultation RAG | `GET /rag/list`, `GET /rag/count`, `GET /rag/segments/{id}` |
 | Gestion RAG | `POST /rag/upload`, `POST /rag/text`, `POST /rag/url`, `POST /rag/toggle/{id}`, `DELETE /rag/delete/{id}` |
 | Préférences | `POST /config/audio`, `POST /config/brain_avatar`, `POST /config/long_term_memory`, `POST /config/long_term_memory/rebuild` |
+| Mémoire sémantique | `POST /config/semantic-memory` avec `{ "enabled": true }`, `POST /config/semantic-memory/clear` |
 | Audio | `POST /v1/audio/transcriptions`, `POST /v1/audio/speech` |
 
 `/files/serve/{id}` sert images, audio, PDF et autres fichiers. L'ancienne route `/files/img_serve/{id}` est supprimée.
@@ -565,6 +577,20 @@ Déployez producteurs, daemon, proxy et frontend ensemble. Un rollback doit rest
 La migration `Version20260917000000` crée le journal durable `chat_turn` et ajoute les champs de révision et de tour courant à `chat_history`. Elle doit être appliquée avant la reprise des traitements avec le nouveau code. Sa migration inverse supprime le journal et ses informations de récupération.
 
 Pour une migration depuis les versions antérieures à 2.1, appliquez notamment les migrations créant le journal `telegram_generation`, remplacez les styles d'agents `css` / `CSS` par `theme` / `THEME` et adaptez les clients aux jetons de ressources ainsi qu'à `/files/serve/{id}`.
+
+### Bascule Neuron AI 4
+
+Le lock Composer fixe Neuron AI à **4.0.0**. Les migrations `Version20260930000000` à `Version20260930000300` ajoutent le transcript canonique `stored_messages`, les demandes d'arrêt, le registre de consentement/extraits sémantiques et les cibles Telegram. Conservez `CLAIRE_STOP_ENABLED=false` et `SEMANTIC_MEMORY_ENABLED=false` pendant la bascule.
+
+1. Suspendez les nouvelles soumissions. Laissez terminer les tours actifs ou récupérez leurs checkpoints sans relancer d'inférence.
+2. Arrêtez les anciens workers et sauvegardez SQL ainsi que les fichiers vectoriels. Ne mélangez pas des workers v3 et v4.
+3. Déployez ensemble code, `composer.lock`/vendor et bundles frontend ; appliquez les migrations additives en maintenance, puis régénérez les caches/proxies nécessaires.
+4. Redémarrez HTTP, workers et daemon SSE avec la même version. Vérifiez une ancienne conversation, un nouveau tour avec outil/fichier, le widget et Telegram avant de rouvrir les soumissions.
+5. Activez ensuite l'arrêt et vérifiez un arrêt avec texte partiel, sa reconnexion et le tour suivant. Activez la disponibilité de la mémoire seulement après vérification de son modèle et de sa dimension ; le consentement utilisateur reste désactivé par défaut.
+
+Les anciens fichiers RAG `.store` restent directement lisibles : aucune conversion ni nouvelle facturation d'embeddings n'est requise. Les checkpoints v1 restent récupérables ; les nouveaux checkpoints v2 incluent le transcript canonique.
+
+Avant réouverture, un retour arrière restaure release, lock et sauvegardes cohérentes. **Après de nouvelles écritures v4, ne revenez pas simplement au vendor v3** : `__meta`, le transcript canonique et l'état `stopped` ne sont pas garantis lisibles par l'ancienne version. Préférez un correctif en avant. Une restauration perdant des données nouvelles nécessite une décision explicite ; ne lancez pas automatiquement les migrations inverses destructrices.
 
 ### Queue et diagnostic
 

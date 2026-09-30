@@ -19,13 +19,17 @@ final readonly class Settings
     ) {
     }
 
-    public function get(string $parentsStr): mixed
+    public function get(string $parentsStr, mixed $default = null): mixed
     {
         $settings = $this->settings;
         $parents = explode('.', $parentsStr);
 
         foreach ($parents as $parent) {
             if (! $this->hasSetting($settings, $parent)) {
+                if (func_num_args() > 1) {
+                    return $default;
+                }
+
                 throw new RuntimeException(sprintf('Trying to fetch invalid setting "%s"', $parentsStr));
             }
 

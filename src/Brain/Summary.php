@@ -10,7 +10,7 @@ use App\Services\Auth;
 use App\Services\Session\SessionInterface;
 use App\Services\Settings;
 use Doctrine\DBAL\Connection;
-use NeuronAI\Chat\History\ChatHistoryInterface;
+use NeuronAI\Chat\History\MessageStoreInterface;
 use NeuronAI\Chat\Messages\UserMessage;
 use NeuronAI\Providers\AIProviderInterface;
 
@@ -26,9 +26,10 @@ class Summary extends \NeuronAI\Agent\Agent
         protected readonly SessionInterface $session,
         protected readonly ?string $threadId = null,
     ) {
-        parent::__construct();
+        parent::__construct(workflowId: $threadId);
 
-        $this->observe(new \App\Brain\Observability\Observer());
+        (new \App\Brain\Event\TimestampObserver())->subscribeTo($this);
+        (new \App\Brain\Observability\Observer())->subscribeTo($this);
     }
 
     public function generateAndPersist(bool $evolveLongTermMemory = false): void
@@ -70,15 +71,27 @@ class Summary extends \NeuronAI\Agent\Agent
     }
 
     #[\Override]
-    protected function chatHistory(): ChatHistoryInterface
+    protected function messageStore(): MessageStoreInterface
     {
-        return new SummaryChatHistory(
+        $history = new UserChatHistory(
             session: $this->session,
             pdo: $this->connection->getNativeConnection(),
             contextWindow: $this->settings->get('llm.openai.contextWindow'),
             threadId: $this->threadId,
             createIfMissing: false,
         );
+        $store = new SummaryChatHistory();
+        foreach ($history->getMessages() as $message) {
+            $store->append($this->requireWorkflowId(), $message);
+        }
+
+        return $store;
+    }
+
+    #[\Override]
+    protected function contextWindow(): int
+    {
+        return $this->settings->get('llm.openai.contextWindow');
     }
 
     #[\Override]

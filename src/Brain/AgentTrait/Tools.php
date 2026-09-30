@@ -35,7 +35,7 @@ trait Tools
                 $this->container->get(ComfyUIService::class),
                 $this->container->get(Settings::class),
                 $this->session,
-                $this->threadId,
+                $this->requireWorkflowId(),
                 $this->logger,
             );
         }
@@ -49,7 +49,7 @@ trait Tools
                 $this->container->get(PdfGeneratorService::class),
                 $this->container->get(Settings::class),
                 $this->session,
-                $this->threadId,
+                $this->requireWorkflowId(),
             );
         }
 
@@ -59,7 +59,7 @@ trait Tools
                 $this->container->get(AudioGeneratorService::class),
                 $audioService,
                 $this->session,
-                $this->threadId,
+                $this->requireWorkflowId(),
             );
         }
 

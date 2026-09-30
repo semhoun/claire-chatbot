@@ -124,7 +124,28 @@ final class QueueWorker
             } catch (Throwable $error) {
                 $this->logger->error('Periodic chat recovery failed', ['exception' => $error]);
             }
+
+            try {
+                if ($this->container->has(\App\Services\Settings::class)) {
+                    $settings = $this->container->get(\App\Services\Settings::class);
+                    if ($settings->get('llm.semanticMemory.enabled', false) === true
+                        || $this->container->get(\Doctrine\DBAL\Connection::class)->createSchemaManager()->tablesExist([
+                            'semantic_memory_preference', 'semantic_memory_excerpt',
+                        ])) {
+                        $this->container->get(\App\Services\SemanticMemoryService::class)->sweep(5);
+                    }
+
+                    if ($settings->get('llm.stop.enabled', false) === true) {
+                        $retention = max(2592000, (int) $settings->get('queue.deduplicationSeconds', 604800) + 86400);
+                        $this->container->get(\App\Services\ChatStopRequests::class)->cleanup(time() - $retention);
+                    }
+                }
+            } catch (Throwable $error) {
+                // Consent and source validity remain authoritative while asynchronous work retries.
+                $this->logger->warning('Periodic memory/stop maintenance failed', ['exception' => $error::class]);
+            }
         }
+
         $job = $this->reserveJob($queueWorkerOptions, $workerId);
 
         if (! $job instanceof QueueMessage) {

@@ -12,16 +12,16 @@ use NeuronAI\Tools\ToolProperty;
 
 class WebSearch extends Tool
 {
-    public function __construct(private readonly string $searxngUrl)
-    {
-        parent::__construct(
-            'web_search',
-            <<< EOT
+    protected string $name = 'web_search';
+
+    protected ?string $description = <<<'EOT'
 Performs a web search using the SearXNG API, ideal for general queries, news, articles, and online content.
 Use this for broad information gathering, recent events, or when you need diverse web sources.
 Results are returned in json format.
-EOT
-        );
+EOT;
+
+    public function __construct(private readonly string $searxngUrl)
+    {
     }
 
     public function __invoke(

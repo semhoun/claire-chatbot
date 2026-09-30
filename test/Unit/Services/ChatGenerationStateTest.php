@@ -120,7 +120,7 @@ final class ChatGenerationStateTest extends TestCase
         });
         $settings = new Settings(['redis' => ['prefix' => 'test:']]);
         $state = new ChatGenerationState($redis, $settings);
-        foreach (['queued', 'running', 'done', 'error', 'deleted'] as $status) {
+        foreach (['queued', 'running', 'done', 'stopped', 'error', 'deleted'] as $status) {
             $state->set('alice', 'thread', 'message', $status, $status !== 'queued');
             $responding = in_array($status, ['queued', 'running'], true);
             self::assertSame([
@@ -129,10 +129,11 @@ final class ChatGenerationStateTest extends TestCase
             ], new ChatGenerationState($redis, $settings)->snapshot('alice', 'thread'));
             self::assertSame(['responding' => false, 'activeMessageId' => null], $state->snapshot('bob', 'thread'));
             foreach (['chat.assistant.start', 'chat.assistant.placeholder', 'chat.assistant.update',
-                'chat.tool.update', 'chat.assistant.done', 'chat.error'] as $event) {
+                'chat.tool.update', 'chat.assistant.done', 'chat.assistant.stopped', 'chat.error'] as $event) {
                 $accepted = match ($event) {
                     'chat.assistant.done' => $status === 'done',
-                    'chat.assistant.update' => in_array($status, ['queued', 'running', 'done'], true),
+                    'chat.assistant.stopped' => $status === 'stopped',
+                    'chat.assistant.update' => in_array($status, ['queued', 'running', 'done', 'stopped'], true),
                     'chat.error' => $status === 'error',
                     default => $responding,
                 };
@@ -161,6 +162,25 @@ final class ChatGenerationStateTest extends TestCase
             'generationMessageId' => 'message', 'generation' => ['messageId' => 'message', 'status' => 'done'],
             'generationStatus' => 'done', 'submissionId' => null, 'turnStatus' => null,
             'rollbackConfirmed' => false], $snapshot);
+    }
+
+    public function testStoppedSqlTurnOverridesStaleRunningProjection(): void
+    {
+        $redis = $this->createStub(RedisClient::class);
+        $redis->method('hgetall')->willReturn(['status' => 'running', 'messageId' => 'message']);
+        $snapshot = new ChatGenerationState($redis, new Settings(['redis' => ['prefix' => 'test:']]))
+            ->capture('alice', 'thread', static function (array $generation): array {
+                self::assertSame('stopped', $generation['status']);
+                return ['messages' => ['partial response']];
+            }, static fn (): array => ['status' => 'stopped', 'submissionId' => 'submission']);
+        self::assertFalse($snapshot['responding']);
+        self::assertNull($snapshot['activeMessageId']);
+        self::assertSame('stopped', $snapshot['generationStatus']);
+        self::assertSame('stopped', $snapshot['turnStatus']);
+        self::assertSame('submission', $snapshot['submissionId']);
+        self::assertSame(['partial response'], $snapshot['messages']);
+        self::assertFalse($snapshot['rollbackConfirmed']);
+        self::assertSame('running', $snapshot['generation']['status']);
     }
 
     public function testCaptureProjectsOnlySafeTerminalStatusOnReconnect(): void

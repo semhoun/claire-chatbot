@@ -32,6 +32,7 @@ final class ChatTurnRecoveryTest extends TestCase
     private bool $redisDown = false;
     private ChatGenerationState $state;
     private TelegramService $telegram;
+    private ChatStreamPublisher $publisher;
 
     protected function setUp(): void
     {
@@ -58,8 +59,8 @@ final class ChatTurnRecoveryTest extends TestCase
         });
         $this->state = new ChatGenerationState($redis, $settings);
         $this->telegram = $this->createMock(TelegramService::class);
-        $this->recovery = new ChatTurnRecovery($this->sql,
-            new ChatStreamPublisher($redis, new ChatStreamSubscriber($settings), $settings),
+        $this->publisher = new ChatStreamPublisher($redis, new ChatStreamSubscriber($settings), $settings);
+        $this->recovery = new ChatTurnRecovery($this->sql, $this->publisher,
             new TelegramGeneration($settings, $this->sql, $this->state), $this->telegram, $settings, new NullLogger());
     }
 
@@ -232,5 +233,88 @@ final class ChatTurnRecoveryTest extends TestCase
         $cursor = json_decode($tester->getDisplay(), true, flags: JSON_THROW_ON_ERROR)['cursor'];
         self::assertSame(0, $tester->execute(['--recover' => true, '--limit' => '1', '--apply' => true, '--cursor' => $cursor]));
         self::assertSame('rolled_back', $this->journal->get('message-2')['status']);
+    }
+
+    private function enableStopRecovery(): \App\Services\ChatStopRequests
+    {
+        $this->telegram->expects(self::never())->method('sendFailureNotice');
+        $migration = new \Migrations\Version20260930000100($this->sql, new NullLogger());
+        $migration->up(new \Doctrine\DBAL\Schema\Schema());
+        foreach ($migration->getSql() as $query) {
+            $this->sql->executeStatement($query->getStatement());
+        }
+        $settings = new Settings(['llm' => ['stop' => ['enabled' => true]],
+            'redis' => ['prefix' => 'recovery:'], 'telegram' => ['bot_token' => '123:secret']]);
+        $this->recovery = new ChatTurnRecovery($this->sql, $this->publisher,
+            new TelegramGeneration($settings, $this->sql, $this->state), $this->telegram, $settings, new NullLogger());
+        return new \App\Services\ChatStopRequests($this->sql);
+    }
+
+    public function testStoppedTerminalRecoveryOnlyRepairsProjectionNeverRollsBackTranscript(): void
+    {
+        $stops = $this->enableStopRecovery();
+        $stops->register('user', 'thread', 'web', 'stopped');
+        $journal = new ChatTurnJournal($this->sql, $stops);
+        $journal->begin('stopped', 'user', 'thread', 'web', 'stopped', 'submission',
+            ['sessionId' => ChatStreamSubscriber::scope('user', 'tab')]);
+        $journal->complete('stopped', 'user', 'stopped', function (): void {
+            new \App\Brain\ChatHistory\UserChatHistory(
+                new \App\Services\Session\InMemorySession([Auth::USERID => 'user']),
+                $this->sql->getNativeConnection(), threadId: 'thread',
+            )->persistStoppedTurn([new \NeuronAI\Chat\Messages\UserMessage('accepted')], 'stopped', 'stopped');
+        });
+        $history = $this->sql->fetchAssociative('SELECT * FROM chat_history');
+        $this->state->set('user', 'thread', 'stopped', 'running', true);
+        self::assertSame(['stopped' => 1], $this->recovery->recover()['counts']);
+        self::assertSame('stopped', $this->state->get('user', 'thread')['status']);
+        self::assertSame('chat.assistant.stopped', $this->events[0]['event']);
+        self::assertSame($history, $this->sql->fetchAssociative('SELECT * FROM chat_history'));
+        $this->state->set('user', 'thread', 'new-queued', 'queued', false);
+        $this->recovery->recover();
+        self::assertSame('new-queued', $this->state->get('user', 'thread')['messageId']);
+        self::assertCount(1, $this->events);
+    }
+
+    public function testRequestedStopAfterWorkerCrashStillRollsBackAndTerminalizesRegistry(): void
+    {
+        $stops = $this->enableStopRecovery();
+        $stops->register('user', 'thread', 'web', 'crashed');
+        $this->journal->begin('crashed', 'user', 'thread', 'web', 'crashed');
+        $this->sql->executeStatement("UPDATE chat_history SET messages = 'partial-uncommitted'");
+        $stops->request('user', 'thread', 'web', 'crashed');
+        self::assertSame(['rolled_back' => 1], $this->recovery->recover()['counts']);
+        self::assertSame('rolled_back', $stops->request('user', 'thread', 'web', 'crashed')['status']);
+        self::assertSame('[]', $this->sql->fetchOne('SELECT messages FROM chat_history'));
+        self::assertSame('error', $this->state->get('user', 'thread')['status']);
+    }
+
+    public function testEnabledStopRecoveryStillHandlesLegacyUnregisteredTurns(): void
+    {
+        $this->enableStopRecovery();
+        $this->journal->begin('legacy', 'user', 'thread', 'web', 'legacy');
+        self::assertSame(['rolled_back' => 1], $this->recovery->recover()['counts']);
+        self::assertSame(0, (int) $this->sql->fetchOne('SELECT COUNT(*) FROM chat_stop_request'));
+    }
+
+    public function testPreEntryFailureWithRequestedStopPreservesAcceptedTextWithoutAssistant(): void
+    {
+        $stops = $this->enableStopRecovery();
+        $stops->register('user', 'thread', 'web', 'queued');
+        $stops->request('user', 'thread', 'web', 'queued');
+        $this->state->set('user', 'thread', 'queued', 'queued', false);
+        $job = new QueueMessage('job', \App\Job\Web\NewMessageJob::class, [
+            'messageId' => 'queued', 'threadId' => 'thread', 'submissionId' => 'submission-queued',
+            'sessionId' => 'tab', 'session' => [Auth::USERID => 'user'], 'message' => 'Accepted question',
+        ], 'test');
+        $this->recovery->failed($job);
+        $this->recovery->failed($job);
+        self::assertSame('stopped', $this->journal->get('queued')['status']);
+        self::assertSame('stopped', $this->state->get('user', 'thread')['status']);
+        $messages = json_decode($this->sql->fetchOne('SELECT display_messages FROM chat_history'),
+            true, flags: JSON_THROW_ON_ERROR);
+        self::assertCount(1, $messages);
+        self::assertSame('user', $messages[0]['role']);
+        self::assertSame('Accepted question', $messages[0]['content'][0]['content']);
+        self::assertSame('submission-queued', $messages[0]['__meta']['claire_submission_id']);
     }
 }

@@ -66,21 +66,25 @@ final readonly class RagService implements RagServiceInterface
 
     public function delete(RagDocument $ragDocument): void
     {
-        $path = $this->documentStorePath($ragDocument);
-        if (is_file($path)) {
-            unlink($path);
-        }
+        $this->withUserLock($ragDocument->getUser(), function () use ($ragDocument): void {
+            $path = $this->documentStorePath($ragDocument);
+            if (is_file($path) && ! unlink($path)) {
+                throw new \RuntimeException('Unable to delete RAG store: ' . $path);
+            }
 
-        $this->entityManager->remove($ragDocument);
-        $this->entityManager->flush();
-        $this->rebuildActiveVectorStore($ragDocument->getUser());
+            $this->entityManager->remove($ragDocument);
+            $this->entityManager->flush();
+            $this->rebuildActiveStore($ragDocument->getUser());
+        });
     }
 
     public function setActive(RagDocument $ragDocument, bool $active): void
     {
-        $ragDocument->setIsActive($active);
-        $this->entityManager->flush();
-        $this->rebuildActiveVectorStore($ragDocument->getUser());
+        $this->withUserLock($ragDocument->getUser(), function () use ($ragDocument, $active): void {
+            $ragDocument->setIsActive($active);
+            $this->entityManager->flush();
+            $this->rebuildActiveStore($ragDocument->getUser());
+        });
     }
 
     /**
@@ -131,7 +135,7 @@ final readonly class RagService implements RagServiceInterface
                     continue;
                 }
 
-                $entry = json_decode($line, true);
+                $entry = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
                 if (! is_array($entry) || ! isset($entry['content'])) {
                     continue;
                 }
@@ -147,24 +151,31 @@ final readonly class RagService implements RagServiceInterface
 
     public function rebuildActiveVectorStore(User $user): void
     {
+        $this->withUserLock($user, fn () => $this->rebuildActiveStore($user));
+    }
+
+    private function rebuildActiveStore(User $user): void
+    {
         $activeDocuments = $this->entityManager->getRepository(RagDocument::class)
             ->findActiveByUser($user->getId());
 
         $activePath = $this->userDirectory($user) . '/active.store';
-        $tempPath = $activePath . '.tmp';
-
-        $directory = dirname($activePath);
-        if (! is_dir($directory) && ! @mkdir($directory, 0o755, true)) {
-            throw new \RuntimeException('Unable to create RAG directory: ' . $directory);
+        $tempPath = tempnam(dirname($activePath), '.active-');
+        if ($tempPath === false) {
+            throw new \RuntimeException('Unable to create RAG temporary store.');
         }
 
         $handle = fopen($tempPath, 'w');
         if ($handle === false) {
+            unlink($tempPath);
             throw new \RuntimeException('Unable to write RAG active store: ' . $tempPath);
         }
 
         try {
             foreach ($activeDocuments as $activeDocument) {
+                if ($activeDocument->getUser()->getId() !== $user->getId()) {
+                    throw new \RuntimeException('RAG document owner mismatch.');
+                }
                 $sourcePath = $this->documentStorePath($activeDocument);
                 if (! is_file($sourcePath)) {
                     continue;
@@ -172,25 +183,28 @@ final readonly class RagService implements RagServiceInterface
 
                 $sourceHandle = fopen($sourcePath, 'r');
                 if ($sourceHandle === false) {
-                    continue;
+                    throw new \RuntimeException('Unable to read RAG store: ' . $sourcePath);
                 }
 
-                while (($line = fgets($sourceHandle)) !== false) {
-                    fwrite($handle, $line);
+                try {
+                    // Copy legacy rows unchanged; no embedding call or format conversion.
+                    if (stream_copy_to_stream($sourceHandle, $handle) === false) {
+                        throw new \RuntimeException('Unable to copy RAG store: ' . $sourcePath);
+                    }
+                } finally {
+                    fclose($sourceHandle);
                 }
+            }
 
-                fclose($sourceHandle);
+            $permissions = is_file($activePath) ? fileperms($activePath) & 0o777 : 0o644 & ~umask();
+            if (! fflush($handle) || ! chmod($tempPath, $permissions) || ! rename($tempPath, $activePath)) {
+                throw new \RuntimeException('Unable to finalize RAG active store: ' . $activePath);
             }
         } finally {
             fclose($handle);
-        }
-
-        if (is_file($activePath)) {
-            unlink($activePath);
-        }
-
-        if (! rename($tempPath, $activePath)) {
-            throw new \RuntimeException('Unable to finalize RAG active store: ' . $activePath);
+            if (is_file($tempPath)) {
+                unlink($tempPath);
+            }
         }
 
         $this->logger->info('RAG active store rebuilt', [
@@ -204,16 +218,23 @@ final readonly class RagService implements RagServiceInterface
         $documents = $this->splitContent($content);
         $ragDocument->setChunkCount(count($documents));
 
-        $this->entityManager->persist($ragDocument);
-        $this->entityManager->flush();
-
-        $embedded = $this->embeddingsProvider->embedDocuments($documents);
-        $vectorStore = $this->documentVectorStore($ragDocument);
-        $vectorStore->addDocuments($embedded);
-
-        if ($ragDocument->isActive()) {
-            $this->rebuildActiveVectorStore($ragDocument->getUser());
+        foreach ($documents as $document) {
+            $document->setSourceType($ragDocument->getSourceType())
+                ->setSourceName($ragDocument->getName());
+            if ($ragDocument->getSourceId() !== null) {
+                $document->addMetadata('source_id', $ragDocument->getSourceId());
+            }
         }
+        $embedded = $this->embeddingsProvider->embedDocuments($documents);
+        $this->withUserLock($ragDocument->getUser(), function () use ($ragDocument, $embedded): void {
+            $this->entityManager->persist($ragDocument);
+            $this->entityManager->flush();
+            $this->documentVectorStore($ragDocument)->addDocuments($embedded);
+
+            if ($ragDocument->isActive()) {
+                $this->rebuildActiveStore($ragDocument->getUser());
+            }
+        });
 
         return $ragDocument;
     }
@@ -249,7 +270,34 @@ final readonly class RagService implements RagServiceInterface
 
     private function userDirectory(User $user): string
     {
+        if ($user->getId() === '') {
+            throw new \RuntimeException('A persisted user is required for RAG storage.');
+        }
+
         return $this->settings->get('llm.rag.path') . '/' . $user->getId();
+    }
+
+    private function withUserLock(User $user, \Closure $operation): void
+    {
+        $directory = $this->userDirectory($user);
+        if (! is_dir($directory) && ! @mkdir($directory, 0o755, true) && ! is_dir($directory)) {
+            throw new \RuntimeException('Unable to create RAG directory: ' . $directory);
+        }
+
+        // Stable across atomic replacements; all document mutations share this lock.
+        $lock = fopen($directory . '/.documents.lock', 'c');
+        if ($lock === false) {
+            throw new \RuntimeException('Unable to open RAG user lock.');
+        }
+
+        try {
+            if (! flock($lock, LOCK_EX)) {
+                throw new \RuntimeException('Unable to acquire RAG user lock.');
+            }
+            $operation();
+        } finally {
+            fclose($lock);
+        }
     }
 
     private function fetchUrlContent(string $url): string

@@ -9,6 +9,7 @@ use App\Job\Web\NewMessageJob;
 use App\Job\Web\StartThreadJob;
 use App\Services\Auth;
 use App\Services\ChatGenerationBusyException;
+use App\Services\ChatStopRequests;
 use App\Services\ChatThreadLock;
 use App\Services\Settings;
 use App\Services\TelegramService;
@@ -33,6 +34,7 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
         $stateKey = '';
         $messageId = '';
         $deduplicationKey = '';
+        $submissionId = '';
         $lock = null;
         if (in_array($jobClass, [NewMessageJob::class, StartThreadJob::class], true)) {
             foreach (['threadId', 'sessionId'] as $field) {
@@ -96,11 +98,23 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
         }
 
         try {
+            $stopRegistration = null;
+            if ($jobClass === NewMessageJob::class && $this->settings->get('llm.stop.enabled', false) === true) {
+                $stopRegistration = new ChatStopRequests($this->connection)
+                    ->register($userId, $payload['threadId'], 'web', $messageId);
+            }
+
             $result = $this->queueRedisConnection->evaluate(QueueScripts::DISPATCH, [
                 $this->queueKey($queue), $this->jobKey($jobId),
                 $jobId, $queue, $jobClass, $this->serialize($payload), $deduplicationKey, $stateKey, $messageId,
+                $submissionId,
             ], 2);
             if ($result === 'CHAT_BUSY') {
+                if ($stopRegistration['created'] ?? false) {
+                    $this->connection->transactional(fn (): array => new ChatStopRequests($this->connection)
+                        ->arbitrateTerminal($userId, $payload['threadId'], 'web', $messageId, 'rolled_back'));
+                }
+
                 throw new ChatGenerationBusyException('Chat generation is busy or deleted');
             }
 
@@ -160,7 +174,9 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
     public function isFailed(QueueMessage $message): bool
     {
         return $this->queueRedisConnection->evaluate(
-            "return redis.call('HGET', KEYS[1], 'state') or ''", [$this->jobKey($message->id)], 1,
+            "return redis.call('HGET', KEYS[1], 'state') or ''",
+            [$this->jobKey($message->id)],
+            1,
         ) === 'dead';
     }
 
@@ -190,8 +206,13 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
                 $data[$values[$i]] = $values[$i + 1];
             }
             try {
-                $messages[] = new QueueMessage($data['id'], $data['job_class'],
-                    $this->deserialize($data['payload']), $data['queue_name'], $data);
+                $messages[] = new QueueMessage(
+                    $data['id'],
+                    $data['job_class'],
+                    $this->deserialize($data['payload']),
+                    $data['queue_name'],
+                    $data
+                );
             } catch (\Throwable) {
                 // Malformed jobs cannot safely identify a conversation.
             }

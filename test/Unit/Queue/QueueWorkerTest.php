@@ -65,6 +65,43 @@ final class QueueWorkerTest extends TestCase
         self::assertSame(1, $worker->run(new QueueWorkerOptions('test', 0, 1, 10), 'test-worker'));
     }
 
+    public function testPeriodicMaintenancePurgesWhenSemanticFeatureIsDisabled(): void
+    {
+        $connection = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $connection->executeStatement('CREATE TABLE account (id VARCHAR(255) PRIMARY KEY)');
+        $connection->insert('account', ['id' => 'synthetic-owner']);
+        $migration = new \Migrations\Version20260930000200($connection, new NullLogger());
+        $migration->up(new \Doctrine\DBAL\Schema\Schema());
+        foreach ($migration->getSql() as $query) {
+            $connection->executeStatement($query->getStatement(), $query->getParameters(), $query->getTypes());
+        }
+        $registry = new \App\Services\SemanticMemoryRegistry($connection);
+        $registry->setEnabled('synthetic-owner', true);
+        $registry->erase('synthetic-owner');
+        $settings = new \App\Services\Settings([]);
+        $memory = new \App\Services\SemanticMemoryService($connection, $registry, null, new NullLogger(),
+            '/tmp/kilo/unused-worker-memory-purge', '', 0, false);
+        $container = $this->createStub(ContainerInterface::class);
+        $container->method('has')->willReturnCallback(static fn (string $id): bool =>
+            $id === \App\Services\Settings::class);
+        $container->method('get')->willReturnCallback(static fn (string $id): mixed => match ($id) {
+            \App\Services\Settings::class => $settings,
+            \Doctrine\DBAL\Connection::class => $connection,
+            \App\Services\SemanticMemoryService::class => $memory,
+            default => throw new RuntimeException('Unexpected dependency: ' . $id),
+        });
+        $backend = $this->createMock(\App\Services\Queue\LeasedQueueBackendInterface::class);
+        $message = new QueueMessage('id', WorkerTestJob::class, ['fail' => false], 'test');
+        $backend->method('reserveNextAvailable')->willReturn($message);
+        $backend->method('withLease')->willReturnCallback(static fn ($message, callable $work): mixed => $work());
+        $backend->expects(self::once())->method('delete')->with($message);
+        $worker = new QueueWorker($backend, $container, new NullLogger());
+        self::assertSame(1, $worker->run(new QueueWorkerOptions('test', 0, 1, 10), 'test-worker'));
+        self::assertSame(0, (int) $connection->fetchOne(
+            'SELECT purge_pending FROM semantic_memory_preference WHERE user_id = ?', ['synthetic-owner'],
+        ));
+    }
+
     private function runJob(bool $fail, bool $releaseFails = false): void
     {
         $backend = $this->createMock(QueueBackendInterface::class);

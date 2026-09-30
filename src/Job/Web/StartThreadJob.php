@@ -109,8 +109,14 @@ final class StartThreadJob implements QueueDoer
                 throw new \InvalidArgumentException('Unknown opening assistant');
             }
             $chatThreadLock->assertHeld();
-            $turn = $journal->begin($messageId, $this->userId, $this->threadId, 'web', $messageId,
-                notification: ['sessionId' => $this->sessionId]);
+            $turn = $journal->begin(
+                $messageId,
+                $this->userId,
+                $this->threadId,
+                'web',
+                $messageId,
+                notification: ['sessionId' => $this->sessionId]
+            );
             if (! $turn['entered']) {
                 return;
             }
@@ -169,7 +175,7 @@ final class StartThreadJob implements QueueDoer
         $chatThreadLock->assertHeld();
         $assistantMessage = new AssistantMessage($openingMessage)
             ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-        $chatHistory = $this->agent->getChatHistory();
+        $chatHistory = $this->agent->getUserChatHistory();
 
         // Replace the technical generation exchange with a valid hidden
         // context followed by the opening message actually shown to the user.

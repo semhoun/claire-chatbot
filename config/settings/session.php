@@ -30,6 +30,7 @@ return [
         'brain_avatar' => 'claire',
         'layout_mode' => 'full',
         LongTermMemory::SESSION_KEY => false,
+        'semantic_memory_enabled' => false,
         ComfyUIWorkflowRegistry::SESSION_KEY => null,
         AudioServiceInterface::ENABLED_SESSION_KEY => false,
         AudioServiceInterface::AUTO_GENERATE_SESSION_KEY => false,

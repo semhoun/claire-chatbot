@@ -140,6 +140,20 @@ export class SessionClient {
     return this.performRequest(path, init)
   }
 
+  public async stopGeneration(threadId: string, generationId: string): Promise<string> {
+    const response = await this.request('/brain/stop', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threadId, generationId }),
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const result = await response.json() as { status?: unknown }
+    if (typeof result.status !== 'string'
+      || !['queued', 'running', 'stopped', 'succeeded', 'rolled_back'].includes(result.status)) {
+      throw new Error('Invalid stop status')
+    }
+    return result.status
+  }
+
   private async performRequest(path: string, init: RequestInit, authUpdate = false): Promise<Response> {
     if (this.destroyed) throw new DOMException('Session destroyed', 'AbortError')
     const generation = this.generation

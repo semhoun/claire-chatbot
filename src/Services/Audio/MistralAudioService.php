@@ -10,7 +10,7 @@ use function fclose;
 use function fopen;
 use function fwrite;
 use JsonException;
-use NeuronAI\HttpClient\GuzzleHttpClient;
+use NeuronAI\HttpClient\Guzzle\GuzzleHttpClient;
 use NeuronAI\HttpClient\HttpClientInterface;
 use NeuronAI\HttpClient\HttpRequest;
 use function rewind;
@@ -24,14 +24,10 @@ final readonly class MistralAudioService implements AudioServiceInterface
         private Settings $settings,
         ?HttpClientInterface $httpClient = null,
     ) {
-        $this->httpClient = ($httpClient ?? new GuzzleHttpClient(
+        $this->httpClient = $httpClient ?? new GuzzleHttpClient(
             timeout: $settings->get('llm.httpClient.timeout'),
             connectTimeout: $settings->get('llm.httpClient.connectTimeout'),
-        ))
-            ->withBaseUri((string) $settings->get('audio.baseUri'))
-            ->withHeaders([
-                'Authorization' => 'Bearer ' . $settings->get('audio.key'),
-            ]);
+        );
     }
 
     public function isAvailable(): bool
@@ -129,8 +125,9 @@ final readonly class MistralAudioService implements AudioServiceInterface
             }
 
             $response = $this->httpClient->request(HttpRequest::post(
-                uri: 'audio/transcriptions',
+                uri: rtrim((string) $this->settings->get('audio.baseUri'), '/') . '/audio/transcriptions',
                 body: $body,
+                headers: ['Authorization' => 'Bearer ' . $this->settings->get('audio.key')],
             ));
 
             return $this->decodeJson($response->body);
@@ -162,7 +159,7 @@ final readonly class MistralAudioService implements AudioServiceInterface
         }
 
         $httpResponse = $this->httpClient->request(HttpRequest::post(
-            uri: 'audio/speech',
+            uri: rtrim((string) $this->settings->get('audio.baseUri'), '/') . '/audio/speech',
             body: [
                 'model' => $this->speechModel(),
                 'input' => $input,
@@ -170,7 +167,10 @@ final readonly class MistralAudioService implements AudioServiceInterface
                 'response_format' => $format,
                 'stream' => false,
             ],
-            headers: ['Content-Type' => 'application/json'],
+            headers: [
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . $this->settings->get('audio.key'),
+            ],
         ));
 
         $payload = $this->decodeJson($httpResponse->body);

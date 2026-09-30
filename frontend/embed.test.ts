@@ -91,6 +91,166 @@ function bootstrap(): ClaireBootstrap {
 }
 
 describe('embed public API', () => {
+  describe.each(['normal', 'embed'] as const)('cooperative stop in %s', mode => {
+    it('waits for a terminal event, keeps partial text and never stops welcome or on collapse/disconnect', async () => {
+      let release!: (response: Response) => void
+      const stops: RequestInit[] = []
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path === '/brain/stop') {
+          stops.push(init!)
+          return new Promise<Response>(resolve => { release = resolve })
+        }
+        return new Response('0')
+      }))
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, stopAvailable: true } } })
+      const stop = () => wrapper.findAll('button').find(button => button.text() === 'Arrêter la génération')
+      try {
+        await flushPromises()
+        const source = FakeEventSource.instances.at(-1)!
+        source.emit('chat.snapshot', { responding: true, activeMessageId: 'welcome', messages: [] })
+        await flushPromises()
+        expect(stop()).toBeUndefined()
+        source.emit('chat.snapshot', { responding: true, activeMessageId: 'generation', submissionId: 'user-turn',
+          generationStatus: 'queued', messages: [entry('generation', 'Texte partiel')] })
+        await flushPromises()
+        if (mode === 'embed') {
+          await wrapper.get('.claire-embed-toolbar__left').trigger('click')
+          await wrapper.get('.claire-embed-toolbar__left').trigger('click')
+          expect(stops).toHaveLength(0)
+        }
+        await stop()!.trigger('click')
+        await flushPromises()
+        expect(JSON.parse(stops[0].body as string)).toEqual({ threadId: 'thread-1', generationId: 'generation' })
+        expect(new Headers(stops[0].headers).get('Content-Type')).toBe('application/json')
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
+        expect(wrapper.findAll('button').find(button => button.text() === 'Arrêt demandé')!.attributes('disabled')).toBeDefined()
+        release(Response.json({ status: 'queued' }))
+        await flushPromises()
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
+        source.emit('chat.snapshot', { responding: false, activeMessageId: null, messages: [] })
+        await flushPromises()
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
+        expect(wrapper.text()).toContain('Texte partiel')
+        source.emit('chat.assistant.stopped', { messageId: 'obsolete', submissionId: 'old', turnStatus: 'stopped' })
+        await flushPromises()
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
+        source.emit('chat.assistant.stopped', { messageId: 'generation', submissionId: 'user-turn', turnStatus: 'stopped', generationStatus: 'stopped' })
+        source.emit('chat.assistant.update', { messageId: 'generation', submissionId: 'user-turn', message: 'Late text' })
+        await flushPromises()
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
+        expect(wrapper.text()).toContain('Texte partiel')
+        expect(wrapper.text()).not.toContain('Late text')
+        expect(wrapper.text()).toContain('Génération arrêtée')
+        expect(stop()).toBeUndefined()
+        source.onerror?.()
+        expect(stops).toHaveLength(1)
+      } finally { wrapper.unmount() }
+      expect(stops).toHaveLength(1)
+    })
+
+    it('stops an admitted user turn before its first token and ignores its late HTTP response during the next turn', async () => {
+      let release!: (response: Response) => void
+      let submissionId = ''
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path === '/brain/messages') {
+          submissionId = String((init!.body as FormData).get('submissionId'))
+          return Response.json({ submissionId, messageId: 'admitted' }, { status: 202 })
+        }
+        if (path === '/brain/stop') return new Promise<Response>(resolve => { release = resolve })
+        return new Response('0')
+      }))
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, stopAvailable: true } } })
+      try {
+        await flushPromises()
+        await wrapper.get('textarea').setValue('Accepted question')
+        await wrapper.get('form#claire-brain-chat').trigger('submit')
+        await flushPromises()
+        await wrapper.findAll('button').find(button => button.text() === 'Arrêter la génération')!.trigger('click')
+        await flushPromises()
+        const source = FakeEventSource.instances.at(-1)!
+        source.emit('chat.assistant.stopped', { messageId: 'admitted', submissionId, turnStatus: 'stopped' })
+        await flushPromises()
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
+        expect(wrapper.text()).toContain('Accepted question')
+        expect(wrapper.findAll('.claire-message--received')).toHaveLength(0)
+        source.emit('chat.snapshot', { responding: true, activeMessageId: 'next', submissionId: 'next-submission', messages: [] })
+        release(Response.json({ status: 'stopped' }))
+        await flushPromises()
+        expect(FakeEventSource.instances).toHaveLength(1)
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
+        expect(wrapper.findAll('button').some(button => button.text() === 'Arrêter la génération')).toBe(true)
+      } finally { wrapper.unmount() }
+    })
+
+    it.each(['stopped', 'succeeded', 'rolled_back'])('reconciles a terminal HTTP %s race through the snapshot', async status => {
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path === '/brain/stop') return Response.json({ status })
+        return new Response('0')
+      }))
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, stopAvailable: true } } })
+      try {
+        await flushPromises()
+        FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { responding: true, activeMessageId: 'g', submissionId: 's', messages: [] })
+        await flushPromises()
+        await wrapper.findAll('button').find(button => button.text() === 'Arrêter la génération')!.trigger('click')
+        await flushPromises()
+        expect(FakeEventSource.instances).toHaveLength(2)
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
+        FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { responding: false, activeMessageId: null,
+          messageId: 'g', submissionId: 's', turnStatus: status, generationStatus: status === 'stopped' ? 'stopped' : 'done',
+          rollbackConfirmed: status === 'rolled_back', messages: status === 'rolled_back' ? [] : [entry('g', 'Durable partial')] })
+        await flushPromises()
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
+        expect(wrapper.text().includes('Durable partial')).toBe(status !== 'rolled_back')
+      } finally { wrapper.unmount() }
+    })
+
+    it('hides unavailable stop and restores a stopped snapshot without treating it as failure', async () => {
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => new URL(input).pathname === '/auth/resource-token'
+        ? new Response(capability()) : new Response('0')))
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode } } })
+      try {
+        await flushPromises()
+        const source = FakeEventSource.instances.at(-1)!
+        source.emit('chat.snapshot', { responding: true, activeMessageId: 'g', submissionId: 's', messages: [] })
+        await flushPromises()
+        expect(wrapper.text()).not.toContain('Arrêter la génération')
+        source.emit('chat.snapshot', { responding: false, activeMessageId: null, generationMessageId: 'g', submissionId: 's',
+          generationStatus: 'stopped', turnStatus: 'stopped', messages: [entry('g', 'Durable partial')] })
+        await flushPromises()
+        expect(wrapper.text()).toContain('Durable partial')
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(false)
+      } finally { wrapper.unmount() }
+    })
+
+    it('leaves generation active after unknown identity or failed stop and permits retry', async () => {
+      vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+        const path = new URL(input).pathname
+        if (path === '/auth/resource-token') return new Response(capability())
+        if (path === '/brain/stop') return new Response(null, { status: 404 })
+        return new Response('0')
+      }))
+      const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, stopAvailable: true } } })
+      try {
+        await flushPromises()
+        FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { responding: true, activeMessageId: 'g', submissionId: 's', messages: [] })
+        await flushPromises()
+        await wrapper.findAll('button').find(button => button.text() === 'Arrêter la génération')!.trigger('click')
+        await flushPromises()
+        expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
+        expect(wrapper.text()).toContain('La demande d’arrêt a échoué')
+        expect(wrapper.findAll('button').find(button => button.text() === 'Arrêter la génération')!.attributes('disabled')).toBeUndefined()
+      } finally { wrapper.unmount() }
+    })
+  })
+
   describe.each(['normal', 'embed'] as const)('submission rollback in %s', mode => {
     it('submits with secure random bytes when randomUUID is unavailable', async () => {
       const random = vi.fn(crypto.getRandomValues.bind(crypto))

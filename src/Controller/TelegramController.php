@@ -11,9 +11,12 @@ use App\Renderer\JsonRenderer;
 use App\Services\Audio\AudioServiceInterface;
 use App\Services\ComfyUIWorkflowRegistry;
 use App\Services\Queue\QueueDispatcherInterface;
+use App\Services\SemanticMemoryRegistry;
 use App\Services\Settings;
 use App\Services\TelegramService;
+use App\Services\TelegramStopIngress;
 use App\Services\TelegramValidator;
+use Doctrine\DBAL\Connection;
 use InvalidArgumentException;
 use Phptg\BotApi\Type\Update\Update;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -34,6 +37,9 @@ final readonly class TelegramController
         private QueueDispatcherInterface $queueDispatcher,
         private Settings $settings,
         private AudioServiceInterface $audioService,
+        private TelegramStopIngress $telegramStopIngress,
+        private Connection $connection,
+        private SemanticMemoryRegistry $semanticMemory,
     ) {
     }
 
@@ -42,12 +48,24 @@ final readonly class TelegramController
         try {
             $this->telegramValidator->validateSecretToken($request);
             $rawBody = $request->getBody()->getContents();
-            Update::fromJson($rawBody);
+            $update = Update::fromJson($rawBody);
         } catch (InvalidArgumentException) {
             return $response->withStatus(401);
         }
 
         try {
+            if ($this->settings->get('llm.stop.enabled', false)
+                && (string) $this->settings->get('telegram.webhook_secret', '') === '') {
+                return $response->withStatus(401);
+            }
+            if ($this->settings->get('llm.stop.enabled', false) && $this->telegramStopIngress->handle($update)) {
+                return $response->withStatus(204);
+            }
+            $hasAudio = $update->message?->voice !== null || $update->message?->audio !== null;
+            if ($this->settings->get('llm.stop.enabled', false)
+                && (! $hasAudio || $this->audioService->isAvailable())) {
+                $this->telegramStopIngress->accept($update);
+            }
             $this->queueDispatcher->dispatch(
                 TelegramService::class,
                 ['update_json' => $rawBody],
@@ -86,6 +104,7 @@ final readonly class TelegramController
             'comfyui_enabled' => $comfyUIEnabled,
             'audio_available' => $this->audioService->isAvailable(),
             'audio_voices' => $this->audioService->voices(),
+            'semantic_memory_available' => (bool) $this->settings->get('llm.semanticMemory.enabled', false),
         ])->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
@@ -108,6 +127,32 @@ final readonly class TelegramController
         }
 
         try {
+            $semanticAvailable = (bool) $this->settings->get('llm.semanticMemory.enabled', false);
+            $semanticAction = array_key_exists('semantic_memory_enabled', $body)
+                || in_array($body['action'] ?? '', ['semantic_memory', 'erase_semantic_memory'], true);
+            if ($semanticAction) {
+                if (! $semanticAvailable) {
+                    return $this->jsonRenderer->json($response, ['error' => 'Semantic memory unavailable'], 404);
+                }
+                $userId = $this->connection->fetchOne(
+                    'SELECT id FROM account WHERE telegram_id = ?',
+                    [(string) $telegramUserId]
+                );
+                if ($userId === false) {
+                    return $this->jsonRenderer->json($response, ['error' => 'User not authorized'], 403);
+                }
+                if (array_key_exists('semantic_memory_enabled', $body)) {
+                    if (! is_bool($body['semantic_memory_enabled'])) {
+                        return $this->jsonRenderer->json($response, ['error' => 'Expected boolean preference'], 400);
+                    }
+                    $this->semanticMemory->setEnabled($userId, $body['semantic_memory_enabled']);
+                } elseif (($body['action'] ?? '') === 'erase_semantic_memory') {
+                    $this->semanticMemory->erase($userId);
+                }
+                return $this->jsonRenderer->json($response, [
+                    'success' => true, 'semanticMemory' => $this->semanticMemory->preference($userId),
+                ]);
+            }
             $this->telegramService->manageSession($telegramUserId);
 
             // Check if this is an update request
@@ -213,6 +258,16 @@ final readonly class TelegramController
                 return $this->jsonRenderer->json($response, ['success' => false, 'error' => 'Failed to load settings'], 500);
             }
 
+            $settings['semantic_memory_enabled'] = false;
+            if ($semanticAvailable) {
+                $userId = $this->connection->fetchOne(
+                    'SELECT id FROM account WHERE telegram_id = ?',
+                    [(string) $telegramUserId]
+                );
+                if ($userId !== false) {
+                    $settings['semantic_memory_enabled'] = $this->semanticMemory->preference($userId)['enabled'];
+                }
+            }
             return $this->jsonRenderer->json($response, ['success' => true, 'settings' => $settings]);
         } catch (\Throwable $throwable) {
             $this->logger->error('Failed to process API request: ' . $throwable->getMessage());

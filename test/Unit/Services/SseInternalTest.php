@@ -77,7 +77,7 @@ final class SseInternalTest extends TestCase
         });
         $this->pdo = new \PDO('sqlite::memory:');
         $this->pdo->exec('CREATE TABLE chat_history (user_id TEXT, thread_id TEXT PRIMARY KEY, messages TEXT, '
-            . 'display_messages TEXT, display_messages_count INTEGER DEFAULT 0, title TEXT, summary TEXT, '
+            . 'display_messages TEXT, stored_messages TEXT NULL, display_messages_count INTEGER DEFAULT 0, title TEXT, summary TEXT, '
             . 'revision INTEGER NOT NULL DEFAULT 0, current_turn_id TEXT)');
         $connection = $this->createStub(Connection::class);
         $connection->method('fetchAssociative')->willReturnCallback(function (string $sql, array $params): array|false {
@@ -234,7 +234,7 @@ final class SseInternalTest extends TestCase
         self::assertSame(['messageId' => '', 'status' => ''], $snapshot['generation']);
         self::assertNull($snapshot['generationMessageId']);
         $this->thread = null;
-        foreach (['queued', 'running', 'done', 'error'] as $status) {
+        foreach (['queued', 'running', 'done', 'stopped', 'error'] as $status) {
             $this->generation = ['messageId' => 'generation', 'status' => $status];
             self::assertSame(200, $this->request('/open', $this->input())->getStatusCode());
         }
@@ -390,7 +390,7 @@ final class SseInternalTest extends TestCase
         $app = AppFactory::create();
         $routes = require Settings::getAppRoot() . '/config/routes/brain.php';
         $routes($app);
-        self::assertSame(['/brain/messages', '/brain/turn/{submissionId}', '/brain/audio'], array_values(array_map(
+        self::assertSame(['/brain/messages', '/brain/stop', '/brain/turn/{submissionId}', '/brain/audio'], array_values(array_map(
             static fn ($route): string => $route->getPattern(), $app->getRouteCollector()->getRoutes(),
         )));
         self::assertFalse(method_exists(\App\Controller\BrainController::class, 'stream'));

@@ -71,6 +71,44 @@ final class RedisQueueBackendTest extends TestCase
         self::assertSame(0, $this->redis->zCard($this->key('leased')));
     }
 
+    public function testWebStopIdentityIsDurableBeforeReservationAndDuplicateCannotCancelIt(): void
+    {
+        $sql = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
+        $migration = new \Migrations\Version20260930000100($sql, new \Psr\Log\NullLogger());
+        $migration->up(new \Doctrine\DBAL\Schema\Schema());
+        foreach ($migration->getSql() as $query) {
+            $sql->executeStatement($query->getStatement(), $query->getParameters(), $query->getTypes());
+        }
+        $settings = new Settings([
+            'redis' => $this->settings->get('redis'), 'queue' => $this->settings->get('queue'),
+            'llm' => ['stop' => ['enabled' => true]],
+        ]);
+        $backend = new RedisQueueBackend(new QueueRedisConnection($settings), $settings, $sql);
+        $payload = $this->webPayload();
+        $job = $backend->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'web');
+        $stops = new \App\Services\ChatStopRequests($sql);
+        self::assertFalse($stops->isRequested('user-test', 'thread-test', 'web', $payload['messageId']));
+        self::assertSame($payload['submissionId'], $this->redis->hGet($this->generationKey(), 'submissionId'));
+        self::assertSame('accepted', $stops->request('user-test', 'thread-test', 'web', $payload['messageId'])['status']);
+        try {
+            $backend->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'web');
+            self::fail('Duplicate submission must be rejected');
+        } catch (\App\Services\ChatGenerationBusyException) {
+            self::assertTrue($stops->isRequested('user-test', 'thread-test', 'web', $payload['messageId']));
+            self::assertSame('accepted', $sql->fetchOne('SELECT status FROM chat_stop_request'));
+        }
+        $rejected = array_replace($payload, ['messageId' => 'message-rejected', 'submissionId' => 'submit-rejected']);
+        try {
+            $backend->dispatch(\App\Job\Web\NewMessageJob::class, $rejected, 'web');
+            self::fail('Busy conversation must reject a new submission');
+        } catch (\App\Services\ChatGenerationBusyException) {
+            self::assertSame('rolled_back', $sql->fetchOne(
+                'SELECT status FROM chat_stop_request WHERE generation_id = ?', ['message-rejected'],
+            ));
+        }
+        self::assertSame($job, $backend->reserveNextAvailable('web', 0)?->id);
+    }
+
     public function testFailedMessageScanRetainsPayloadAndSkipsLiveJobs(): void
     {
         $id = $this->backend->dispatch('ExampleJob', ['submissionId' => 'submission'], 'telegram');
@@ -398,7 +436,8 @@ final class RedisQueueBackendTest extends TestCase
         $key = $this->generationKey();
         $before = $this->redis->hGetAll($key);
         self::assertSame(['messageId' => 'msg-test', 'status' => 'queued', 'attempted' => '0',
-            'jobId' => $id, 'queue' => 'telegram', 'jobMessageId' => 'msg-test'], $before);
+            'jobId' => $id, 'queue' => 'telegram', 'jobMessageId' => 'msg-test',
+            'submissionId' => 'submission-test', 'submissionMessageId' => 'msg-test'], $before);
         try {
             $payload['messageId'] = 'msg-other';
             $this->backend->dispatch(\App\Job\Web\NewMessageJob::class, $payload, 'telegram');

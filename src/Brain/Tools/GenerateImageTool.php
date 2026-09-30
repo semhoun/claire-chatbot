@@ -12,19 +12,15 @@ use NeuronAI\Chat\Messages\ContentBlocks\TextContent;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Tools\PropertyType;
 use NeuronAI\Tools\Tool;
+use NeuronAI\Tools\ToolCall;
 use NeuronAI\Tools\ToolProperty;
 use Psr\Log\LoggerInterface;
 
 class GenerateImageTool extends Tool implements MessagePostProcessorInterface
 {
-    public function __construct(
-        private readonly ComfyUIService $comfyUIService,
-        private readonly Settings $settings,
-        private readonly SessionInterface $session,
-        private readonly string $threadId,
-        private readonly LoggerInterface $logger,
-    ) {
-        $description = <<<EOT
+    protected string $name = 'generate_image';
+
+    protected ?string $description = <<<'EOT'
 Generates an image from a text description. The generated image will be sent to the user.
 IMPORTANT: Use this tool whenever the user requests or needs an image, photo, drawing, illustration, or any other visual output.
 The prompt must be written in natural English, using complete sentences and enough visual detail to clearly describe the scene. Do not use specific character names; use only generic character types such as rabbit, man, woman, child, thief, or robot.
@@ -32,10 +28,13 @@ To insert a generated image into the text, provide only its ID (for example: @@G
 IMPORTANT: Use ONLY image IDs that have been explicitly provided by the generate_image tool in the current conversation. NEVER invent, placeholder, or hallucinate image IDs (like @@GENERATED@@placeholder@@). If you haven't called the tool yet, you don't have an ID to use.
 EOT;
 
-        parent::__construct(
-            'generate_image',
-            $description
-        );
+    public function __construct(
+        private readonly ComfyUIService $comfyUIService,
+        private readonly Settings $settings,
+        private readonly SessionInterface $session,
+        private readonly string $threadId,
+        private readonly LoggerInterface $logger,
+    ) {
     }
 
     public function __invoke(
@@ -79,9 +78,9 @@ EOT;
      * If the ID is missing, it appends it to the message content.
      */
     #[\Override]
-    public function postProcessMessage(Message $message): Message
+    public function postProcessMessage(Message $message, ToolCall $call): Message
     {
-        $imageId = $this->extractImageId();
+        $imageId = $this->extractImageId($call);
 
         if ($imageId === null) {
             return $message;
@@ -108,11 +107,11 @@ EOT;
         ];
     }
 
-    private function extractImageId(): ?string
+    private function extractImageId(ToolCall $call): ?string
     {
-        $result = $this->getResult();
+        $result = $call->hasResult() ? $call->getResult() : null;
 
-        if ($result === null) {
+        if (! is_string($result)) {
             return null;
         }
 
@@ -123,7 +122,7 @@ EOT;
                 return null;
             }
 
-            return $resultData['id'];
+            return is_string($resultData['id']) ? $resultData['id'] : null;
         } catch (JsonException) {
             return null;
         }

@@ -32,6 +32,9 @@ class ChatHistory
     #[ORM\Column(name: 'messages', type: 'text', nullable: false)]
     private string $messages;
 
+    #[ORM\Column(name: 'stored_messages', type: 'text', nullable: true)]
+    private ?string $storedMessages = null;
+
     #[ORM\Column(name: 'display_messages', type: 'text', nullable: false)]
     private string $displayMessages;
 
@@ -109,6 +112,16 @@ class ChatHistory
     public function getMessages(): string
     {
         return $this->messages;
+    }
+
+    public function getStoredMessages(): ?string
+    {
+        return $this->storedMessages;
+    }
+
+    public function setStoredMessages(?string $messages): void
+    {
+        $this->storedMessages = $messages;
     }
 
     public function setMessages(string $messages): void

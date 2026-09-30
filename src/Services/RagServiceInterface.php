@@ -26,6 +26,7 @@ interface RagServiceInterface
      */
     public function listForUser(User $user): array;
 
+    /** Document-only store; query with the v4 SearchRequest API. */
     public function getActiveVectorStoreForUser(User $user): VectorStoreInterface;
 
     /**

@@ -18,8 +18,8 @@ final class MessageTimestampTest extends TestCase
 
         $serialized = $userMessage->jsonSerialize();
 
-        $this->assertArrayHasKey('timestamp', $serialized);
-        $this->assertSame($timestamp, $serialized['timestamp']);
+        $this->assertArrayHasKey('timestamp', $serialized['__meta']);
+        $this->assertSame($timestamp, $serialized['__meta']['timestamp']);
         $this->assertSame('user', $serialized['role']);
     }
 
@@ -31,8 +31,8 @@ final class MessageTimestampTest extends TestCase
 
         $serialized = $assistantMessage->jsonSerialize();
 
-        $this->assertArrayHasKey('timestamp', $serialized);
-        $this->assertSame($timestamp, $serialized['timestamp']);
+        $this->assertArrayHasKey('timestamp', $serialized['__meta']);
+        $this->assertSame($timestamp, $serialized['__meta']['timestamp']);
         $this->assertSame('assistant', $serialized['role']);
     }
 
@@ -46,7 +46,7 @@ final class MessageTimestampTest extends TestCase
         $json = json_encode($userMessage->jsonSerialize(), JSON_THROW_ON_ERROR);
         $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
 
-        $this->assertArrayHasKey('timestamp', $decoded);
-        $this->assertSame($timestamp, $decoded['timestamp']);
+        $this->assertArrayHasKey('timestamp', $decoded['__meta']);
+        $this->assertSame($timestamp, $decoded['__meta']['timestamp']);
     }
 }

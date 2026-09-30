@@ -568,6 +568,18 @@
         </div>
     </div>
 
+    {% if semantic_memory_available %}
+    <section class="claire-glass-card" aria-labelledby="claire-semantic-title">
+        <h2 class="claire-card-title" id="claire-semantic-title">Mémoire sémantique</h2>
+        <p class="claire-selection-desc" id="claire-semantic-disclosure">Option indépendante du profil textuel ci-dessus. Après activation, des extraits des nouveaux échanges terminés sont envoyés au fournisseur d'embeddings configuré pour retrouver des souvenirs entre vos conversations. Aucun ancien historique n'est indexé. Désactiver conserve les données ; effacer supprime ces souvenirs.</p>
+        <label class="claire-selection-item" for="claire-semantic-enabled">
+            <span class="claire-selection-info">Activer la mémoire sémantique</span>
+            <input type="checkbox" id="claire-semantic-enabled" aria-describedby="claire-semantic-disclosure">
+        </label>
+        <button type="button" class="claire-action-btn claire-btn-danger" id="claire-semantic-erase">Effacer les souvenirs sémantiques</button>
+    </section>
+    {% endif %}
+
     {% if audio_available and audio_voices is not empty %}
     <!-- Audio voice -->
     <div class="claire-glass-card">
@@ -639,6 +651,8 @@
         const workflowName = document.getElementById('claire-workflow-name');
         const memorySelector = document.getElementById('claire-memory-selector');
         const memoryName = document.getElementById('claire-memory-name');
+        const semanticEnabled = document.getElementById('claire-semantic-enabled');
+        const semanticErase = document.getElementById('claire-semantic-erase');
         const voiceSelector = document.getElementById('claire-voice-selector');
         const voiceName = document.getElementById('claire-voice-name');
         const closeBtn = document.getElementById('claire-close-btn');
@@ -707,6 +721,7 @@
             const memoryEnabled = settings.long_term_memory_enabled === true;
             memoryName.textContent = memoryEnabled ? 'Activée' : 'Désactivée';
             memorySelector.classList.toggle('claire-active', memoryEnabled);
+            if (semanticEnabled) semanticEnabled.checked = settings.semantic_memory_enabled === true;
 
             if (audioAvailable && voiceSelector && voiceName) {
                 const voice = audioVoices.find(v => v.id === settings.audio_voice);
@@ -798,6 +813,37 @@
                 const options = audioVoices.map(v => ({ value: v.id, label: v.label }));
                 openModal('Choisir une voix', options, currentSettings.audio_voice || '', async (value) => {
                     await saveSetting('audio_voice', value);
+                });
+            });
+        }
+
+        if (semanticEnabled) {
+            semanticEnabled.addEventListener('change', async () => {
+                semanticEnabled.disabled = true;
+                try {
+                    await saveSetting('semantic_memory_enabled', semanticEnabled.checked);
+                    updateUI(currentSettings);
+                } finally {
+                    semanticEnabled.disabled = false;
+                }
+            });
+            semanticErase.addEventListener('click', () => {
+                tg.showConfirm('Effacer les souvenirs sémantiques ? Le profil textuel et les conversations seront conservés.', async (confirmed) => {
+                    if (!confirmed) return;
+                    semanticErase.disabled = true;
+                    try {
+                        const response = await fetch(`${baseUrl}/telegram/webapp/api`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ initData, action: 'erase_semantic_memory' })
+                        });
+                        const data = await response.json();
+                        showToast(data.success ? 'Souvenirs sémantiques effacés' : (data.error || 'Erreur'));
+                    } catch (error) {
+                        showToast('Erreur de connexion');
+                    } finally {
+                        semanticErase.disabled = false;
+                    }
                 });
             });
         }
