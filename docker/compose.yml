@@ -53,8 +53,8 @@ services:
       OPENAPI_CONTEXT_WINDOW: 256000
       OPENAPI_REQUEST_TIMEOUT: 600.0
 
-      # Activer uniquement apres les migrations et la bascule de tous les workers.
-      CLAIRE_STOP_ENABLED: "false"
+      # Desactiver l'arret pendant une bascule ; appliquer les migrations avant utilisation.
+      CLAIRE_STOP_ENABLED: "true"
       SEMANTIC_MEMORY_ENABLED: "false"
       # Dimension exacte de OPENAPI_MODEL_EMBED, a renseigner avant activation.
       SEMANTIC_MEMORY_DIMENSIONS: 0

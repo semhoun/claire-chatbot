@@ -105,16 +105,22 @@ describe('embed public API', () => {
         return new Response('0')
       }))
       const wrapper = mount(ClaireApp, { props: { config: { ...bootstrap(), mode, stopAvailable: true } } })
-      const stop = () => wrapper.findAll('button').find(button => button.text() === 'Arrêter la génération')
+      const stop = () => wrapper.findAll('button').find(button => button.attributes('aria-label') === 'Arrêter la génération')
       try {
         await flushPromises()
         const source = FakeEventSource.instances.at(-1)!
+        expect(wrapper.find('.claire-chat-input__actions button[aria-label="Envoyer"]').exists()).toBe(true)
         source.emit('chat.snapshot', { responding: true, activeMessageId: 'welcome', messages: [] })
         await flushPromises()
         expect(stop()).toBeUndefined()
         source.emit('chat.snapshot', { responding: true, activeMessageId: 'generation', submissionId: 'user-turn',
           generationStatus: 'queued', messages: [entry('generation', 'Texte partiel')] })
         await flushPromises()
+        expect(wrapper.find('button[aria-label="Envoyer"]').exists()).toBe(false)
+        expect(wrapper.findAll('.claire-chat-input__actions button[aria-label="Arrêter la génération"]')).toHaveLength(1)
+        expect(stop()!.attributes('type')).toBe('button')
+        expect(stop()!.attributes('disabled')).toBeUndefined()
+        expect(stop()!.get('svg path').attributes('d')).toBe('M7 7h10v10H7z')
         if (mode === 'embed') {
           await wrapper.get('.claire-embed-toolbar__left').trigger('click')
           await wrapper.get('.claire-embed-toolbar__left').trigger('click')
@@ -125,7 +131,7 @@ describe('embed public API', () => {
         expect(JSON.parse(stops[0].body as string)).toEqual({ threadId: 'thread-1', generationId: 'generation' })
         expect(new Headers(stops[0].headers).get('Content-Type')).toBe('application/json')
         expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
-        expect(wrapper.findAll('button').find(button => button.text() === 'Arrêt demandé')!.attributes('disabled')).toBeDefined()
+        expect(wrapper.get('button[aria-label="Arrêt demandé"]').attributes('disabled')).toBeDefined()
         release(Response.json({ status: 'queued' }))
         await flushPromises()
         expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
@@ -144,6 +150,7 @@ describe('embed public API', () => {
         expect(wrapper.text()).not.toContain('Late text')
         expect(wrapper.text()).toContain('Génération arrêtée')
         expect(stop()).toBeUndefined()
+        expect(wrapper.find('.claire-chat-input__actions button[aria-label="Envoyer"]').exists()).toBe(true)
         source.onerror?.()
         expect(stops).toHaveLength(1)
       } finally { wrapper.unmount() }
@@ -169,7 +176,7 @@ describe('embed public API', () => {
         await wrapper.get('textarea').setValue('Accepted question')
         await wrapper.get('form#claire-brain-chat').trigger('submit')
         await flushPromises()
-        await wrapper.findAll('button').find(button => button.text() === 'Arrêter la génération')!.trigger('click')
+        await wrapper.get('button[aria-label="Arrêter la génération"]').trigger('click')
         await flushPromises()
         const source = FakeEventSource.instances.at(-1)!
         source.emit('chat.assistant.stopped', { messageId: 'admitted', submissionId, turnStatus: 'stopped' })
@@ -182,7 +189,7 @@ describe('embed public API', () => {
         await flushPromises()
         expect(FakeEventSource.instances).toHaveLength(1)
         expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
-        expect(wrapper.findAll('button').some(button => button.text() === 'Arrêter la génération')).toBe(true)
+        expect(wrapper.find('button[aria-label="Arrêter la génération"]').exists()).toBe(true)
       } finally { wrapper.unmount() }
     })
 
@@ -198,7 +205,7 @@ describe('embed public API', () => {
         await flushPromises()
         FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { responding: true, activeMessageId: 'g', submissionId: 's', messages: [] })
         await flushPromises()
-        await wrapper.findAll('button').find(button => button.text() === 'Arrêter la génération')!.trigger('click')
+        await wrapper.get('button[aria-label="Arrêter la génération"]').trigger('click')
         await flushPromises()
         expect(FakeEventSource.instances).toHaveLength(2)
         expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
@@ -220,7 +227,7 @@ describe('embed public API', () => {
         const source = FakeEventSource.instances.at(-1)!
         source.emit('chat.snapshot', { responding: true, activeMessageId: 'g', submissionId: 's', messages: [] })
         await flushPromises()
-        expect(wrapper.text()).not.toContain('Arrêter la génération')
+        expect(wrapper.find('button[aria-label="Arrêter la génération"]').exists()).toBe(false)
         source.emit('chat.snapshot', { responding: false, activeMessageId: null, generationMessageId: 'g', submissionId: 's',
           generationStatus: 'stopped', turnStatus: 'stopped', messages: [entry('g', 'Durable partial')] })
         await flushPromises()
@@ -242,11 +249,11 @@ describe('embed public API', () => {
         await flushPromises()
         FakeEventSource.instances.at(-1)!.emit('chat.snapshot', { responding: true, activeMessageId: 'g', submissionId: 's', messages: [] })
         await flushPromises()
-        await wrapper.findAll('button').find(button => button.text() === 'Arrêter la génération')!.trigger('click')
+        await wrapper.get('button[aria-label="Arrêter la génération"]').trigger('click')
         await flushPromises()
         expect(wrapper.get<HTMLTextAreaElement>('textarea').element.disabled).toBe(true)
         expect(wrapper.text()).toContain('La demande d’arrêt a échoué')
-        expect(wrapper.findAll('button').find(button => button.text() === 'Arrêter la génération')!.attributes('disabled')).toBeUndefined()
+        expect(wrapper.get('button[aria-label="Arrêter la génération"]').attributes('disabled')).toBeUndefined()
       } finally { wrapper.unmount() }
     })
   })

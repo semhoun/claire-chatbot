@@ -13,7 +13,7 @@ Env::require([
 
 return [
     'stop' => [
-        'enabled' => filter_var(Env::get('CLAIRE_STOP_ENABLED', false), FILTER_VALIDATE_BOOL),
+        'enabled' => filter_var(Env::get('CLAIRE_STOP_ENABLED', true), FILTER_VALIDATE_BOOL),
     ],
     'semanticMemory' => [
         'enabled' => filter_var(Env::get('SEMANTIC_MEMORY_ENABLED', false), FILTER_VALIDATE_BOOL),

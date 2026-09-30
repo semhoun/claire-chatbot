@@ -119,6 +119,8 @@ def run_case(browser, mode, viewport):
     expect(page.get_by_role("button", name="Arrêter la génération")).to_have_count(0)
     emit("chat.snapshot", {"responding": True, "activeMessageId": "generation-1", "submissionId": "submission-1",
                            "generationStatus": "running", "messages": [message("user-1", "Question", True), message("generation-1", "Réponse partielle")]})
+    expect(page.get_by_role("button", name="Envoyer", exact=True)).to_have_count(0)
+    expect(page.locator('.claire-chat-input__actions button[aria-label="Arrêter la génération"]')).to_be_visible()
     page.get_by_role("button", name="Arrêter la génération").focus()
     page.keyboard.press("Enter")
     expect(page.get_by_role("button", name="Arrêt demandé", exact=True)).to_be_disabled()
@@ -133,6 +135,7 @@ def run_case(browser, mode, viewport):
                                     "turnStatus": "stopped", "generationStatus": "stopped"})
     expect(page.get_by_role("textbox", name="Votre message")).to_be_enabled()
     expect(page.get_by_text("Réponse partielle", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Envoyer", exact=True)).to_be_visible()
 
     # Reload uses only the durable snapshot, not prior in-memory stop state.
     page.reload(wait_until="networkidle")

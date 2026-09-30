@@ -177,7 +177,7 @@ Pour MySQL/MariaDB ou PostgreSQL, ajoutez `DATABASE_HOST`, `DATABASE_PORT`, `DAT
 | Recherche web | `SEARXNG_URL`. |
 | RAG | `OPENAPI_MODEL_EMBED`, `RAG_CHUNK_SIZE=1000`, `RAG_TOP_K=4`. |
 | Mémoire durable | `LONG_TERM_MEMORY_MAX_CHARACTERS=4000`, `LONG_TERM_MEMORY_UPDATE_EVERY_USER_MESSAGES=5`, `LONG_TERM_MEMORY_REBUILD_BATCH_SIZE=20`. |
-| Arrêt coopératif | `CLAIRE_STOP_ENABLED=false`. Activer après migration SQL et mise à jour de tous les processus. |
+| Arrêt coopératif | `CLAIRE_STOP_ENABLED=true` par défaut. Les migrations SQL doivent être appliquées ; utiliser `false` pendant la bascule des processus. |
 | Mémoire sémantique | `SEMANTIC_MEMORY_ENABLED=false`, `OPENAPI_MODEL_EMBED` (fournisseur/modèle RAG partagé), `SEMANTIC_MEMORY_DIMENSIONS` (dimension exacte du modèle, obligatoire avant activation). |
 | Images | `COMFYUI_ENABLED=false`, `COMFYUI_URL`, `COMFYUI_DEFAULT_WORKFLOW`. |
 | PDF | `PDF_ENABLED=true`, `PDF_DEFAULT_FORMAT=html`, `PDF_DEFAULT_PAGE_SIZE=A4`, `PDF_MAX_PAGES=100`, `PDF_TEMP_DIR`. |
