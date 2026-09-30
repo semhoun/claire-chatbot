@@ -122,8 +122,7 @@ final readonly class BrainController
             ->withHeader('Content-Type', 'application/json');
     }
 
-    /** @param array<string, string> $args */
-    public function turn(Request $request, Response $response, array $args): Response
+    public function turn(Request $request, Response $response, string $submissionId): Response
     {
         $response = $response->withHeader('Cache-Control', 'no-store');
         $user = $this->entityManager->getRepository(\App\Entity\User::class)
@@ -131,9 +130,7 @@ final readonly class BrainController
         if ($user === null) {
             return $response->withStatus(401);
         }
-        $submissionId = $args['submissionId'] ?? null;
-        if (! is_string($submissionId)
-            || preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $submissionId) !== 1) {
+        if (preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $submissionId) !== 1) {
             return $response->withStatus(400);
         }
         $turn = $this->entityManager->getConnection()->fetchAssociative(

@@ -302,7 +302,7 @@ final class BrainControllerTest extends TestCase
             if ($status === 'rolled_back') {
                 $journal->rollback('old', 'user-1');
             }
-            $response = $controller->turn($request, new Response(), ['submissionId' => 'submission-old']);
+            $response = $controller->turn($request, new Response(), 'submission-old');
             self::assertSame(200, $response->getStatusCode());
             self::assertSame('no-store', $response->getHeaderLine('Cache-Control'));
             self::assertSame(['submissionId' => 'submission-old', 'messageId' => 'old', 'threadId' => 'thread',
@@ -310,9 +310,40 @@ final class BrainControllerTest extends TestCase
                 json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR));
         }
         foreach (['submission-private', 'unknown'] as $id) {
-            self::assertSame(404, $controller->turn($request, new Response(), ['submissionId' => $id])->getStatusCode());
+            self::assertSame(404, $controller->turn($request, new Response(), $id)->getStatusCode());
         }
-        self::assertSame(400, $controller->turn($request, new Response(), ['submissionId' => 'bad/id'])->getStatusCode());
+        self::assertSame(400, $controller->turn($request, new Response(), 'bad/id')->getStatusCode());
+    }
+
+    public function testTurnRouteResolvesSubmissionIdThroughPhpDiBridge(): void
+    {
+        [$controller, , $session, , , , $connection] = $this->controller(
+            $this->createStub(QueueDispatcherInterface::class),
+        );
+        $journal = new \App\Services\ChatTurnJournal($connection);
+        $journal->begin('generation-1', 'user-1', 'thread', 'web', 'generation-1',
+            submissionId: 'submission-1');
+        $journal->begin('generation-private', 'other-user', 'private-thread', 'web', 'generation-private',
+            submissionId: 'submission-private');
+        $container = new \DI\Container();
+        $container->set(BrainController::class, $controller);
+        $app = \DI\Bridge\Slim\Bridge::create($container);
+        (require Settings::getAppRoot() . '/config/routes/brain.php')($app);
+
+        $cases = ['submission-1' => 200, 'submission-private' => 404, 'unknown' => 404, 'bad!id' => 400];
+        foreach ($cases as $id => $status) {
+            $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/turn/' . $id)
+                ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session);
+            $response = $app->handle($request);
+            self::assertSame($status, $response->getStatusCode());
+            self::assertSame('no-store', $response->getHeaderLine('Cache-Control'));
+            if ($status === 200) {
+                self::assertSame([
+                    'submissionId' => 'submission-1', 'messageId' => 'generation-1', 'threadId' => 'thread',
+                    'turnStatus' => 'running', 'rollbackConfirmed' => false,
+                ], json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR));
+            }
+        }
     }
 
     public function testSubmissionCannotBeReusedAfterEitherTerminalResultAcrossThreads(): void
@@ -337,7 +368,7 @@ final class BrainControllerTest extends TestCase
                 self::assertSame(409, $response->getStatusCode());
                 self::assertSame('', (string) $response->getBody());
             }
-            $result = $controller->turn($request, new Response(), ['submissionId' => 'submission-1']);
+            $result = $controller->turn($request, new Response(), 'submission-1');
             $turn = json_decode((string) $result->getBody(), true, flags: JSON_THROW_ON_ERROR);
             self::assertSame('original', $turn['messageId']);
             self::assertSame($status, $turn['turnStatus']);
@@ -407,7 +438,7 @@ final class BrainControllerTest extends TestCase
         );
         $request = new ServerRequestFactory()->createServerRequest('GET', '/brain/turn/submission-1')
             ->withAttribute(JwtSessionMiddleware::SESSION_ATTRIBUTE, $session);
-        self::assertSame(401, $controller->turn($request, new Response(), ['submissionId' => 'submission-1'])
+        self::assertSame(401, $controller->turn($request, new Response(), 'submission-1')
             ->getStatusCode());
     }
 
