@@ -7,6 +7,32 @@ et ce projet adhère à [Semantic Versioning](https://semver.org/lang/fr/).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-30
+
+### Added
+- **Arrêt des générations** : arrêt coopératif durable, activé par défaut avec `CLAIRE_STOP_ENABLED=true` ; bouton **Arrêter** à la place de l'envoi dans le web et le widget, route authentifiée `POST /brain/stop` ciblant une génération précise et commande Telegram `/stop`, y compris avant le démarrage du traitement
+- **Arrêt des générations** : conservation du message utilisateur et du texte partiel validé après confirmation de l'état `stopped`, sans audio automatique ni indexation sémantique ; un outil déjà lancé peut terminer et ses effets externes ne sont pas annulés
+- **Mémoire sémantique** : rappel d'extraits des autres conversations du même utilisateur, partagé entre agents et distinct de la synthèse textuelle long terme ; activation serveur facultative et consentement utilisateur explicite dans le web, le widget et la Mini-App
+- **Mémoire sémantique** : indexation asynchrone des nouveaux échanges réussis, reprise des extraits en attente par les workers et effacement dédié avec invalidation SQL immédiate puis purge physique différée ; stockage local séparé du RAG, sans réindexation automatique des anciens échanges
+- **Tests** : couverture de la compatibilité Neuron v3/v4, des arrêts et de leur récupération, du consentement et de la suppression des sources sémantiques, ainsi que des parcours web, widget et Telegram
+
+### Changed
+- **Moteur IA** : migration vers Neuron AI 4, verrouillé en `4.0.0`, avec adaptation des agents, outils, middlewares, événements d'observabilité et du stockage d'historique
+- **Historique** : ajout du transcript canonique `stored_messages` avec protection contre les écritures obsolètes ; checkpoints v2 incluant ce transcript, tout en conservant la récupération des checkpoints v1 et la lecture des anciens index RAG `.store`
+- **Telegram** : refus des webhooks sans `TELEGRAM_WEBHOOK_SECRET` lorsque l'arrêt coopératif est activé ; `TELEGRAM_BOT_USERNAME` permet de reconnaître `/stop@nomdubot`
+- **Confidentialité** : les extraits rappelés sont traités comme des données non fiables ; désactiver la mémoire sémantique suspend le rappel et les nouvelles écritures sans effacer les extraits existants, tandis que les purges restent actives
+
+### Fixed
+- **API** : correction de l'injection du paramètre `submissionId` dans `GET /brain/turn/{submissionId}` pour consulter le résultat durable d'un envoi
+- **Thèmes** : contraste des boutons secondaires corrigé dans le preset `light`, y compris au survol
+
+### Migration
+- Appliquer `./console migrations:migrate --no-interaction` en maintenance : `Version20260930000000` à `Version20260930000300` ajoutent le transcript canonique, les demandes d'arrêt, le registre sémantique et les cibles d'arrêt Telegram ; depuis 2.1.1, appliquer aussi `Version20260917000000` pour le journal des tours
+- Sauvegarder SQL, Redis et les fichiers, suspendre les soumissions et arrêter les anciens workers ; déployer ensemble code, dépendances Composer, bundles frontend/embed, HTTP et daemon SSE, sans mélanger des workers Neuron v3 et v4
+- Garder explicitement `CLAIRE_STOP_ENABLED=false` et `SEMANTIC_MEMORY_ENABLED=false` pendant la bascule ; les migrations restent obligatoires même avec ces options désactivées. Après vérification, réactiver l'arrêt et republier le menu Telegram avec `./console telegram:set-commands`
+- La mémoire sémantique reste désactivée par défaut : configurer `OPENAPI_MODEL_EMBED` et la dimension exacte `SEMANTIC_MEMORY_DIMENSIONS` avant d'activer `SEMANTIC_MEMORY_ENABLED`. Le consentement utilisateur reste nécessaire et les extraits ainsi que les requêtes de rappel sont transmis au fournisseur d'embeddings
+- La migration du transcript canonique est irréversible ; après de nouvelles écritures v4, ne pas revenir simplement aux dépendances v3. Voir la [procédure de bascule Neuron AI 4](README.md#bascule-neuron-ai-4)
+
 ## [2.1.2] - 2026-09-17
 
 ### Added

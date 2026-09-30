@@ -35,11 +35,11 @@ Le projet utilise PHP 8.5, Slim 4 et Neuron AI côté serveur, Vue 3 et TypeScri
 
 | Domaine | Ce que propose Claire |
 | --- | --- |
-| Conversations | Réponses en streaming SSE, rendu Markdown et code, historique, reprise de conversation et suppression du dernier échange. |
+| Conversations | Réponses en streaming SSE, arrêt coopératif, rendu Markdown et code, historique, reprise de conversation et suppression du dernier échange. |
 | Agents | Claire et Einstein intégrés ; ajout d'agents YAML sans modifier le code. |
 | Apparence | Six thèmes, personnalisation par agent et composants partagés entre interface normale et widget. |
 | Documents | Pièces jointes et recherche augmentée par documents personnels : fichiers, texte collé et URL. |
-| Mémoire | Résumé automatique du contexte court et mémoire durable facultative entre les conversations. |
+| Mémoire | Résumé automatique du contexte court, synthèse durable et rappel sémantique facultatifs entre les conversations. |
 | Recherche web | Outil de recherche via une instance SearXNG. |
 | Audio | Dictée, synthèse vocale, choix de voix et production de fichiers audio via Mistral. |
 | Création | Génération d'images avec ComfyUI et de PDF depuis HTML ou Markdown. |
@@ -213,7 +213,11 @@ Claire résume automatiquement le contexte court. La **mémoire long terme**, d�
 
 Lorsque l'arrêt coopératif est activé sur le serveur, le bouton **Arrêter** du chat normal/widget et la commande Telegram `/stop` ciblent la génération courante, même encore en queue. L'interface attend le terminal confirmé avant de permettre un nouvel envoi. Le message utilisateur et le texte partiel engagé sont conservés ; aucun audio automatique ni extrait de mémoire sémantique n'est produit pour ce tour. Un outil synchrone déjà lancé peut terminer : ses effets ne sont pas annulés. Une lecture réseau bloquante peut retarder l'arrêt. Fermer le widget ou perdre la connexion SSE ne demande pas l'arrêt. Les accueils ne sont pas concernés et la Mini-App n'a pas de bouton d'arrêt.
 
+Cette conservation dépend de la confirmation durable de l'état `stopped`. Une panne avant cette confirmation peut entraîner la restauration du checkpoint antérieur, plutôt que la conservation du texte partiel.
+
 La **mémoire sémantique** est une option séparée du profil textuel. Après activation serveur, chaque utilisateur choisit explicitement de l'activer dans les options web/widget ou la Mini-App. Seuls les nouveaux échanges éligibles, terminés avec succès sous ce consentement, envoient des extraits au fournisseur d'embeddings configuré. Aucun historique ancien n'est réindexé automatiquement. Le rappel partage les sources entre agents du même utilisateur, exclut la conversation courante et traite leur contenu comme des données non fiables. Une panne d'embeddings ne doit pas faire échouer le chat.
+
+Lors du rappel, le texte de la requête courante est également envoyé au fournisseur d'embeddings lorsqu'un index admissible existe. Tenez compte de ces transmissions et de leur coût avant d'activer cette fonction.
 
 Désactiver cette option suspend le rappel et les nouvelles écritures sans effacer les extraits déjà indexés. Le bouton d'effacement dédié invalide les sources immédiatement en SQL ; la purge physique est reprise par les workers. Supprimer une source retire son éligibilité au rappel. Les index sémantiques résident dans `DATA_PATH/semantic-memory` (`var/data/semantic-memory` par défaut), séparément des documents RAG. Un changement de modèle ou de dimension n'entraîne pas de réindexation payante implicite. Le bouton de reconstruction du profil textuel reste indépendant.
 
@@ -424,7 +428,7 @@ Les commandes `telegram:webhook` et `telegram:menu-button` acceptent aussi `--de
 
 Dans l'interface web, ouvrez la configuration Telegram et renseignez votre **identifiant utilisateur numérique**, pas votre `@username`. Il doit être unique. Effacez le champ et enregistrez pour dissocier le compte.
 
-Le bot accepte les commandes `/start`, `/help`, `/brain` et `/comfyui`, ainsi que les messages, photos et documents. Les voix et fichiers audio entrants sont transcrits lorsque l'audio Mistral est configuré ; le bot peut aussi répondre en audio.
+Le bot accepte les commandes `/start`, `/help`, `/brain` et `/comfyui`, ainsi que `/stop` lorsque l'arrêt coopératif est activé, et les messages, photos et documents. Les voix et fichiers audio entrants sont transcrits lorsque l'audio Mistral est configuré ; le bot peut aussi répondre en audio.
 
 La Mini-App permet de gérer les préférences, choisir une voix, ouvrir une nouvelle conversation et reconstruire la mémoire durable. C'est une interface de configuration liée au compte, pas une copie complète du chat web.
 
@@ -580,7 +584,7 @@ Pour une migration depuis les versions antérieures à 2.1, appliquez notamment 
 
 ### Bascule Neuron AI 4
 
-Le lock Composer fixe Neuron AI à **4.0.0**. Les migrations `Version20260930000000` à `Version20260930000300` ajoutent le transcript canonique `stored_messages`, les demandes d'arrêt, le registre de consentement/extraits sémantiques et les cibles Telegram. Conservez `CLAIRE_STOP_ENABLED=false` et `SEMANTIC_MEMORY_ENABLED=false` pendant la bascule.
+La version **2.2.0** migre vers Neuron AI **4.0.0**, fixé par le lock Composer. Les migrations `Version20260930000000` à `Version20260930000300` ajoutent le transcript canonique `stored_messages`, les demandes d'arrêt, le registre de consentement/extraits sémantiques et les cibles Telegram. Conservez `CLAIRE_STOP_ENABLED=false` et `SEMANTIC_MEMORY_ENABLED=false` pendant la bascule. Les migrations restent obligatoires même avec ces deux options désactivées.
 
 1. Suspendez les nouvelles soumissions. Laissez terminer les tours actifs ou récupérez leurs checkpoints sans relancer d'inférence.
 2. Arrêtez les anciens workers et sauvegardez SQL ainsi que les fichiers vectoriels. Ne mélangez pas des workers v3 et v4.
@@ -588,9 +592,11 @@ Le lock Composer fixe Neuron AI à **4.0.0**. Les migrations `Version20260930000
 4. Redémarrez HTTP, workers et daemon SSE avec la même version. Vérifiez une ancienne conversation, un nouveau tour avec outil/fichier, le widget et Telegram avant de rouvrir les soumissions.
 5. Activez ensuite l'arrêt et vérifiez un arrêt avec texte partiel, sa reconnexion et le tour suivant. Activez la disponibilité de la mémoire seulement après vérification de son modèle et de sa dimension ; le consentement utilisateur reste désactivé par défaut.
 
+Pour Telegram, vérifiez `TELEGRAM_WEBHOOK_SECRET` avant d'activer l'arrêt, puis relancez `./console telegram:set-commands` pour publier `/stop` dans le menu du bot. Réexécutez cette commande après tout changement de disponibilité de l'arrêt.
+
 Les anciens fichiers RAG `.store` restent directement lisibles : aucune conversion ni nouvelle facturation d'embeddings n'est requise. Les checkpoints v1 restent récupérables ; les nouveaux checkpoints v2 incluent le transcript canonique.
 
-Avant réouverture, un retour arrière restaure release, lock et sauvegardes cohérentes. **Après de nouvelles écritures v4, ne revenez pas simplement au vendor v3** : `__meta`, le transcript canonique et l'état `stopped` ne sont pas garantis lisibles par l'ancienne version. Préférez un correctif en avant. Une restauration perdant des données nouvelles nécessite une décision explicite ; ne lancez pas automatiquement les migrations inverses destructrices.
+Avant réouverture, un retour arrière restaure release, lock et sauvegardes cohérentes. **Après de nouvelles écritures v4, ne revenez pas simplement au vendor v3** : `__meta`, le transcript canonique et l'état `stopped` ne sont pas garantis lisibles par l'ancienne version. La migration `Version20260930000000` est explicitement irréversible. Préférez un correctif en avant. Une restauration perdant des données nouvelles nécessite une décision explicite ; ne lancez pas automatiquement les migrations inverses destructrices.
 
 ### Queue et diagnostic
 
