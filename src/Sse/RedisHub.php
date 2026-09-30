@@ -18,27 +18,43 @@ use function React\Promise\reject;
 final class RedisHub implements RedisGateway
 {
     private mixed $subscriber = null;
+
     private mixed $commands = null;
+
     /**
      * @var array<string, array{identity: \stdClass, listeners: array<int|string, callable>,
      *     ack: PromiseInterface|null, unsubscribing: bool}>
      */
     private array $channels = [];
+
     /** @var array<string, PromiseInterface> */
     private array $reads = [];
+
     /** @var array<string, array{string, string, Deferred}> */
     private array $waiting = [];
+
     private int $activeReads = 0;
+
     private int $epoch = 0;
+
     private int $failures = 0;
+
     private bool $stopped = false;
-    private ?TimerInterface $retry = null;
-    private ?PromiseInterface $connecting = null;
+
+    private ?TimerInterface $timer = null;
+
+    private ?PromiseInterface $promise = null;
+
     private readonly string $uri;
+
     private readonly string $prefix;
+
     private int $messages = 0;
+
     private int $messageBytes = 0;
+
     private float $dispatchSeconds = 0.0;
+
     private int $listenerErrors = 0;
 
     public function __construct(
@@ -55,9 +71,11 @@ final class RedisHub implements RedisGateway
         if (! is_string($host) || ! preg_match('/^[a-zA-Z0-9.:-]+$/D', $host)) {
             throw new \InvalidArgumentException('Invalid Redis host');
         }
+
         if (str_contains($host, ':')) {
             $host = '[' . $host . ']';
         }
+
         $password = $redis['password'] ?? null;
         $this->uri = 'redis://' . ($password === null || $password === '' ? '' : ':' . rawurlencode($password) . '@')
             . $host . ':' . $redis['port'] . '/' . $redis['database']
@@ -66,22 +84,24 @@ final class RedisHub implements RedisGateway
 
     public function start(): void
     {
-        if ($this->stopped || $this->connecting !== null || $this->ready()) {
+        if ($this->stopped || $this->promise instanceof \React\Promise\PromiseInterface || $this->ready()) {
             return;
         }
+
         ++$this->epoch;
         $epoch = $this->epoch;
         $factory = new Factory($this->loop);
         $clients = [];
         $requests = [];
         foreach ([0, 1] as $index) {
-            $request = $this->connect !== null ? ($this->connect)($this->uri)
+            $request = $this->connect instanceof \Closure ? ($this->connect)($this->uri)
                 : ($index === 0 ? PubSubClient::connect($this->uri, $this->loop) : $factory->createClient($this->uri));
             $requests[] = $request->then(function ($client) use (&$clients, $index, $epoch) {
                 if ($this->stopped || $epoch !== $this->epoch) {
                     $client->close();
                     throw new \RuntimeException('Stale Redis connection');
                 }
+
                 $clients[$index] = $client;
                 $client->on('error', function () use ($epoch): void {
                     $this->lost($epoch);
@@ -92,15 +112,18 @@ final class RedisHub implements RedisGateway
                 return $client;
             });
         }
-        $this->connecting = Async::timeout(all($requests), $this->loop, $this->config->get('http_timeout'));
-        $this->connecting->then(function (array $connected) use ($epoch): void {
-            $this->connecting = null;
+
+        $this->promise = Async::timeout(all($requests), $this->loop, $this->config->get('http_timeout'));
+        $this->promise->then(function (array $connected) use ($epoch): void {
+            $this->promise = null;
             if ($epoch !== $this->epoch || $this->stopped) {
                 foreach ($connected as $client) {
                     $client->close();
                 }
+
                 return;
             }
+
             [$this->subscriber, $this->commands] = $connected;
             $this->failures = 0;
             $this->subscriber->on('message', function (string $channel, string $message): void {
@@ -114,6 +137,7 @@ final class RedisHub implements RedisGateway
                         ++$this->listenerErrors;
                     }
                 }
+
                 $this->dispatchSeconds += (hrtime(true) - $started) / 1_000_000_000;
             });
         }, function () use ($epoch, &$clients): void {
@@ -135,6 +159,7 @@ final class RedisHub implements RedisGateway
         if (! $this->ready()) {
             return reject(new \RuntimeException('Redis unavailable'));
         }
+
         if (! isset($this->channels[$channel])) {
             $this->channels[$channel] = [
                 'identity' => new \stdClass(), 'listeners' => [], 'ack' => null, 'unsubscribing' => false,
@@ -143,9 +168,10 @@ final class RedisHub implements RedisGateway
         } elseif ($this->channels[$channel]['unsubscribing']) {
             $this->channels[$channel]['unsubscribing'] = false;
             $this->channels[$channel]['ack'] = $this->channels[$channel]['ack']->then(
-                fn () => $this->subscription('subscribe', $channel),
+                fn (): \React\Promise\PromiseInterface => $this->subscription('subscribe', $channel),
             );
         }
+
         $this->channels[$channel]['listeners'][$id] = $listener;
         return $this->channels[$channel]['ack'];
     }
@@ -155,15 +181,17 @@ final class RedisHub implements RedisGateway
         if (! isset($this->channels[$channel]['listeners'][$id])) {
             return;
         }
+
         unset($this->channels[$channel]['listeners'][$id]);
         if ($this->channels[$channel]['listeners'] !== []) {
             return;
         }
+
         $this->channels[$channel]['unsubscribing'] = true;
         $epoch = $this->epoch;
         $identity = $this->channels[$channel]['identity'];
         $operation = $this->channels[$channel]['ack'] = $this->channels[$channel]['ack']->then(
-            fn () => $this->subscription('unsubscribe', $channel),
+            fn (): \React\Promise\PromiseInterface => $this->subscription('unsubscribe', $channel),
         );
         $operation->then(function () use ($channel, $epoch, $identity, $operation): void {
             // A later close can set unsubscribing again while this older ACK is still pending.
@@ -186,6 +214,7 @@ final class RedisHub implements RedisGateway
                 for ($index = 0; $index < $count; $index += 2) {
                     $state[$values[$index]] = $values[$index + 1];
                 }
+
                 return $state;
             },
         );
@@ -207,10 +236,11 @@ final class RedisHub implements RedisGateway
     public function stop(): void
     {
         $this->stopped = true;
-        if ($this->retry !== null) {
-            $this->loop->cancelTimer($this->retry);
-            $this->retry = null;
+        if ($this->timer instanceof \React\EventLoop\TimerInterface) {
+            $this->loop->cancelTimer($this->timer);
+            $this->timer = null;
         }
+
         $this->lost($this->epoch);
     }
 
@@ -235,6 +265,7 @@ final class RedisHub implements RedisGateway
         if (! $this->ready()) {
             return reject(new \RuntimeException('Redis unavailable'));
         }
+
         $epoch = $this->epoch;
         $promise = Async::timeout(
             $this->subscriber->$operation($channel),
@@ -252,13 +283,16 @@ final class RedisHub implements RedisGateway
         if (! $this->ready()) {
             return reject(new \RuntimeException('Redis unavailable'));
         }
+
         $id = $operation . ':' . $key;
         if (isset($this->reads[$id])) {
             return $this->reads[$id];
         }
+
         if (count($this->reads) >= 2 * $this->config->get('max_connections')) {
             return reject(new \RuntimeException('Redis command admission exhausted'));
         }
+
         $epoch = $this->epoch;
         $deferred = new Deferred();
         $promise = $this->reads[$id] = Async::timeout(
@@ -290,11 +324,12 @@ final class RedisHub implements RedisGateway
                 if ($epoch !== $this->epoch) {
                     return;
                 }
+
                 --$this->activeReads;
                 $deferred->resolve($value);
                 $this->pumpReads();
-            }, static function (\Throwable $error) use ($deferred): void {
-                $deferred->reject($error);
+            }, static function (\Throwable $throwable) use ($deferred): void {
+                $deferred->reject($throwable);
             });
         }
     }
@@ -304,13 +339,18 @@ final class RedisHub implements RedisGateway
         if ($epoch !== $this->epoch) {
             return;
         }
+
         ++$this->epoch;
         $subscriber = $this->subscriber;
         $commands = $this->commands;
-        $connecting = $this->connecting;
-        $this->subscriber = $this->commands = $this->connecting = null;
+        $connecting = $this->promise;
+        $this->subscriber = null;
+        $this->commands = null;
+        $this->promise = null;
         $reads = $this->reads;
-        $this->channels = $this->reads = $this->waiting = [];
+        $this->channels = [];
+        $this->reads = [];
+        $this->waiting = [];
         $this->activeReads = 0;
         ($this->unavailable)();
         $subscriber?->close();
@@ -319,12 +359,13 @@ final class RedisHub implements RedisGateway
         foreach ($reads as $read) {
             $read->cancel();
         }
+
         if (! $this->stopped) {
-            $jitter = $this->jitter !== null ? ($this->jitter)() : random_int(750, 1250) / 1000;
+            $jitter = $this->jitter instanceof \Closure ? ($this->jitter)() : random_int(750, 1250) / 1000;
             $delay = min(30, 0.25 * (2 ** min(7, $this->failures))) * $jitter;
             ++$this->failures;
-            $this->retry = $this->loop->addTimer($delay, function (): void {
-                $this->retry = null;
+            $this->timer = $this->loop->addTimer($delay, function (): void {
+                $this->timer = null;
                 $this->start();
             });
         }

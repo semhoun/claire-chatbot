@@ -28,15 +28,19 @@ use Throwable;
 final class GenerationExecution
 {
     private bool $used = false;
+
     /** @var array<string, Message> */
     private array $messages = [];
+
     /** @var array<string, ToolResultMessage> */
     private array $results = [];
+
     private ?string $lastToolMessageId = null;
+
     /** @var array<string, array<string, array{callId:?string, name:string, status:string}>> */
     private array $partialCalls = [];
 
-    public function __construct(private readonly GenerationStopToken $token)
+    public function __construct(private readonly GenerationStopToken $generationStopToken)
     {
     }
 
@@ -56,11 +60,13 @@ final class GenerationExecution
         if ($this->used) {
             throw new LogicException('A generation execution cannot be replayed.');
         }
+
         $this->used = true;
         $messages = is_array($messages) ? $messages : [$messages];
         if (! array_any($messages, static fn (Message $message): bool => $message instanceof UserMessage && ! $message instanceof ToolResultMessage)) {
             throw new InvalidArgumentException('Cooperative execution requires user input, not a welcome generation.');
         }
+
         foreach ($messages as $message) {
             $this->messages[$message->getId()] = $message;
         }
@@ -71,12 +77,13 @@ final class GenerationExecution
             if ($beforeResume !== null) {
                 $beforeResume();
             }
-            $this->token->check();
+
+            $this->generationStopToken->check();
             // Keep stop listeners out of the shared definition and subsequent turns.
             $agent = $agent->for($agent->getThreadId() ?? throw new LogicException('Bind the agent thread first.'));
-            $gate = new CooperativeStop($this->token);
-            $agent->addGlobalMiddleware($gate);
-            $agent->subscribe(ToolCalling::class, $gate);
+            $cooperativeStop = new CooperativeStop($this->generationStopToken);
+            $agent->addGlobalMiddleware($cooperativeStop);
+            $agent->subscribe(ToolCalling::class, $cooperativeStop);
             $agent->subscribe(InferenceStop::class, $this->recordResponse(...));
             $stream = $agent->stream($messages);
             while ($stream->valid()) {
@@ -84,8 +91,9 @@ final class GenerationExecution
                 if ($chunk instanceof TextChunk && $chunk->messageId !== null) {
                     $id = $chunk->messageId;
                     $text = ($this->messages[$id] ?? null)?->getContent() ?? '';
-                    $this->messages[$id] = (new AssistantMessage($text . $chunk->content))->setId($id);
+                    $this->messages[$id] = new AssistantMessage($text . $chunk->content)->setId($id);
                 }
+
                 if ($chunk instanceof ToolArgumentChunk) {
                     $this->partialCalls[$chunk->messageId ?? ''][$chunk->toolCallId ?? $chunk->toolName] = [
                         'callId' => $chunk->toolCallId,
@@ -93,29 +101,34 @@ final class GenerationExecution
                         'status' => 'cancelled',
                     ];
                 }
+
                 yield $chunk;
                 if ($beforeResume !== null) {
                     $beforeResume();
                 }
-                $this->token->check();
+
+                $this->generationStopToken->check();
                 $stream->next();
             }
+
             $state = $stream->getReturn();
             if ($state->isInterrupted()) {
                 throw new RuntimeException('Unexpected interrupted generation; automatic resume is forbidden.');
             }
-            $this->token->check();
+
+            $this->generationStopToken->check();
         } catch (GenerationStopped $stop) {
-            if ($stop->token !== $this->token) {
+            if ($stop->token !== $this->generationStopToken) {
                 throw $stop;
             }
+
             // Unwind the suspended workflow, releasing its lease without executing
             // the next tool or recovering the failed workflow with another invocation.
             if ($stream !== null && $stream->valid()) {
                 try {
                     $stream->throw($stop);
                 } catch (GenerationStopped $unwound) {
-                    if ($unwound->token !== $this->token) {
+                    if ($unwound->token !== $this->generationStopToken) {
                         throw $unwound;
                     }
                 }
@@ -124,29 +137,31 @@ final class GenerationExecution
             // v4 deliberately has no assistant response when cancellation precedes
             // all text. Do not misclassify other provider failures as user stops.
             if ($error->getMessage() !== 'The stream was stopped before the answer started.'
-                || ! $this->token->isRequested()) {
+                || ! $this->generationStopToken->isRequested()) {
                 throw $error;
             }
         } catch (Throwable $error) {
-            if ($stream !== null && $stream->valid()) {
+            if ($stream instanceof \Generator && $stream->valid()) {
                 try {
                     $stream->throw($error);
                 } catch (Throwable) {
                     // The original delivery/ownership failure is authoritative.
                 }
             }
+
             throw $error;
         }
 
-        return new GenerationExecutionResult($this->token->isRequested(), $state, $this->transcript());
+        return new GenerationExecutionResult($this->generationStopToken->isRequested(), $state, $this->transcript());
     }
 
-    private function recordResponse(InferenceStop $event): void
+    private function recordResponse(InferenceStop $inferenceStop): void
     {
-        if ($event->message instanceof ToolResultMessage && $this->lastToolMessageId !== null) {
-            $this->results[$this->lastToolMessageId] = $event->message;
+        if ($inferenceStop->message instanceof ToolResultMessage && $this->lastToolMessageId !== null) {
+            $this->results[$this->lastToolMessageId] = $inferenceStop->message;
         }
-        $message = $event->response->message();
+
+        $message = $inferenceStop->response->message();
         // Keep raw provider output for a stop that wins terminal arbitration
         // after normal execution. Tool calls must stay live until results settle.
         $this->messages[$message->getId()] = $message instanceof AssistantMessage
@@ -155,8 +170,9 @@ final class GenerationExecution
             $this->lastToolMessageId = $message->getId();
             unset($this->partialCalls[$message->getId()]);
         }
+
         if ($message->getMetadata('stop_reason') === StoppableHttpClient::STOP_REASON) {
-            $this->token->request();
+            $this->generationStopToken->request();
         }
     }
 
@@ -169,27 +185,32 @@ final class GenerationExecution
             if (! $message instanceof ToolCallMessage) {
                 continue;
             }
+
             foreach ($message->getToolCalls() as $call) {
                 if (! $call->hasResult()) {
                     $call->setResult(ToolOutput::error('CANCELLED: generation stopped; tool not executed.'));
                 }
             }
+
             $messages[] = $this->results[$message->getId()]
-                ?? (new ToolResultMessage($message->getToolCalls()))->setId($message->getId() . ':results');
+                ?? new ToolResultMessage($message->getToolCalls())->setId($message->getId() . ':results');
         }
-        if ($this->token->isRequested() && $messages !== []) {
+
+        if ($this->generationStopToken->isRequested() && $messages !== []) {
             $last = $messages[array_key_last($messages)];
             $last->addMetadata('generation_stopped', true);
             if ($this->partialCalls !== []) {
                 // Partial JSON is not a model-ready call. Keep an explicit audit
                 // cancellation, not invented arguments or an executable tool pair.
                 $cancelled = [];
-                foreach ($this->partialCalls as $calls) {
-                    array_push($cancelled, ...array_values($calls));
+                foreach ($this->partialCalls as $partialCall) {
+                    array_push($cancelled, ...array_values($partialCall));
                 }
+
                 $last->addMetadata('cancelled_tool_calls', $cancelled);
             }
         }
+
         return $messages;
     }
 }

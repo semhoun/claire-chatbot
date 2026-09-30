@@ -35,14 +35,14 @@ final class PubSubClient extends EventEmitter
 
     private readonly SerializerInterface $serializer;
 
-    public function __construct(private readonly DuplexStreamInterface $stream)
+    public function __construct(private readonly DuplexStreamInterface $duplexStream)
     {
-        $protocol = new Factory();
-        $this->parser = $protocol->createResponseParser();
-        $this->serializer = $protocol->createSerializer();
-        $stream->on('data', $this->receive(...));
-        $stream->on('error', $this->close(...));
-        $stream->on('close', $this->close(...));
+        $factory = new Factory();
+        $this->parser = $factory->createResponseParser();
+        $this->serializer = $factory->createSerializer();
+        $duplexStream->on('data', $this->receive(...));
+        $duplexStream->on('error', $this->close(...));
+        $duplexStream->on('close', $this->close(...));
     }
 
     /** @return PromiseInterface<self> */
@@ -55,20 +55,20 @@ final class PubSubClient extends EventEmitter
         $connector = new Connector(['timeout' => $timeout], $loop);
         $connecting = $connector->connect('tcp://' . $parts['host'] . ':' . ($parts['port'] ?? 6379));
         $client = null;
-        $handshake = $connecting->then(static function (DuplexStreamInterface $stream) use (&$client, $parts) {
-            $client = new self($stream);
+        $handshake = $connecting->then(static function (DuplexStreamInterface $duplexStream) use (&$client, $parts) {
+            $client = new self($duplexStream);
             $authenticated = isset($parts['pass'])
                 ? $client->request('auth', [rawurldecode($parts['pass'])]) : resolve(null);
             return $authenticated->then(
-                static fn () => $client->request('select', [ltrim($parts['path'] ?? '/0', '/')]),
-            )->then(static fn () => $client);
+                static fn (): \React\Promise\PromiseInterface => $client->request('select', [ltrim($parts['path'] ?? '/0', '/')]),
+            )->then(static fn (): \App\Sse\PubSubClient => $client);
         });
-        $promise = new Promise(static function ($resolve, $reject) use ($handshake, &$client): void {
-            $handshake->then($resolve, static function (Throwable $error) use ($reject, &$client): void {
+        $promise = new Promise(static function (?callable $resolve, $reject) use ($handshake, &$client): void {
+            $handshake->then($resolve, static function (Throwable $throwable) use ($reject, &$client): void {
                 $client?->close();
-                $reject($error);
+                $reject($throwable);
             });
-        }, static function () use ($connecting, &$client): void {
+        }, static function () use ($connecting, &$client): never {
             $connecting->cancel();
             $client?->close();
             throw new RuntimeException('Pub/Sub connection cancelled');
@@ -89,7 +89,7 @@ final class PubSubClient extends EventEmitter
         return $this->request('unsubscribe', [$channel]);
     }
 
-    public function close(?Throwable $error = null): void
+    public function close(?Throwable $throwable = null): void
     {
         if ($this->closed) {
             return;
@@ -98,12 +98,13 @@ final class PubSubClient extends EventEmitter
         $this->closed = true;
         $pending = $this->pending;
         $this->pending = [];
-        $this->stream->close();
+
+        $this->duplexStream->close();
         $this->emit('close');
         $this->removeAllListeners();
-        $error ??= new RuntimeException('Pub/Sub connection closed');
+        $throwable ??= new RuntimeException('Pub/Sub connection closed');
         foreach ($pending as $request) {
-            $request['deferred']->reject($error);
+            $request['deferred']->reject($throwable);
         }
     }
 
@@ -122,7 +123,7 @@ final class PubSubClient extends EventEmitter
             $this->close();
         });
         $this->pending[] = ['command' => $command, 'arguments' => $arguments, 'deferred' => $deferred];
-        $this->stream->write($this->serializer->getRequestMessage($command, $arguments));
+        $this->duplexStream->write($this->serializer->getRequestMessage($command, $arguments));
 
         return $deferred->promise();
     }
@@ -130,16 +131,17 @@ final class PubSubClient extends EventEmitter
     private function receive(string $data): void
     {
         try {
-            foreach ($this->parser->pushIncoming($data) as $reply) {
+            foreach ($this->parser->pushIncoming($data) as $model) {
                 if ($this->closed) {
                     return;
                 }
 
-                $value = $reply->getValueNative();
+                $value = $model->getValueNative();
                 if (is_array($value) && ($value[0] ?? null) === 'message') {
                     if (count($value) !== 3 || ! is_string($value[1]) || ! is_string($value[2])) {
                         throw new RuntimeException('Invalid Pub/Sub message');
                     }
+
                     $this->emit('message', [$value[1], $value[2]]);
                     continue;
                 }
@@ -148,11 +150,13 @@ final class PubSubClient extends EventEmitter
                 if ($request === null) {
                     throw new RuntimeException('Unexpected Pub/Sub response');
                 }
-                if ($reply instanceof ErrorReply) {
+
+                if ($model instanceof ErrorReply) {
                     array_shift($this->pending);
-                    $request['deferred']->reject($reply);
+                    $request['deferred']->reject($model);
                     continue;
                 }
+
                 if (in_array($request['command'], ['subscribe', 'unsubscribe'], true)
                     && (! is_array($value) || count($value) !== 3 || $value[0] !== $request['command']
                         || $value[1] !== $request['arguments'][0] || ! is_int($value[2]) || $value[2] < 0)) {
@@ -162,8 +166,8 @@ final class PubSubClient extends EventEmitter
                 array_shift($this->pending);
                 $request['deferred']->resolve($value);
             }
-        } catch (Throwable $error) {
-            $this->close($error);
+        } catch (Throwable $throwable) {
+            $this->close($throwable);
         }
     }
 }

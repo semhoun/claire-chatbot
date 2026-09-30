@@ -20,6 +20,7 @@ class RAG extends \NeuronAI\RAG\RAG
     use AgentTrait\Constructor;
     use AgentTrait\Middleware;
 
+    /** @return array{SystemMessage, array<\NeuronAI\Tools\ToolInterface|\NeuronAI\Tools\ProviderToolInterface>} */
     #[\Override]
     protected function resolveTools(): array
     {

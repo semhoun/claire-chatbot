@@ -36,6 +36,7 @@ PROMPT
         }
     }
 
+    /** @return array{\NeuronAI\Chat\Messages\SystemMessage, array<\NeuronAI\Tools\ToolInterface|\NeuronAI\Tools\ProviderToolInterface>} */
     #[\Override]
     protected function resolveTools(): array
     {
@@ -72,8 +73,8 @@ PROMPT
         }
 
         $nickname = (string) ($this->session->get('user_info')['displayName'] ?? '');
-        foreach ($instructions->getTextBlocks() as $block) {
-            $block->content = str_replace('{{USER}}', $nickname, $block->content);
+        foreach ($instructions->getTextBlocks() as $textContent) {
+            $textContent->content = str_replace('{{USER}}', $nickname, $textContent->content);
         }
 
         return [$instructions, $tools];

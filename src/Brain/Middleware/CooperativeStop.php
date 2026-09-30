@@ -12,16 +12,16 @@ use NeuronAI\Workflow\NodeInterface;
 use NeuronAI\Workflow\WorkflowResources;
 use NeuronAI\Workflow\WorkflowState;
 
-final class CooperativeStop implements WorkflowMiddleware
+final readonly class CooperativeStop implements WorkflowMiddleware
 {
-    public function __construct(private readonly GenerationStopToken $token)
+    public function __construct(private GenerationStopToken $generationStopToken)
     {
     }
 
     /** Must also be subscribed: middleware alone only gates a whole tool batch. */
-    public function __invoke(ToolCalling $event): void
+    public function __invoke(ToolCalling $toolCalling): void
     {
-        $this->token->check();
+        $this->generationStopToken->check();
     }
 
     public function before(
@@ -30,7 +30,7 @@ final class CooperativeStop implements WorkflowMiddleware
         WorkflowState $state,
         WorkflowResources $resources,
     ): void {
-        $this->token->check();
+        $this->generationStopToken->check();
     }
 
     public function after(

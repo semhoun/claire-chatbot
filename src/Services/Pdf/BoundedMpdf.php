@@ -10,25 +10,39 @@ use RuntimeException;
 
 final class BoundedMpdf extends Mpdf
 {
+    /** @param array<string, mixed> $config */
     public function __construct(array $config, ContainerInterface $container, private readonly int $maxPages)
     {
         if ($maxPages < 1) {
             throw new RuntimeException('PDF maxPages must be a positive integer.');
         }
+
         parent::__construct($config, $container);
     }
 
     #[\Override]
     public function _beginpage(
-        $orientation,
-        $mgl = '', $mgr = '', $mgt = '', $mgb = '', $mgh = '', $mgf = '',
-        $ohname = '', $ehname = '', $ofname = '', $efname = '',
-        $ohvalue = 0, $ehvalue = 0, $ofvalue = 0, $efvalue = 0,
-        $pagesel = '', $newformat = '',
+        mixed $orientation,
+        mixed $mgl = '',
+        mixed $mgr = '',
+        mixed $mgt = '',
+        mixed $mgb = '',
+        mixed $mgh = '',
+        mixed $mgf = '',
+        mixed $ohname = '',
+        mixed $ehname = '',
+        mixed $ofname = '',
+        mixed $efname = '',
+        mixed $ohvalue = 0,
+        mixed $ehvalue = 0,
+        mixed $ofvalue = 0,
+        mixed $efvalue = 0,
+        mixed $pagesel = '',
+        mixed $newformat = '',
     ): void {
         // This is mPDF's allocation hook, after conditional/duplex breaks.
         // Selecting a named page at the top of page 1 reuses that page.
-        $reusesFirstPage = $pagesel && $this->page == 1
+        $reusesFirstPage = $pagesel && $this->page === 1
             && sprintf('%0.4f', $this->y) === sprintf('%0.4f', $this->tMargin);
         if (! $reusesFirstPage && $this->page >= $this->maxPages) {
             throw new RuntimeException(sprintf(
@@ -38,14 +52,30 @@ final class BoundedMpdf extends Mpdf
         }
 
         parent::_beginpage(
-            $orientation, $mgl, $mgr, $mgt, $mgb, $mgh, $mgf,
-            $ohname, $ehname, $ofname, $efname, $ohvalue, $ehvalue, $ofvalue, $efvalue, $pagesel, $newformat,
+            $orientation,
+            $mgl,
+            $mgr,
+            $mgt,
+            $mgb,
+            $mgh,
+            $mgf,
+            $ohname,
+            $ehname,
+            $ofname,
+            $efname,
+            $ohvalue,
+            $ehvalue,
+            $ofvalue,
+            $efvalue,
+            $pagesel,
+            $newformat,
         );
         $this->validatePrintableGeometry();
     }
 
+    // Preserve mPDF's public method spelling and permissive parameter contract.
     #[\Override]
-    public function SetAutoPageBreak($auto, $margin = 0): void
+    public function SetAutoPageBreak(mixed $auto, mixed $margin = 0): void
     {
         parent::SetAutoPageBreak($auto, $margin);
         // Called after resolved @page margins, before headers or body layout,
@@ -63,7 +93,9 @@ final class BoundedMpdf extends Mpdf
             || $this->w <= 0 || $this->h <= 0) {
             throw new RuntimeException(sprintf(
                 'Invalid PDF printable geometry on page %d (%.2F x %.2F mm). Check page size and margins.',
-                $this->page, $width, $height,
+                $this->page,
+                $width,
+                $height,
             ));
         }
     }

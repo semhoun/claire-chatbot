@@ -153,8 +153,7 @@ final readonly class PdfGeneratorService
         string $orientation,
         array $margins,
         array $tempFiles = [],
-    ): string
-    {
+    ): string {
         new DocumentResourceValidator()->validate($html);
         $html = new PageSizeNormalizer()->normalize($html);
         $mpdfOrientation = $orientation === 'landscape' ? 'L' : 'P';
@@ -164,7 +163,7 @@ final readonly class PdfGeneratorService
             throw new RuntimeException('PDF maxPages must be a positive integer.');
         }
 
-        $mpdf = new BoundedMpdf([
+        $boundedMpdf = new BoundedMpdf([
             'mode' => 'utf-8',
             // Keep document fonts, but render missing symbols with a local monochrome font.
             'fontDir' => [
@@ -188,10 +187,10 @@ final readonly class PdfGeneratorService
         ], new ResourceContainer(new RestrictedAssetFetcher($tempFiles)), $maxPages);
 
         // Load defaults first so document styles and explicit page settings remain authoritative.
-        $mpdf->WriteHTML(self::DEFAULT_CSS, HTMLParserMode::HEADER_CSS);
-        $mpdf->WriteHTML($html);
+        $boundedMpdf->WriteHTML(self::DEFAULT_CSS, HTMLParserMode::HEADER_CSS);
+        $boundedMpdf->WriteHTML($html);
 
-        return $mpdf->Output('', Destination::STRING_RETURN);
+        return $boundedMpdf->Output('', Destination::STRING_RETURN);
     }
 
     /**
@@ -267,6 +266,7 @@ final readonly class PdfGeneratorService
         }
 
         $tempDir = $this->settings->get('tools.pdf.tempDir');
+        // Malformed image data is rejected below without exposing decoder warnings.
         $imageInfo = @getimagesizefromstring($imageData);
         if ($imageInfo === false
             || ! in_array($imageInfo[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_GIF, IMAGETYPE_WEBP, IMAGETYPE_BMP], true)
@@ -306,6 +306,7 @@ final readonly class PdfGeneratorService
     {
         foreach ($tempFiles as $tempFile) {
             if (file_exists($tempFile)) {
+                // Cleanup is best effort, including when the file disappears after the check.
                 @unlink($tempFile);
             }
         }

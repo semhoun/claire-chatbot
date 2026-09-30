@@ -119,12 +119,14 @@ final readonly class TelegramJournal
         if ($next['stopped']) {
             $deliveries['_terminal'] = ['status' => 'stopped'];
         }
+
         $data['deliveries'] = json_encode($deliveries, JSON_THROW_ON_ERROR);
         if ($revision === 0) {
             $this->connection->insert('telegram_generation', ['id' => $id] + $data);
         } elseif ($this->connection->update('telegram_generation', $data, ['id' => $id, 'revision' => $revision]) !== 1) {
             throw new RuntimeException('Telegram journal revision conflict');
         }
+
         $record = $next;
     }
 }

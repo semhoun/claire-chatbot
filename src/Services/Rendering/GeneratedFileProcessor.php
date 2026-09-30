@@ -30,11 +30,11 @@ final readonly class GeneratedFileProcessor
         }
 
         $files = [];
-        $repository = $this->entityManager->getRepository(File::class);
+        $entityRepository = $this->entityManager->getRepository(File::class);
         // Repair only the complete UUID variant before deduplication and owner lookup.
         $ids = array_map(static fn (string $id): string => str_ends_with($id, '@@') ? $id : $id . '@', $matches[0]);
         foreach (array_unique($ids) as $id) {
-            $file = $repository->findOneBy(['fileId' => $id, 'user' => $userId]);
+            $file = $entityRepository->findOneBy(['fileId' => $id, 'user' => $userId]);
             if (! $file instanceof File) {
                 if ($pending) {
                     $files[] = [
@@ -42,6 +42,7 @@ final readonly class GeneratedFileProcessor
                         'type' => 'pending', 'url' => null,
                     ];
                 }
+
                 continue;
             }
 

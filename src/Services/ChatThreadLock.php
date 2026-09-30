@@ -78,6 +78,7 @@ final class ChatThreadLock
         } elseif (! $this->locked) {
             throw new RuntimeException('Chat lock was released');
         }
+
         // Use the original PDO, never a silently reconnected DBAL session.
         if ($this->driver === 'mysql') {
             $statement = $this->pdo->prepare('SELECT IS_USED_LOCK(:key) = CONNECTION_ID()');

@@ -109,9 +109,9 @@ final class QueueWorker
                     $recovery = $this->container->get(\App\Services\ChatTurnRecovery::class);
                     $recovery->recover();
                     if ($this->queueBackend instanceof RedisQueueBackend) {
-                        foreach ($this->queueBackend->failedMessages($this->failedCursor) as $failed) {
+                        foreach ($this->queueBackend->failedMessages($this->failedCursor) as $queueMessage) {
                             try {
-                                $recovery->failed($failed);
+                                $recovery->failed($queueMessage);
                             } catch (\App\Services\ChatGenerationBusyException) {
                                 // Active holders, not elapsed time, determine abandonment.
                                 continue;
@@ -202,6 +202,7 @@ final class QueueWorker
                 } else {
                     $this->queueBackend->release($job);
                 }
+
                 if ($this->queueBackend instanceof RedisQueueBackend && $this->queueBackend->isFailed($job)
                     && $this->container->has(\App\Services\ChatTurnRecovery::class)) {
                     $this->container->get(\App\Services\ChatTurnRecovery::class)->failed($job);

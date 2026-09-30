@@ -72,9 +72,9 @@ EOT;
     }
 
     #[\Override]
-    public function postProcessMessage(Message $message, ToolCall $call): Message
+    public function postProcessMessage(Message $message, ToolCall $toolCall): Message
     {
-        $fileId = $this->extractFileId($call);
+        $fileId = $this->extractFileId($toolCall);
         if ($fileId === null || str_contains($message->getContent() ?? '', $fileId)) {
             return $message;
         }
@@ -126,9 +126,9 @@ EOT;
         ];
     }
 
-    private function extractFileId(ToolCall $call): ?string
+    private function extractFileId(ToolCall $toolCall): ?string
     {
-        $result = $call->hasResult() ? $call->getResult() : null;
+        $result = $toolCall->hasResult() ? $toolCall->getResult() : null;
         if (! is_string($result)) {
             return null;
         }

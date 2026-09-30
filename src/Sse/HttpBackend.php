@@ -15,16 +15,26 @@ use React\Stream\ReadableStreamInterface;
 final class HttpBackend implements Backend
 {
     private int $active = 0;
+
     /** @var array<string, true> */
     private array $closing = [];
+
     private readonly Browser $browser;
+
     private int $errors = 0;
+
     private int $completed = 0;
+
     private float $totalSeconds = 0.0;
+
     private float $snapshotSeconds = 0.0;
+
     private int $snapshots = 0;
+
     private bool $stopped = false;
+
     private int $sequence = 0;
+
     /** @var array<int, PromiseInterface> */
     private array $pending = [];
 
@@ -34,7 +44,7 @@ final class HttpBackend implements Backend
         private readonly Budget $budget,
         private readonly ?\Closure $send = null,
     ) {
-        $this->browser = (new Browser($loop))->withFollowRedirects(false)->withRejectErrorResponse(false)
+        $this->browser = new Browser($loop)->withFollowRedirects(false)->withRejectErrorResponse(false)
             ->withTimeout($config->get('http_timeout'));
     }
 
@@ -49,10 +59,12 @@ final class HttpBackend implements Backend
             || $this->active >= $this->config->get('max_http_requests')) {
             return reject(new \RuntimeException('SSE backend admission exhausted'));
         }
+
         $encoded = json_encode($payload, JSON_THROW_ON_ERROR);
         if (strlen($encoded) > 16384) {
             return reject(new \RuntimeException('SSE backend request body limit'));
         }
+
         ++$this->active;
         $started = microtime(true);
         $headers = [
@@ -60,12 +72,12 @@ final class HttpBackend implements Backend
             'Content-Type' => 'application/json', 'Accept' => 'application/json',
         ];
         $url = $this->config->get('backend') . '/' . $operation;
-        $request = $this->send !== null ? ($this->send)('POST', $url, $headers, $encoded)
+        $request = $this->send instanceof \Closure ? ($this->send)('POST', $url, $headers, $encoded)
             : $this->browser->requestStreaming('POST', $url, $headers, $encoded);
         $stream = null;
         $bytes = 0;
         $body = '';
-        $pending = new Promise(function ($resolve, $reject) use ($request, $operation, &$stream, &$bytes, &$body): void {
+        $promise = new Promise(function ($resolve, $reject) use ($request, $operation, &$stream, &$bytes, &$body): void {
             $request->then(function (ResponseInterface $response) use ($resolve, $reject, $operation, &$stream, &$bytes, &$body): void {
                 $stream = $response->getBody();
                 if ($operation === 'close' && $response->getStatusCode() === 204) {
@@ -73,15 +85,18 @@ final class HttpBackend implements Backend
                     $resolve([]);
                     return;
                 }
+
                 if (! $stream instanceof ReadableStreamInterface) {
                     $reject(new \RuntimeException('Backend did not return a stream'));
                     return;
                 }
+
                 if ($response->getStatusCode() !== 200) {
                     $stream->close();
                     $reject(new \RuntimeException('SSE backend rejected operation', $response->getStatusCode()));
                     return;
                 }
+
                 $stream->on('data', function (string $chunk) use ($reject, &$stream, &$bytes, &$body): void {
                     $size = strlen($chunk);
                     if ($bytes + $size > $this->config->get('max_client_buffer') || ! $this->budget->acquire($size)) {
@@ -89,6 +104,7 @@ final class HttpBackend implements Backend
                         $stream->close();
                         return;
                     }
+
                     $bytes += $size;
                     $body .= $chunk;
                 });
@@ -99,24 +115,25 @@ final class HttpBackend implements Backend
                         if (! is_array($data)) {
                             throw new \RuntimeException('Invalid SSE backend response');
                         }
+
                         $resolve($data);
-                    } catch (\Throwable $error) {
-                        $reject($error);
+                    } catch (\Throwable $throwable) {
+                        $reject($throwable);
                     }
                 });
                 $stream->on('close', static function () use ($reject): void {
                     $reject(new \RuntimeException('SSE backend body closed'));
                 });
             }, $reject);
-        }, static function () use ($request, &$stream): void {
+        }, static function () use ($request, &$stream): never {
             $request->cancel();
             $stream?->close();
             throw new \RuntimeException('SSE backend cancelled');
         });
         ++$this->sequence;
         $id = $this->sequence;
-        $this->pending[$id] = $pending;
-        $result = Async::timeout($pending, $this->loop, $this->config->get('http_timeout'))->finally(
+        $this->pending[$id] = $promise;
+        $result = Async::timeout($promise, $this->loop, $this->config->get('http_timeout'))->finally(
             function () use (&$bytes, &$body, &$stream, $started, $operation, $id): void {
                 unset($this->pending[$id]);
                 $stream?->close();
@@ -131,6 +148,7 @@ final class HttpBackend implements Backend
                     ++$this->snapshots;
                     $this->snapshotSeconds += $elapsed;
                 }
+
                 $this->drainClosures();
             },
         );
@@ -154,10 +172,12 @@ final class HttpBackend implements Backend
         if ($this->stopped) {
             return;
         }
+
         // Bounded best-effort cleanup; Redis authorization TTL remains the crash/saturation fallback.
         if (count($this->closing) < $this->config->get('max_connections')) {
             $this->closing[$authorization] = true;
         }
+
         $this->drainClosures();
     }
 
@@ -168,6 +188,7 @@ final class HttpBackend implements Backend
         foreach ($this->pending as $pending) {
             $pending->cancel();
         }
+
         $this->pending = [];
     }
 

@@ -320,7 +320,11 @@ final readonly class SemanticMemoryRegistry
         });
     }
 
-    /** Existing successful sources only; callers additionally check current consent for reads/writes. */
+    /**
+     * Existing successful sources only; callers additionally check current consent for reads/writes.
+     *
+     * @return array<string, mixed>|null
+     */
     public function source(string $userId, string $id): ?array
     {
         $row = $this->connection->fetchAssociative(

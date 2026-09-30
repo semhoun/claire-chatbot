@@ -43,13 +43,13 @@ final readonly class RagController
         $documents = $this->ragService->listForUser($user);
 
         $response->getBody()->write(json_encode([
-            'documents' => array_values(array_map(static fn (RagDocument $document): array => [
-                'documentId' => $document->getDocumentId(),
-                'name' => $document->getName(),
-                'sourceType' => $document->getSourceType(),
-                'isActive' => $document->isActive(),
-                'chunkCount' => $document->getChunkCount(),
-                'createdAt' => $document->getCreatedAt()->format(DATE_ATOM),
+            'documents' => array_values(array_map(static fn (RagDocument $ragDocument): array => [
+                'documentId' => $ragDocument->getDocumentId(),
+                'name' => $ragDocument->getName(),
+                'sourceType' => $ragDocument->getSourceType(),
+                'isActive' => $ragDocument->isActive(),
+                'chunkCount' => $ragDocument->getChunkCount(),
+                'createdAt' => $ragDocument->getCreatedAt()->format(DATE_ATOM),
             ], $documents)),
             'acceptedExt' => $this->settings->get('files.upload.acceptedExt'),
         ], JSON_THROW_ON_ERROR));

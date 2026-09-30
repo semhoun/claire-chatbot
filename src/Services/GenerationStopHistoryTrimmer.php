@@ -12,6 +12,7 @@ use NeuronAI\Chat\Messages\UserMessage;
 /** Preserve stopped turn boundaries without inventing an assistant response. */
 final class GenerationStopHistoryTrimmer extends HistoryTrimmer
 {
+    /** @param list<\NeuronAI\Chat\Messages\Message> $messages */
     protected function validateAlternation(array $messages): void
     {
         $segment = [];
@@ -25,9 +26,11 @@ final class GenerationStopHistoryTrimmer extends HistoryTrimmer
                 parent::validateAlternation($segment);
                 $segment = [];
             }
+
             $segment[] = $message;
             $previous = $message;
         }
+
         parent::validateAlternation($segment);
     }
 }

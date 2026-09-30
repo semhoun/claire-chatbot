@@ -120,11 +120,11 @@ final readonly class HistoryController
         $userId = (string) $session->get(Auth::USERID);
         $histories = $this->entityManager->getRepository(ChatHistoryEntity::class)->getHistoryList($userId);
         $response->getBody()->write(json_encode([
-            'histories' => array_values(array_map(static fn (ChatHistoryEntity $history): array => [
-                'threadId' => $history->getThreadId(),
-                'title' => $history->getTitle() ?: 'Conversation',
-                'summary' => trim($history->getSummary() ?? ''),
-                'updatedAt' => $history->getUpdatedAt()->format(DATE_ATOM),
+            'histories' => array_values(array_map(static fn (ChatHistoryEntity $chatHistoryEntity): array => [
+                'threadId' => $chatHistoryEntity->getThreadId(),
+                'title' => $chatHistoryEntity->getTitle() ?: 'Conversation',
+                'summary' => trim($chatHistoryEntity->getSummary() ?? ''),
+                'updatedAt' => $chatHistoryEntity->getUpdatedAt()->format(DATE_ATOM),
             ], $histories)),
         ], JSON_THROW_ON_ERROR));
         return $response->withHeader('Content-Type', 'application/json');
@@ -195,6 +195,7 @@ final readonly class HistoryController
         }
 
         try {
+            // Keep the RAII lock alive until this method exits, including early returns.
             $chatThreadLock = new ChatThreadLock($this->entityManager->getConnection()->getNativeConnection(), $userId, $threadId);
         } catch (\RuntimeException) {
             return $response->withStatus(409);
@@ -235,6 +236,7 @@ final readonly class HistoryController
         }
 
         try {
+            // Keep the RAII lock alive until this method exits, including early returns.
             $chatThreadLock = new ChatThreadLock($this->entityManager->getConnection()->getNativeConnection(), $userId, $threadId);
         } catch (\RuntimeException) {
             return $response->withStatus(409);
@@ -282,14 +284,17 @@ final readonly class HistoryController
                         $sourceIds[] = $id;
                     }
                 }
+
                 if ($message instanceof UserMessage && ! $message instanceof ToolResultMessage) {
                     $hasUserMessage = true;
                     break;
                 }
             }
+
             if ($semanticMemory && $hasUserMessage) {
                 new SemanticMemoryRegistry($connection)->invalidateSources($userId, $threadId, array_unique($sourceIds));
             }
+
             return [$userChatHistory, $userChatHistory->removeLastExchange()];
         });
         if ($removedMessage === null) {
@@ -329,12 +334,15 @@ final readonly class HistoryController
                 ++$missing;
             }
         }
+
         if ($missing === 0) {
             return true;
         }
+
         if ($missing !== 2 || $this->settings->get('llm.semanticMemory.enabled', false)) {
             throw new \RuntimeException('Semantic memory schema is incomplete; refusing source deletion.');
         }
+
         return false;
     }
 
@@ -367,6 +375,7 @@ final readonly class HistoryController
         if ($sessionId === '') {
             return $messages;
         }
+
         $this->chatStreamPublisher->publish(ChatStreamSubscriber::scope($userId, $sessionId), 'chat.snapshot', [
             'threadId' => $threadId,
             'sessionId' => $sessionId,

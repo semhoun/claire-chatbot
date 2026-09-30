@@ -101,7 +101,7 @@ final class TelegramSemanticSettingsTest extends TestCase
         $manager->method('getRepository')->willReturn($repository);
         $controller = new ReflectionClass(TelegramController::class)->newInstanceWithoutConstructor();
         foreach (['logger' => new NullLogger(), 'settings' => $settings, 'jsonRenderer' => new JsonRenderer(),
-            'connection' => $this->sql, 'semanticMemory' => $this->memory,
+            'connection' => $this->sql, 'semanticMemoryRegistry' => $this->memory,
             'telegramValidator' => new TelegramValidator(new NullLogger(), $manager, $settings)] as $name => $value) {
             new ReflectionProperty($controller, $name)->setValue($controller, $value);
         }

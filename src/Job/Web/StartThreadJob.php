@@ -67,18 +67,20 @@ final class StartThreadJob implements QueueDoer
         $this->initContext($payload);
         $chatThreadLock = new ChatThreadLock($this->connection->getNativeConnection(), $this->userId, $this->threadId);
         $chatGenerationState = $this->chatStreamPublisher->generationState();
-        $journal = new ChatTurnJournal($this->connection);
+        $chatTurnJournal = new ChatTurnJournal($this->connection);
         $messageId = 'opening-' . $this->threadId;
         $attempted = false;
         try {
-            $turn = $journal->get($messageId);
+            $turn = $chatTurnJournal->get($messageId);
             if ($turn !== null) {
                 if ($turn['userId'] !== $this->userId || $turn['threadId'] !== $this->threadId) {
                     throw new \RuntimeException('Opening turn identity conflict');
                 }
+
                 if ($turn['status'] !== 'running') {
                     return;
                 }
+
                 throw new NonRetryableJobException('Abandoned opening must not replay the agent');
             }
 
@@ -94,11 +96,13 @@ final class StartThreadJob implements QueueDoer
             ) !== false) {
                 return;
             }
+
             $previous = $chatGenerationState->get($this->userId, $this->threadId);
             if (in_array($previous['status'] ?? '', ['done', 'deleted'], true)
                 || ($previous['messageId'] ?? $messageId) !== $messageId) {
                 return;
             }
+
             $attempted = ($previous['attempted'] ?? '0') === '1';
             if ($attempted) {
                 throw new NonRetryableJobException('Unsafe opening generation retry refused');
@@ -108,8 +112,9 @@ final class StartThreadJob implements QueueDoer
             if (! $this->brainRegistry->has($inMemorySession->get('brain_avatar'))) {
                 throw new \InvalidArgumentException('Unknown opening assistant');
             }
+
             $chatThreadLock->assertHeld();
-            $turn = $journal->begin(
+            $turn = $chatTurnJournal->begin(
                 $messageId,
                 $this->userId,
                 $this->threadId,
@@ -120,28 +125,32 @@ final class StartThreadJob implements QueueDoer
             if (! $turn['entered']) {
                 return;
             }
+
             $attempted = true;
             $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'running', true);
             $chatThreadLock->assertHeld();
             $this->agent = $this->brainRegistry->get($inMemorySession->get('brain_avatar'), $inMemorySession, $this->threadId);
             $messages = $this->startNewStream($chatThreadLock);
             $chatThreadLock->assertHeld();
-            $journal->succeed($messageId, $this->userId);
+            $chatTurnJournal->succeed($messageId, $this->userId);
             $chatGenerationState->set($this->userId, $this->threadId, $messageId, 'done', true);
         } catch (\Throwable $throwable) {
             $chatThreadLock->assertHeld();
-            $turn = $journal->get($messageId);
+            $turn = $chatTurnJournal->get($messageId);
             if ($turn !== null) {
                 if ($turn['userId'] !== $this->userId || $turn['threadId'] !== $this->threadId) {
                     throw $throwable;
                 }
+
                 // SQL success wins, including a lost commit acknowledgement or Redis failure.
                 if ($turn['status'] === 'succeeded' || $turn['deletedAt'] !== null) {
                     return;
                 }
-                $turn = $journal->rollback($messageId, $this->userId);
+
+                $turn = $chatTurnJournal->rollback($messageId, $this->userId);
                 $attempted = true;
             }
+
             try {
                 $previous = $chatGenerationState->get($this->userId, $this->threadId);
                 if (($previous['messageId'] ?? $messageId) === $messageId
@@ -175,14 +184,14 @@ final class StartThreadJob implements QueueDoer
         $chatThreadLock->assertHeld();
         $assistantMessage = new AssistantMessage($openingMessage)
             ->addMetadata('timestamp', new \DateTimeImmutable()->format(\DateTimeInterface::ATOM));
-        $chatHistory = $this->agent->getUserChatHistory();
+        $userChatHistory = $this->agent->getUserChatHistory();
 
         // Replace the technical generation exchange with a valid hidden
         // context followed by the opening message actually shown to the user.
-        $chatHistory->initializeWithOpeningMessage($assistantMessage);
+        $userChatHistory->initializeWithOpeningMessage($assistantMessage);
 
         return $this->chatDataRenderer->messages(
-            $chatHistory->getFormattedMessages(),
+            $userChatHistory->getFormattedMessages(),
             $this->userId,
         );
     }

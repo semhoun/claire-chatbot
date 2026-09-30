@@ -13,12 +13,12 @@ final readonly class ResourceContainer implements ContainerInterface
     {
     }
 
-    public function has($id): bool
+    public function has(mixed $id): bool
     {
         return $id === 'assetFetcher';
     }
 
-    public function get($id): RestrictedAssetFetcher
+    public function get(mixed $id): RestrictedAssetFetcher
     {
         if (! $this->has($id)) {
             throw new InvalidArgumentException('Unknown PDF service.');

@@ -14,7 +14,7 @@ final readonly class ChatTurnJournal
         'messages', 'display_messages', 'display_messages_count', 'title', 'summary', 'updated_at', 'stored_messages',
     ];
 
-    public function __construct(private Connection $connection, private ?ChatStopRequests $stops = null)
+    public function __construct(private Connection $connection, private ?ChatStopRequests $chatStopRequests = null)
     {
     }
 
@@ -41,10 +41,12 @@ final readonly class ChatTurnJournal
                 throw new \InvalidArgumentException('Invalid chat turn identity');
             }
         }
+
         if (! in_array($channel, ['web', 'telegram'], true)
             || ($submissionId !== null && ($submissionId === '' || strlen($submissionId) > 128))) {
             throw new \InvalidArgumentException('Invalid chat turn channel or submission');
         }
+
         foreach ($notification as $key => $value) {
             if (! in_array($key, ['botId', 'updateId', 'chatId', 'messageThreadId', 'replyToMessageId',
                 'messageId', 'sessionId',
@@ -53,6 +55,7 @@ final readonly class ChatTurnJournal
                 throw new \InvalidArgumentException('Invalid chat turn notification context');
             }
         }
+
         return $this->transaction(function () use (
             $id,
             $userId,
@@ -65,13 +68,15 @@ final readonly class ChatTurnJournal
         ): array {
             $existing = $this->get($id);
             if ($existing !== null) {
-                foreach (compact('userId', 'threadId', 'channel', 'generationId', 'submissionId') as $key => $value) {
+                foreach (['userId' => $userId, 'threadId' => $threadId, 'channel' => $channel, 'generationId' => $generationId, 'submissionId' => $submissionId] as $key => $value) {
                     if ($existing[$key] !== $value) {
                         throw new RuntimeException('Chat turn identity conflict');
                     }
                 }
+
                 return $existing + ['entered' => false];
             }
+
             if ($this->connection->fetchOne(
                 'SELECT id FROM chat_turn WHERE user_id = ? AND thread_id = ?'
                 . " AND (status = 'running' OR deleted_at IS NOT NULL)",
@@ -79,6 +84,7 @@ final readonly class ChatTurnJournal
             ) !== false) {
                 throw new RuntimeException('Chat turn requires recovery');
             }
+
             $history = $this->history($userId, $threadId);
             if ($history === false) {
                 $this->connection->insert('chat_history', [
@@ -88,9 +94,11 @@ final readonly class ChatTurnJournal
                 ]);
                 $history = $this->history($userId, $threadId);
             }
+
             if ($history['current_turn_id'] !== null) {
                 throw new RuntimeException('Chat history has an active turn');
             }
+
             $checkpoint = ['version' => 2, 'history' => array_intersect_key(
                 $history,
                 array_flip(self::CHECKPOINT_FIELDS),
@@ -113,6 +121,7 @@ final readonly class ChatTurnJournal
             if ($atomic !== null) {
                 $atomic($this->connection);
             }
+
             return $this->get($id) + ['entered' => true];
         });
     }
@@ -131,14 +140,17 @@ final readonly class ChatTurnJournal
         if ($row === false) {
             return null;
         }
+
         if ($row['id'] !== $id) {
             throw new RuntimeException('Chat turn identity conflict');
         }
+
         $record = [];
         foreach ($row as $column => $value) {
             if ($column === 'checkpoint') {
                 continue;
             }
+
             $key = lcfirst(str_replace(' ', '', ucwords(str_replace('_', ' ', $column))));
             $record[$key] = match ($column) {
                 'revision', 'history_revision', 'created_at', 'updated_at' => (int) $value,
@@ -147,6 +159,7 @@ final readonly class ChatTurnJournal
                 default => $value,
             };
         }
+
         return $record;
     }
 
@@ -173,6 +186,7 @@ final readonly class ChatTurnJournal
         if (! in_array($proposedStatus, ['succeeded', 'stopped', 'rolled_back'], true)) {
             throw new \InvalidArgumentException('Invalid chat turn terminal status');
         }
+
         return $this->finish($id, $userId, $proposedStatus, $atomic);
     }
 
@@ -188,6 +202,7 @@ final readonly class ChatTurnJournal
         if ($limit < 1 || $limit > 10000) {
             throw new \InvalidArgumentException('Invalid chat turn scan limit');
         }
+
         $ids = $this->connection->fetchFirstColumn(
             "SELECT id FROM chat_turn WHERE status = 'running' ORDER BY created_at, id LIMIT " . $limit,
         );
@@ -200,6 +215,7 @@ final readonly class ChatTurnJournal
         if (! $this->connection->isTransactionActive()) {
             throw new RuntimeException('Chat turn deletion requires a transaction');
         }
+
         // Deletion is a privacy operation even with memory globally disabled. Probe
         // through savepoints: deployed temporary schemas work, and legacy PG remains usable.
         $missing = 0;
@@ -212,11 +228,13 @@ final readonly class ChatTurnJournal
                 ++$missing;
             }
         }
+
         if ($missing === 0) {
             new SemanticMemoryRegistry($this->connection)->invalidateSources($userId, $threadId);
         } elseif ($missing !== 2) {
             throw new RuntimeException('Semantic memory schema is incomplete; refusing source deletion');
         }
+
         $this->connection->executeStatement(
             "UPDATE chat_turn SET status = 'rolled_back', checkpoint = NULL, revision = revision + 1,"
             . " updated_at = ?, completed_at = ? WHERE user_id = ? AND thread_id = ? AND status = 'running'",
@@ -240,11 +258,13 @@ final readonly class ChatTurnJournal
             if ($turn === null || $turn['userId'] !== $userId) {
                 throw new RuntimeException('Chat turn owner mismatch or missing turn');
             }
+
             if ($turn['status'] !== 'running') {
                 return $turn;
             }
-            if ($this->stops !== null) {
-                $decision = $this->stops->arbitrateTerminal(
+
+            if ($this->chatStopRequests instanceof \App\Services\ChatStopRequests) {
+                $decision = $this->chatStopRequests->arbitrateTerminal(
                     $userId,
                     $turn['threadId'],
                     $turn['channel'],
@@ -256,13 +276,16 @@ final readonly class ChatTurnJournal
                     // not permission to replay finalization or invent a journal result.
                     throw new RuntimeException('Chat turn terminal conflict; recovery required');
                 }
+
                 $status = $decision['status'];
             }
+
             $history = $this->history($userId, $turn['threadId']);
             if ($history === false || $history['current_turn_id'] !== $id
                 || (int) $history['revision'] < $turn['historyRevision']) {
                 throw new RuntimeException('Chat turn history conflict; recovery required');
             }
+
             $data = ['current_turn_id' => null, 'revision' => (int) $history['revision'] + 1];
             if ($status === 'rolled_back') {
                 $checkpoint = json_decode($this->connection->fetchOne(
@@ -275,12 +298,14 @@ final readonly class ChatTurnJournal
                     || array_keys($checkpoint['history'] ?? []) !== $fields) {
                     throw new RuntimeException('Unsupported chat turn checkpoint');
                 }
+
                 $data += $checkpoint['history'];
                 if ($version === 1) {
                     // A v3 checkpoint has no canonical transcript: rebuild from restored projections on next write.
                     $data['stored_messages'] = null;
                 }
             }
+
             $this->check($this->connection->update('chat_history', $data, [
                 'user_id' => $userId, 'thread_id' => $turn['threadId'],
                 'revision' => $history['revision'], 'current_turn_id' => $id,
@@ -292,6 +317,7 @@ final readonly class ChatTurnJournal
             if ($atomic !== null) {
                 $atomic($this->connection, $status);
             }
+
             return $this->get($id);
         });
     }
@@ -307,6 +333,7 @@ final readonly class ChatTurnJournal
         if ($row !== false && ($row['user_id'] !== $userId || $row['thread_id'] !== $threadId)) {
             throw new RuntimeException('Chat history owner or thread mismatch');
         }
+
         return $row;
     }
 
@@ -321,6 +348,7 @@ final readonly class ChatTurnJournal
         if ($this->connection->isTransactionActive() || ($native instanceof \PDO && $native->inTransaction())) {
             throw new RuntimeException('Chat turn journal requires an independent short commit');
         }
+
         return $this->connection->transactional($operation);
     }
 

@@ -97,9 +97,7 @@ final class BrainRegistry
             // Vérifier si c'est un brain YAML
             $yamlBrains = $this->loadYamlBrains();
             if (isset($yamlBrains[$slug])) {
-                $instance = new YamlBrain($yamlBrains[$slug], $this->container, $session, $threadId);
-                assert($instance instanceof Agent);
-                return $instance;
+                return new YamlBrain($yamlBrains[$slug], $this->container, $session, $threadId);
             }
 
             throw new \InvalidArgumentException('Assistant inconnu: ' . $slug);

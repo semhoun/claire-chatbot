@@ -31,6 +31,15 @@ final readonly class VueShell
         ]);
     }
 
+    /** @param array<string, mixed> $data */
+    public function respond(ResponseInterface $response, array $data = []): ResponseInterface
+    {
+        $response->getBody()->write($this->document($data));
+        return $response->withHeader('Content-Type', 'text/html; charset=utf-8')
+            ->withHeader('Cache-Control', 'no-store')
+            ->withHeader('Referrer-Policy', 'no-referrer');
+    }
+
     private function stylesheets(string $appRoot, string $baseUrl): string
     {
         $path = $appRoot . '/public/build/.vite/manifest.json';
@@ -61,14 +70,5 @@ final readonly class VueShell
         }
 
         return implode("\n", $links);
-    }
-
-    /** @param array<string, mixed> $data */
-    public function respond(ResponseInterface $response, array $data = []): ResponseInterface
-    {
-        $response->getBody()->write($this->document($data));
-        return $response->withHeader('Content-Type', 'text/html; charset=utf-8')
-            ->withHeader('Cache-Control', 'no-store')
-            ->withHeader('Referrer-Policy', 'no-referrer');
     }
 }

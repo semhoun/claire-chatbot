@@ -14,32 +14,53 @@ use React\Promise\PromiseInterface;
 final class Connection
 {
     private readonly Output $output;
+
     private bool $closed = false;
+
     private bool $initialized = false;
+
     private bool $busy = false;
+
     private bool $snapshotWanted = true;
+
     private bool $checking = false;
+
     private bool $checkingRemember = false;
+
     private bool $scheduled = false;
+
     private bool $snapshotRunning = false;
+
     /** @var list<string> */
     private array $queue = [];
+
     private int $bytes = 0;
+
     /** @var array{string, string}|array{} */
     private array $generation = [];
+
     /** @var list<TimerInterface> */
     private array $timers = [];
+
     private ?TimerInterface $writeTimer = null;
-    private ?PromiseInterface $http = null;
+
+    private ?PromiseInterface $promise = null;
+
     /** @var array<string, mixed>|null */
     private ?array $pendingPayload = null;
+
     /** @var array<string, mixed>|null */
     private ?array $snapshotData = null;
+
     /** @var array<string, mixed> */
     private array $effects = [];
+
     private int $snapshotBytes = 0;
+
     private int $effectBytes = 0;
-    private readonly Deferred $opened;
+
+    private readonly Deferred $deferred;
+
     private readonly int $clientLimit;
 
     /**
@@ -53,21 +74,22 @@ final class Connection
         private readonly Config $config,
         private readonly LoopInterface $loop,
         private readonly Backend $backend,
-        private readonly RedisGateway $redis,
+        private readonly RedisGateway $redisGateway,
         private readonly Budget $budget,
         private readonly \Closure $clock,
         private readonly \Closure $onClose,
         int $transportBytes = 0,
     ) {
-        $this->opened = new Deferred();
+        $this->deferred = new Deferred();
         $this->clientLimit = max(0, $config->get('max_client_buffer') - $transportBytes);
         $this->output = new Output($budget, $this->clientLimit);
         $this->output->on('close', fn () => $this->close('client_closed'));
         $this->output->on('drain', function (): void {
-            if ($this->writeTimer !== null) {
+            if ($this->writeTimer instanceof \React\EventLoop\TimerInterface) {
                 $this->loop->cancelTimer($this->writeTimer);
                 $this->writeTimer = null;
             }
+
             $this->schedule();
         });
     }
@@ -82,8 +104,9 @@ final class Connection
         $remaining = $this->authorization['deadline'] - ($this->clock)();
         if ($remaining <= 0) {
             $this->close('deadline');
-            return $this->opened->promise();
+            return $this->deferred->promise();
         }
+
         $this->timers[] = $this->loop->addTimer($remaining, fn () => $this->close('deadline'));
         $this->timers[] = $this->loop->addPeriodicTimer($this->config->get('keepalive'), function (): void {
             if ($this->initialized && ! $this->output->blocked()) {
@@ -96,12 +119,13 @@ final class Connection
             $expires = $this->authorization['remember']['expires'] - ($this->clock)();
             $this->timers[] = $this->loop->addTimer(max(0, $expires), fn () => $this->close('remember_expired'));
         }
-        $this->redis->subscribe($this->channel, $this->id, $this->receive(...))->then(function (): void {
+
+        $this->redisGateway->subscribe($this->channel, $this->id, $this->receive(...))->then(function (): void {
             if ($this->valid()) {
                 $this->snapshot();
             }
         }, fn () => $this->close('subscribe_failed'));
-        return $this->opened->promise();
+        return $this->deferred->promise();
     }
 
     public function receive(string $raw): void
@@ -109,6 +133,7 @@ final class Connection
         if (! $this->valid()) {
             return;
         }
+
         $size = strlen($raw);
         if (count($this->queue) >= $this->config->get('max_pending_events')
             || $size + $this->bytes + $this->output->bufferedBytes() > $this->clientLimit
@@ -116,6 +141,7 @@ final class Connection
             $this->close('event_buffer_limit');
             return;
         }
+
         $this->bytes += $size;
         $this->queue[] = $raw;
         $this->schedule();
@@ -126,10 +152,12 @@ final class Connection
         if ($this->closed) {
             return;
         }
+
         // A running snapshot already includes a post-HTTP authoritative generation check.
         if (! $this->snapshotRunning) {
             $this->snapshotWanted = true;
         }
+
         $this->schedule();
     }
 
@@ -138,27 +166,31 @@ final class Connection
         if ($this->closed) {
             return;
         }
+
         $this->closed = true;
         foreach ($this->timers as $timer) {
             $this->loop->cancelTimer($timer);
         }
+
         $this->timers = [];
-        if ($this->writeTimer !== null) {
+        if ($this->writeTimer instanceof \React\EventLoop\TimerInterface) {
             $this->loop->cancelTimer($this->writeTimer);
         }
+
         $this->writeTimer = null;
-        $http = $this->http;
-        $this->http = null;
+        $http = $this->promise;
+        $this->promise = null;
         $http?->cancel();
         $this->budget->release($this->bytes);
         $this->bytes = 0;
         $this->queue = [];
-        $this->pendingPayload = $this->snapshotData = null;
+        $this->pendingPayload = null;
+        $this->snapshotData = null;
         $this->effects = [];
-        $this->redis->unsubscribe($this->channel, $this->id);
+        $this->redisGateway->unsubscribe($this->channel, $this->id);
         $this->output->close();
         $this->backend->close($this->authorization['authorization']);
-        $this->opened->reject(new \RuntimeException('SSE connection closed'));
+        $this->deferred->reject(new \RuntimeException('SSE connection closed'));
         ($this->onClose)($this->id, $reason);
     }
 
@@ -167,10 +199,12 @@ final class Connection
         if ($this->closed) {
             return false;
         }
+
         if (($this->clock)() >= $this->authorization['deadline']) {
             $this->close('deadline');
             return false;
         }
+
         return true;
     }
 
@@ -179,20 +213,24 @@ final class Connection
         if ($this->scheduled || $this->closed) {
             return;
         }
+
         $this->scheduled = true;
         $this->loop->futureTick(function (): void {
             $this->scheduled = false;
             if (! $this->valid() || ! $this->initialized || $this->busy || $this->output->blocked()) {
                 return;
             }
+
             if ($this->snapshotWanted) {
                 $this->snapshot();
                 return;
             }
+
             $raw = array_shift($this->queue);
             if ($raw === null) {
                 return;
             }
+
             $this->budget->release(strlen($raw));
             $this->bytes -= strlen($raw);
             try {
@@ -201,6 +239,7 @@ final class Connection
                 $this->schedule();
                 return;
             }
+
             $payload = $event['payload'] ?? null;
             $name = $event['event'] ?? null;
             if (! is_array($payload) || ($event['version'] ?? null) !== 1
@@ -214,6 +253,7 @@ final class Connection
                 $this->schedule();
                 return;
             }
+
             if ($name === 'chat.snapshot') {
                 // Adjacent invalidations need one authoritative read, not one SQL call per publication.
                 while ($this->queue !== []) {
@@ -222,17 +262,20 @@ final class Connection
                     } catch (\JsonException) {
                         break;
                     }
+
                     if (($next['event'] ?? null) !== 'chat.snapshot' || ($next['version'] ?? null) !== 1
                         || ($next['threadId'] ?? null) !== $this->authorization['threadId']
                         || ($next['payload']['threadId'] ?? null) !== $this->authorization['threadId']
                         || ($next['payload']['sessionId'] ?? null) !== $this->authorization['sessionId']) {
                         break;
                     }
+
                     $removed = array_shift($this->queue);
                     $this->budget->release(strlen($removed));
                     $this->bytes -= strlen($removed);
                     $payload = $next['payload'];
                 }
+
                 $effects = array_intersect_key(
                     $payload,
                     array_flip(['restoredMessage', 'generationMessageId', 'generationStatus'])
@@ -240,15 +283,18 @@ final class Connection
                 $this->snapshot(0, $effects);
                 return;
             }
+
             if (! is_string($payload['messageId'] ?? null) || $payload['messageId'] === '') {
                 $this->schedule();
                 return;
             }
+
             if (str_starts_with($name, 'chat.audio.')) {
                 $this->event($name, $payload);
                 $this->schedule();
                 return;
             }
+
             $this->busy = true;
             // Keep the in-flight payload accounted for until its shared read settles.
             $size = strlen($raw);
@@ -256,13 +302,15 @@ final class Connection
                 $this->close('global_buffer_limit');
                 return;
             }
+
             $this->bytes += $size;
             $this->pendingPayload = $payload;
-            $this->redis->generation($this->authorization['userId'], $this->authorization['threadId'])->then(
+            $this->redisGateway->generation($this->authorization['userId'], $this->authorization['threadId'])->then(
                 function (array $state) use ($name, $size): void {
                     if (! $this->valid()) {
                         return;
                     }
+
                     $payload = $this->pendingPayload;
                     $this->pendingPayload = null;
                     $this->budget->release($size);
@@ -274,6 +322,7 @@ final class Connection
                             $this->snapshotWanted = true;
                         }
                     }
+
                     $this->schedule();
                 },
                 fn () => $this->close('generation_unavailable'),
@@ -287,6 +336,7 @@ final class Connection
         if (! $this->valid()) {
             return;
         }
+
         $this->busy = true;
         $this->snapshotRunning = true;
         $this->snapshotWanted = false;
@@ -296,15 +346,17 @@ final class Connection
             $this->close('snapshot_buffer_limit');
             return;
         }
+
         $this->effects = $effects;
         $this->effectBytes = $effectBytes;
         $this->bytes += $effectBytes;
-        $this->http = $this->backend->request('snapshot', ['authorization' => $this->authorization['authorization']]);
-        $this->http->then(function (array $snapshot) use ($attempt): void {
-            $this->http = null;
+        $this->promise = $this->backend->request('snapshot', ['authorization' => $this->authorization['authorization']]);
+        $this->promise->then(function (array $snapshot) use ($attempt): void {
+            $this->promise = null;
             if (! $this->valid()) {
                 return;
             }
+
             if (! is_array($snapshot['generation'] ?? null) || ! is_array($snapshot['messages'] ?? null)
                 || ! is_bool($snapshot['responding'] ?? null) || ! is_array($snapshot['audioRequestIds'] ?? null)
                 || ($snapshot['threadId'] ?? null) !== $this->authorization['threadId']
@@ -312,35 +364,41 @@ final class Connection
                 $this->close('invalid_snapshot');
                 return;
             }
+
             $size = strlen(json_encode($snapshot, JSON_THROW_ON_ERROR));
             if ($this->bytes + $size > $this->clientLimit || ! $this->budget->acquire($size)) {
                 $this->close('snapshot_buffer_limit');
                 return;
             }
+
             $this->snapshotData = $snapshot;
             $this->snapshotBytes = $size;
             $this->bytes += $size;
-            $this->redis->generation($this->authorization['userId'], $this->authorization['threadId'])->then(
+            $this->redisGateway->generation($this->authorization['userId'], $this->authorization['threadId'])->then(
                 function (array $state) use ($attempt): void {
                     if (! $this->valid()) {
                         return;
                     }
+
                     $snapshot = $this->snapshotData;
                     $effects = $this->effects;
                     $this->snapshotData = null;
                     $this->effects = [];
                     $this->budget->release($this->snapshotBytes + $this->effectBytes);
                     $this->bytes -= $this->snapshotBytes + $this->effectBytes;
-                    $this->snapshotBytes = $this->effectBytes = 0;
-                    if (self::signature($state) !== self::signature($snapshot['generation'])) {
+                    $this->snapshotBytes = 0;
+                    $this->effectBytes = 0;
+                    if ($this->signature($state) !== $this->signature($snapshot['generation'])) {
                         if ($attempt >= 2) {
                             $this->close('snapshot_unstable');
                             return;
                         }
+
                         $this->snapshot($attempt + 1);
                         return;
                     }
-                    $this->generation = self::signature($state);
+
+                    $this->generation = $this->signature($state);
                     $payload = array_intersect_key($snapshot, array_flip(['messages', 'responding', 'activeMessageId',
                         'generationStatus', 'generationMessageId', 'audioRequestIds',
                         'submissionId', 'turnStatus', 'rollbackConfirmed',
@@ -351,16 +409,18 @@ final class Connection
                         && ($effects['generationStatus'] ?? '') === ($state['status'] ?? '')) {
                         $payload['restoredMessage'] = $effects['restoredMessage'];
                     }
+
                     $this->event('chat.snapshot', [...$payload, 'threadId' => $this->authorization['threadId'],
                         'sessionId' => $this->authorization['sessionId'],
                     ]);
                     if ($this->closed) {
                         return;
                     }
+
                     $this->initialized = true;
                     $this->busy = false;
                     $this->snapshotRunning = false;
-                    $this->opened->resolve($this->output);
+                    $this->deferred->resolve($this->output);
                     $this->schedule();
                 },
                 fn () => $this->close('generation_unavailable'),
@@ -373,11 +433,12 @@ final class Connection
         if (! $this->valid() || ! $this->initialized || $this->checking) {
             return;
         }
+
         $this->checking = true;
-        $this->redis->generation($this->authorization['userId'], $this->authorization['threadId'])->then(
+        $this->redisGateway->generation($this->authorization['userId'], $this->authorization['threadId'])->then(
             function (array $state): void {
                 $this->checking = false;
-                if ($this->valid() && self::signature($state) !== $this->generation) {
+                if ($this->valid() && $this->signature($state) !== $this->generation) {
                     $this->requestSnapshot();
                 }
             },
@@ -390,13 +451,15 @@ final class Connection
         if (! $this->valid() || $this->checkingRemember) {
             return;
         }
+
         $this->checkingRemember = true;
         $remember = $this->authorization['remember'];
-        $this->redis->remember($remember['id'])->then(function (?array $data) use ($remember): void {
+        $this->redisGateway->remember($remember['id'])->then(function (?array $data) use ($remember): void {
             $this->checkingRemember = false;
             if (! $this->valid()) {
                 return;
             }
+
             if (! RememberSession::validRecord($data, (int) ($this->clock)())
                 || $data['user_id'] !== $this->authorization['userId'] || $data['expires'] !== $remember['expires']) {
                 $this->close('remember_revoked');
@@ -416,11 +479,13 @@ final class Connection
         if (! $this->valid()) {
             return;
         }
+
         if (strlen($frame) + $this->bytes > $this->clientLimit || ! $this->output->send($frame)) {
             $this->close('output_buffer_limit');
             return;
         }
-        if ($this->output->blocked() && $this->writeTimer === null) {
+
+        if ($this->output->blocked() && ! $this->writeTimer instanceof \React\EventLoop\TimerInterface) {
             $this->writeTimer = $this->loop->addTimer(
                 $this->config->get('write_timeout'),
                 fn () => $this->close('write_timeout')
@@ -433,7 +498,7 @@ final class Connection
      *
      * @return array{string, string}
      */
-    private static function signature(array $state): array
+    private function signature(array $state): array
     {
         return [$state['messageId'] ?? '', $state['status'] ?? ''];
     }

@@ -13,23 +13,23 @@ use NeuronAI\Workflow\Workflow;
 final class TimestampObserver
 {
     /** @var \WeakMap<Workflow, bool> */
-    private \WeakMap $subscriptions;
+    private \WeakMap $weakMap;
 
     public function __construct()
     {
-        $this->subscriptions = new \WeakMap();
+        $this->weakMap = new \WeakMap();
     }
 
-    public function __invoke(MessageSaving $event): void
+    public function __invoke(MessageSaving $messageSaving): void
     {
-        $this->addTimestampToMessage($event->message);
+        $this->addTimestampToMessage($messageSaving->message);
     }
 
     public function subscribeTo(Workflow $workflow): void
     {
-        if (! isset($this->subscriptions[$workflow])) {
+        if (! isset($this->weakMap[$workflow])) {
             $workflow->subscribe(MessageSaving::class, $this);
-            $this->subscriptions[$workflow] = true;
+            $this->weakMap[$workflow] = true;
         }
     }
 

@@ -176,6 +176,7 @@ final readonly class RagService implements RagServiceInterface
                 if ($activeDocument->getUser()->getId() !== $user->getId()) {
                     throw new \RuntimeException('RAG document owner mismatch.');
                 }
+
                 $sourcePath = $this->documentStorePath($activeDocument);
                 if (! is_file($sourcePath)) {
                     continue;
@@ -225,6 +226,7 @@ final readonly class RagService implements RagServiceInterface
                 $document->addMetadata('source_id', $ragDocument->getSourceId());
             }
         }
+
         $embedded = $this->embeddingsProvider->embedDocuments($documents);
         $this->withUserLock($ragDocument->getUser(), function () use ($ragDocument, $embedded): void {
             $this->entityManager->persist($ragDocument);
@@ -280,6 +282,7 @@ final readonly class RagService implements RagServiceInterface
     private function withUserLock(User $user, \Closure $operation): void
     {
         $directory = $this->userDirectory($user);
+        // Concurrent creators may win the mkdir race; the final is_dir check is authoritative.
         if (! is_dir($directory) && ! @mkdir($directory, 0o755, true) && ! is_dir($directory)) {
             throw new \RuntimeException('Unable to create RAG directory: ' . $directory);
         }
@@ -294,6 +297,7 @@ final readonly class RagService implements RagServiceInterface
             if (! flock($lock, LOCK_EX)) {
                 throw new \RuntimeException('Unable to acquire RAG user lock.');
             }
+
             $operation();
         } finally {
             fclose($lock);

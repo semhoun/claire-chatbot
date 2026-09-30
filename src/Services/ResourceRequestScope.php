@@ -18,8 +18,10 @@ final readonly class ResourceRequestScope
                     return true;
                 }
             }
+
             return false;
         }
+
         $path = $request->getUri()->getPath();
         $basePath = rtrim((string) $request->getAttribute(RouteContext::BASE_PATH, ''), '/');
         if (isset($resource['fileId'])) {

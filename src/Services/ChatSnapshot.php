@@ -12,9 +12,9 @@ use Doctrine\ORM\EntityManagerInterface;
 final readonly class ChatSnapshot
 {
     public function __construct(
-        private ChatGenerationState $generationState,
+        private ChatGenerationState $chatGenerationState,
         private EntityManagerInterface $entityManager,
-        private ChatDataRenderer $renderer,
+        private ChatDataRenderer $chatDataRenderer,
         private Settings $settings,
     ) {
     }
@@ -23,18 +23,18 @@ final readonly class ChatSnapshot
     public function read(SessionInterface $session, string $threadId): array
     {
         $userId = (string) $session->get(Auth::USERID);
-        return $this->generationState->capture(
+        return $this->chatGenerationState->capture(
             $userId,
             $threadId,
             function (array $generation) use ($session, $threadId, $userId): array {
-                $history = new UserChatHistory(
+                $userChatHistory = new UserChatHistory(
                     session: $session,
                     pdo: $this->entityManager->getConnection()->getNativeConnection(),
                     contextWindow: $this->settings->get('llm.openai.contextWindow'),
                     threadId: $threadId,
                     createIfMissing: false,
                 );
-                $messages = $history->getFormattedMessages();
+                $messages = $userChatHistory->getFormattedMessages();
                 $last = array_key_last($messages);
                 $messageId = $generation['messageId'] ?? '';
                 if (($generation['status'] ?? '') === 'running' && $messageId !== '' && $last !== null
@@ -46,7 +46,7 @@ final readonly class ChatSnapshot
                 }
 
                 return [
-                    'messages' => $this->renderer->messages(
+                    'messages' => $this->chatDataRenderer->messages(
                         $messages,
                         $userId,
                         ($generation['status'] ?? '') === 'running',
@@ -62,10 +62,12 @@ final readonly class ChatSnapshot
                 if ($messageId === '') {
                     return null;
                 }
+
                 $turn = new ChatTurnJournal($this->entityManager->getConnection())->get($messageId);
                 if ($turn === null || $turn['userId'] !== $userId || $turn['threadId'] !== $threadId) {
                     return null;
                 }
+
                 return ['status' => $turn['status'], 'submissionId' => $turn['submissionId']];
             },
         );

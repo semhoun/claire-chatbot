@@ -29,7 +29,7 @@ trait Constructor
 
         parent::__construct(workflowId: $threadId);
 
-        (new \App\Brain\Event\TimestampObserver())->subscribeTo($this);
-        (new \App\Brain\Observability\Observer())->subscribeTo($this);
+        new \App\Brain\Event\TimestampObserver()->subscribeTo($this);
+        new \App\Brain\Observability\Observer()->subscribeTo($this);
     }
 }

@@ -105,6 +105,16 @@ final class ThemeRegistryTest extends TestCase
         self::assertSame(['preset' => 'cyberpunk', 'tokens' => [], 'variants' => []], $registry->resolve('light'));
     }
 
+    public function testCatalogWithoutPresetsUsesEmptyFallback(): void
+    {
+        foreach (glob($this->path . '/*.yaml') as $file) {
+            unlink($file);
+        }
+
+        self::assertSame(['preset' => 'cyberpunk', 'tokens' => [], 'variants' => []],
+            new ThemeRegistry($this->settings)->resolve('light'));
+    }
+
     public function testMergesOverridesAndFiltersUnknownKeysAndNonStringValues(): void
     {
         $registry = new ThemeRegistry($this->settings);

@@ -71,45 +71,47 @@ class Observer
     ];
 
     /** @var \WeakMap<Workflow, bool> */
-    private \WeakMap $subscriptions;
+    private \WeakMap $weakMap;
 
     public function __construct(?object $instrumentation = null)
     {
-        $this->subscriptions = new \WeakMap();
+        $this->weakMap = new \WeakMap();
         $this->instrumentation = $instrumentation
             ?? new \OpenTelemetry\API\Instrumentation\CachedInstrumentation(self::SPAN_TYPE);
     }
 
     public function subscribeTo(Workflow $workflow): void
     {
-        if (isset($this->subscriptions[$workflow])) {
+        if (isset($this->weakMap[$workflow])) {
             return;
         }
+
         foreach ($this->methodsMap as $eventClass => $method) {
-            $workflow->subscribe($eventClass, function (ObservabilityEvent $event) use ($method): void {
-                $this->$method($event->source ?? $event, $event->name(), $event);
+            $workflow->subscribe($eventClass, function (ObservabilityEvent $observabilityEvent) use ($method): void {
+                $this->$method($observabilityEvent->source ?? $observabilityEvent, $observabilityEvent->name(), $observabilityEvent);
             });
         }
-        $this->subscriptions[$workflow] = true;
+
+        $this->weakMap[$workflow] = true;
     }
 
     /**
      * @throws \Exception
      */
-    public function reportError(object $source, string $event, WorkflowError $agentError): void
+    public function reportError(object $source, string $event, WorkflowError $workflowError): void
     {
-        $logRecord = new LogRecord($agentError->exception->getMessage(), $agentError->exception->getTrace());
+        $logRecord = new LogRecord($workflowError->exception->getMessage(), $workflowError->exception->getTrace());
         $this->instrumentation->logger()->emit($logRecord);
 
         $attributes = [
-            'error.message' => $agentError->exception->getMessage(),
-            'error.type' => $agentError->exception::class,
-            'error.stacktrace' => $agentError->exception->getTraceAsString(),
+            'error.message' => $workflowError->exception->getMessage(),
+            'error.type' => $workflowError->exception::class,
+            'error.stacktrace' => $workflowError->exception->getTraceAsString(),
         ];
 
         foreach ($this->getActiveSpans() as $span) {
-            $span->setStatus(StatusCode::STATUS_ERROR, $agentError->exception->getMessage());
-            $span->recordException($agentError->exception, $attributes);
+            $span->setStatus(StatusCode::STATUS_ERROR, $workflowError->exception->getMessage());
+            $span->recordException($workflowError->exception, $attributes);
         }
     }
 
@@ -170,17 +172,21 @@ class Observer
         if ($value instanceof \JsonSerializable) {
             $value = $value->jsonSerialize();
         }
+
         if (! is_array($value)) {
             return $value;
         }
+
         if (($value['source_type'] ?? null) === SourceType::BASE64->value) {
             unset($value['source'], $value['content']);
         }
+
         foreach ($value as $key => $item) {
             $value[$key] = is_string($key)
                 && preg_match('/(?:secret|password|authorization|api[_-]?key|access[_-]?token|refresh[_-]?token)/i', $key)
                 ? '[redacted]' : $this->redact($item);
         }
+
         return $value;
     }
 }

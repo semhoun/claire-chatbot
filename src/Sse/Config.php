@@ -22,6 +22,7 @@ final readonly class Config
                 throw new \InvalidArgumentException('Invalid SSE setting: ' . $key);
             }
         }
+
         if (! is_string($values['secret'] ?? null) || trim($values['secret']) === ''
             || preg_match('/[\r\n]/', $values['secret'])
             || ($values['backend'] ?? null) !== 'http://127.0.0.1:8082'
@@ -32,6 +33,7 @@ final readonly class Config
             || $values['max_client_buffer'] > $values['max_global_buffer']) {
             throw new \InvalidArgumentException('Invalid SSE security or buffer configuration');
         }
+
         $this->values = $values;
     }
 

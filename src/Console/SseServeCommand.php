@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace App\Console;
 
-use Throwable;
-
+use App\Sse\Daemon;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-
-use App\Sse\Daemon;
+use Throwable;
 
 #[AsCommand(name: 'sse:serve', description: 'Run the ReactPHP SSE daemon', aliases: ['sse'])]
 final class SseServeCommand extends Command

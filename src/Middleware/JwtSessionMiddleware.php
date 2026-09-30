@@ -75,9 +75,10 @@ final class JwtSessionMiddleware implements MiddlewareInterface
                     $arraySession->set(RememberSession::ID, $resource[RememberSession::ID]);
                     $arraySession->set(RememberSession::EXPIRES, $resource[RememberSession::EXPIRES] ?? null);
                     if (! $this->rememberSession->valid($arraySession)) {
-                        return (new \Slim\Psr7\Response(401))->withHeader('Cache-Control', 'no-store');
+                        return new \Slim\Psr7\Response(401)->withHeader('Cache-Control', 'no-store');
                     }
                 }
+
                 $request = $request->withAttribute(self::SESSION_ATTRIBUTE, $arraySession)
                     ->withAttribute(self::AUTH_RESOURCE, $resource)
                     ->withAttribute(self::AUTH_EXPIRES_AT, $resource['expiresAt']);
@@ -94,8 +95,9 @@ final class JwtSessionMiddleware implements MiddlewareInterface
 
             $this->decodeAndPopulateSession($arraySession, $parsedSession);
             if (! $this->rememberSession->valid($arraySession)) {
-                return (new \Slim\Psr7\Response(401))->withHeader('Cache-Control', 'no-store');
+                return new \Slim\Psr7\Response(401)->withHeader('Cache-Control', 'no-store');
             }
+
             $request = $request->withAttribute(self::AUTH_EXPIRES_AT, $this->tokenClaims['exp']->getTimestamp());
         } else {
             $arraySession->start();

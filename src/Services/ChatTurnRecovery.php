@@ -15,7 +15,7 @@ final class ChatTurnRecovery
 
     public function __construct(
         private readonly Connection $connection,
-        private readonly ChatStreamPublisher $publisher,
+        private readonly ChatStreamPublisher $chatStreamPublisher,
         private readonly TelegramGeneration $telegramGeneration,
         private readonly TelegramService $telegramService,
         private readonly Settings $settings,
@@ -33,13 +33,16 @@ final class ChatTurnRecovery
         if ($limit < 1 || $limit > 10000) {
             throw new \InvalidArgumentException('Invalid recovery limit');
         }
+
         if ($cursor !== null) {
             if (strlen($cursor) > 128) {
                 throw new \InvalidArgumentException('Invalid recovery cursor');
             }
+
             $this->cursor = $cursor === '0' ? '' : $cursor;
         }
-        $journal = new ChatTurnJournal($this->connection);
+
+        $chatTurnJournal = new ChatTurnJournal($this->connection);
         $ids = $this->connection->fetchFirstColumn(
             'SELECT id FROM chat_turn WHERE id > ? ORDER BY id LIMIT ' . $limit,
             [$this->cursor],
@@ -47,15 +50,17 @@ final class ChatTurnRecovery
         $counts = [];
         foreach ($ids as $id) {
             try {
-                $result = $apply ? $this->recoverTurn($journal->get($id)) : 'eligible';
+                $result = $apply ? $this->recoverTurn($chatTurnJournal->get($id)) : 'eligible';
             } catch (ChatGenerationBusyException) {
                 $result = 'locked';
             } catch (\Throwable $error) {
                 $this->logger->error('Chat turn recovery failed', ['turnId' => $id, 'exception' => $error]);
                 $result = 'failed';
             }
+
             $counts[$result] = ($counts[$result] ?? 0) + 1;
         }
+
         $this->cursor = count($ids) === $limit ? end($ids) : '';
         return ['counts' => $counts, 'cursor' => $this->cursor === '' ? '0' : $this->cursor];
     }
@@ -70,20 +75,24 @@ final class ChatTurnRecovery
                 if ($sessionId === '') {
                     return 'missing-destination';
                 }
+
                 $locks[] = new ChatThreadLock($this->connection->getNativeConnection(), 'telegram-session', $sessionId);
                 $locks[] = new ChatThreadLock($this->connection->getNativeConnection(), 'telegram-journal', $turn['id']);
             }
+
             $locks[] = new ChatThreadLock($this->connection->getNativeConnection(), $turn['userId'], $turn['threadId']);
             $journal = $this->journalForTurn($turn);
             $turn = $journal->rollback($turn['id'], $turn['userId']);
             if (($turn['deletedAt'] ?? null) !== null) {
                 return 'deleted';
             }
+
             try {
                 $this->project($turn);
             } catch (\Throwable $error) {
                 $this->logger->error('Chat recovery projection failed', ['exception' => $error]);
             }
+
             if ($turn['channel'] === 'telegram' && $turn['status'] === 'rolled_back') {
                 $record = new TelegramJournal($this->connection)->load($turn['id']);
                 $botId = explode(':', (string) $this->settings->get('telegram.bot_token'), 2)[0];
@@ -94,6 +103,7 @@ final class ChatTurnRecovery
                     );
                 }
             }
+
             return $turn['status'];
         } finally {
             foreach (array_reverse($locks) as $lock) {
@@ -103,36 +113,40 @@ final class ChatTurnRecovery
     }
 
     /** Called only after the queue has confirmed its terminal transition. */
-    public function failed(QueueMessage $job): void
+    public function failed(QueueMessage $queueMessage): void
     {
-        if (in_array($job->jobClass, [TelegramService::class, \App\Job\Telegram\StartThreadJob::class], true)) {
-            $this->telegramService->failed($job->payload);
+        if (in_array($queueMessage->jobClass, [TelegramService::class, \App\Job\Telegram\StartThreadJob::class], true)) {
+            $this->telegramService->failed($queueMessage->payload);
             return;
         }
-        if ($job->jobClass !== NewMessageJob::class) {
+
+        if ($queueMessage->jobClass !== NewMessageJob::class) {
             return;
         }
-        $payload = $job->payload;
+
+        $payload = $queueMessage->payload;
         $id = (string) ($payload['messageId'] ?? '');
         $user = (string) ($payload['session'][Auth::USERID] ?? '');
         $thread = (string) ($payload['threadId'] ?? '');
         if ($id === '' || $user === '' || $thread === '') {
             return;
         }
-        $lock = new ChatThreadLock($this->connection->getNativeConnection(), $user, $thread);
+
+        $chatThreadLock = new ChatThreadLock($this->connection->getNativeConnection(), $user, $thread);
         try {
             $stops = $this->registeredStops(['userId' => $user, 'threadId' => $thread,
                 'channel' => 'web', 'generationId' => $id,
             ]);
-            $journal = new ChatTurnJournal($this->connection, $stops);
-            $turn = $journal->get($id);
+            $chatTurnJournal = new ChatTurnJournal($this->connection, $stops);
+            $turn = $chatTurnJournal->get($id);
             if ($turn === null) {
-                $state = $this->publisher->generationState()->get($user, $thread);
+                $state = $this->chatStreamPublisher->generationState()->get($user, $thread);
                 if (($state['messageId'] ?? '') !== $id || ($state['status'] ?? '') === 'deleted'
                     || ($state['attempted'] ?? '0') === '1') {
                     return;
                 }
-                $journal->begin(
+
+                $chatTurnJournal->begin(
                     $id,
                     $user,
                     $thread,
@@ -143,7 +157,7 @@ final class ChatTurnRecovery
                 );
                 $text = is_string($payload['message'] ?? null) ? trim($payload['message']) : '';
                 if ($text !== '' && $stops?->isRequested($user, $thread, 'web', $id)) {
-                    $this->project($journal->complete($id, $user, 'stopped', function () use (
+                    $this->project($chatTurnJournal->complete($id, $user, 'stopped', function () use (
                         $payload,
                         $text,
                         $id,
@@ -163,9 +177,10 @@ final class ChatTurnRecovery
                     return;
                 }
             }
-            $this->project($journal->rollback($id, $user));
+
+            $this->project($chatTurnJournal->rollback($id, $user));
         } finally {
-            $lock->release();
+            $chatThreadLock->release();
         }
     }
 
@@ -185,9 +200,11 @@ final class ChatTurnRecovery
             ) !== $turn['id']) {
             return false;
         }
+
         if ($previous === [] || ($previous['messageId'] ?? '') === $turn['id']) {
             return true;
         }
+
         $older = new ChatTurnJournal($connection)->get((string) ($previous['messageId'] ?? ''));
         return $older !== null && $older['userId'] === $turn['userId'] && $older['threadId'] === $turn['threadId']
             && $older['historyRevision'] < $turn['historyRevision']
@@ -197,12 +214,13 @@ final class ChatTurnRecovery
     /** @param array<string, mixed> $turn */
     private function project(array $turn): void
     {
-        $state = $this->publisher->generationState();
-        $previous = $state->get($turn['userId'], $turn['threadId']);
+        $chatGenerationState = $this->chatStreamPublisher->generationState();
+        $previous = $chatGenerationState->get($turn['userId'], $turn['threadId']);
         if (! self::canProjectTerminal($this->connection, $turn, $previous)) {
             return;
         }
-        $state->set(
+
+        $chatGenerationState->set(
             $turn['userId'],
             $turn['threadId'],
             $turn['id'],
@@ -213,14 +231,15 @@ final class ChatTurnRecovery
         );
         if ($turn['channel'] === 'web' && $turn['status'] === 'stopped'
             && isset($turn['notification']['sessionId'])) {
-            $this->publisher->publish($turn['notification']['sessionId'], 'chat.assistant.stopped', [
+            $this->chatStreamPublisher->publish($turn['notification']['sessionId'], 'chat.assistant.stopped', [
                 'threadId' => $turn['threadId'], 'sessionId' => $turn['notification']['sessionId'],
                 'messageId' => $turn['id'], 'submissionId' => $turn['submissionId'], 'turnStatus' => 'stopped',
             ]);
         }
+
         if ($turn['channel'] === 'web' && $turn['status'] === 'rolled_back'
             && isset($turn['notification']['sessionId'])) {
-            $this->publisher->publish($turn['notification']['sessionId'], 'chat.error', [
+            $this->chatStreamPublisher->publish($turn['notification']['sessionId'], 'chat.error', [
                 'threadId' => $turn['threadId'], 'sessionId' => $turn['notification']['sessionId'],
                 'messageId' => $turn['id'], 'submissionId' => $turn['submissionId'],
                 'turnStatus' => 'rolled_back', 'rollbackConfirmed' => true,
@@ -248,6 +267,7 @@ final class ChatTurnRecovery
                 $stops = new ChatStopRequests($this->connection);
             }
         }
+
         return $stops;
     }
 }

@@ -14,7 +14,8 @@ final readonly class OrphanFilePurger
         private EntityManagerInterface $entityManager,
         private Filesystem $filesystem,
         private Settings $settings,
-    ) {}
+    ) {
+    }
 
     /** @return array{orphan_rows: int, deleted_rows: int, orphan_files: int, deleted_files: int} */
     public function purge(bool $apply, int $minAgeHours = 24): array

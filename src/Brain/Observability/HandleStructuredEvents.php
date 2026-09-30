@@ -92,6 +92,7 @@ trait HandleStructuredEvents
         if ($validated->violations !== []) {
             $this->spanSetAttributes($this->validate, 'neuron.Violations', $validated->violations);
         }
+
         $this->validate->end();
         unset($this->validate);
     }

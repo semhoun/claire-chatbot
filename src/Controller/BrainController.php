@@ -48,6 +48,7 @@ final readonly class BrainController
             || preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $submissionId) !== 1) {
             return $response->withStatus(400);
         }
+
         $userStr = trim((string) ($data['message'] ?? ''));
         if ($userStr === '') {
             return $response->withStatus(422);
@@ -77,8 +78,7 @@ final readonly class BrainController
 
         $userId = (string) $user->getId();
         if ($this->entityManager->getConnection()->fetchOne(
-            'SELECT id FROM chat_turn WHERE user_id = ?'
-                . ' AND (submission_id = ? OR (thread_id = ? AND status = ?))',
+            'SELECT id FROM chat_turn WHERE user_id = ? AND (submission_id = ? OR (thread_id = ? AND status = ?))',
             [$userId, $submissionId, $threadId, 'running'],
         ) !== false) {
             return $response->withStatus(409);
@@ -130,9 +130,11 @@ final readonly class BrainController
         if ($user === null) {
             return $response->withStatus(401);
         }
+
         if (preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $submissionId) !== 1) {
             return $response->withStatus(400);
         }
+
         $turn = $this->entityManager->getConnection()->fetchAssociative(
             'SELECT submission_id, generation_id, thread_id, status FROM chat_turn'
                 . ' WHERE user_id = ? AND submission_id = ?',
@@ -141,6 +143,7 @@ final readonly class BrainController
         if ($turn === false) {
             return $response->withStatus(404);
         }
+
         $response->getBody()->write(json_encode([
             'submissionId' => $turn['submission_id'],
             'messageId' => $turn['generation_id'],

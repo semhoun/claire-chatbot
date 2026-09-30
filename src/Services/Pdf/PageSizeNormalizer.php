@@ -23,8 +23,11 @@ final class PageSizeNormalizer
                         if (in_array(strtolower($value), ['auto', 'portrait', 'landscape'], true)) {
                             return $declaration[1] . 'size: ' . strtolower($value);
                         }
+
                         if (! preg_match(
-                            '/^([a-z][a-z0-9]*|[24]a0)(?:\s+(portrait|landscape)|-(L))?$/i', $value, $name,
+                            '/^([a-z][a-z0-9]*|[24]a0)(?:\s+(portrait|landscape)|-(L))?$/i',
+                            $value,
+                            $name,
                         )) {
                             return $declaration[0];
                         }
@@ -38,7 +41,9 @@ final class PageSizeNormalizer
                         }
 
                         return $declaration[1] . sprintf(
-                            'size: %.5Fmm %.5Fmm', $width / Mpdf::SCALE, $height / Mpdf::SCALE,
+                            'size: %.5Fmm %.5Fmm',
+                            $width / Mpdf::SCALE,
+                            $height / Mpdf::SCALE,
                         );
                     },
                     $page[2],

@@ -28,8 +28,8 @@ class Summary extends \NeuronAI\Agent\Agent
     ) {
         parent::__construct(workflowId: $threadId);
 
-        (new \App\Brain\Event\TimestampObserver())->subscribeTo($this);
-        (new \App\Brain\Observability\Observer())->subscribeTo($this);
+        new \App\Brain\Event\TimestampObserver()->subscribeTo($this);
+        new \App\Brain\Observability\Observer()->subscribeTo($this);
     }
 
     public function generateAndPersist(bool $evolveLongTermMemory = false): void
@@ -42,6 +42,7 @@ class Summary extends \NeuronAI\Agent\Agent
         if ($before === false || $before['current_turn_id'] !== null) {
             throw new \RuntimeException('Summary requires a completed conversation');
         }
+
         $longTermMemory = new LongTermMemory(
             connection: $this->connection,
             session: $this->session,
@@ -49,8 +50,7 @@ class Summary extends \NeuronAI\Agent\Agent
         );
         $currentMemory = $longTermMemory->recall();
         $userMessage = new UserMessage(
-            "Génère 'title', 'summary' et 'memory'.\n\n"
-            . "Mémoire actuelle à faire évoluer :\n"
+            "Génère 'title', 'summary' et 'memory'.\n\nMémoire actuelle à faire évoluer :\n"
             . ($currentMemory === '' ? '(vide)' : $currentMemory)
         );
         $message = $this->chat($userMessage)->getMessage();
@@ -73,19 +73,19 @@ class Summary extends \NeuronAI\Agent\Agent
     #[\Override]
     protected function messageStore(): MessageStoreInterface
     {
-        $history = new UserChatHistory(
+        $userChatHistory = new UserChatHistory(
             session: $this->session,
             pdo: $this->connection->getNativeConnection(),
             contextWindow: $this->settings->get('llm.openai.contextWindow'),
             threadId: $this->threadId,
             createIfMissing: false,
         );
-        $store = new SummaryChatHistory();
-        foreach ($history->getMessages() as $message) {
-            $store->append($this->requireWorkflowId(), $message);
+        $summaryChatHistory = new SummaryChatHistory();
+        foreach ($userChatHistory->getMessages() as $message) {
+            $summaryChatHistory->append($this->requireWorkflowId(), $message);
         }
 
-        return $store;
+        return $summaryChatHistory;
     }
 
     #[\Override]

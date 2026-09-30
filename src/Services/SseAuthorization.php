@@ -14,15 +14,16 @@ final readonly class SseAuthorization
     private int $duration;
 
     public function __construct(
-        private SseAccess $access,
-        private ChatSnapshot $snapshots,
-        private RedisClient $redis,
+        private SseAccess $sseAccess,
+        private ChatSnapshot $chatSnapshot,
+        private RedisClient $redisClient,
         private Settings $settings,
     ) {
         $duration = $settings->get('sse.duration');
         if (! is_int($duration) || $duration < 1 || $duration > 86400) {
             throw new RuntimeException('Invalid SSE duration.');
         }
+
         $this->duration = $duration;
     }
 
@@ -32,31 +33,33 @@ final readonly class SseAuthorization
      */
     public function open(array $input): array
     {
-        $session = $this->access->authenticate($input);
+        $arraySession = $this->sseAccess->authenticate($input);
         $openedAt = microtime(true);
         $context = [
-            'userId' => $session->get(Auth::USERID),
+            'userId' => $arraySession->get(Auth::USERID),
             'threadId' => $input['threadId'],
             'sessionId' => $input['sessionId'],
             'openedAt' => $openedAt,
             'deadline' => $openedAt + $this->duration,
-            'remember' => $session->has(RememberSession::ID) ? [
-                'id' => $session->get(RememberSession::ID),
-                'expires' => $session->get(RememberSession::EXPIRES),
+            'remember' => $arraySession->has(RememberSession::ID) ? [
+                'id' => $arraySession->get(RememberSession::ID),
+                'expires' => $arraySession->get(RememberSession::EXPIRES),
             ] : null,
         ];
         $authorization = bin2hex(random_bytes(32));
-        if (! $this->redis->setex(
+        if (! $this->redisClient->setex(
             $this->key($authorization),
             $this->duration,
             json_encode($context, JSON_THROW_ON_ERROR)
         )) {
             throw new RuntimeException('Cannot store SSE authorization.');
         }
+
         if (microtime(true) >= $context['deadline']) {
             $this->close($authorization);
             $this->deny();
         }
+
         return ['authorization' => $authorization, ...$context];
     }
 
@@ -64,22 +67,24 @@ final readonly class SseAuthorization
     public function snapshot(string $authorization): array
     {
         $context = $this->load($authorization);
-        $session = new ArraySession();
-        $session->start();
-        $session->set(Auth::USERID, $context['userId']);
-        $session->set(Auth::AUTHENTICATED, true);
+        $arraySession = new ArraySession();
+        $arraySession->start();
+        $arraySession->set(Auth::USERID, $context['userId']);
+        $arraySession->set(Auth::AUTHENTICATED, true);
         if ($context['remember'] !== null) {
-            $session->set(RememberSession::ID, $context['remember']['id']);
-            $session->set(RememberSession::EXPIRES, $context['remember']['expires']);
+            $arraySession->set(RememberSession::ID, $context['remember']['id']);
+            $arraySession->set(RememberSession::EXPIRES, $context['remember']['expires']);
         }
-        $this->access->check($session, $context['threadId']);
-        $snapshot = $this->snapshots->read($session, $context['threadId']);
+
+        $this->sseAccess->check($arraySession, $context['threadId']);
+        $snapshot = $this->chatSnapshot->read($arraySession, $context['threadId']);
         // A slow SQL/render call cannot extend admission or hide revocation during the handshake.
         $this->load($authorization);
-        $this->access->check($session, $context['threadId']);
+        $this->sseAccess->check($arraySession, $context['threadId']);
         if (microtime(true) >= $context['deadline']) {
             $this->deny();
         }
+
         return [...$snapshot, 'threadId' => $context['threadId'], 'sessionId' => $context['sessionId']];
     }
 
@@ -88,7 +93,8 @@ final readonly class SseAuthorization
         if (! preg_match('/\A[a-f0-9]{64}\z/', $authorization)) {
             $this->deny();
         }
-        if ($this->redis->del($this->key($authorization)) === false) {
+
+        if ($this->redisClient->del($this->key($authorization)) === false) {
             throw new RuntimeException('Cannot delete SSE authorization.');
         }
     }
@@ -99,12 +105,14 @@ final readonly class SseAuthorization
         if (! preg_match('/\A[a-f0-9]{64}\z/', $authorization)) {
             $this->deny();
         }
-        $stored = $this->redis->get($this->key($authorization));
+
+        $stored = $this->redisClient->get($this->key($authorization));
         try {
             $context = $stored === false ? null : json_decode($stored, true, 16, JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
             $this->deny();
         }
+
         if (! is_array($context) || count($context) !== 6
             || ! is_string($context['userId'] ?? null) || $context['userId'] === ''
             || ! is_string($context['threadId'] ?? null) || $context['threadId'] === ''
@@ -117,6 +125,7 @@ final readonly class SseAuthorization
             || ! array_key_exists('remember', $context)) {
             $this->deny();
         }
+
         if ($context['remember'] !== null
             && (! is_array($context['remember']) || count($context['remember']) !== 2
                 || ! is_string($context['remember']['id'] ?? null)
@@ -124,6 +133,7 @@ final readonly class SseAuthorization
                 || ! is_int($context['remember']['expires'] ?? null))) {
             $this->deny();
         }
+
         return $context;
     }
 

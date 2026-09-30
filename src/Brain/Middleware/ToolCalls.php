@@ -17,9 +17,9 @@ use NeuronAI\Workflow\NodeInterface;
 use NeuronAI\Workflow\WorkflowResources;
 use NeuronAI\Workflow\WorkflowState;
 
-final class ToolCalls implements WorkflowMiddleware
+final readonly class ToolCalls implements WorkflowMiddleware
 {
-    public function __construct(private readonly ?UserChatHistory $history = null)
+    public function __construct(private ?UserChatHistory $userChatHistory = null)
     {
     }
 
@@ -30,19 +30,22 @@ final class ToolCalls implements WorkflowMiddleware
         WorkflowResources $resources,
     ): void {
         if (! $event instanceof AgentOutputEvent || ! $state instanceof AgentState
-            || ! $resources instanceof AgentResources || $state->getMessage() === null) {
+            || ! $resources instanceof AgentResources || ! $state->getMessage() instanceof \NeuronAI\Chat\Messages\Message) {
             return;
         }
+
         $message = $state->getMessage();
         if ($message->getMetadata('stop_reason') === \NeuronAI\HttpClient\StoppableHttpClient::STOP_REASON
             || $message->getMetadata('generation_stopped') === true) {
             return;
         }
+
         $processed = [];
         foreach ($state->getSteps() as $step) {
             if (! $step instanceof ToolResultMessage) {
                 continue;
             }
+
             foreach ($step->getToolCalls() as $call) {
                 $tool = $resources->tools->find($call->getName());
                 if ($tool instanceof MessagePostProcessorInterface && $call->hasResult()
@@ -52,8 +55,9 @@ final class ToolCalls implements WorkflowMiddleware
                 }
             }
         }
+
         if ($processed !== []) {
-            $this->history?->updateMessage($message);
+            $this->userChatHistory?->updateMessage($message);
             // Keep the original response envelope and its provider metadata intact.
             $original = $state->getMessage();
             if ($message !== $original) {

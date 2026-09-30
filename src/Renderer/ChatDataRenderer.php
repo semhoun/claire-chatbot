@@ -22,6 +22,7 @@ final readonly class ChatDataRenderer
     }
 
     /** @param array<int, array<string, mixed>>|null $messages
+     *
      * @return array<int, array<string, mixed>>
      */
     public function messages(?array $messages, string $userId, bool $running = false): array
@@ -36,13 +37,16 @@ final readonly class ChatDataRenderer
                     $tool['interrupted'] = true;
                 }
             }
+
             unset($tool);
         }
+
         unset($message);
         return $messages;
     }
 
     /** @param array<string, mixed> $message
+     *
      * @return array<string, mixed>
      */
     public function message(array $message, string $userId): array

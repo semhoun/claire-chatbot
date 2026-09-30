@@ -28,5 +28,5 @@ interface MessagePostProcessorInterface
      * @return Message The processed message (can be the same instance
      *                 modified or a new instance)
      */
-    public function postProcessMessage(Message $message, ToolCall $call): Message;
+    public function postProcessMessage(Message $message, ToolCall $toolCall): Message;
 }

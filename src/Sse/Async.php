@@ -21,14 +21,15 @@ final class Async
             $promise->then(static function ($value) use ($resolve, $loop, &$timer): void {
                 $loop->cancelTimer($timer);
                 $resolve($value);
-            }, static function (\Throwable $error) use ($reject, $loop, &$timer): void {
+            }, static function (\Throwable $throwable) use ($reject, $loop, &$timer): void {
                 $loop->cancelTimer($timer);
-                $reject($error);
+                $reject($throwable);
             });
         }, static function () use ($promise, $loop, &$timer): void {
             if ($timer !== null) {
                 $loop->cancelTimer($timer);
             }
+
             $promise->cancel();
             throw new \RuntimeException('SSE operation cancelled');
         });

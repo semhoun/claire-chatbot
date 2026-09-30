@@ -72,6 +72,7 @@ final readonly class ChatStopRequests
         if ($record === null) {
             throw new RuntimeException('Accepted generation is unavailable');
         }
+
         return $record['stopRequested'];
     }
 
@@ -94,9 +95,11 @@ final readonly class ChatStopRequests
         if (! in_array($proposedStatus, ['succeeded', 'stopped', 'rolled_back'], true)) {
             throw new InvalidArgumentException('Invalid generation terminal status');
         }
+
         if (! $this->connection->isTransactionActive()) {
             throw new RuntimeException('Stop arbitration requires the history transaction');
         }
+
         $won = $this->connection->executeStatement(
             'UPDATE chat_stop_request SET status = CASE'
             . " WHEN stop_requested = 1 AND ? = 'succeeded' THEN 'stopped' ELSE ? END, completed_at = ?"
@@ -107,6 +110,7 @@ final readonly class ChatStopRequests
         if ($record === null) {
             throw new RuntimeException('Accepted generation is unavailable');
         }
+
         return $record + ['won' => $won];
     }
 
@@ -119,6 +123,7 @@ final readonly class ChatStopRequests
         if ($completedBefore < 0 || $completedBefore >= time() || $limit < 1 || $limit > 1000) {
             throw new InvalidArgumentException('Invalid stop request retention bounds');
         }
+
         $ids = $this->connection->fetchFirstColumn(
             'SELECT id FROM chat_stop_request WHERE completed_at < ? ORDER BY completed_at, id LIMIT ' . $limit,
             [$completedBefore],
@@ -130,6 +135,7 @@ final readonly class ChatStopRequests
                 [$id, $completedBefore],
             );
         }
+
         return $deleted;
     }
 
@@ -138,9 +144,11 @@ final readonly class ChatStopRequests
         if ($userId === '' || strlen($userId) > 255 || ! in_array($channel, ['web', 'telegram'], true)) {
             throw new InvalidArgumentException('Invalid stop request owner or channel');
         }
+
         if ($threadId === '' || strlen($threadId) > 128 || $generationId === '' || strlen($generationId) > 128) {
             throw new InvalidArgumentException('Invalid stop request identity');
         }
+
         // Exact byte identity even on databases with case-insensitive collations.
         return hash('sha256', json_encode([$userId, $threadId, $channel, $generationId], JSON_THROW_ON_ERROR));
     }

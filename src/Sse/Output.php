@@ -13,8 +13,11 @@ use React\Stream\WritableStreamInterface;
 final class Output extends EventEmitter implements ReadableStreamInterface
 {
     private bool $readable = true;
+
     private bool $paused = true;
+
     private ?string $frame = null;
+
     private int $bytes = 0;
 
     public function __construct(private readonly Budget $budget, private readonly int $limit)
@@ -27,6 +30,7 @@ final class Output extends EventEmitter implements ReadableStreamInterface
             || ! $this->budget->acquire(strlen($frame))) {
             return false;
         }
+
         $this->bytes = strlen($frame);
         $this->frame = $frame;
         $this->flush();
@@ -58,10 +62,12 @@ final class Output extends EventEmitter implements ReadableStreamInterface
         if (! $this->readable) {
             return;
         }
+
         $this->paused = false;
         if ($this->frame === null) {
             $this->release();
         }
+
         $this->flush();
         if (! $this->blocked()) {
             $this->emit('drain');
@@ -71,9 +77,9 @@ final class Output extends EventEmitter implements ReadableStreamInterface
     /** @param array{end?: bool} $options */
     public function pipe(WritableStreamInterface $dest, array $options = []): WritableStreamInterface
     {
-        $result = Util::pipe($this, $dest, $options);
+        $writableStream = Util::pipe($this, $dest, $options);
         $this->resume();
-        return $result;
+        return $writableStream;
     }
 
     public function close(): void
@@ -81,6 +87,7 @@ final class Output extends EventEmitter implements ReadableStreamInterface
         if (! $this->readable) {
             return;
         }
+
         $this->readable = false;
         $this->frame = null;
         $this->release();
@@ -93,6 +100,7 @@ final class Output extends EventEmitter implements ReadableStreamInterface
         if ($this->paused || $this->frame === null || ! $this->readable) {
             return;
         }
+
         $frame = $this->frame;
         $this->frame = null;
         $this->emit('data', [$frame]);

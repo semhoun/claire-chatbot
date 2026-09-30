@@ -70,7 +70,7 @@ return [
         $metadataCache = $isDevMode ? new ArrayAdapter() : new PhpFilesAdapter('metadata', 0, $cacheDir);
 
         // Configuration manuelle avec cache explicite
-        $configuration = ORMSetup::createAttributeMetadataConfiguration(
+        $configuration = ORMSetup::createAttributeMetadataConfig(
             $entityPaths,
             $isDevMode,
             $cacheDir . '/proxy',
@@ -138,14 +138,10 @@ return [
 
         return $logger;
     },
-    Twig::class => static function (Settings $settings): Twig {
-        $twig = Twig::create(
-            $settings->get('twig.template_path'),
-            $settings->get('twig.config')
-        );
-
-        return $twig;
-    },
+    Twig::class => static fn(Settings $settings): Twig => Twig::create(
+        $settings->get('twig.template_path'),
+        $settings->get('twig.config')
+    ),
     Filesystem::class => static function (Settings $settings): FileSystem {
         if ($settings->get('files.fileSystem.type') === 'local') {
             $adapter = new League\Flysystem\Local\LocalFilesystemAdapter(

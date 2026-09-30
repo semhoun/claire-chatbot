@@ -78,9 +78,9 @@ EOT;
      * If the ID is missing, it appends it to the message content.
      */
     #[\Override]
-    public function postProcessMessage(Message $message, ToolCall $call): Message
+    public function postProcessMessage(Message $message, ToolCall $toolCall): Message
     {
-        $imageId = $this->extractImageId($call);
+        $imageId = $this->extractImageId($toolCall);
 
         if ($imageId === null) {
             return $message;
@@ -107,9 +107,9 @@ EOT;
         ];
     }
 
-    private function extractImageId(ToolCall $call): ?string
+    private function extractImageId(ToolCall $toolCall): ?string
     {
-        $result = $call->hasResult() ? $call->getResult() : null;
+        $result = $toolCall->hasResult() ? $toolCall->getResult() : null;
 
         if (! is_string($result)) {
             return null;

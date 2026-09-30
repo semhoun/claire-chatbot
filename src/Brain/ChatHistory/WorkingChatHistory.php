@@ -12,17 +12,17 @@ use NeuronAI\Chat\Messages\Message;
 final class WorkingChatHistory extends ChatHistory
 {
     public function __construct(
-        private readonly UserChatHistory $facade,
+        private readonly UserChatHistory $userChatHistory,
         string $threadId,
         int $contextWindow = self::DEFAULT_CONTEXT_WINDOW,
     ) {
-        parent::__construct($facade->messageStore(), $threadId, $contextWindow, new GenerationStopHistoryTrimmer());
+        parent::__construct($userChatHistory->messageStore(), $threadId, $contextWindow, new GenerationStopHistoryTrimmer());
     }
 
     /** @param list<Message> $messages */
     public function replaceActiveMessages(array $messages): void
     {
-        $this->facade->replaceMessages($messages);
+        $this->userChatHistory->replaceMessages($messages);
         $this->messages = $messages;
     }
 }

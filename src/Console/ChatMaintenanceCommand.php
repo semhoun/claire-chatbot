@@ -124,6 +124,7 @@ HELP;
                 $output->writeln(json_encode(['apply' => $apply, ...$result], JSON_THROW_ON_ERROR));
                 return isset($result['counts']['failed']) ? Command::FAILURE : Command::SUCCESS;
             }
+
             $service = $this->container->get(ChatMaintenance::class);
             $result = $compact
                 ? $service->compact($days, $limit, $cursor, $apply)

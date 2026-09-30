@@ -19,6 +19,7 @@ final readonly class SweepJob implements QueueDoer
         return new self($container->get(SemanticMemoryService::class));
     }
 
+    /** @param array<string, mixed> $payload */
     public function handle(array $payload): void
     {
         $this->semanticMemoryService->sweep();

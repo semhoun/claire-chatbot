@@ -178,6 +178,7 @@ class File
         return self::FILE_TYPE_UNKNOWN;
     }
 
+    /** @param array<string, mixed> $metadata */
     public function setGeneratedFileData(ChatHistory $chatHistory, string $filename, string $extension, int $fileSize = 0, array $metadata = []): void
     {
         $fileUuid = Uuid::uuid4()->toString();

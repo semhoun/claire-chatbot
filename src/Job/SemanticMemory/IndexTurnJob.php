@@ -19,6 +19,7 @@ final readonly class IndexTurnJob implements QueueDoer
         return new self($container->get(SemanticMemoryService::class));
     }
 
+    /** @param array<string, mixed> $payload */
     public function handle(array $payload): void
     {
         if (is_string($payload['userId'] ?? null) && is_string($payload['documentId'] ?? null)) {

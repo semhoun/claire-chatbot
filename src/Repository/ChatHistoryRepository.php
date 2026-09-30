@@ -94,12 +94,13 @@ class ChatHistoryRepository extends EntityRepository
             [$userId, self::MIN_MESSAGES],
         );
         $deleted = 0;
-        foreach ($threads as $threadId) {
+        foreach ($threads as $thread) {
             try {
-                $lock = new ChatThreadLock($connection->getNativeConnection(), $userId, $threadId);
+                $lock = new ChatThreadLock($connection->getNativeConnection(), $userId, $thread);
             } catch (ChatGenerationBusyException) {
                 continue;
             }
+
             try {
                 // Journalized threads include selected Telegram openings and rolled-back drafts.
                 $eligible = $connection->fetchOne(
@@ -107,15 +108,16 @@ class ChatHistoryRepository extends EntityRepository
                     . ' AND display_messages_count <= ? AND current_turn_id IS NULL'
                     . ' AND NOT EXISTS (SELECT 1 FROM chat_turn WHERE chat_turn.user_id = chat_history.user_id'
                     . ' AND chat_turn.thread_id = chat_history.thread_id)',
-                    [$userId, $threadId, self::MIN_MESSAGES],
+                    [$userId, $thread, self::MIN_MESSAGES],
                 );
-                if ($eligible !== false && $this->deleteThread($userId, $threadId)) {
+                if ($eligible !== false && $this->deleteThread($userId, $thread)) {
                     ++$deleted;
                 }
             } finally {
                 $lock->release();
             }
         }
+
         return $deleted;
     }
 
@@ -162,7 +164,7 @@ class ChatHistoryRepository extends EntityRepository
         return true;
     }
 
-    public function getCurrentUserChatHistory($session, string $threadId): ?ChatHistory
+    public function getCurrentUserChatHistory(\App\Services\Session\SessionInterface $session, string $threadId): ?ChatHistory
     {
         $user = $this->getEntityManager()->getRepository(User::class)->getCurrentUser($session);
         if ($user === null) {

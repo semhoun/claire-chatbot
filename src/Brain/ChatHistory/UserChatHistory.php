@@ -38,6 +38,7 @@ class UserChatHistory
     public const string AUDIO_REQUEST_ID_METADATA = 'claire_audio_request_id';
 
     public const string AUDIO_REQUEST_ID_PATTERN = '/\A[A-Za-z0-9._-]{1,128}\z/';
+
     /** @var list<Message> */
     protected array $history = [];
 
@@ -59,7 +60,7 @@ class UserChatHistory
 
     private bool $loaded = false;
 
-    private ?UserMessageStore $store = null;
+    private ?UserMessageStore $userMessageStore = null;
 
     private string $loadedMessages = '[]';
 
@@ -86,7 +87,7 @@ class UserChatHistory
 
     public function messageStore(): UserMessageStore
     {
-        return $this->store ??= new UserMessageStore($this);
+        return $this->userMessageStore ??= new UserMessageStore($this);
     }
 
     public function getThreadId(): ?string
@@ -121,6 +122,7 @@ class UserChatHistory
         if (isset($this->stored[$message->getId()])) {
             return $this;
         }
+
         $this->history[] = clone $message;
         $this->onNewMessage(clone $message);
         $this->persistHistories();
@@ -134,11 +136,13 @@ class UserChatHistory
         if ($limit !== null && $limit < 1) {
             throw new \InvalidArgumentException('Invalid history page limit');
         }
+
         $messages = array_column(array_values($this->stored), 'message');
         if ($before !== null) {
             $index = array_search($before, array_keys($this->stored), true);
             $messages = $index === false ? [] : array_slice($messages, 0, $index);
         }
+
         return $limit === null ? $messages : array_slice($messages, -$limit);
     }
 
@@ -147,6 +151,7 @@ class UserChatHistory
         if ($count < 0) {
             throw new \InvalidArgumentException('Invalid archive count');
         }
+
         if ($count > 0) {
             $this->history = array_slice($this->history, $count);
             $this->persistHistories();
@@ -160,11 +165,13 @@ class UserChatHistory
         if (! isset($this->stored[$message->getId()])) {
             throw new \RuntimeException('Cannot update an unknown history message');
         }
+
         foreach ($this->history as &$active) {
             if ($active->getId() === $message->getId()) {
                 $active = clone $message;
             }
         }
+
         unset($active);
         foreach ($this->displayHistory as &$visible) {
             if ($visible->getId() === $message->getId()) {
@@ -177,6 +184,7 @@ class UserChatHistory
                 }
             }
         }
+
         unset($visible);
         $this->stored[$message->getId()]['message'] = clone $message;
         $this->persistHistories();
@@ -194,50 +202,60 @@ class UserChatHistory
         if (! $this->pdo->inTransaction() || $this->threadId === null) {
             throw new \RuntimeException('Stopped history requires the terminal transaction');
         }
+
         if (preg_match(self::MESSAGE_ID_PATTERN, $assistantClaireId) !== 1) {
             throw new \InvalidArgumentException('Invalid stopped assistant identity');
         }
+
         $statement = $this->pdo->prepare('SELECT id, user_id, thread_id, status FROM chat_turn'
             . ' WHERE user_id = ? AND thread_id = ? ORDER BY history_revision DESC LIMIT 1');
         $statement->execute([$this->ownerId, $this->threadId]);
+
         $turn = $statement->fetch(PDO::FETCH_ASSOC);
         if ($turn === false || $turn['id'] !== $turnId || $turn['user_id'] !== (string) $this->ownerId
             || $turn['thread_id'] !== $this->threadId || $turn['status'] !== 'stopped') {
             throw new \RuntimeException('Stopped history terminal identity mismatch');
         }
+
         $this->refresh(); // Never bypass a stale facade's revision/snapshot/xmin guard.
         if ($this->loadedTurnId !== null || $messages === []
             || ! $messages[0] instanceof UserMessage || $messages[0] instanceof ToolResultMessage) {
             throw new \RuntimeException('Stopped history requires accepted user input');
         }
+
         $messages = array_map(static fn (Message $message): Message => clone $message, $messages);
         $ids = array_map(static fn (Message $message): string => $message->getId(), $messages);
         if (count(array_unique($ids)) !== count($ids)) {
             throw new \InvalidArgumentException('Duplicate stopped message identity');
         }
+
         $last = $messages[array_key_last($messages)];
         if ($last instanceof ToolCallMessage) {
             throw new \InvalidArgumentException('Stopped history contains unanswered tool calls');
         }
+
         new \App\Services\GenerationStopHistoryTrimmer()->trim($messages, PHP_INT_MAX);
         foreach ($messages as $index => $message) {
             if ($message instanceof ToolResultMessage) {
                 $calls = $messages[$index - 1]->getToolCalls();
                 $results = $message->getToolCalls();
                 if (array_map(static fn ($call) => $call->getCallId(), $calls)
-                    !== array_map(static fn ($call) => $call->getCallId(), $results)
-                    || array_any($results, static fn ($call): bool => ! $call->hasResult())) {
+                    !== array_map(static fn (\NeuronAI\Tools\ToolCall $toolCall): ?string => $toolCall->getCallId(), $results)
+                    || array_any($results, static fn (\NeuronAI\Tools\ToolCall $toolCall): bool => ! $toolCall->hasResult())) {
                     throw new \InvalidArgumentException('Stopped history contains incomplete tool results');
                 }
             }
+
             $meta = $message->jsonSerialize()['__meta'];
             if (! array_key_exists('timestamp', $meta)) {
                 $meta['timestamp'] = ($this->stored[$message->getId()]['message'] ?? null)
                     ?->getMetadata('timestamp') ?? gmdate(DATE_ATOM);
             }
+
             unset($meta[self::AUDIO_REQUEST_ID_METADATA], $meta[self::MESSAGE_ID_METADATA]);
             $message->setMetadata($meta);
         }
+
         $last->addMetadata('generation_stopped', true);
         $firstId = $ids[0];
         $cutoff = array_search($firstId, array_keys($this->stored), true);
@@ -247,6 +265,7 @@ class UserChatHistory
                 throw new \RuntimeException('Stopped message belongs to an earlier turn');
             }
         }
+
         $keep = static fn (Message $message): bool => isset($prefix[$message->getId()]);
         $this->history = [...array_filter($this->history, $keep), ...$messages];
         $this->displayHistory = array_values(array_filter($this->displayHistory, $keep));
@@ -256,8 +275,10 @@ class UserChatHistory
             if ($message === $last && ($message instanceof AssistantMessage || $message instanceof ToolResultMessage)) {
                 $visible->addMetadata(self::MESSAGE_ID_METADATA, $assistantClaireId);
             }
+
             $this->onNewMessage($visible);
         }
+
         $this->persistHistories();
     }
 
@@ -275,7 +296,7 @@ class UserChatHistory
         }
 
         $this->threadId = $threadId;
-        $this->store = null;
+        $this->userMessageStore = null;
         $this->loadedRevision = null;
         $this->loadedTurnId = null;
         $this->loaded = false;
@@ -426,13 +447,16 @@ class UserChatHistory
             if ($this->loadedRevision !== null) {
                 throw new \RuntimeException('Chat history changed or was deleted; refusing stale snapshot');
             }
+
             $this->history = [];
             $this->displayHistory = [];
             $this->title = null;
             $this->summary = null;
             $this->stored = [];
-            $this->loadedMessages = $this->loadedDisplayMessages = '[]';
-            $this->loadedStoredMessages = $this->loadedVersion = null;
+            $this->loadedMessages = '[]';
+            $this->loadedDisplayMessages = '[]';
+            $this->loadedStoredMessages = null;
+            $this->loadedVersion = null;
             $this->loaded = true;
             return;
         }
@@ -441,10 +465,12 @@ class UserChatHistory
         if ($this->loaded && $this->loadedRevision === null) {
             throw new \RuntimeException('Chat history changed or was deleted; refusing stale snapshot');
         }
+
         $this->loaded = true;
         if ((string) $history['user_id'] !== (string) $this->ownerId || $history['thread_id'] !== $this->threadId) {
             throw new \RuntimeException('Chat history owner or thread mismatch');
         }
+
         if ($this->loadedRevision !== null
             && ($this->loadedRevision !== (int) $history['revision']
                 || $this->loadedTurnId !== $history['current_turn_id']
@@ -454,6 +480,7 @@ class UserChatHistory
                 || $this->loadedVersion !== ($history['version'] ?? null))) {
             throw new \RuntimeException('Chat history changed or was deleted; refusing stale snapshot');
         }
+
         $this->loadedRevision = (int) $history['revision'];
         $this->loadedTurnId = $history['current_turn_id'];
         $this->loadedMessages = (string) $history[self::LLM_MESSAGES_COLUMN];
@@ -487,8 +514,10 @@ class UserChatHistory
                         break;
                     }
                 }
+
                 continue;
             }
+
             for ($visibleIndex = $cursor; $visibleIndex >= 0; --$visibleIndex) {
                 $visible = $this->displayHistory[$visibleIndex];
                 if ($this->fingerprint($message) === $this->fingerprint($visible)) {
@@ -498,6 +527,7 @@ class UserChatHistory
                 }
             }
         }
+
         $this->stored = [];
         if ($this->loadedStoredMessages !== null) {
             foreach (json_decode($this->loadedStoredMessages, true, flags: JSON_THROW_ON_ERROR) as $record) {
@@ -509,6 +539,7 @@ class UserChatHistory
         if (($this->history[0] ?? null) instanceof AssistantMessage) {
             array_unshift($this->history, $this->openingContextMessage());
         }
+
         $this->synchronizeStored();
     }
 
@@ -615,6 +646,7 @@ class UserChatHistory
             if (! $this->createIfMissing) {
                 throw new \RuntimeException('Chat history missing; refusing stale snapshot');
             }
+
             $postgres = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'pgsql';
             $insert = $this->pdo->prepare('INSERT INTO chat_history'
                 . ' (user_id, thread_id, messages, display_messages, display_messages_count, stored_messages, revision)'
@@ -626,6 +658,7 @@ class UserChatHistory
             } catch (\PDOException $exception) {
                 throw new \RuntimeException('Chat history changed or was deleted; refusing stale snapshot', 0, $exception);
             }
+
             $this->loadedRevision = 1;
             $this->loadedMessages = $messages;
             $this->loadedDisplayMessages = $display;
@@ -674,9 +707,11 @@ class UserChatHistory
         if ($this->loadedStoredMessages !== null) {
             $parameters['loaded_stored_messages'] = $this->loadedStoredMessages;
         }
+
         if ($this->loadedTurnId !== null) {
             $parameters['loaded_turn_id'] = $this->loadedTurnId;
         }
+
         if ($this->loadedVersion !== null) {
             $parameters['version'] = $this->loadedVersion;
         }
@@ -709,7 +744,7 @@ Prends-le en compte dans la suite de la conversation.
 CONTEXT
         );
         $userMessage->addMetadata('message_type', 'out_of_context');
-        $userMessage->setId('legacy-opening-' . hash('sha256', (string) $this->ownerId . ':' . $this->threadId));
+        $userMessage->setId('legacy-opening-' . hash('sha256', $this->ownerId . ':' . $this->threadId));
 
         return $userMessage;
     }
@@ -727,7 +762,11 @@ CONTEXT
         );
     }
 
-    /** @param list<array<string, mixed>> $payload @return list<Message> */
+    /**
+     * @param list<array<string, mixed>> $payload
+     *
+     * @return list<Message>
+     */
     private function deserializeMessages(array $payload, string $projection): array
     {
         $messages = [];
@@ -738,6 +777,7 @@ CONTEXT
             ));
             $messages[] = new MessageDeserializer()->deserialize($data);
         }
+
         return $messages;
     }
 
@@ -756,10 +796,12 @@ CONTEXT
             foreach ($this->displayHistory as $message) {
                 $this->stored[$message->getId()] = ['message' => clone $message, 'archived' => true];
             }
+
             foreach ($this->history as $index => $message) {
                 if (isset($this->stored[$message->getId()])) {
                     continue;
                 }
+
                 $position = count($this->stored);
                 foreach (array_slice($this->history, $index + 1) as $next) {
                     $found = array_search($next->getId(), array_keys($this->stored), true);
@@ -768,18 +810,22 @@ CONTEXT
                         break;
                     }
                 }
+
                 $this->stored = array_slice($this->stored, 0, $position, true)
                     + [$message->getId() => ['message' => clone $message, 'archived' => false]]
                     + array_slice($this->stored, $position, null, true);
             }
         }
+
         foreach ($this->stored as &$record) {
             $record['archived'] = true;
         }
+
         unset($record);
         foreach ($this->displayHistory as $message) {
             $this->stored[$message->getId()] = ['message' => clone $message, 'archived' => true];
         }
+
         foreach ($this->history as $message) {
             $id = $message->getId();
             $this->stored[$id] ??= ['message' => clone $message, 'archived' => false];

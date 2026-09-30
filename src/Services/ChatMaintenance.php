@@ -101,6 +101,7 @@ final readonly class ChatMaintenance
             if ($turn !== null) {
                 return [...$state, 'result' => 'chat-turn-retained', 'turnStatus' => $turn['status']];
             }
+
             $journal = $this->connection->fetchOne(
                 'SELECT id FROM telegram_generation WHERE delivered = 0 '
                 . 'AND id = ? AND user_id = ? AND thread_id = ?',
@@ -170,7 +171,8 @@ final readonly class ChatMaintenance
         }
 
         $rows = $this->connection->fetchAllAssociative(
-            $sql . ' ORDER BY completed_at, id LIMIT ' . ($limit + 1), $parameters,
+            $sql . ' ORDER BY completed_at, id LIMIT ' . ($limit + 1),
+            $parameters,
         );
         $more = count($rows) > $limit;
         if ($more) {
@@ -183,7 +185,8 @@ final readonly class ChatMaintenance
             $result = $this->compactRecord($telegramJournal, $row, $cutoff, $apply);
             $counts[$result] = ($counts[$result] ?? 0) + 1;
             $next = 'sql:v1:' . base64_encode(json_encode(
-                [(int) $row['completed_at'], $row['id']], JSON_THROW_ON_ERROR,
+                [(int) $row['completed_at'], $row['id']],
+                JSON_THROW_ON_ERROR,
             ));
         }
 

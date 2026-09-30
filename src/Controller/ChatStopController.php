@@ -18,7 +18,7 @@ final readonly class ChatStopController
 
     public function __construct(
         private EntityManagerInterface $entityManager,
-        private ChatStopRequests $stopRequests,
+        private ChatStopRequests $chatStopRequests,
         private Settings $settings,
     ) {
     }
@@ -29,18 +29,21 @@ final readonly class ChatStopController
         if ($this->settings->get('llm.stop.enabled', false) !== true) {
             return $response->withStatus(404);
         }
+
         $user = $this->entityManager->getRepository(User::class)->getCurrentUser($this->getSession($request));
         if ($user === null) {
             return $response->withStatus(401);
         }
+
         $body = (array) ($request->getParsedBody() ?? []);
         if (! is_string($body['threadId'] ?? null) || $body['threadId'] === '' || strlen($body['threadId']) > 128
             || ! is_string($body['generationId'] ?? null)
             || preg_match('/\A[A-Za-z][A-Za-z0-9_.:-]{0,127}\z/', $body['generationId']) !== 1) {
             return $response->withStatus(400);
         }
+
         // Channel and owner are never accepted from the body. The SQL identity proves acceptance/ownership.
-        $record = $this->stopRequests->request(
+        $record = $this->chatStopRequests->request(
             (string) $user->getId(),
             $body['threadId'],
             'web',
@@ -49,6 +52,7 @@ final readonly class ChatStopController
         if ($record === null) {
             return $response->withStatus(404);
         }
+
         $pending = $record['status'] === 'accepted';
         $response->getBody()->write(json_encode([
             'status' => $pending ? 'queued' : $record['status'],

@@ -22,6 +22,7 @@ final class Budget
         if ($bytes < 0 || $bytes > $this->limit - $this->bytes) {
             return false;
         }
+
         $this->bytes += $bytes;
         return true;
     }

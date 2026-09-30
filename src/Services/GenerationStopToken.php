@@ -11,7 +11,8 @@ use NeuronAI\HttpClient\StoppableHttpClient;
 /** One user generation only; the predicate must capture its immutable SQL identity. */
 final class GenerationStopToken
 {
-    private Closure $predicate;
+    private readonly Closure $predicate;
+
     private bool $stopped = false;
 
     public function __construct(callable $predicate)
@@ -36,8 +37,8 @@ final class GenerationStopToken
         }
     }
 
-    public function httpClient(HttpClientInterface $client): StoppableHttpClient
+    public function httpClient(HttpClientInterface $httpClient): StoppableHttpClient
     {
-        return new StoppableHttpClient($client, $this->isRequested(...));
+        return new StoppableHttpClient($httpClient, $this->isRequested(...));
     }
 }

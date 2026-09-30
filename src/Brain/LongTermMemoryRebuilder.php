@@ -20,8 +20,8 @@ final class LongTermMemoryRebuilder extends \NeuronAI\Agent\Agent
         private readonly SessionInterface $session,
     ) {
         parent::__construct(workflowId: 'memory-rebuild-' . \Ramsey\Uuid\Uuid::uuid7()->toString());
-        (new \App\Brain\Event\TimestampObserver())->subscribeTo($this);
-        (new \App\Brain\Observability\Observer())->subscribeTo($this);
+        new \App\Brain\Event\TimestampObserver()->subscribeTo($this);
+        new \App\Brain\Observability\Observer()->subscribeTo($this);
     }
 
     public function rebuild(): string

@@ -24,6 +24,7 @@ trait UserChatHistory
             if ($this->userChatHistory !== null && $copy->messageStore === $this->userChatHistory->messageStore()) {
                 $copy->messageStore = null;
             }
+
             $copy->userChatHistory = null;
         }
 

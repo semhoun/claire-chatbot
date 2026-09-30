@@ -59,6 +59,7 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
                     || preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $submissionId) !== 1) {
                     throw new \InvalidArgumentException('Stable submission ID is required');
                 }
+
                 $deduplicationKey = $this->prefix() . 'chat:submission:'
                     . hash('sha256', json_encode([$userId, $submissionId], JSON_THROW_ON_ERROR));
                 $messageId = $payload['messageId'] ?? '';
@@ -171,11 +172,11 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
         $this->transitionMessage($queueMessage, 'fail');
     }
 
-    public function isFailed(QueueMessage $message): bool
+    public function isFailed(QueueMessage $queueMessage): bool
     {
         return $this->queueRedisConnection->evaluate(
             "return redis.call('HGET', KEYS[1], 'state') or ''",
-            [$this->jobKey($message->id)],
+            [$this->jobKey($queueMessage->id)],
             1,
         ) === 'dead';
     }
@@ -205,6 +206,7 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
             for ($i = 0; $i < $count; $i += 2) {
                 $data[$values[$i]] = $values[$i + 1];
             }
+
             try {
                 $messages[] = new QueueMessage(
                     $data['id'],
@@ -217,6 +219,7 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
                 // Malformed jobs cannot safely identify a conversation.
             }
         }
+
         return $messages;
     }
 

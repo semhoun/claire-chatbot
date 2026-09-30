@@ -19,9 +19,7 @@ final class ArrayFlash implements FlashInterface
 
     public function add(string $key, string $message): void
     {
-        if (! isset($this->messages[$key])) {
-            $this->messages[$key] = [];
-        }
+        $this->messages[$key] ??= [];
 
         $this->messages[$key][] = $message;
         $this->consumed[$key] = false;

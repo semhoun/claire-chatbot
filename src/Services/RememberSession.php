@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use RuntimeException;
-
-use Psr\Http\Message\ServerRequestInterface as Request;
-
 use App\Services\Session\SessionInterface;
+use Psr\Http\Message\ServerRequestInterface as Request;
+use RuntimeException;
 
 final readonly class RememberSession
 {
@@ -33,11 +31,13 @@ final readonly class RememberSession
         if ($session->get(Auth::AUTHENTICATED) !== true || ! is_string($userId) || $userId === '') {
             throw new RuntimeException('Cannot remember an unauthenticated session.');
         }
+
         if (! $this->redisClient->setex($this->key($id), self::TTL, json_encode([
             'user_id' => $userId, 'expires' => $expires,
         ], JSON_THROW_ON_ERROR))) {
             throw new RuntimeException('Unable to store remember session.');
         }
+
         $session->set(self::ID, $id);
         $session->set(self::EXPIRES, $expires);
         return self::COOKIE . '=' . $token . '; Path=/; Max-Age=' . self::TTL
@@ -56,15 +56,18 @@ final readonly class RememberSession
         if (! is_string($id) || ! preg_match('/^[a-f0-9]{64}$/D', $id)) {
             return null;
         }
+
         $value = $this->redisClient->get($this->key($id));
         try {
             $data = $value === false ? null : json_decode($value, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
             return null;
         }
+
         if (! self::validRecord($data, time())) {
             return null;
         }
+
         return ['user_id' => $data['user_id'], 'expires' => $data['expires']];
     }
 
@@ -73,6 +76,7 @@ final readonly class RememberSession
         if (! $session->has(self::ID)) {
             return true; // Embed and existing short-lived sessions are not cookie sessions.
         }
+
         $data = $this->find($session->get(self::ID));
         return $data !== null && $data['user_id'] === $session->get(Auth::USERID)
             && $data['expires'] === $session->get(self::EXPIRES);
@@ -101,11 +105,6 @@ final readonly class RememberSession
             && in_array($request->getHeaderLine('Sec-Fetch-Site'), ['', 'same-origin'], true);
     }
 
-    private function key(string $id): string
-    {
-        return self::rememberKey($this->settings->get('redis.prefix'), $id);
-    }
-
     public static function rememberKey(string $prefix, string $id): string
     {
         return $prefix . 'auth:remember:' . $id;
@@ -115,5 +114,10 @@ final readonly class RememberSession
     {
         return is_array($data) && is_int($data['expires'] ?? null) && $data['expires'] > $now
             && is_string($data['user_id'] ?? null) && $data['user_id'] !== '';
+    }
+
+    private function key(string $id): string
+    {
+        return self::rememberKey($this->settings->get('redis.prefix'), $id);
     }
 }

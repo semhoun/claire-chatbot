@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
-use App\Renderer\VueShell;
 use App\Entity\ChatHistory;
 use App\Entity\File;
 use App\Middleware\JwtSessionMiddleware;
+use App\Renderer\VueShell;
 use App\Services\Auth;
 use App\Services\ChatGenerationState;
 use App\Services\JwtTokenService;
@@ -124,6 +124,7 @@ final readonly class AuthController
         if (! $this->rememberSession->allows($request)) {
             return $this->jsonResponse($response, ['error' => 'forbidden'], 403);
         }
+
         $session = $request->getAttribute('session');
         if (! $session instanceof SessionInterface) {
             return $response->withStatus(500);
@@ -140,6 +141,7 @@ final readonly class AuthController
         if (! $this->rememberSession->allows($request)) {
             return $this->jsonResponse($response, ['error' => 'forbidden'], 403);
         }
+
         $id = $this->rememberSession->cookieId($request->getCookieParams()[RememberSession::COOKIE] ?? null);
         $data = $this->rememberSession->find($id);
         $session = $this->getSession($request);
@@ -148,6 +150,7 @@ final readonly class AuthController
             return $this->jsonResponse($response, ['error' => 'unauthorized'], 401)
                 ->withAddedHeader('Set-Cookie', $this->rememberSession->clearCookie());
         }
+
         $session->set(RememberSession::ID, $id);
         $session->set(RememberSession::EXPIRES, $data['expires']);
         // JWT middleware emits the short-lived header. Never extend the cookie or Redis TTL here.
@@ -305,11 +308,14 @@ final readonly class AuthController
         try {
             if ($batched) {
                 $token = $this->jwtTokenService->generateResourcesToken(
-                    $session, $resources, $request->getAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT)
+                    $session,
+                    $resources,
+                    $request->getAttribute(JwtSessionMiddleware::AUTH_EXPIRES_AT)
                 );
                 $claims = $this->jwtTokenService->parseResourcesToken($token);
                 return $this->jsonResponse($response, ['token' => $token, 'expiresAt' => $claims['expiresAt']]);
             }
+
             $token = $type === 'file'
                 ? $this->jwtTokenService->generateFileToken($session, $payload['fileId'])
                 : $this->jwtTokenService->generateStreamToken($session, $payload['threadId'], $payload['sessionId']);

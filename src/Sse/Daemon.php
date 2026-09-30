@@ -24,23 +24,24 @@ final readonly class Daemon
         $config = new Config($settings);
         $loop = Loop::get();
         $budget = new Budget($config->get('max_global_buffer'));
-        $backend = new HttpBackend($config, $loop, $budget);
+        $httpBackend = new HttpBackend($config, $loop, $budget);
         $application = null;
-        $redis = new RedisHub($settings, $config, $loop, static function () use (&$application): void {
+        $redisHub = new RedisHub($settings, $config, $loop, static function () use (&$application): void {
             $application?->unavailable();
         });
-        $application = new Server($settings, $config, $loop, $backend, $redis, $budget, static fn (): float => microtime(true));
-        $socket = new SocketServer($config->get('listen'), [], $loop);
+        $application = new Server($settings, $config, $loop, $httpBackend, $redisHub, $budget, static fn (): float => microtime(true));
+        $socketServer = new SocketServer($config->get('listen'), [], $loop);
         $sockets = [];
         $remoteSockets = [];
         // Bound even unauthenticated sockets and incomplete headers, before HTTP parsing/admission.
-        $socket->on('connection', static function (ConnectionInterface $connection) use (&$sockets, &$remoteSockets, $config, $loop, $budget): void {
+        $socketServer->on('connection', static function (ConnectionInterface $connection) use (&$sockets, &$remoteSockets, $config, $loop, $budget): void {
             // React sockets can retain up to 64 KiB before write=false; reserve this independently of SSE frames.
             if (count($sockets) >= $config->get('max_connections') + $config->get('max_http_requests')
                 || ! $budget->acquire(65536)) {
                 $connection->close();
                 return;
             }
+
             $id = spl_object_id($connection);
             $sockets[$id] = $connection;
             $remote = parse_url((string) $connection->getRemoteAddress());
@@ -54,6 +55,7 @@ final readonly class Daemon
                     $connection->close();
                     return;
                 }
+
                 $headerBytes += strlen($chunk);
                 $headers .= $chunk;
                 if (str_contains($headers, "\r\n\r\n")) {
@@ -72,45 +74,48 @@ final readonly class Daemon
                 $headerBytes = 0;
             });
         });
-        $http = new HttpServer(
+        $httpServer = new HttpServer(
             $loop,
             new StreamingRequestMiddleware(),
-            static function (ServerRequestInterface $request) use ($application, &$remoteSockets): mixed {
-                $params = $request->getServerParams();
+            static function (ServerRequestInterface $serverRequest) use ($application, &$remoteSockets): mixed {
+                $params = $serverRequest->getServerParams();
                 $connection = $remoteSockets[($params['REMOTE_ADDR'] ?? '') . ':' . ($params['REMOTE_PORT'] ?? '')] ?? null;
-                return $application->handle($request, $connection !== null ? $connection->close(...) : null);
+                return $application->handle($serverRequest, $connection instanceof \React\Socket\ConnectionInterface ? $connection->close(...) : null);
             }
         );
         // Never log request URLs or credentials.
-        $http->on('error', static function (): void {
+        $httpServer->on('error', static function (): void {
         });
-        $http->listen($socket);
-        $redis->start();
+        $httpServer->listen($socketServer);
+
+        $redisHub->start();
         $last = microtime(true);
         stream_set_blocking(STDOUT, false);
-        $metrics = $loop->addPeriodicTimer(15, static function () use ($application, $redis, $backend, &$last): void {
+        $metrics = $loop->addPeriodicTimer(15, static function () use ($application, $redisHub, $httpBackend, &$last): void {
             $now = microtime(true);
             fwrite(STDOUT, json_encode([
-                ...$application->metrics(), ...$redis->metrics(), ...$backend->metrics(),
+                ...$application->metrics(), ...$redisHub->metrics(), ...$httpBackend->metrics(),
                 'loop_lag_seconds' => max(0, $now - $last - 15),
             ], JSON_THROW_ON_ERROR) . "\n");
             $last = $now;
         });
         $stopping = false;
-        $shutdown = static function () use (&$stopping, &$sockets, $socket, $application, $redis, $backend, $loop, $config, $metrics): void {
+        $shutdown = static function () use (&$stopping, &$sockets, $socketServer, $application, $redisHub, $httpBackend, $loop, $config, $metrics): void {
             if ($stopping) {
                 return;
             }
+
             $stopping = true;
-            $socket->close();
+            $socketServer->close();
             $loop->cancelTimer($metrics);
             $application->stop();
-            $redis->stop();
-            $loop->addTimer($config->get('shutdown_timeout'), static function () use (&$sockets, $backend, $loop): void {
-                $backend->stop();
-                foreach ($sockets as $connection) {
-                    $connection->close();
+            $redisHub->stop();
+            $loop->addTimer($config->get('shutdown_timeout'), static function () use (&$sockets, $httpBackend, $loop): void {
+                $httpBackend->stop();
+                foreach ($sockets as $socket) {
+                    $socket->close();
                 }
+
                 $loop->stop();
             });
         };

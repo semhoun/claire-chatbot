@@ -33,7 +33,7 @@ final readonly class TelegramChatActionHeartbeat
                     $telegramAction->value,
                 );
             }
-            : Closure::fromCallable($sendAction);
+        : Closure::fromCallable($sendAction);
     }
 
     /**
@@ -60,8 +60,7 @@ final readonly class TelegramChatActionHeartbeat
     private function start(
         int $chatId,
         TelegramAction $telegramAction,
-    ): ?int
-    {
+    ): ?int {
         if (! $this->isSupported()) {
             return null;
         }

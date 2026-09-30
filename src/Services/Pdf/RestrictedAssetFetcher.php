@@ -15,7 +15,7 @@ final class RestrictedAssetFetcher extends AssetFetcher
         // Never initialize or delegate to the network-capable parent implementation.
     }
 
-    public function fetchDataFromPath($path, $originalSrc = null): string
+    public function fetchDataFromPath(mixed $path, mixed $originalSrc = null): string
     {
         if (! in_array($path, $this->paths, true)
             || ($originalSrc !== null && ! in_array($originalSrc, $this->paths, true))) {
@@ -25,6 +25,7 @@ final class RestrictedAssetFetcher extends AssetFetcher
             );
         }
 
+        // The prepared file may disappear; convert read warnings to the controlled error below.
         $data = @file_get_contents($path);
         if ($data === false) {
             throw new RuntimeException('Cannot read prepared PDF image.');
@@ -33,12 +34,12 @@ final class RestrictedAssetFetcher extends AssetFetcher
         return $data;
     }
 
-    public function fetchLocalContent($path, $originalSrc): string
+    public function fetchLocalContent(mixed $path, mixed $originalSrc): string
     {
         return $this->fetchDataFromPath($path, $originalSrc);
     }
 
-    public function fetchRemoteContent($path): string
+    public function fetchRemoteContent(mixed $path): string
     {
         throw new RuntimeException('PDF external resources are forbidden.');
     }

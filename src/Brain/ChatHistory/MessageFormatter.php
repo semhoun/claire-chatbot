@@ -68,6 +68,7 @@ final class MessageFormatter
             if ($message instanceof ToolCallMessage) {
                 $formattedMessage['message'] .= $message->getContent();
             }
+
             $tools = $this->formatTools($message);
             if ($tools !== []) {
                 $formattedMessage['toolsCall'] = array_merge($formattedMessage['toolsCall'], $tools);
@@ -91,6 +92,7 @@ final class MessageFormatter
             $formattedMessage['id'] = $submissionId;
             $formattedMessage['submissionId'] = $submissionId;
         }
+
         $messageId = $message->getMetadata(UserChatHistory::MESSAGE_ID_METADATA);
         if ($message instanceof AssistantMessage && is_string($messageId)
             && preg_match(UserChatHistory::MESSAGE_ID_PATTERN, $messageId) === 1) {
@@ -111,8 +113,8 @@ final class MessageFormatter
     {
         $tools = [];
         if ($message instanceof ToolCallMessage) {
-            foreach ($message->getToolCalls() as $tool) {
-                $callId = $tool->getCallId();
+            foreach ($message->getToolCalls() as $toolCall) {
+                $callId = $toolCall->getCallId();
 
                 // On regarde si dans les réponse on a une réponse avec cette id, si c'est le cas on ne le décodera pas
                 foreach ($this->displayHistory as $toolResult) {
@@ -128,31 +130,31 @@ final class MessageFormatter
                 }
 
                 // On a pas trouvé de réponse donc c'est un tool encore en cours d'éxécution
-                $tools[] = $this->formatTool($tool, false);
+                $tools[] = $this->formatTool($toolCall, false);
             }
 
             return $tools;
         }
 
-        foreach ($message->getToolCalls() as $tool) {
-            $tools[] = $this->formatTool($tool, $message instanceof ToolResultMessage);
+        foreach ($message->getToolCalls() as $toolCall) {
+            $tools[] = $this->formatTool($toolCall, $message instanceof ToolResultMessage);
         }
 
         return $tools;
     }
 
     /** @return array<string, mixed> */
-    private function formatTool(ToolCall $tool, bool $isResult): array
+    private function formatTool(ToolCall $toolCall, bool $isResult): array
     {
         $toolData = [
-            'id' => $tool->getCallId(),
-            'name' => $tool->getName(),
+            'id' => $toolCall->getCallId(),
+            'name' => $toolCall->getName(),
             'inputs' => [],
             'running' => ! $isResult,
             'result' => null,
         ];
 
-        foreach ($tool->getInputs() as $name => $val) {
+        foreach ($toolCall->getInputs() as $name => $val) {
             $toolData['inputs'][] = [
                 'name' => $name,
                 'value' => $val,
@@ -160,7 +162,7 @@ final class MessageFormatter
         }
 
         if ($isResult) {
-            $result = $tool->getResult();
+            $result = $toolCall->getResult();
             $toolData['result'] = $result instanceof \NeuronAI\Tools\ToolOutput ? $result->getText() : $result;
             if ($result instanceof \NeuronAI\Tools\ToolOutput && $result->isError()
                 && str_starts_with($result->getText(), 'CANCELLED:')) {

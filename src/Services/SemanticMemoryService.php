@@ -182,13 +182,15 @@ final readonly class SemanticMemoryService
                 $this->semanticMemoryRegistry->lock($userId);
                 $version = $this->semanticMemoryRegistry->preference($userId)['indexVersion'];
                 // A killed writer can leave a staged copy containing now-erased text.
-                foreach (glob($directory . '/.semantic-*') ?: [] as $temporary) {
+                $temporaryFiles = glob($directory . '/.semantic-*');
+                foreach ($temporaryFiles === false ? [] : $temporaryFiles as $temporary) {
                     if (! unlink($temporary)) {
                         throw new RuntimeException('Cannot purge staged semantic index');
                     }
                 }
 
-                foreach (glob($directory . '/*.store') ?: [] as $path) {
+                $stores = glob($directory . '/*.store');
+                foreach ($stores === false ? [] : $stores as $path) {
                     $documents = str_starts_with(basename($path), 'v' . $version . '-')
                         ? $this->readValid($userId, $path) : [];
                     if ($documents === []) {
@@ -270,6 +272,10 @@ final readonly class SemanticMemoryService
         return $documents;
     }
 
+    /**
+     * @param array<string, mixed> $source
+     * @param list<int|float> $embedding
+     */
     private function document(array $source, array $embedding): Document
     {
         return new Document($source['content'])->setId($source['id'])
@@ -284,7 +290,11 @@ final readonly class SemanticMemoryService
             ]);
     }
 
-    /** Caller holds the stable per-owner lock; every mutation publishes a complete file with rename. */
+    /**
+     * Caller holds the stable per-owner lock; every mutation publishes a complete file with rename.
+     *
+     * @param list<Document> $documents
+     */
     private function replace(string $directory, string $name, array $documents): void
     {
         $temporary = tempnam($directory, '.semantic-');

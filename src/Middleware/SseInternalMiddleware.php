@@ -23,6 +23,7 @@ final readonly class SseInternalMiddleware implements MiddlewareInterface
         if (! is_string($secret) || trim($secret) === '') {
             throw new RuntimeException('SSE internal secret is required.');
         }
+
         $this->secret = $secret;
     }
 
@@ -48,6 +49,7 @@ final readonly class SseInternalMiddleware implements MiddlewareInterface
                 $response = new Response(503);
             }
         }
+
         return $response->withoutHeader('X-Claire-Token')->withoutHeader('X-Claire-Minitoken')
             ->withHeader('Cache-Control', 'no-store')->withHeader('Referrer-Policy', 'no-referrer')
             ->withHeader('Content-Type', 'application/json');

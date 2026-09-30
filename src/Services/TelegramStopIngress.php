@@ -16,26 +16,32 @@ final readonly class TelegramStopIngress
 {
     public function __construct(
         private Connection $connection,
-        private ChatStopRequests $stops,
+        private ChatStopRequests $chatStopRequests,
         private Settings $settings,
-        private TelegramBotApi $bot,
+        private TelegramBotApi $telegramBotApi,
         private LoggerInterface $logger,
     ) {
     }
 
-    /** Read-only source authentication; never creates or locks a Telegram session. */
+    /**
+     * Read-only source authentication; never creates or locks a Telegram session.
+     *
+     * @return array<string, mixed>|null
+     */
     public function accept(Update $update): ?array
     {
         $message = $update->message;
-        if (! $this->settings->get('llm.stop.enabled', false) || $message === null || $message->from === null
-            || $message->from->isBot || $message->senderChat !== null
+        if (! $this->settings->get('llm.stop.enabled', false) || ! $message instanceof \Phptg\BotApi\Type\Message || ! $message->from instanceof \Phptg\BotApi\Type\User
+            || $message->from->isBot || $message->senderChat instanceof \Phptg\BotApi\Type\Chat
             || str_starts_with($message->text ?? '', '/')) {
             return null;
         }
-        if ($message->text === null && $message->voice === null && $message->audio === null
-            && $message->document === null && ($message->photo === null || $message->photo === [])) {
+
+        if ($message->text === null && ! $message->voice instanceof \Phptg\BotApi\Type\Voice && ! $message->audio instanceof \Phptg\BotApi\Type\Audio
+            && ! $message->document instanceof \Phptg\BotApi\Type\Document && ($message->photo === null || $message->photo === [])) {
             return null;
         }
+
         $userId = $this->connection->fetchOne(
             'SELECT id FROM account WHERE telegram_id = ?',
             [(string) $message->from->id]
@@ -43,6 +49,7 @@ final readonly class TelegramStopIngress
         if ($userId === false) {
             return null;
         }
+
         $botId = explode(':', (string) $this->settings->get('telegram.bot_token'), 2)[0];
         $session = $this->connection->fetchOne(
             'SELECT session_data FROM telegram_session WHERE telegram_id = ?',
@@ -53,6 +60,7 @@ final readonly class TelegramStopIngress
         if ($threadId === '') {
             $threadId = 'telegram' . TelegramJournal::id($botId, 'update:' . $update->updateId);
         }
+
         return $this->register(
             $botId,
             $update->updateId,
@@ -63,7 +71,11 @@ final readonly class TelegramStopIngress
         );
     }
 
-    /** Acceptance must call this BEFORE enqueue and preserve the returned thread binding on retries. */
+    /**
+     * Acceptance must call this BEFORE enqueue and preserve the returned thread binding on retries.
+     *
+     * @return array<string, mixed>
+     */
     public function register(
         string $botId,
         int $updateId,
@@ -87,16 +99,18 @@ final readonly class TelegramStopIngress
                     'id' => $id, 'bot_id' => $botId, 'update_id' => $updateId, 'user_id' => $userId,
                     'thread_id' => $threadId, 'chat_id' => (string) $chatId, 'topic_id' => $topicId,
                 ]);
-                $this->stops->register($userId, $threadId, 'telegram', $id);
+                $this->chatStopRequests->register($userId, $threadId, 'telegram', $id);
             });
         } catch (UniqueConstraintViolationException) {
             // First acceptance owns the binding, even after a thread switch.
         }
+
         $target = $this->connection->fetchAssociative('SELECT * FROM telegram_stop_target WHERE id = ?', [$id]);
         if ($target === false || $target['user_id'] !== $userId || $target['chat_id'] !== (string) $chatId
             || (int) $target['topic_id'] !== $topicId) {
             throw new \RuntimeException('Telegram acceptance identity mismatch');
         }
+
         return $target;
     }
 
@@ -104,26 +118,30 @@ final readonly class TelegramStopIngress
     public function handle(Update $update): bool
     {
         $message = $update->message;
-        if ($message === null || preg_match(
+        if (! $message instanceof \Phptg\BotApi\Type\Message || preg_match(
             '/\A\/stop(?:@([A-Za-z0-9_]+))?(?:\s|\z)/i',
             $message->text ?? '',
             $match
         ) !== 1) {
             return false;
         }
+
         if (! $this->settings->get('llm.stop.enabled', false)) {
             return true;
         }
+
         if (isset($match[1]) && $match[1] !== '' && strcasecmp(
             $match[1],
             ltrim((string) $this->settings->get('telegram.bot_username', ''), '@')
         ) !== 0) {
             return true;
         }
+
         $sender = $message->from;
-        if ($sender === null || $sender->isBot || $message->senderChat !== null) {
+        if (! $sender instanceof \Phptg\BotApi\Type\User || $sender->isBot || $message->senderChat instanceof \Phptg\BotApi\Type\Chat) {
             return true;
         }
+
         $botId = explode(':', (string) $this->settings->get('telegram.bot_token'), 2)[0];
         $id = TelegramJournal::id($botId, (string) $update->updateId);
         $scope = hash('sha256', json_encode([$botId, $sender->id, $message->chat->id,
@@ -149,18 +167,21 @@ final readonly class TelegramStopIngress
                 [$botId, $userId, (string) $message->chat->id, $message->messageThreadId ?? 0, $update->updateId],
             );
             try {
-                $this->connection->transactional(fn () => $this->connection->insert('telegram_stop_update', [
+                $this->connection->transactional(fn (): int|string => $this->connection->insert('telegram_stop_update', [
                     'id' => $id, 'target_id' => $target === false ? null : $target,
                     'scope_id' => $scope, 'created_at' => time(),
                 ]));
             } catch (UniqueConstraintViolationException) {
                 // Concurrent retry uses the winner's frozen target, including a null target.
             }
+
             $binding = $this->connection->fetchAssociative('SELECT * FROM telegram_stop_update WHERE id = ?', [$id]);
         }
+
         if ($binding['scope_id'] !== $scope) {
             return true;
         }
+
         $result = null;
         if ($binding['target_id'] !== null) {
             $target = $this->connection->fetchAssociative(
@@ -170,9 +191,10 @@ final readonly class TelegramStopIngress
             if ($target !== false && $target['user_id'] === $userId
                 && $target['bot_id'] === $botId && $target['chat_id'] === (string) $message->chat->id
                 && (int) $target['topic_id'] === ($message->messageThreadId ?? 0)) {
-                $result = $this->stops->request($target['user_id'], $target['thread_id'], 'telegram', $target['id']);
+                $result = $this->chatStopRequests->request($target['user_id'], $target['thread_id'], 'telegram', $target['id']);
             }
         }
+
         // Claim before the API call: an uncertain notification must never repeat inference or retarget.
         if ($this->connection->executeStatement(
             'UPDATE telegram_stop_update SET notice_claimed = 1 WHERE id = ? AND notice_claimed = 0',
@@ -182,7 +204,7 @@ final readonly class TelegramStopIngress
                 $notice = ($result['status'] ?? '') === 'accepted'
                     ? 'Arret demande. Un outil deja lance peut terminer.'
                     : 'Aucune generation active a arreter.';
-                $sent = $this->bot->sendMessage(
+                $sent = $this->telegramBotApi->sendMessage(
                     chatId: $message->chat->id,
                     text: $notice,
                     messageThreadId: $message->messageThreadId
@@ -194,6 +216,7 @@ final readonly class TelegramStopIngress
                 $this->logger->warning('Telegram stop notice failed', ['exception' => $error::class]);
             }
         }
+
         return true;
     }
 }

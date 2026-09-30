@@ -11,7 +11,7 @@ use Slim\Exception\HttpBadRequestException;
 
 final readonly class SseInternalController
 {
-    public function __construct(private SseAuthorization $authorizations)
+    public function __construct(private SseAuthorization $sseAuthorization)
     {
     }
 
@@ -20,6 +20,7 @@ final readonly class SseInternalController
         if (strtolower(trim(explode(';', $request->getHeaderLine('Content-Type'))[0])) !== 'application/json') {
             throw new HttpBadRequestException($request);
         }
+
         // Bound before decoding; the private API accepts credentials, not event/audio payloads.
         $raw = $request->getBody()->read(16385);
         try {
@@ -27,22 +28,27 @@ final readonly class SseInternalController
         } catch (\JsonException) {
             throw new HttpBadRequestException($request);
         }
+
         if (! is_array($input) || array_is_list($input)) {
             throw new HttpBadRequestException($request);
         }
+
         $path = $request->getUri()->getPath();
         if ($path === '/open') {
-            $result = $this->authorizations->open($input);
+            $result = $this->sseAuthorization->open($input);
         } else {
             if (count($input) !== 1 || ! is_string($input['authorization'] ?? null)) {
                 throw new HttpBadRequestException($request);
             }
+
             if ($path === '/close') {
-                $this->authorizations->close($input['authorization']);
+                $this->sseAuthorization->close($input['authorization']);
                 return $response->withStatus(204);
             }
-            $result = $this->authorizations->snapshot($input['authorization']);
+
+            $result = $this->sseAuthorization->snapshot($input['authorization']);
         }
+
         $response->getBody()->write(json_encode($result, JSON_THROW_ON_ERROR));
         return $response;
     }

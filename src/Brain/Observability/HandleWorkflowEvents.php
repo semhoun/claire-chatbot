@@ -32,10 +32,13 @@ trait HandleWorkflowEvents
             }
         } finally {
             // Failed inference/tools and suspensions may have no matching domain stop event.
-            foreach ($this->getActiveSpans() as $span) {
-                $span->end();
+            foreach ($this->getActiveSpans() as $activeSpan) {
+                $activeSpan->end();
             }
-            $this->spans = $this->agentSpans = $this->toolCalls = [];
+
+            $this->spans = [];
+            $this->agentSpans = [];
+            $this->toolCalls = [];
             unset($this->message, $this->inference, $this->schema, $this->extract, $this->deserialize, $this->validate);
         }
     }
@@ -46,9 +49,10 @@ trait HandleWorkflowEvents
             ->startSpan();
         $this->spanSetAttributes($span, 'neuron.Before', $workflowNodeStart->state->all());
         if ($workflowNodeStart->state instanceof \NeuronAI\Agent\AgentState
-            && isset($workflowNodeStart->state->request)) {
+            && (property_exists($workflowNodeStart->state, 'request') && $workflowNodeStart->state->request instanceof \NeuronAI\Agent\InferenceRequest)) {
             $span->setAttribute('neuron.instructions', $workflowNodeStart->state->request->instructions->getContent() ?? '');
         }
+
         $this->spans[$workflowNodeStart->node] = $span;
     }
 

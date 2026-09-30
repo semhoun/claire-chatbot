@@ -188,7 +188,7 @@ final class TelegramServiceStreamingTest extends TestCase
             'telegramChatActionHeartbeat' => new TelegramChatActionHeartbeat($settings, new NullLogger(), static function (): void {}),
             'telegramGeneration' => new TelegramGeneration($settings, $this->sql, new ChatGenerationState($redis, $settings)),
             'semanticMemoryRegistry' => $this->memory, 'generationId' => 'update:42',
-            'semanticQueue' => $semanticQueue,
+            'queueDispatcher' => $semanticQueue,
         ] as $name => $value) {
             new \ReflectionProperty(TelegramService::class, $name)->setValue($this->service, $value);
         }
@@ -265,6 +265,32 @@ final class TelegramServiceStreamingTest extends TestCase
         self::assertSame(0, (int) $this->sql->fetchOne("SELECT COUNT(*) FROM semantic_memory_excerpt WHERE status='pending'"));
         $this->runGeneration();
         self::assertCount(1, $this->sent);
+    }
+
+    public function testZeroTopicOmitsThreadIdForNormalAndFailedStopDelivery(): void
+    {
+        foreach ([false, true] as $failed) {
+            $provider = new FakeAIProvider(new AssistantMessage('Must not run'));
+            $this->setupService($provider);
+            $this->sql->update('telegram_stop_target', ['topic_id' => 0], ['id' => $this->id]);
+            $this->stop();
+
+            if ($failed) {
+                $this->service->failed(['update_json' => json_encode([
+                    'update_id' => 42,
+                    'message' => ['message_id' => 1, 'date' => 1,
+                        'chat' => ['id' => 42, 'type' => 'private'],
+                        'from' => ['id' => 42, 'is_bot' => false, 'first_name' => 'Synthetic'],
+                        'text' => 'Question'],
+                ], JSON_THROW_ON_ERROR)]);
+            } else {
+                $this->runGeneration();
+            }
+
+            self::assertCount(1, $this->sent);
+            self::assertArrayNotHasKey('message_thread_id', $this->sent[0]);
+            self::assertSame(0, $provider->getCallCount());
+        }
     }
 
     public function testDeliveryFailureLeavesPendingOutboxForSweepWithoutDispatchOnRetry(): void

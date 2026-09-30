@@ -52,6 +52,7 @@ trait HandleInferenceEvents
         if ($inferenceStop->message !== false) {
             $this->spanSetAttributes($this->inference, 'neuron.Message', $this->prepareMessageItem($inferenceStop->message));
         }
+
         $this->spanSetAttributes($this->inference, 'neuron.Response', $this->prepareMessageItem($inferenceStop->response->message()));
         $this->inference->end();
         unset($this->inference);

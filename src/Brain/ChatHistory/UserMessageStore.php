@@ -12,47 +12,50 @@ final readonly class UserMessageStore implements MessageStoreInterface
 {
     private ?string $threadId;
 
-    public function __construct(private UserChatHistory $history)
+    public function __construct(private UserChatHistory $userChatHistory)
     {
-        $this->threadId = $history->getThreadId();
+        $this->threadId = $userChatHistory->getThreadId();
     }
 
+    /** @return list<Message> */
     public function loadActive(string $threadId): array
     {
         $this->guard($threadId);
-        return $this->history->getMessages();
+        return $this->userChatHistory->getMessages();
     }
 
+    /** @return list<Message> */
     public function loadAll(string $threadId, ?int $limit = null, ?string $before = null): array
     {
         $this->guard($threadId);
-        return $this->history->getStoredMessages($limit, $before);
+        return $this->userChatHistory->getStoredMessages($limit, $before);
     }
 
     public function append(string $threadId, Message $message): void
     {
         $this->guard($threadId);
-        $this->history->addMessage($message);
+        $this->userChatHistory->addMessage($message);
     }
 
     public function archive(string $threadId, int $count): void
     {
         $this->guard($threadId);
-        $this->history->archiveMessages($count);
+        $this->userChatHistory->archiveMessages($count);
     }
 
     public function clear(string $threadId): void
     {
         $this->guard($threadId);
-        $this->history->flushAll();
+        $this->userChatHistory->flushAll();
     }
 
     private function guard(string $threadId): void
     {
-        $this->history->assertOwner();
-        if ($threadId !== $this->threadId || $threadId !== $this->history->getThreadId()) {
+        $this->userChatHistory->assertOwner();
+        if ($threadId !== $this->threadId || $threadId !== $this->userChatHistory->getThreadId()) {
             throw new \RuntimeException('Chat message store thread mismatch');
         }
-        $this->history->refresh();
+
+        $this->userChatHistory->refresh();
     }
 }

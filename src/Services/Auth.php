@@ -75,6 +75,7 @@ class Auth
         if (! $user instanceof User) {
             return false;
         }
+
         $session->clear();
         $this->initializeUserSession($session, $user, $userId, [
             'firstName' => $user->getFirstName(), 'lastName' => $user->getLastName(),

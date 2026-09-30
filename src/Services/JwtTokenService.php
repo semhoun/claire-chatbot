@@ -22,7 +22,6 @@ use RuntimeException;
 
 final readonly class JwtTokenService
 {
-
     public const int RESOURCE_TTL = 300;
 
     public const int RESOURCE_LIMIT = 32;
@@ -140,6 +139,7 @@ final readonly class JwtTokenService
         if ($session->get(Auth::AUTHENTICATED) !== true || $userId === '' || $userId === '0') {
             throw new RuntimeException('Cannot generate resource token without authenticated user');
         }
+
         if (! $this->validResources($resources) || $expiresAt <= time()) {
             throw new InvalidArgumentException('Invalid resource scope');
         }
@@ -147,11 +147,17 @@ final readonly class JwtTokenService
         if ($session->has(RememberSession::ID)) {
             $expiresAt = min($expiresAt, $session->get(RememberSession::EXPIRES));
         }
-        return $this->buildToken($userId, $this->rememberClaims($session) + ['resources' => $resources],
-            min(self::RESOURCE_TTL, max(1, $this->ttl())), 'resources', $expiresAt);
+
+        return $this->buildToken(
+            $userId,
+            $this->rememberClaims($session) + ['resources' => $resources],
+            min(self::RESOURCE_TTL, max(1, $this->ttl())),
+            'resources',
+            $expiresAt
+        );
     }
 
-    /** @return array{userId:string,expiresAt:int,resources:array}|null */
+    /** @return array{userId:string,expiresAt:int,resources:list<array{type:'file',fileId:string}|array{type:'stream',threadId:string,sessionId:string}>}|null */
     public function parseResourcesToken(string $token): ?array
     {
         try {
@@ -159,6 +165,7 @@ final readonly class JwtTokenService
             if ($identity === null) {
                 return null;
             }
+
             $resources = $this->parse($token)->claims()->get('resources');
             return $this->validResources($resources) ? $identity + ['resources' => $resources] : null;
         } catch (\Throwable) {
@@ -173,10 +180,12 @@ final readonly class JwtTokenService
             || strlen(json_encode($resources, JSON_THROW_ON_ERROR)) > self::RESOURCE_SCOPE_BYTES) {
             return false;
         }
+
         foreach ($resources as $resource) {
             if (! is_array($resource)) {
                 return false;
             }
+
             $fields = match ($resource['type'] ?? null) {
                 'file' => ['type', 'fileId'],
                 'stream' => ['type', 'threadId', 'sessionId'],
@@ -185,6 +194,7 @@ final readonly class JwtTokenService
             if ($fields === [] || count($resource) !== count($fields)) {
                 return false;
             }
+
             foreach ($fields as $field) {
                 $value = $resource[$field] ?? null;
                 if (! is_string($value) || $value === '' || strlen($value) > 255
@@ -193,6 +203,7 @@ final readonly class JwtTokenService
                 }
             }
         }
+
         return true;
     }
 
@@ -229,9 +240,13 @@ final readonly class JwtTokenService
             }
         }
 
-        return $this->buildToken($userId, $this->rememberClaims($session) + $scope,
-            min(self::RESOURCE_TTL, max(1, $this->ttl())), $audience,
-            $session->has(RememberSession::ID) ? $session->get(RememberSession::EXPIRES) : null);
+        return $this->buildToken(
+            $userId,
+            $this->rememberClaims($session) + $scope,
+            min(self::RESOURCE_TTL, max(1, $this->ttl())),
+            $audience,
+            $session->has(RememberSession::ID) ? $session->get(RememberSession::EXPIRES) : null
+        );
     }
 
     /** @return array<string,mixed> */
@@ -268,6 +283,7 @@ final readonly class JwtTokenService
                 $result[RememberSession::ID] = $claims->get(RememberSession::ID);
                 $result[RememberSession::EXPIRES] = $claims->get(RememberSession::EXPIRES);
             }
+
             foreach ($fields as $field) {
                 $value = $claims->get($field);
                 if (! is_string($value) || $value === '') {
@@ -301,6 +317,7 @@ final readonly class JwtTokenService
             if ($expiresAt <= $now->getTimestamp()) {
                 throw new InvalidArgumentException('Resource authorization expired');
             }
+
             $expiration = $expiration->setTimestamp(min($expiration->getTimestamp(), $expiresAt));
         }
 

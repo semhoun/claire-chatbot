@@ -16,10 +16,10 @@ use Slim\Routing\RouteContext;
 final readonly class SseAccess
 {
     public function __construct(
-        private JwtTokenService $tokens,
+        private JwtTokenService $jwtTokenService,
         private RememberSession $rememberSession,
         private EntityManagerInterface $entityManager,
-        private ChatGenerationState $generationState,
+        private ChatGenerationState $chatGenerationState,
         private Settings $settings,
     ) {
     }
@@ -34,7 +34,7 @@ final readonly class SseAccess
         if (count($input) !== 6 || ($input['method'] ?? null) !== 'GET' || ($input['path'] ?? null) !== $path
             || ! in_array($input['credentialType'] ?? null, ['header', 'capability'], true)
             || ! is_string($input['credential'] ?? null) || $input['credential'] === ''
-            || ! $this->tokens->validResources([
+            || ! $this->jwtTokenService->validResources([
                 [
                     'type' => 'stream',
                     'threadId' => $input['threadId'] ?? null,
@@ -43,65 +43,73 @@ final readonly class SseAccess
             ])) {
             throw new HttpBadRequestException($request);
         }
+
         $request = $request->withQueryParams(['threadId' => $input['threadId'], 'sessionId' => $input['sessionId']]);
         $credential = $input['credential'];
-        $resource = $this->tokens->parseStreamToken($credential)
-            ?? $this->tokens->parseResourcesToken($credential)
-            ?? $this->tokens->parseFileToken($credential);
-        $session = new ArraySession();
-        $session->start();
+        $resource = $this->jwtTokenService->parseStreamToken($credential)
+            ?? $this->jwtTokenService->parseResourcesToken($credential)
+            ?? $this->jwtTokenService->parseFileToken($credential);
+        $arraySession = new ArraySession();
+        $arraySession->start();
         if ($resource !== null) {
             if (! ResourceRequestScope::matches($request, $resource)) {
                 throw new HttpForbiddenException($request);
             }
-            $session->set(Auth::USERID, $resource['userId']);
-            $session->set(Auth::AUTHENTICATED, true);
+
+            $arraySession->set(Auth::USERID, $resource['userId']);
+            $arraySession->set(Auth::AUTHENTICATED, true);
             if (array_key_exists(RememberSession::ID, $resource)) {
-                $session->set(RememberSession::ID, $resource[RememberSession::ID]);
-                $session->set(RememberSession::EXPIRES, $resource[RememberSession::EXPIRES] ?? null);
+                $arraySession->set(RememberSession::ID, $resource[RememberSession::ID]);
+                $arraySession->set(RememberSession::EXPIRES, $resource[RememberSession::EXPIRES] ?? null);
             }
         } else {
-            $parsed = $input['credentialType'] === 'header' ? $this->tokens->parseSessionToken($credential) : null;
+            $parsed = $input['credentialType'] === 'header' ? $this->jwtTokenService->parseSessionToken($credential) : null;
             if ($parsed === null || ! is_array($parsed['sessionData'])) {
                 throw new HttpUnauthorizedException($request);
             }
+
             // Retain only identity and revocation context, never the general session or token.
             foreach ([Auth::USERID, Auth::AUTHENTICATED, RememberSession::ID, RememberSession::EXPIRES] as $key) {
                 if (array_key_exists($key, $parsed['sessionData'])) {
-                    $session->set($key, $parsed['sessionData'][$key]);
+                    $arraySession->set($key, $parsed['sessionData'][$key]);
                 }
             }
         }
-        $this->check($session, $input['threadId']);
-        return $session;
+
+        $this->check($arraySession, $input['threadId']);
+        return $arraySession;
     }
 
     public function check(SessionInterface $session, string $threadId): void
     {
-        $request = new ServerRequestFactory()->createServerRequest('POST', '/snapshot');
+        $serverRequest = new ServerRequestFactory()->createServerRequest('POST', '/snapshot');
         $userId = $session->get(Auth::USERID);
         if (! is_string($userId) || $userId === '' || $userId === '0'
             || $session->get(Auth::AUTHENTICATED) !== true || ! $this->rememberSession->valid($session)) {
-            throw new HttpUnauthorizedException($request);
+            throw new HttpUnauthorizedException($serverRequest);
         }
+
         // Recheck both facts in one fresh SQL statement, never Doctrine's managed identity map.
         $access = $this->entityManager->getConnection()->fetchAssociative(
             'SELECT h.user_id FROM account a LEFT JOIN chat_history h ON h.thread_id = ? WHERE a.id = ?',
             [$threadId, $userId],
         );
         if ($access === false) {
-            throw new HttpUnauthorizedException($request);
+            throw new HttpUnauthorizedException($serverRequest);
         }
+
         if ($access['user_id'] !== null) {
             if ($access['user_id'] !== $userId) {
-                throw new HttpForbiddenException($request);
+                throw new HttpForbiddenException($serverRequest);
             }
+
             return;
         }
-        $state = $this->generationState->get($userId, $threadId);
+
+        $state = $this->chatGenerationState->get($userId, $threadId);
         if (($state['messageId'] ?? '') === ''
             || ! in_array($state['status'] ?? '', ['queued', 'running', 'done', 'stopped', 'error'], true)) {
-            throw new HttpForbiddenException($request);
+            throw new HttpForbiddenException($serverRequest);
         }
     }
 }

@@ -88,6 +88,7 @@ EOT;
         }
     }
 
+    /** @return list<ToolProperty> */
     protected function properties(): array
     {
         return [

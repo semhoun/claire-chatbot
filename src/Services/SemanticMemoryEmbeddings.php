@@ -18,6 +18,7 @@ final readonly class SemanticMemoryEmbeddings implements EmbeddingsProviderInter
         }
     }
 
+    /** @return list<int|float> */
     public function embedText(string $text): array
     {
         $embedding = $this->embeddingsProvider->embedText($text);

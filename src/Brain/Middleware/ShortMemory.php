@@ -97,6 +97,7 @@ class ShortMemory extends Summarization
         if (! $chatHistory instanceof WorkingChatHistory) {
             return;
         }
+
         // Find a safe cutoff point
 
         $cutoffIndex = $this->findSafeCutoffIndex($messages);

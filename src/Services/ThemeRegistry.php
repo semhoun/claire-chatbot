@@ -58,6 +58,7 @@ final class ThemeRegistry
             return;
         }
 
+        // Missing or unreadable optional catalogs fall back without leaking filesystem warnings.
         $json = @file_get_contents($path . '/contract.json');
         if ($json === false) {
             return;
@@ -79,6 +80,7 @@ final class ThemeRegistry
                 $this->tokens[$token] = true;
             }
         }
+
         foreach ($contract['variants'] as $key => $values) {
             if (is_string($key) && preg_match('/^[a-z][a-z0-9-]*$/D', $key) === 1
                 && is_array($values) && array_is_list($values)) {
@@ -86,28 +88,33 @@ final class ThemeRegistry
             }
         }
 
-        foreach (glob($path . '/*.yaml') ?: [] as $file) {
+        $files = glob($path . '/*.yaml');
+        foreach ($files === false ? [] : $files as $file) {
             $slug = basename($file, '.yaml');
             if (preg_match('/^[a-z][a-z0-9-]*$/D', $slug) !== 1) {
                 continue;
             }
+
             try {
                 $data = Yaml::parseFile($file);
             } catch (ParseException) {
                 continue;
             }
+
             if (! is_array($data) || ! is_array($data['tokens'] ?? null)
                 || ! is_array($data['variants'] ?? null)
                 || ($data['tokens'] !== [] && array_is_list($data['tokens']))
                 || ($data['variants'] !== [] && array_is_list($data['variants']))) {
                 continue;
             }
+
             $this->catalog[$slug] = $this->filter($data);
         }
     }
 
     /**
      * @param array<mixed> $data
+     *
      * @return array{tokens:array<string, string>, variants:array<string, string>}
      */
     private function filter(array $data): array
@@ -118,6 +125,7 @@ final class ThemeRegistry
                 $result['tokens'][$key] = $value;
             }
         }
+
         foreach (is_array($data['variants'] ?? null) ? $data['variants'] : [] as $key => $value) {
             if (isset($this->variants[$key]) && is_string($value)
                 && in_array($value, $this->variants[$key], true)) {

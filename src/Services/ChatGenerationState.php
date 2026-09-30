@@ -23,6 +23,7 @@ final readonly class ChatGenerationState
         if (($state['messageId'] ?? '') === '' || ($state['jobMessageId'] ?? '') !== $state['messageId']) {
             unset($state['jobId'], $state['queue'], $state['jobMessageId']);
         }
+
         if (($state['submissionMessageId'] ?? '') !== ($state['messageId'] ?? '')) {
             unset($state['submissionId'], $state['submissionMessageId']);
         }
@@ -117,6 +118,7 @@ final readonly class ChatGenerationState
             $values['submissionId'] = $submissionId;
             $values['submissionMessageId'] = $messageId;
         }
+
         if ($this->redisClient->hset($this->key($userId, $threadId), $values) === false) {
             throw new \RuntimeException('Cannot persist chat generation state');
         }

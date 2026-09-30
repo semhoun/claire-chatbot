@@ -21,12 +21,14 @@ use Throwable;
 final class SemanticRecall implements AIProviderInterface
 {
     private bool $attempted = false;
+
     private ?string $messageId = null;
+
     private string $context = '';
 
     /** @param Closure(string): string $recall */
     public function __construct(
-        private readonly AIProviderInterface $provider,
+        private readonly AIProviderInterface $aiProvider,
         private readonly Closure $recall,
         private readonly LoggerInterface $logger,
     ) {
@@ -34,40 +36,45 @@ final class SemanticRecall implements AIProviderInterface
 
     public function getModel(): string
     {
-        return $this->provider->getModel();
+        return $this->aiProvider->getModel();
     }
 
     public function systemPrompt(SystemMessage|string|null $prompt): AIProviderInterface
     {
-        $this->provider->systemPrompt($prompt);
+        $this->aiProvider->systemPrompt($prompt);
         return $this;
     }
 
+    /** @param array<\NeuronAI\Tools\ToolInterface|\NeuronAI\Tools\ProviderToolInterface> $tools */
     public function setTools(array $tools): AIProviderInterface
     {
-        $this->provider->setTools($tools);
+        $this->aiProvider->setTools($tools);
         return $this;
     }
 
     public function setHttpClient(HttpClientInterface $client): AIProviderInterface
     {
-        $this->provider->setHttpClient($client);
+        $this->aiProvider->setHttpClient($client);
         return $this;
     }
 
     public function chat(Message ...$messages): ProviderResponse
     {
-        return $this->provider->chat(...$this->project($messages));
+        return $this->aiProvider->chat(...$this->project($messages));
     }
 
     public function stream(Message ...$messages): Generator
     {
-        return yield from $this->provider->stream(...$this->project($messages));
+        return yield from $this->aiProvider->stream(...$this->project($messages));
     }
 
+    /**
+     * @param array<Message>|Message $messages
+     * @param array<string, mixed> $response_schema
+     */
     public function structured(array|Message $messages, string $class, array $response_schema): ProviderResponse
     {
-        return $this->provider->structured(
+        return $this->aiProvider->structured(
             $this->project(is_array($messages) ? $messages : [$messages]),
             $class,
             $response_schema,

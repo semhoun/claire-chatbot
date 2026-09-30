@@ -28,6 +28,7 @@ trait HandleToolEvents
         if (! isset($this->toolCalls[$id])) {
             return;
         }
+
         $span = $this->toolCalls[$id];
         $this->spanSetAttributes($span, 'neuron', [
             'Inputs' => $toolCalled->tool->getInputs(),
