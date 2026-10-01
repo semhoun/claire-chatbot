@@ -71,6 +71,139 @@ final class RedisQueueBackendTest extends TestCase
         self::assertSame(0, $this->redis->zCard($this->key('leased')));
     }
 
+    public function testMaintenanceIsSharedAndRetainsCursorAfterCooldown(): void
+    {
+        $calls = 0;
+        $this->backend->withMaintenance(static function (string &$cursor, string &$recovery) use (&$calls): void {
+            self::assertSame('0', $cursor);
+            self::assertSame('0', $recovery);
+            $cursor = '42';
+            $recovery = 'turn-42';
+            $calls++;
+        });
+        for ($i = 0; $i < 4; $i++) {
+            $this->newBackend()->withMaintenance(static function () use (&$calls): void {
+                $calls++;
+            });
+        }
+        self::assertSame(1, $calls);
+        $key = $this->prefix . 'queue:maintenance:cooldown';
+        self::assertGreaterThan(0, $this->redis->ttl($key));
+        $this->redis->pExpire($key, 1);
+        usleep(10_000);
+        $this->newBackend()->withMaintenance(static function (string &$cursor, string &$recovery) use (&$calls): void {
+            self::assertSame('42', $cursor);
+            self::assertSame('turn-42', $recovery);
+            $calls++;
+        });
+        self::assertSame(2, $calls);
+    }
+
+    public function testLongMaintenanceCannotOverlapAfterCooldownExpires(): void
+    {
+        $calls = 0;
+        $this->backend->withMaintenance(function () use (&$calls): void {
+            $this->redis->del($this->prefix . 'queue:maintenance:cooldown');
+            $this->newBackend()->withMaintenance(static function () use (&$calls): void {
+                $calls++;
+            });
+        });
+        self::assertSame(0, $calls);
+        self::assertGreaterThan(0, $this->redis->ttl($this->prefix . 'queue:maintenance:cooldown'));
+    }
+
+    public function testPausedContenderCannotReuseSlotAfterAnotherWorkerCompleted(): void
+    {
+        $connection = new QueueRedisConnection($this->settings);
+        $delayed = $this->createMock(QueueRedisConnection::class);
+        $calls = 0;
+        $delayed->expects(self::exactly(2))->method('evaluate')->willReturnCallback(
+            function (string $script, array $arguments, int $keyCount) use ($connection, &$calls): mixed {
+                $result = $connection->evaluate($script, $arguments, $keyCount);
+                if (++$calls === 1) {
+                    $this->redis->del($this->prefix . 'queue:maintenance:cooldown');
+                    $this->newBackend()->withMaintenance(static function (string &$cursor): void {
+                        $cursor = '42';
+                    });
+                }
+                return $result;
+            },
+        );
+        $backend = new RedisQueueBackend($delayed, $this->settings,
+            \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]));
+        $backend->withMaintenance(static function (): void {
+            self::fail('Stale scheduling slot must not execute');
+        });
+        self::assertSame('42', $this->redis->hGet($this->prefix . 'queue:maintenance:cursors', 'failed'));
+    }
+
+    public function testConcurrentMaintenanceWorkersExecuteOnlyOnce(): void
+    {
+        $children = [];
+        for ($i = 0; $i < 4; $i++) {
+            $pid = pcntl_fork();
+            self::assertNotSame(-1, $pid);
+            if ($pid === 0) {
+                $redis = new QueueRedisConnection($this->settings);
+                $this->newBackend()->withMaintenance(function () use ($redis): void {
+                    $redis->evaluate("return redis.call('INCR', KEYS[1])", [$this->prefix . 'runs'], 1);
+                });
+                exit(0);
+            }
+            $children[] = $pid;
+        }
+        foreach ($children as $pid) {
+            pcntl_waitpid($pid, $status);
+            self::assertSame(0, pcntl_wexitstatus($status));
+        }
+        self::assertSame('1', $this->redis->get($this->prefix . 'runs'));
+    }
+
+    public function testMaintenanceErrorReleasesLockAndRetriesUncommittedCursor(): void
+    {
+        try {
+            $this->backend->withMaintenance(static function (string &$cursor): void {
+                $cursor = '99';
+                throw new RuntimeException('maintenance failed');
+            });
+            self::fail('Failure must propagate');
+        } catch (RuntimeException $error) {
+            self::assertSame('maintenance failed', $error->getMessage());
+        }
+        self::assertGreaterThan(0, $this->redis->ttl($this->prefix . 'queue:maintenance:cooldown'));
+        $this->redis->del($this->prefix . 'queue:maintenance:cooldown');
+        $called = false;
+        $this->newBackend()->withMaintenance(static function (string &$cursor) use (&$called): void {
+            self::assertSame('0', $cursor);
+            $called = true;
+        });
+        self::assertTrue($called);
+    }
+
+    public function testKilledMaintenanceWorkerCanBeReplacedAfterCooldown(): void
+    {
+        $pid = pcntl_fork();
+        self::assertNotSame(-1, $pid);
+        if ($pid === 0) {
+            $this->newBackend()->withMaintenance(static function (): void {
+                posix_kill(getmypid(), SIGKILL);
+            });
+            exit(1);
+        }
+        pcntl_waitpid($pid, $status);
+        self::assertTrue(pcntl_wifsignaled($status));
+        self::assertSame(SIGKILL, pcntl_wtermsig($status));
+        $key = $this->prefix . 'queue:maintenance:cooldown';
+        self::assertGreaterThan(0, $this->redis->ttl($key));
+        $this->redis->pExpire($key, 1);
+        usleep(10_000);
+        $called = false;
+        $this->newBackend()->withMaintenance(static function () use (&$called): void {
+            $called = true;
+        });
+        self::assertTrue($called);
+    }
+
     public function testWebStopIdentityIsDurableBeforeReservationAndDuplicateCannotCancelIt(): void
     {
         $sql = \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);

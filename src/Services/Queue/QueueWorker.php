@@ -25,8 +25,6 @@ final class QueueWorker
 
     private int $lastRecoveryAt = 0;
 
-    private string $failedCursor = '0';
-
     public function __construct(
         private readonly QueueBackendInterface $queueBackend,
         private readonly ContainerInterface $container,
@@ -105,47 +103,67 @@ final class QueueWorker
         if (time() - $this->lastRecoveryAt >= 30) {
             $this->lastRecoveryAt = time();
             try {
-                if ($this->container->has(\App\Services\ChatTurnRecovery::class)) {
-                    $recovery = $this->container->get(\App\Services\ChatTurnRecovery::class);
-                    $recovery->recover();
-                    if ($this->queueBackend instanceof RedisQueueBackend) {
-                        foreach ($this->queueBackend->failedMessages($this->failedCursor) as $queueMessage) {
-                            try {
-                                $recovery->failed($queueMessage);
-                            } catch (\App\Services\ChatGenerationBusyException) {
-                                // Active holders, not elapsed time, determine abandonment.
-                                continue;
-                            } catch (Throwable $error) {
-                                $this->logger->error('Terminal chat recovery failed', ['exception' => $error]);
-                            }
-                        }
-                    }
+                if ($this->queueBackend instanceof RedisQueueBackend) {
+                    $this->queueBackend->withMaintenance($this->maintain(...));
+                } else {
+                    $cursor = '0';
+                    $recoveryCursor = null;
+                    $this->maintain($cursor, $recoveryCursor);
                 }
             } catch (Throwable $error) {
-                $this->logger->error('Periodic chat recovery failed', ['exception' => $error]);
-            }
-
-            try {
-                if ($this->container->has(\App\Services\Settings::class)) {
-                    $settings = $this->container->get(\App\Services\Settings::class);
-                    if ($settings->get('llm.semanticMemory.enabled', false) === true
-                        || $this->container->get(\Doctrine\DBAL\Connection::class)->createSchemaManager()->tablesExist([
-                            'semantic_memory_preference', 'semantic_memory_excerpt',
-                        ])) {
-                        $this->container->get(\App\Services\SemanticMemoryService::class)->sweep(5);
-                    }
-
-                    if ($settings->get('llm.stop.enabled', false) === true) {
-                        $retention = max(2592000, (int) $settings->get('queue.deduplicationSeconds', 604800) + 86400);
-                        $this->container->get(\App\Services\ChatStopRequests::class)->cleanup(time() - $retention);
-                    }
-                }
-            } catch (Throwable $error) {
-                // Consent and source validity remain authoritative while asynchronous work retries.
-                $this->logger->warning('Periodic memory/stop maintenance failed', ['exception' => $error::class]);
+                $this->logger->error('Periodic maintenance coordination failed', ['exception' => $error]);
             }
         }
 
+        $this->executeJobCycle($queueWorkerOptions, $workerId);
+    }
+
+    private function maintain(string &$failedCursor, ?string &$recoveryCursor): void
+    {
+        try {
+            if ($this->container->has(\App\Services\ChatTurnRecovery::class)) {
+                $recovery = $this->container->get(\App\Services\ChatTurnRecovery::class);
+                $recoveryCursor = $recovery->recover(cursor: $recoveryCursor)['cursor'];
+                if ($this->queueBackend instanceof RedisQueueBackend) {
+                    foreach ($this->queueBackend->failedMessages($failedCursor) as $queueMessage) {
+                        try {
+                            $recovery->failed($queueMessage);
+                        } catch (\App\Services\ChatGenerationBusyException) {
+                            // Active holders, not elapsed time, determine abandonment.
+                            continue;
+                        } catch (Throwable $error) {
+                            $this->logger->error('Terminal chat recovery failed', ['exception' => $error]);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable $throwable) {
+            $this->logger->error('Periodic chat recovery failed', ['exception' => $throwable]);
+        }
+
+        try {
+            if ($this->container->has(\App\Services\Settings::class)) {
+                $settings = $this->container->get(\App\Services\Settings::class);
+                if ($settings->get('llm.semanticMemory.enabled', false) === true
+                    || $this->container->get(\Doctrine\DBAL\Connection::class)->createSchemaManager()->tablesExist([
+                        'semantic_memory_preference', 'semantic_memory_excerpt',
+                    ])) {
+                    $this->container->get(\App\Services\SemanticMemoryService::class)->sweep(5);
+                }
+
+                if ($settings->get('llm.stop.enabled', false) === true) {
+                    $retention = max(2592000, (int) $settings->get('queue.deduplicationSeconds', 604800) + 86400);
+                    $this->container->get(\App\Services\ChatStopRequests::class)->cleanup(time() - $retention);
+                }
+            }
+        } catch (Throwable $throwable) {
+            // Consent and source validity remain authoritative while asynchronous work retries.
+            $this->logger->warning('Periodic memory/stop maintenance failed', ['exception' => $throwable::class]);
+        }
+    }
+
+    private function executeJobCycle(QueueWorkerOptions $queueWorkerOptions, string $workerId): void
+    {
         $job = $this->reserveJob($queueWorkerOptions, $workerId);
 
         if (! $job instanceof QueueMessage) {

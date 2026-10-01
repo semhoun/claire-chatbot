@@ -223,6 +223,49 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
         return $messages;
     }
 
+    /** Run global maintenance at most once per interval, never concurrently. */
+    public function withMaintenance(callable $operation): void
+    {
+        $key = $this->prefix() . 'queue:maintenance';
+        $token = bin2hex(random_bytes(16));
+        if ($this->queueRedisConnection->evaluate(<<<'LUA'
+            return redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', 30) and 1 or 0
+            LUA, [$key . ':cooldown', $token], 1) !== 1) {
+            return;
+        }
+
+        try {
+            // Unlike a fixed Redis lease, this remains exclusive for long sweeps.
+            $chatThreadLock = new ChatThreadLock($this->connection->getNativeConnection(), $key, 'global');
+        } catch (ChatGenerationBusyException) {
+            return;
+        }
+
+        try {
+            $cursors = $this->queueRedisConnection->evaluate(<<<'LUA'
+                if redis.call('GET', KEYS[2]) ~= ARGV[1] then return 0 end
+                return {redis.call('HGET', KEYS[1], 'failed') or '0',
+                    redis.call('HGET', KEYS[1], 'recovery') or '0'}
+                LUA, [$key . ':cursors', $key . ':cooldown', $token], 2);
+            if ($cursors === 0) {
+                // A paused contender must not reuse an expired/replaced scheduling slot.
+                return;
+            }
+
+            [$failedCursor, $recoveryCursor] = $cursors;
+            $operation($failedCursor, $recoveryCursor);
+            $chatThreadLock->assertHeld();
+            // Keep the cooldown after completion; preserve scan progress across workers.
+            $this->queueRedisConnection->evaluate(<<<'LUA'
+                redis.call('HSET', KEYS[1], 'failed', ARGV[1], 'recovery', ARGV[2])
+                redis.call('SET', KEYS[2], '1', 'EX', 30)
+                return 1
+                LUA, [$key . ':cursors', $key . ':cooldown', $failedCursor, $recoveryCursor], 2);
+        } finally {
+            $chatThreadLock->release();
+        }
+    }
+
     public function defer(QueueMessage $queueMessage): void
     {
         $this->transitionMessage($queueMessage, 'defer');

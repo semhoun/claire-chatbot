@@ -95,10 +95,10 @@ return [
         ->constructorParameter('semanticMemoryRegistry', DI\get(SemanticMemoryRegistry::class)),
     NewMessageJob::class => DI\autowire()
         ->constructorParameter('semanticMemoryRegistry', DI\get(SemanticMemoryRegistry::class))
-        ->constructorParameter('semanticQueue', DI\get(QueueDispatcherInterface::class)),
+        ->constructorParameter('queueDispatcher', DI\get(QueueDispatcherInterface::class)),
     TelegramService::class => DI\autowire()
         ->constructorParameter('semanticMemoryRegistry', DI\get(SemanticMemoryRegistry::class))
-        ->constructorParameter('semanticQueue', DI\get(QueueDispatcherInterface::class)),
+        ->constructorParameter('queueDispatcher', DI\get(QueueDispatcherInterface::class)),
     SemanticMemoryRegistry::class => DI\factory(
         static fn (Settings $settings, Connection $connection): SemanticMemoryRegistry
             => new SemanticMemoryRegistry(

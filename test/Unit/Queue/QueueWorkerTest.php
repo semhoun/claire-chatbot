@@ -54,6 +54,31 @@ final class QueueWorkerTest extends TestCase
         $this->runJob(true, true);
     }
 
+    public function testMaintenanceCoordinationFailureDoesNotRunUncoordinatedOrStopJobs(): void
+    {
+        $redis = $this->createMock(\App\Services\Queue\QueueRedisConnection::class);
+        $container = $this->createMock(ContainerInterface::class);
+        $container->expects(self::never())->method('has');
+        $backend = new \App\Services\Queue\RedisQueueBackend($redis,
+            new \App\Services\Settings(['redis' => ['prefix' => 'test:'], 'queue' => []]),
+            \Doctrine\DBAL\DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]));
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger->expects(self::once())->method('error')->with('Periodic maintenance coordination failed',
+            self::isArray());
+        $worker = new QueueWorker($backend, $container, $logger);
+        $calls = 0;
+        $redis->expects(self::exactly(2))->method('evaluate')->willReturnCallback(
+            static function () use ($worker, &$calls): array {
+                if (++$calls === 1) {
+                    throw new RuntimeException('Redis unavailable');
+                }
+                $worker->requestStop();
+                return [];
+            },
+        );
+        self::assertSame(0, $worker->run(new QueueWorkerOptions('test', 0, 1, 10), 'test-worker'));
+    }
+
     public function testInvalidJobIsReleasedNotDeleted(): void
     {
         $backend = $this->createMock(QueueBackendInterface::class);
