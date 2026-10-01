@@ -4,8 +4,17 @@ declare(strict_types=1);
 
 namespace App\Services\Queue;
 
-use App\Brain\Observability\HasInstrumentation;
+use App\Services\Observability\SqlInstrumentation;
+use OpenTelemetry\API\Globals;
+use OpenTelemetry\API\Instrumentation\Configurator;
+use OpenTelemetry\API\Trace\Propagation\TraceContextPropagator;
+use OpenTelemetry\API\Trace\Span;
+use OpenTelemetry\API\Trace\SpanInterface;
+use OpenTelemetry\API\Trace\SpanKind;
 use OpenTelemetry\API\Trace\StatusCode;
+use OpenTelemetry\Context\Context;
+use OpenTelemetry\Context\ContextInterface;
+use OpenTelemetry\Context\ScopeInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface as Logger;
 use RuntimeException;
@@ -13,8 +22,6 @@ use Throwable;
 
 final class QueueWorker
 {
-    use HasInstrumentation;
-
     private bool $running = true;
 
     private readonly int $startedAt;
@@ -74,6 +81,7 @@ final class QueueWorker
             'loop_count' => $this->loopCount,
             'running' => $this->running,
         ]);
+        $this->flushTelemetry();
         return $this->processedJobs;
     }
 
@@ -120,6 +128,22 @@ final class QueueWorker
 
     private function maintain(string &$failedCursor, ?string &$recoveryCursor): void
     {
+        $span = $this->startSpan('queue.maintenance', Context::getRoot(), SpanKind::KIND_INTERNAL);
+        $scope = $this->activateSpan($span, Context::getRoot(), 'maintenance');
+        try {
+            $this->performMaintenance($failedCursor, $recoveryCursor, $span);
+        } finally {
+            $scope->detach();
+            $this->finishSpan($span);
+        }
+    }
+
+    private function performMaintenance(
+        string &$failedCursor,
+        ?string &$recoveryCursor,
+        SpanInterface $span,
+    ): void
+    {
         try {
             if ($this->container->has(\App\Services\ChatTurnRecovery::class)) {
                 $recovery = $this->container->get(\App\Services\ChatTurnRecovery::class);
@@ -132,12 +156,14 @@ final class QueueWorker
                             // Active holders, not elapsed time, determine abandonment.
                             continue;
                         } catch (Throwable $error) {
+                            $this->markSpanError($span, $error);
                             $this->logger->error('Terminal chat recovery failed', ['exception' => $error]);
                         }
                     }
                 }
             }
         } catch (Throwable $throwable) {
+            $this->markSpanError($span, $throwable);
             $this->logger->error('Periodic chat recovery failed', ['exception' => $throwable]);
         }
 
@@ -157,6 +183,7 @@ final class QueueWorker
                 }
             }
         } catch (Throwable $throwable) {
+            $this->markSpanError($span, $throwable);
             // Consent and source validity remain authoritative while asynchronous work retries.
             $this->logger->warning('Periodic memory/stop maintenance failed', ['exception' => $throwable::class]);
         }
@@ -174,12 +201,19 @@ final class QueueWorker
             return;
         }
 
-        $this->otelStartSpan('queue.process');
-        $this->activeSpan->setAttribute('messaging.system', 'redis');
-        $this->activeSpan->setAttribute('messaging.destination', $queueWorkerOptions->queueName);
-        $this->activeSpan->setAttribute('messaging.message.id', $job->id);
-        $this->activeSpan->setAttribute('messaging.job_class', $job->jobClass);
-        $this->activeSpan->setAttribute('worker.id', $workerId);
+        $carrier = array_filter(
+            array_intersect_key($job->metadata, array_flip(['traceparent', 'tracestate'])),
+            is_string(...),
+        );
+        $context = TraceContextPropagator::getInstance()->extract($carrier, context: Context::getRoot());
+        $span = $this->startSpan('queue.process', $context, SpanKind::KIND_CONSUMER, [
+            'messaging.system' => 'redis',
+            'messaging.destination' => $queueWorkerOptions->queueName,
+            'messaging.message.id' => $job->id,
+            'messaging.job_class' => $job->jobClass,
+            'worker.id' => $workerId,
+        ]);
+        $scope = $this->activateSpan($span, $context, 'job');
 
         try {
             $this->logger->info('Processing job', [
@@ -196,13 +230,8 @@ final class QueueWorker
             }
 
             $this->queueBackend->delete($job);
-
-            $this->activeSpan?->setStatus(StatusCode::STATUS_OK);
         } catch (Throwable $throwable) {
-            if ($this->activeSpan instanceof \OpenTelemetry\API\Trace\SpanInterface) {
-                $this->activeSpan->setStatus(StatusCode::STATUS_ERROR, $throwable->getMessage());
-                $this->activeSpan->recordException($throwable);
-            }
+            $this->markSpanError($span, $throwable);
 
             $this->logger->error('Failed to execute job', [
                 'worker_id' => $workerId,
@@ -232,7 +261,8 @@ final class QueueWorker
                 ]);
             }
         } finally {
-            $this->otelStopSpan();
+            $scope->detach();
+            $this->finishSpan($span);
         }
     }
 
@@ -267,11 +297,71 @@ final class QueueWorker
             'job_id' => $queueMessage->id,
             'job_class' => $queueMessage->jobClass,
         ]);
+    }
 
-        // Comme on est dans un worker on force le flush des logs
-        $loggerProvider = \OpenTelemetry\API\Globals::loggerProvider();
-        if (method_exists($loggerProvider, 'forceFlush')) {
-            $loggerProvider->forceFlush();
+    /** @param array<string, string> $attributes */
+    private function startSpan(string $name, ContextInterface $context, int $kind, array $attributes = []): SpanInterface
+    {
+        try {
+            return Globals::tracerProvider()->getTracer('claire.queue')->spanBuilder($name)
+                ->setParent($context)->setSpanKind($kind)->setAttributes($attributes)->startSpan();
+        } catch (Throwable) {
+            return Span::getInvalid();
+        }
+    }
+
+    private function activateSpan(SpanInterface $span, ContextInterface $context, string $marker): ScopeInterface
+    {
+        try {
+            // Preserve configured providers, never baggage or arbitrary ambient values.
+            $context = Configurator::create()
+                ->withTracerProvider(Globals::tracerProvider())
+                ->withLoggerProvider(Globals::loggerProvider())
+                ->withMeterProvider(Globals::meterProvider())
+                ->storeInContext($context);
+            $context = $span->storeInContext($context);
+        } catch (Throwable) {
+            $context = Span::getInvalid()->storeInContext($context);
+        }
+
+        return $context->with(SqlInstrumentation::contextKey(), $marker)->activate();
+    }
+
+    private function markSpanError(SpanInterface $span, Throwable $throwable): void
+    {
+        try {
+            $span->setStatus(StatusCode::STATUS_ERROR);
+            $span->setAttribute('error.type', $throwable::class);
+        } catch (Throwable) {
+            // Telemetry must not alter queue transitions.
+        }
+    }
+
+    private function finishSpan(SpanInterface $span): void
+    {
+        try {
+            $span->end();
+        } catch (Throwable) {
+            // Export failures must not prevent the next job.
+        } finally {
+            $this->flushTelemetry();
+        }
+    }
+
+    private function flushTelemetry(): void
+    {
+        // One attempt per provider. SDK batch exports ignore cancellation, so
+        // transport timeouts apply per request, not as a hard flush deadline.
+        foreach (['tracerProvider', 'loggerProvider'] as $accessor) {
+            try {
+                $provider = Globals::$accessor();
+                if ($provider instanceof \OpenTelemetry\SDK\Trace\TracerProviderInterface
+                    || $provider instanceof \OpenTelemetry\SDK\Logs\LoggerProviderInterface) {
+                    $provider->forceFlush();
+                }
+            } catch (Throwable) {
+                // Best effort only; logging here could recursively trigger another export.
+            }
         }
     }
 

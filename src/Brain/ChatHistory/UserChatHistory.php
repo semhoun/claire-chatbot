@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Brain\ChatHistory;
 
 use App\Services\Auth;
+use App\Services\Observability\SqlInstrumentation;
 use App\Services\Session\SessionInterface;
+use App\Services\Settings;
 use NeuronAI\Chat\Messages\AssistantMessage;
 use NeuronAI\Chat\Messages\Message;
 use NeuronAI\Chat\Messages\MessageDeserializer;
@@ -61,6 +63,8 @@ class UserChatHistory
     private bool $loaded = false;
 
     private ?UserMessageStore $userMessageStore = null;
+
+    private ?SqlInstrumentation $sqlInstrumentation = null;
 
     private string $loadedMessages = '[]';
 
@@ -209,7 +213,7 @@ class UserChatHistory
 
         $statement = $this->pdo->prepare('SELECT id, user_id, thread_id, status FROM chat_turn'
             . ' WHERE user_id = ? AND thread_id = ? ORDER BY history_revision DESC LIMIT 1');
-        $statement->execute([$this->ownerId, $this->threadId]);
+        $this->executeStatement($statement, [$this->ownerId, $this->threadId]);
 
         $turn = $statement->fetch(PDO::FETCH_ASSOC);
         if ($turn === false || $turn['id'] !== $turnId || $turn['user_id'] !== (string) $this->ownerId
@@ -437,7 +441,7 @@ class UserChatHistory
                 self::TABLE
             )
         );
-        $stmt->execute([
+        $this->executeStatement($stmt, [
             'user_id' => $this->session->get(Auth::USERID),
             'thread_id' => $this->threadId,
         ]);
@@ -652,7 +656,7 @@ class UserChatHistory
                 . ' (user_id, thread_id, messages, display_messages, display_messages_count, stored_messages, revision)'
                 . ' VALUES (?, ?, ?, ?, ?, ?, 1)' . ($postgres ? ' RETURNING xmin::text' : ''));
             try {
-                $insert->execute([$this->ownerId, $this->threadId, $messages, $display,
+                $this->executeStatement($insert, [$this->ownerId, $this->threadId, $messages, $display,
                     count($this->displayHistory), $stored,
                 ]);
             } catch (\PDOException $exception) {
@@ -716,7 +720,7 @@ class UserChatHistory
             $parameters['version'] = $this->loadedVersion;
         }
 
-        $stmt->execute($parameters);
+        $this->executeStatement($stmt, $parameters);
         $matched = $stmt->rowCount() === 1;
 
         if (! $matched) {
@@ -731,6 +735,26 @@ class UserChatHistory
         $this->loadedDisplayMessages = $parameters['display_messages'];
         $this->loadedStoredMessages = $parameters['stored_messages'];
         ++$this->loadedRevision;
+    }
+
+    /** @param array<int|string, mixed> $parameters */
+    private function executeStatement(\PDOStatement $pdoStatement, array $parameters): bool
+    {
+        try {
+            $this->sqlInstrumentation ??= SqlInstrumentation::fromSettings(new Settings([
+                'observability' => require Settings::getAppRoot() . '/config/settings/observability.php',
+            ]));
+            $dbSystem = (string) $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+            $sql = $pdoStatement->queryString;
+        } catch (\Throwable) {
+            return $pdoStatement->execute($parameters);
+        }
+
+        return $this->sqlInstrumentation->measure(
+            $sql,
+            $dbSystem,
+            static fn (): bool => $pdoStatement->execute($parameters),
+        );
     }
 
     private function openingContextMessage(): UserMessage

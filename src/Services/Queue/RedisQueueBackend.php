@@ -15,6 +15,7 @@ use App\Services\Settings;
 use App\Services\TelegramService;
 use Doctrine\DBAL\Connection;
 use JsonException;
+use OpenTelemetry\API\Trace\Propagation\TraceContextPropagator;
 use Ramsey\Uuid\Uuid;
 use RuntimeException;
 
@@ -105,10 +106,19 @@ final readonly class RedisQueueBackend implements LeasedQueueBackendInterface
                     ->register($userId, $payload['threadId'], 'web', $messageId);
             }
 
+            $traceContext = [];
+            try {
+                // Use W3C trace context only, never the global baggage propagator.
+                TraceContextPropagator::getInstance()->inject($traceContext);
+            } catch (\Throwable) {
+                // Telemetry must not prevent dispatch or leave a partial carrier.
+                $traceContext = [];
+            }
+
             $result = $this->queueRedisConnection->evaluate(QueueScripts::DISPATCH, [
                 $this->queueKey($queue), $this->jobKey($jobId),
                 $jobId, $queue, $jobClass, $this->serialize($payload), $deduplicationKey, $stateKey, $messageId,
-                $submissionId,
+                $submissionId, $traceContext['traceparent'] ?? '', $traceContext['tracestate'] ?? '',
             ], 2);
             if ($result === 'CHAT_BUSY') {
                 if ($stopRegistration['created'] ?? false) {

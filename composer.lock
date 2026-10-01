@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a4edd5c02ebd0ef7cd79d29048d7c4fa",
+    "content-hash": "6da0cc39247ae4f662b3f1bab126b8a1",
     "packages": [
         {
             "name": "akrabat/proxy-detection-middleware",
@@ -3535,66 +3535,6 @@
             ],
             "support": {
                 "source": "https://github.com/opentelemetry-php/contrib-auto-curl/tree/0.2.0"
-            },
-            "time": "2026-03-24T16:33:16+00:00"
-        },
-        {
-            "name": "open-telemetry/opentelemetry-auto-doctrine",
-            "version": "0.4.0",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/opentelemetry-php/contrib-auto-doctrine.git",
-                "reference": "c8a71845fe4c0fa0315ff78e57aa4631c4ec9e66"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/opentelemetry-php/contrib-auto-doctrine/zipball/c8a71845fe4c0fa0315ff78e57aa4631c4ec9e66",
-                "reference": "c8a71845fe4c0fa0315ff78e57aa4631c4ec9e66",
-                "shasum": ""
-            },
-            "require": {
-                "doctrine/dbal": "^3 || ^4 || ^5",
-                "ext-opentelemetry": "*",
-                "open-telemetry/api": "^1.0",
-                "open-telemetry/sem-conv": "^1.32",
-                "php": "^8.1"
-            },
-            "require-dev": {
-                "friendsofphp/php-cs-fixer": "^3",
-                "open-telemetry/sdk": "^1.0",
-                "phan/phan": "^5.0",
-                "php-http/mock-client": "*",
-                "phpstan/phpstan": "^1.1",
-                "phpstan/phpstan-phpunit": "^1.0",
-                "phpunit/phpunit": "^9.5",
-                "psalm/plugin-phpunit": "^0.19.2",
-                "vimeo/psalm": "6.4.0"
-            },
-            "type": "library",
-            "autoload": {
-                "files": [
-                    "_register.php"
-                ],
-                "psr-4": {
-                    "OpenTelemetry\\Contrib\\Instrumentation\\Doctrine\\": "src/"
-                }
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "Apache-2.0"
-            ],
-            "description": "OpenTelemetry auto-instrumentation for Doctrine",
-            "homepage": "https://opentelemetry.io/docs/languages/php/",
-            "keywords": [
-                "doctrine",
-                "instrumentation",
-                "open-telemetry",
-                "opentelemetry",
-                "otel",
-                "tracing"
-            ],
-            "support": {
-                "source": "https://github.com/opentelemetry-php/contrib-auto-doctrine/tree/0.4.0"
             },
             "time": "2026-03-24T16:33:16+00:00"
         },

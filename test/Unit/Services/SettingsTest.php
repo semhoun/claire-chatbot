@@ -83,6 +83,33 @@ final class SettingsTest extends TestCase
         self::assertNull($settings->get('nullable', 'fallback'));
     }
 
+    public function testSqlObservabilityRequiresExplicitActivation(): void
+    {
+        $enabled = getenv('SQL_OBSERVABILITY_ENABLED');
+        $maxBytes = getenv('SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES');
+        try {
+            putenv('SQL_OBSERVABILITY_ENABLED');
+            putenv('SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES');
+            $config = require Settings::getAppRoot() . '/config/settings/observability.php';
+            self::assertSame(['sql' => ['enabled' => false, 'maxQueryTextBytes' => 16384]], $config);
+
+            putenv('SQL_OBSERVABILITY_ENABLED=true');
+            putenv('SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES=256');
+            $config = require Settings::getAppRoot() . '/config/settings/observability.php';
+            self::assertSame(['sql' => ['enabled' => true, 'maxQueryTextBytes' => 256]], $config);
+
+            putenv('SQL_OBSERVABILITY_ENABLED=false');
+            putenv('SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES=-1');
+            $config = require Settings::getAppRoot() . '/config/settings/observability.php';
+            self::assertSame(['sql' => ['enabled' => false, 'maxQueryTextBytes' => 1]], $config);
+        } finally {
+            putenv($enabled === false ? 'SQL_OBSERVABILITY_ENABLED' : 'SQL_OBSERVABILITY_ENABLED=' . $enabled);
+            putenv($maxBytes === false
+                ? 'SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES'
+                : 'SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES=' . $maxBytes);
+        }
+    }
+
     public function testGetAppRoot(): void
 
     {

@@ -8,6 +8,9 @@ use App\Services\Queue\QueueRedisConnection;
 use App\Services\Queue\RedisQueueBackend;
 use App\Services\Settings;
 use App\Services\TelegramService;
+use OpenTelemetry\API\Baggage\Baggage;
+use OpenTelemetry\API\Trace\Propagation\TraceContextPropagator;
+use OpenTelemetry\Context\Context;
 use PHPUnit\Framework\TestCase;
 use Redis;
 use RuntimeException;
@@ -69,6 +72,101 @@ final class RedisQueueBackendTest extends TestCase
         $this->backend->delete($message);
         self::assertSame(0, $this->redis->exists($this->jobKey($id)));
         self::assertSame(0, $this->redis->zCard($this->key('leased')));
+    }
+
+    public function testTraceContextSurvivesDeduplicationRetriesAndDeadLetterReconstruction(): void
+    {
+        $carrier = [
+            'traceparent' => '00-11111111111111111111111111111111-2222222222222222-01',
+            'tracestate' => 'vendor=value',
+        ];
+        $context = TraceContextPropagator::getInstance()->extract($carrier, context: Context::getRoot());
+        $scope = Baggage::getBuilder()->set('private', 'sentinel')->build()->storeInContext($context)->activate();
+        $payload = ['update_json' => '{"update_id":123}'];
+        try {
+            $id = $this->backend->dispatch(TelegramService::class, $payload, 'telegram');
+        } finally {
+            $scope->detach();
+        }
+        $raw = $this->redis->hGetAll($this->jobKey($id));
+        self::assertTraceContext($carrier, $raw);
+        self::assertSame($payload, json_decode($raw['payload'], true, flags: JSON_THROW_ON_ERROR));
+        self::assertArrayNotHasKey('baggage', $raw);
+        self::assertStringNotContainsString('sentinel', implode('', $raw));
+
+        $other = TraceContextPropagator::getInstance()->extract([
+            'traceparent' => '00-33333333333333333333333333333333-4444444444444444-00',
+            'tracestate' => 'other=value',
+        ], context: Context::getRoot())->activate();
+        try {
+            self::assertSame($id, $this->newBackend()->dispatch(TelegramService::class, $payload, 'telegram'));
+            self::assertSame($raw, $this->redis->hGetAll($this->jobKey($id)));
+            $first = $this->backend->reserveNextAvailable('telegram', 0);
+            self::assertNotNull($first);
+            self::assertTraceContext($carrier, $first->metadata);
+            $this->backend->defer($first);
+            $this->makeRetryReady($id);
+            $deferred = $this->backend->reserveNextAvailable('telegram', 0);
+            self::assertNotNull($deferred);
+            self::assertSame('1', $deferred->metadata['attempts']);
+            self::assertTraceContext($carrier, $deferred->metadata);
+            $this->backend->release($deferred);
+            $this->makeRetryReady($id);
+            $retry = $this->newBackend()->reserveNextAvailable('telegram', 0);
+            self::assertNotNull($retry);
+            self::assertSame('2', $retry->metadata['attempts']);
+            self::assertNotSame($first->metadata['token'], $retry->metadata['token']);
+            self::assertTraceContext($carrier, $retry->metadata);
+            // Crash recovery must retain the dispatch parent too.
+            $this->redis->zAdd($this->key('leased'), 0, $id);
+            self::assertNull($this->backend->reserveNextAvailable('telegram', 0));
+            $this->makeRetryReady($id);
+            $recovered = $this->backend->reserveNextAvailable('telegram', 0);
+            self::assertNotNull($recovered);
+            self::assertSame('3', $recovered->metadata['attempts']);
+            self::assertTraceContext($carrier, $recovered->metadata);
+            $this->backend->release($recovered);
+        } finally {
+            $other->detach();
+        }
+        $cursor = '0';
+        $found = [];
+        do {
+            foreach ($this->backend->failedMessages($cursor) as $failed) {
+                $found[] = $failed->id;
+                self::assertTraceContext($carrier, $failed->metadata);
+                self::assertSame($payload, $failed->payload);
+            }
+        } while ($cursor !== '0');
+        self::assertSame([$id], $found);
+    }
+
+    /** @param array<string, string> $expected @param array<string, mixed> $actual */
+    private static function assertTraceContext(array $expected, array $actual): void
+    {
+        foreach ($expected as $field => $value) {
+            self::assertSame($value, $actual[$field] ?? null);
+        }
+    }
+
+    public function testAbsentAndInvalidTraceContextDoesNotChangeQueueBehavior(): void
+    {
+        $scope = Context::getRoot()->activate();
+        try {
+            $id = $this->backend->dispatch('ExampleJob', [], 'telegram');
+        } finally {
+            $scope->detach();
+        }
+        self::assertFalse($this->redis->hExists($this->jobKey($id), 'traceparent'));
+        self::assertFalse($this->redis->hExists($this->jobKey($id), 'tracestate'));
+        // Persisted malformed technical fields are left for worker extraction to reject.
+        $this->redis->hMSet($this->jobKey($id), ['traceparent' => 'invalid', 'tracestate' => 'invalid']);
+        $message = $this->backend->reserveNextAvailable('telegram', 0);
+        self::assertNotNull($message);
+        self::assertSame([], $message->payload);
+        self::assertSame('invalid', $message->metadata['traceparent']);
+        $this->backend->delete($message);
+        self::assertSame(0, $this->redis->exists($this->jobKey($id)));
     }
 
     public function testMaintenanceIsSharedAndRetainsCursorAfterCooldown(): void
@@ -517,6 +615,8 @@ final class RedisQueueBackendTest extends TestCase
         $message = $this->backend->reserveNextAvailable('telegram', 0);
         self::assertNotNull($message);
         self::assertSame('legacy', $message->id);
+        self::assertArrayNotHasKey('traceparent', $message->metadata);
+        self::assertArrayNotHasKey('tracestate', $message->metadata);
         self::assertSame(-1, $this->redis->ttl($this->jobKey('legacy')));
     }
 

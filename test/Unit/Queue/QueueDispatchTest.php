@@ -5,13 +5,59 @@ declare(strict_types=1);
 namespace App\Test\Unit\Queue;
 
 use App\Services\Queue\QueueRedisConnection;
+use App\Services\Queue\QueueScripts;
 use App\Services\Queue\RedisQueueBackend;
 use App\Services\Settings;
+use OpenTelemetry\API\Baggage\Baggage;
+use OpenTelemetry\API\Trace\Propagation\TraceContextPropagator;
+use OpenTelemetry\Context\Context;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
 final class QueueDispatchTest extends TestCase
 {
+    public function testDispatchPassesOnlyValidW3cFieldsToAtomicScript(): void
+    {
+        $parent = '00-11111111111111111111111111111111-2222222222222222-01';
+        foreach ([
+            ['traceparent' => $parent, 'tracestate' => 'vendor=value'],
+            ['traceparent' => str_replace('-01', '-00', $parent)],
+            ['traceparent' => $parent, 'tracestate' => 'invalid state'],
+            ['traceparent' => 'invalid', 'tracestate' => 'vendor=value'],
+            [],
+        ] as $carrier) {
+            $context = TraceContextPropagator::getInstance()->extract($carrier, context: Context::getRoot());
+            $context = Baggage::getBuilder()->set('private', 'sentinel')->build()->storeInContext($context);
+            $scope = $context->activate();
+            try {
+                $expectedParent = ($carrier['traceparent'] ?? '') === 'invalid'
+                    ? '' : ($carrier['traceparent'] ?? '');
+                $expectedState = $expectedParent !== '' && ($carrier['tracestate'] ?? '') === 'vendor=value'
+                    ? 'vendor=value' : '';
+                $redis = $this->createMock(QueueRedisConnection::class);
+                $redis->expects(self::once())->method('evaluate')->willReturnCallback(
+                    static function (string $script, array $arguments, int $keyCount) use (
+                        $expectedParent, $expectedState,
+                    ): string {
+                        self::assertSame(QueueScripts::DISPATCH, $script);
+                        self::assertSame(2, $keyCount);
+                        self::assertCount(12, $arguments);
+                        self::assertSame('{"business":"unchanged"}', $arguments[5]);
+                        self::assertSame($expectedParent, $arguments[10]);
+                        self::assertSame($expectedState, $arguments[11]);
+                        self::assertStringNotContainsString('sentinel', implode('', $arguments));
+                        return $arguments[2];
+                    },
+                );
+                $backend = new RedisQueueBackend($redis, new Settings(['redis' => ['prefix' => 'test:']]),
+                    $this->createStub(\Doctrine\DBAL\Connection::class));
+                $backend->dispatch('ExampleJob', ['business' => 'unchanged'], 'test');
+            } finally {
+                $scope->detach();
+            }
+        }
+    }
+
     public function testDependencyAliasesResolveToRedisBackend(): void
     {
         $builder = new \DI\ContainerBuilder();

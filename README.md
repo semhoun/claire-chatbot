@@ -663,6 +663,29 @@ Le modèle Compose configure les logs console ; la présence d'un collecteur Ope
 
 Protégez les secrets, sauvegardes et données d'observabilité. N'exposez pas Redis, les listeners SSE internes ou l'interface de collecte sur Internet. Une restriction CORS contrôle l'accès des navigateurs, pas l'authentification de tous les clients HTTP.
 
+### Traces SQL
+
+Le suivi SQL applicatif est désactivé par défaut. Le Compose de développement l'active pour `claire-dev`. Pour l'activer ailleurs, déployez conjointement ces réglages sur HTTP et les workers :
+
+```yaml
+SQL_OBSERVABILITY_ENABLED: true
+SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES: 16384
+```
+
+Le paquet `open-telemetry/opentelemetry-auto-doctrine` n'est pas installé : le suivi SQL repose uniquement sur l'instrumentation applicative, sans exclusion OTEL supplémentaire. L'auto-instrumentation Slim est conservée. Le template de production conserve ses exporteurs actuels ; ces réglages seuls n'activent pas l'export des traces. Ne changez ni le sampler global ni la configuration OTEL du daemon SSE.
+
+Le scope `claire.sql` produit un span CLIENT par exécution DBAL ou par exécution PDO métier de `UserChatHistory`. Il contient le texte SQL avec placeholders, l'opération et le système SQL, ainsi que le contexte technique identifiable (`request`, `job`, `maintenance`, `cli`). La limite de texte est exprimée en octets, avec troncature UTF-8 valide et attribut de troncature. Aucun paramètre lié, résultat, DSN ou identifiant utilisateur n'est ajouté, et aucun log SQL systématique n'est émis. Les erreurs de ces spans ne contiennent que le type d'exception, sans son message ni sa pile.
+
+**Le SQL brut peut néanmoins contenir des données sensibles dans ses littéraux et commentaires.** Les logs applicatifs existants ne bénéficient pas d'une garantie globale de rédaction. Vérifiez les droits d'accès et la rétention ClickStack avant toute activation hors développement.
+
+La durée couvre l'appel client `execute`/`query`/`exec`, pas la préparation, l'hydratation, la lecture complète des résultats ni toute la transaction. Les appels PDO natifs de `ChatThreadLock` restent exclus : acquisition/libération des verrous, contrôle de possession MySQL et sonde `SELECT 1`. Ce n'est pas une couverture SQL globale. Toutes les exécutions couvertes sont éligibles, y compris la maintenance, mais restent soumises au sampling existant.
+
+Seuls `traceparent` et `tracestate` W3C sont transmis dans les champs techniques Redis, sans baggage ni changement du payload métier. Les retries conservent le parent d'origine, chaque tentative créant un nouveau span `queue.process`. La maintenance effectivement exécutée dispose d'un parent `queue.maintenance`. Les workers tentent un flush des traces et logs après finalisation, sur succès comme sur échec, sans conditionner le résultat métier à son succès ni garantir l'export après SIGKILL.
+
+**Limite du SDK verrouillé :** chaque provider compatible reçoit une seule tentative de `forceFlush()`, mais le SDK 1.15 n'applique pas l'annulation à l'export des batches. `OTEL_EXPORTER_OTLP_TIMEOUT` (millisecondes, 10000 par défaut, surchargeable par signal) limite les requêtes réseau, pas la durée totale du flush : retries et réponses `Retry-After` peuvent l'allonger. Il n'y a donc pas de deadline globale stricte du worker, ni de garantie de délai pour un provider tiers bloquant. Configurez les timeouts et le collecteur en conséquence.
+
+Après déploiement, renouvelez HTTP et les workers selon la procédure habituelle. Comparez des fenêtres ClickStack fixes avant/après : un seul span `claire.sql` par exécution, texte et durée ensemble, absence de doublons Doctrine, filiation HTTP → job → SQL et SQL de maintenance sous son parent. Aucun dashboard ou alerte supplémentaire n'est requis. Pour désactiver le suivi SQL, désactivez `SQL_OBSERVABILITY_ENABLED` et renouvelez les processus ; cela ne réactive aucune instrumentation Doctrine. Les champs Redis additionnels peuvent rester jusqu'à expiration des jobs ; aucune migration SQL n'est nécessaire.
+
 ## Développement
 
 ### Préparer l'environnement

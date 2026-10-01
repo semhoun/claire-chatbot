@@ -58,6 +58,12 @@ return [
             $connectionParams['path'] = $settings->get('database.path');
         }
 
+        $configuration->setMiddlewares([...$configuration->getMiddlewares(),
+            new \App\Services\Observability\SqlMiddleware(
+                \App\Services\Observability\SqlInstrumentation::fromSettings($settings)
+            ),
+        ]);
+
         return DriverManager::getConnection($connectionParams, $configuration);
     },
     // Doctrine Config used by entity manager and Tracy

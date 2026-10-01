@@ -37,6 +37,10 @@ final class QueueScripts
         redis.call('HSET', KEYS[2], 'id', ARGV[1], 'queue_name', ARGV[2],
             'job_class', ARGV[3], 'payload', ARGV[4], 'attempts', 0, 'state', 'ready',
             'deduplication_key', ARGV[5])
+        if ARGV[9] ~= '' then
+            redis.call('HSET', KEYS[2], 'traceparent', ARGV[9])
+            if ARGV[10] ~= '' then redis.call('HSET', KEYS[2], 'tracestate', ARGV[10]) end
+        end
         redis.call('LPUSH', KEYS[1], ARGV[1])
         if ARGV[5] ~= '' then redis.call('SET', ARGV[5], ARGV[1]) end
         return ARGV[1]
