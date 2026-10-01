@@ -105,9 +105,11 @@ final class UserChatHistoryTelemetryTest extends TestCase
 
     public function testFacadeLoadsOnlyObservabilitySettingsWithoutChangingPublicConstructor(): void
     {
-        $enabled = getenv('SQL_OBSERVABILITY_ENABLED');
+        $enabled = getenv('OTEL_PHP_AUTOLOAD_ENABLED');
+        $disabled = getenv('OTEL_SDK_DISABLED');
         $limit = getenv('SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES');
-        putenv('SQL_OBSERVABILITY_ENABLED=true');
+        putenv('OTEL_PHP_AUTOLOAD_ENABLED=true');
+        putenv('OTEL_SDK_DISABLED=false');
         putenv('SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES=12');
         try {
             new UserChatHistory($this->session, $this->pdo, threadId: 'thread');
@@ -115,7 +117,8 @@ final class UserChatHistoryTelemetryTest extends TestCase
             self::assertSame('SELECT messa', $span->getAttributes()->get('db.query.text'));
             self::assertTrue($span->getAttributes()->get('claire.sql.query.truncated'));
         } finally {
-            putenv($enabled === false ? 'SQL_OBSERVABILITY_ENABLED' : 'SQL_OBSERVABILITY_ENABLED=' . $enabled);
+            putenv($enabled === false ? 'OTEL_PHP_AUTOLOAD_ENABLED' : 'OTEL_PHP_AUTOLOAD_ENABLED=' . $enabled);
+            putenv($disabled === false ? 'OTEL_SDK_DISABLED' : 'OTEL_SDK_DISABLED=' . $disabled);
             putenv($limit === false ? 'SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES' : 'SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES=' . $limit);
         }
     }

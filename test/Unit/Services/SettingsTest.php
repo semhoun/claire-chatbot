@@ -83,27 +83,38 @@ final class SettingsTest extends TestCase
         self::assertNull($settings->get('nullable', 'fallback'));
     }
 
-    public function testSqlObservabilityRequiresExplicitActivation(): void
+    public function testSqlObservabilityFollowsOpenTelemetryActivation(): void
     {
-        $enabled = getenv('SQL_OBSERVABILITY_ENABLED');
+        $enabled = getenv('OTEL_PHP_AUTOLOAD_ENABLED');
+        $disabled = getenv('OTEL_SDK_DISABLED');
         $maxBytes = getenv('SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES');
         try {
-            putenv('SQL_OBSERVABILITY_ENABLED');
+            putenv('OTEL_PHP_AUTOLOAD_ENABLED');
+            putenv('OTEL_SDK_DISABLED');
             putenv('SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES');
             $config = require Settings::getAppRoot() . '/config/settings/observability.php';
             self::assertSame(['sql' => ['enabled' => false, 'maxQueryTextBytes' => 16384]], $config);
 
-            putenv('SQL_OBSERVABILITY_ENABLED=true');
+            putenv('OTEL_PHP_AUTOLOAD_ENABLED=true');
             putenv('SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES=256');
             $config = require Settings::getAppRoot() . '/config/settings/observability.php';
             self::assertSame(['sql' => ['enabled' => true, 'maxQueryTextBytes' => 256]], $config);
 
-            putenv('SQL_OBSERVABILITY_ENABLED=false');
+            putenv('OTEL_SDK_DISABLED=true');
+            $config = require Settings::getAppRoot() . '/config/settings/observability.php';
+            self::assertFalse($config['sql']['enabled']);
+
+            putenv('OTEL_SDK_DISABLED=false');
+            $config = require Settings::getAppRoot() . '/config/settings/observability.php';
+            self::assertTrue($config['sql']['enabled']);
+
+            putenv('OTEL_PHP_AUTOLOAD_ENABLED=false');
             putenv('SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES=-1');
             $config = require Settings::getAppRoot() . '/config/settings/observability.php';
             self::assertSame(['sql' => ['enabled' => false, 'maxQueryTextBytes' => 1]], $config);
         } finally {
-            putenv($enabled === false ? 'SQL_OBSERVABILITY_ENABLED' : 'SQL_OBSERVABILITY_ENABLED=' . $enabled);
+            putenv($enabled === false ? 'OTEL_PHP_AUTOLOAD_ENABLED' : 'OTEL_PHP_AUTOLOAD_ENABLED=' . $enabled);
+            putenv($disabled === false ? 'OTEL_SDK_DISABLED' : 'OTEL_SDK_DISABLED=' . $disabled);
             putenv($maxBytes === false
                 ? 'SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES'
                 : 'SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES=' . $maxBytes);

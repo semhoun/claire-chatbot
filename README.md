@@ -665,10 +665,9 @@ Protégez les secrets, sauvegardes et données d'observabilité. N'exposez pas R
 
 ### Traces SQL
 
-Le suivi SQL applicatif est désactivé par défaut. Le Compose de développement l'active pour `claire-dev`. Pour l'activer ailleurs, déployez conjointement ces réglages sur HTTP et les workers :
+Le suivi SQL applicatif est activé automatiquement avec OpenTelemetry via `OTEL_PHP_AUTOLOAD_ENABLED=true`, déjà défini dans les deux fichiers Compose, sauf si `OTEL_SDK_DISABLED=true`. Sans activation d'OpenTelemetry, il reste désactivé. Aucune variable d'activation SQL séparée n'est nécessaire. La limite du texte SQL reste configurable sur HTTP et les workers :
 
 ```yaml
-SQL_OBSERVABILITY_ENABLED: true
 SQL_OBSERVABILITY_MAX_QUERY_TEXT_BYTES: 16384
 ```
 
@@ -684,7 +683,7 @@ Seuls `traceparent` et `tracestate` W3C sont transmis dans les champs techniques
 
 **Limite du SDK verrouillé :** chaque provider compatible reçoit une seule tentative de `forceFlush()`, mais le SDK 1.15 n'applique pas l'annulation à l'export des batches. `OTEL_EXPORTER_OTLP_TIMEOUT` (millisecondes, 10000 par défaut, surchargeable par signal) limite les requêtes réseau, pas la durée totale du flush : retries et réponses `Retry-After` peuvent l'allonger. Il n'y a donc pas de deadline globale stricte du worker, ni de garantie de délai pour un provider tiers bloquant. Configurez les timeouts et le collecteur en conséquence.
 
-Après déploiement, renouvelez HTTP et les workers selon la procédure habituelle. Comparez des fenêtres ClickStack fixes avant/après : un seul span `claire.sql` par exécution, texte et durée ensemble, absence de doublons Doctrine, filiation HTTP → job → SQL et SQL de maintenance sous son parent. Aucun dashboard ou alerte supplémentaire n'est requis. Pour désactiver le suivi SQL, désactivez `SQL_OBSERVABILITY_ENABLED` et renouvelez les processus ; cela ne réactive aucune instrumentation Doctrine. Les champs Redis additionnels peuvent rester jusqu'à expiration des jobs ; aucune migration SQL n'est nécessaire.
+Après déploiement, renouvelez HTTP et les workers selon la procédure habituelle. Comparez des fenêtres ClickStack fixes avant/après : un seul span `claire.sql` par exécution, texte et durée ensemble, absence de doublons Doctrine, filiation HTTP → job → SQL et SQL de maintenance sous son parent. Aucun dashboard ou alerte supplémentaire n'est requis. Désactiver OpenTelemetry via `OTEL_PHP_AUTOLOAD_ENABLED=false` ou `OTEL_SDK_DISABLED=true` désactive également le suivi SQL après renouvellement des processus ; cela affecte aussi les autres signaux OpenTelemetry et ne réactive aucune instrumentation Doctrine. Les champs Redis additionnels peuvent rester jusqu'à expiration des jobs ; aucune migration SQL n'est nécessaire.
 
 ## Développement
 
